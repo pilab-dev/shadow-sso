@@ -96,6 +96,11 @@ type OAuthRepository interface {
 	UpdateSessionLastUsed(sessionID string) error
 	RevokeSession(sessionID string) error
 	DeleteExpiredSessions(userID string) error
+
+	// PKCE methods
+	SaveCodeChallenge(code, challenge string) error
+	GetCodeChallenge(code string) (string, error)
+	DeleteCodeChallenge(code string) error
 }
 
 // TokenStore represents the interface for token caching

@@ -4,9 +4,11 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+
+	"github.com/rs/zerolog/log"
 )
 
-// PKCEService handles PKCE (Proof Key for Code Exchange) validation
+// PKCEService handles PKCE validation
 type PKCEService struct {
 	oauthRepo OAuthRepository
 }
@@ -29,6 +31,11 @@ func (s *PKCEService) ValidateCodeVerifier(code, verifier string) error {
 		return fmt.Errorf("invalid code verifier")
 	}
 
+	// Clean up the challenge after successful validation
+	if err := s.oauthRepo.DeleteCodeChallenge(code); err != nil {
+		log.Error().Err(err).Msg("failed to delete code challenge")
+	}
+
 	return nil
 }
 
@@ -44,4 +51,8 @@ func ValidatePKCEChallenge(challenge, verifier string) bool {
 	h.Write([]byte(verifier))
 	calculatedChallenge := base64.RawURLEncoding.EncodeToString(h.Sum(nil))
 	return challenge == calculatedChallenge
+}
+
+func (s *PKCEService) SavePKCEChallenge(code, challenge string) error {
+	return s.oauthRepo.SaveCodeChallenge(code, challenge)
 }
