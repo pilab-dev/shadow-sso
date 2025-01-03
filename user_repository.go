@@ -8,8 +8,8 @@ import (
 	"time"
 )
 
-// Session represents a user's login session
-type Session struct {
+// UserSession represents a user's login session
+type UserSession struct {
 	ID           string    `json:"id"`            // Unique session identifier
 	UserID       string    `json:"user_id"`       // User ID
 	AccessToken  string    `json:"access_token"`  // Current access token
@@ -59,15 +59,15 @@ type UserRepository interface {
 
 	// CreateSession creates a new session for the given user
 	// Returns an error if session creation fails
-	CreateSession(userID string, session *Session) error
+	CreateSession(userID string, session *UserSession) error
 
 	// GetUserSessions retrieves all active sessions for a user
 	// Returns a slice of sessions or an error if retrieval fails
-	GetUserSessions(userID string) ([]Session, error)
+	GetUserSessions(userID string) ([]UserSession, error)
 
 	// GetSessionByToken retrieves a session by its access token
 	// Returns the session or an error if not found
-	GetSessionByToken(accessToken string) (*Session, error)
+	GetSessionByToken(accessToken string) (*UserSession, error)
 
 	// UpdateSessionLastUsed updates the LastUsedAt timestamp of a session
 	// Returns an error if the update fails

@@ -64,7 +64,7 @@ func (s *OAuthService) Login(username, password, deviceInfo string) (*TokenRespo
 	refreshToken := uuid.New().String()
 	expiresAt := time.Now().Add(time.Hour)
 
-	session := &Session{
+	session := &UserSession{
 		ID:           uuid.New().String(),
 		UserID:       user.ID,
 		AccessToken:  accessToken,
@@ -105,7 +105,7 @@ func (s *OAuthService) Login(username, password, deviceInfo string) (*TokenRespo
 }
 
 // Új metódus a felhasználó session-jeinek lekérdezéséhez
-func (s *OAuthService) GetUserSessions(userID string) ([]Session, error) {
+func (s *OAuthService) GetUserSessions(userID string) ([]UserSession, error) {
 	return s.userRepo.GetUserSessions(userID)
 }
 
@@ -252,7 +252,7 @@ func (s *OAuthService) DirectGrant(clientID, clientSecret, username, password, s
 	expiresAt := time.Now().Add(time.Hour)
 
 	// Create session
-	session := &Session{
+	session := &UserSession{
 		ID:           uuid.New().String(),
 		UserID:       user.ID,
 		AccessToken:  accessToken,

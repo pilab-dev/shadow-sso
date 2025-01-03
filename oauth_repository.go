@@ -55,64 +55,180 @@ type Token struct {
 	LastUsedAt time.Time `json:"last_used_at"` // Last usage timestamp
 }
 
-// OAuthRepository defines the interface for OAuth 2.0 data operations
+// OAuthRepository defines the interface for OAuth 2.0 data operations.
+// This interface provides a comprehensive set of methods to manage OAuth 2.0 entities
+// including clients, authorization codes, tokens, sessions, and PKCE challenges.
 type OAuthRepository interface {
 	// Client Operations
+
+	// CreateClient creates a new OAuth client in the repository.
+	// Returns an error if the client already exists or if there's a database error.
 	CreateClient(client *Client) error
+
+	// GetClient retrieves a client by its client ID.
+	// Returns the client if found, or an error if not found or if there's a database error.
 	GetClient(clientID string) (*Client, error)
+
+	// ValidateClient verifies if the provided client credentials (ID and secret) are valid.
+	// Returns nil if valid, or an error if invalid credentials or database error.
 	ValidateClient(clientID, clientSecret string) error
+
+	// UpdateClient updates an existing OAuth client's information.
+	// Returns an error if the client doesn't exist or if there's a database error.
 	UpdateClient(client *Client) error
+
+	// DeleteClient removes a client and all associated data from the repository.
+	// Returns an error if the client doesn't exist or if there's a database error.
 	DeleteClient(clientID string) error
 
 	// Authorization Code Operations
+
+	// SaveAuthCode stores a new authorization code in the repository.
+	// Returns an error if the code already exists or if there's a database error.
 	SaveAuthCode(code *AuthCode) error
+
+	// GetAuthCode retrieves an authorization code by its value.
+	// Returns the authorization code if found, or an error if not found or database error.
 	GetAuthCode(code string) (*AuthCode, error)
+
+	// MarkAuthCodeAsUsed marks an authorization code as used to prevent replay attacks.
+	// Returns an error if the code doesn't exist or if there's a database error.
 	MarkAuthCodeAsUsed(code string) error
+
+	// DeleteExpiredAuthCodes removes all expired authorization codes from the repository.
+	// Returns an error if there's a database error during cleanup.
 	DeleteExpiredAuthCodes() error
 
 	// Token Operations
+
+	// StoreToken saves a new access or refresh token in the repository.
+	// Returns an error if the token already exists or if there's a database error.
 	StoreToken(token *Token) error
+
+	// GetAccessToken retrieves an access token by its value.
+	// Returns the token if found, or an error if not found or database error.
 	GetAccessToken(tokenValue string) (*Token, error)
+
+	// GetRefreshToken retrieves a refresh token by its value.
+	// Returns the token if found, or an error if not found or database error.
 	GetRefreshToken(tokenValue string) (*Token, error)
+
+	// GetRefreshTokenInfo retrieves metadata about a refresh token.
+	// Returns the token info if found, or an error if not found or database error.
 	GetRefreshTokenInfo(tokenValue string) (*TokenInfo, error)
+
+	// GetAccessTokenInfo retrieves metadata about an access token.
+	// Returns the token info if found, or an error if not found or database error.
 	GetAccessTokenInfo(tokenValue string) (*TokenInfo, error)
+
+	// RevokeToken invalidates an access token.
+	// Returns an error if the token doesn't exist or if there's a database error.
 	RevokeToken(tokenValue string) error
+
+	// RevokeRefreshToken invalidates a refresh token.
+	// Returns an error if the token doesn't exist or if there's a database error.
 	RevokeRefreshToken(tokenValue string) error
+
+	// RevokeAllUserTokens invalidates all tokens associated with a user.
+	// Returns an error if there's a database error during revocation.
 	RevokeAllUserTokens(userID string) error
+
+	// RevokeAllClientTokens invalidates all tokens associated with a client.
+	// Returns an error if there's a database error during revocation.
 	RevokeAllClientTokens(clientID string) error
+
+	// DeleteExpiredTokens removes all expired tokens from the repository.
+	// Returns an error if there's a database error during cleanup.
 	DeleteExpiredTokens() error
+
+	// ValidateAccessToken verifies if an access token is valid and returns the associated user ID.
+	// Returns the user ID if valid, or an error if invalid or database error.
 	ValidateAccessToken(token string) (string, error)
 
 	// Token Introspection (RFC 7662)
+
+	// GetTokenInfo retrieves detailed information about a token as per RFC 7662.
+	// Returns the token information if found, or an error if not found or database error.
 	GetTokenInfo(tokenValue string) (*Token, error)
 
 	// User Operations
+
+	// GetUserInfo retrieves user information associated with a user ID.
+	// Returns a map of user claims if found, or an error if not found or database error.
 	GetUserInfo(userID string) (map[string]interface{}, error)
 
 	// Session Operations
-	CreateSession(userID string, session *Session) error
-	GetUserSessions(userID string) ([]Session, error)
-	GetSessionByToken(token string) (*Session, error)
+
+	// CreateSession creates a new user session.
+	// Returns an error if the session already exists or if there's a database error.
+	CreateSession(userID string, session *UserSession) error
+
+	// GetUserSessions retrieves all active sessions for a user.
+	// Returns a slice of sessions if found, or an error if not found or database error.
+	GetUserSessions(userID string) ([]UserSession, error)
+
+	// GetSessionByToken retrieves a session by its associated token.
+	// Returns the session if found, or an error if not found or database error.
+	GetSessionByToken(token string) (*UserSession, error)
+
+	// UpdateSessionLastUsed updates the last used timestamp of a session.
+	// Returns an error if the session doesn't exist or if there's a database error.
 	UpdateSessionLastUsed(sessionID string) error
+
+	// RevokeSession invalidates a specific session.
+	// Returns an error if the session doesn't exist or if there's a database error.
 	RevokeSession(sessionID string) error
+
+	// DeleteExpiredSessions removes all expired sessions for a user.
+	// Returns an error if there's a database error during cleanup.
 	DeleteExpiredSessions(userID string) error
 
 	// PKCE methods
+
+	// SaveCodeChallenge stores a PKCE code challenge for a given authorization code.
+	// Returns an error if the challenge already exists or if there's a database error.
 	SaveCodeChallenge(code, challenge string) error
+
+	// GetCodeChallenge retrieves a PKCE code challenge for verification.
+	// Returns the challenge if found, or an error if not found or database error.
 	GetCodeChallenge(code string) (string, error)
+
+	// DeleteCodeChallenge removes a PKCE code challenge after use.
+	// Returns an error if the challenge doesn't exist or if there's a database error.
 	DeleteCodeChallenge(code string) error
 }
 
-// TokenStore represents the interface for token caching
+// TokenStore represents the interface for token caching operations.
+// This interface provides methods to manage a temporary token cache for improved performance.
 type TokenStore interface {
 	// Token Cache Operations
+
+	// Set stores a token in the cache.
+	// Returns an error if the operation fails.
 	Set(token *Token) error
+
+	// Get retrieves a token from the cache by its value.
+	// Returns the token and true if found, or nil and false if not found.
 	Get(tokenValue string) (*Token, bool)
+
+	// Delete removes a token from the cache.
+	// Returns an error if the operation fails.
 	Delete(tokenValue string) error
+
+	// Clear removes all tokens from the cache.
+	// Returns an error if the operation fails.
 	Clear() error
 
 	// Maintenance Operations
+
+	// DeleteExpired removes all expired tokens from the cache.
+	// Returns an error if the operation fails.
 	DeleteExpired() error
+
+	// Count returns the number of tokens currently in the cache.
 	Count() int
+
+	// Close releases any resources used by the token store.
+	// Returns an error if the operation fails.
 	Close() error
 }
