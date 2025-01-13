@@ -230,7 +230,7 @@ This package adopts the best practices when reporting errors during processes. I
 
 ## ❤️ Contributing
 
-We appreciate any form of contribution! Please take time to follow the rules on the official guidelines, you are always welcomed: **https://github.com/pilab-dev/shadow-sso/blob/main/CONTRIBUTING**.
+We appreciate any form of contribution! Please take time to follow the rules on the official guidelines, you are always welcomed: **https://github.com/pilab-dev/shadow-sso/blob/main/.github/CONTRIBUTING.md**.
 
 ## 📜 License
 

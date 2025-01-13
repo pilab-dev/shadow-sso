@@ -1,4 +1,4 @@
-Okay, here's a `CODE_OF_CONDUCT` file for the Shadow SSO project, adapted from the Contributor Covenant, with some customization:
+Okay, here's a `CODE_OF_CONDUCT.md` file for the Shadow SSO project, adapted from the Contributor Covenant, with some customization:
 
 # Code of Conduct
 
