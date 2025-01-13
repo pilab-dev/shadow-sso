@@ -1,4 +1,8 @@
-package redis // Replace with your actual package name
+//go:build redis
+
+// Package redis implements the TokenStore interface using Redis.
+// To use this package, you need to enable the "redis" build tag.
+package redis
 
 import (
 	"context"
@@ -7,8 +11,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/pilab-dev/shadow-sso/cache"
 	"github.com/redis/go-redis/v9"
-	"go.pilab.hu/sso/cache"
 )
 
 // TokenStore implements the TokenStore interface using Redis

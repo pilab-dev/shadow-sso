@@ -1,3 +1,7 @@
+//go:build mongodb
+
+// Package mongodb implements the OAuthRepository interface using MongoDB.
+// To use this package, you need to enable the "mongodb" build tag.
 package mongodb
 
 import (
@@ -5,10 +9,10 @@ import (
 	"fmt"
 	"time"
 
+	ssso "github.com/pilab-dev/shadow-sso"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-	"go.pilab.hu/sso"
 )
 
 type MongoOAuthRepository struct {
@@ -105,13 +109,13 @@ func (r *MongoOAuthRepository) createIndexes() error {
 }
 
 // Client operations
-func (r *MongoOAuthRepository) CreateClient(client *sso.Client) error {
+func (r *MongoOAuthRepository) CreateClient(client *ssso.Client) error {
 	_, err := r.clients.InsertOne(r.ctx, client)
 	return err
 }
 
-func (r *MongoOAuthRepository) GetClient(clientID string) (*sso.Client, error) {
-	var client sso.Client
+func (r *MongoOAuthRepository) GetClient(clientID string) (*ssso.Client, error) {
+	var client ssso.Client
 	err := r.clients.FindOne(r.ctx, bson.M{"client_id": clientID}).Decode(&client)
 	if err == mongo.ErrNoDocuments {
 		return nil, fmt.Errorf("client not found")
@@ -120,7 +124,7 @@ func (r *MongoOAuthRepository) GetClient(clientID string) (*sso.Client, error) {
 }
 
 func (r *MongoOAuthRepository) ValidateClient(clientID, clientSecret string) error {
-	var client sso.Client
+	var client ssso.Client
 	err := r.clients.FindOne(r.ctx, bson.M{
 		"client_id": clientID,
 		"secret":    clientSecret,
@@ -132,13 +136,13 @@ func (r *MongoOAuthRepository) ValidateClient(clientID, clientSecret string) err
 }
 
 // Auth code operations
-func (r *MongoOAuthRepository) SaveAuthCode(code *sso.AuthCode) error {
+func (r *MongoOAuthRepository) SaveAuthCode(code *ssso.AuthCode) error {
 	_, err := r.authCodes.InsertOne(r.ctx, code)
 	return err
 }
 
-func (r *MongoOAuthRepository) GetAuthCode(code string) (*sso.AuthCode, error) {
-	var authCode sso.AuthCode
+func (r *MongoOAuthRepository) GetAuthCode(code string) (*ssso.AuthCode, error) {
+	var authCode ssso.AuthCode
 	err := r.authCodes.FindOne(r.ctx, bson.M{"code": code}).Decode(&authCode)
 	if err == mongo.ErrNoDocuments {
 		return nil, fmt.Errorf("auth code not found")
@@ -155,13 +159,13 @@ func (r *MongoOAuthRepository) MarkAuthCodeAsUsed(code string) error {
 }
 
 // Token operations
-func (r *MongoOAuthRepository) StoreToken(token *sso.Token) error {
+func (r *MongoOAuthRepository) StoreToken(token *ssso.Token) error {
 	_, err := r.tokens.InsertOne(r.ctx, token)
 	return err
 }
 
-func (r *MongoOAuthRepository) GetAccessToken(tokenValue string) (*sso.Token, error) {
-	var token sso.Token
+func (r *MongoOAuthRepository) GetAccessToken(tokenValue string) (*ssso.Token, error) {
+	var token ssso.Token
 	err := r.tokens.FindOne(r.ctx, bson.M{
 		"token_value": tokenValue,
 		"token_type":  "access_token",

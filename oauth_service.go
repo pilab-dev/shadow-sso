@@ -1,4 +1,4 @@
-package sso
+package ssso
 
 import (
 	"crypto/rsa"

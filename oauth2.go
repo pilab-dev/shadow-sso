@@ -1,4 +1,4 @@
-package sso
+package ssso
 
 import (
 	"fmt"
@@ -7,9 +7,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
+	"github.com/pilab-dev/shadow-sso/client"
+	"github.com/pilab-dev/shadow-sso/errors"
 	"github.com/rs/zerolog/log"
-	"go.pilab.hu/sso/client"
-	"go.pilab.hu/sso/errors"
 )
 
 // OAuth2API struct to hold dependencies

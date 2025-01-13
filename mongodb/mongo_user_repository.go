@@ -1,3 +1,5 @@
+//go:build mongodb
+
 package mongodb
 
 import (
@@ -5,11 +7,11 @@ import (
 	"fmt"
 	"time"
 
+	ssso "github.com/pilab-dev/shadow-sso"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.opentelemetry.io/contrib/instrumentation/go.mongodb.org/mongo-driver/mongo/otelmongo"
-	"go.pilab.hu/sso"
 )
 
 type MongoUserRepository struct {
@@ -76,8 +78,8 @@ func (r *MongoUserRepository) createIndexes() error {
 	return err
 }
 
-func (r *MongoUserRepository) CreateUser(username, password string) (*sso.User, error) {
-	user := &sso.User{
+func (r *MongoUserRepository) CreateUser(username, password string) (*ssso.User, error) {
+	user := &ssso.User{
 		ID:        NewObjectID(),
 		Username:  username,
 		Password:  password,
@@ -96,8 +98,8 @@ func (r *MongoUserRepository) CreateUser(username, password string) (*sso.User, 
 	return user, nil
 }
 
-func (r *MongoUserRepository) GetUserByID(id string) (*sso.User, error) {
-	var user sso.User
+func (r *MongoUserRepository) GetUserByID(id string) (*ssso.User, error) {
+	var user ssso.User
 	err := r.users.FindOne(r.ctx, bson.M{"_id": id}).Decode(&user)
 	if err == mongo.ErrNoDocuments {
 		return nil, fmt.Errorf("user not found")
@@ -105,8 +107,8 @@ func (r *MongoUserRepository) GetUserByID(id string) (*sso.User, error) {
 	return &user, err
 }
 
-func (r *MongoUserRepository) GetUserByUsername(username string) (*sso.User, error) {
-	var user sso.User
+func (r *MongoUserRepository) GetUserByUsername(username string) (*ssso.User, error) {
+	var user ssso.User
 	err := r.users.FindOne(r.ctx, bson.M{"username": username}).Decode(&user)
 	if err == mongo.ErrNoDocuments {
 		return nil, fmt.Errorf("user not found")
@@ -114,7 +116,7 @@ func (r *MongoUserRepository) GetUserByUsername(username string) (*sso.User, err
 	return &user, err
 }
 
-func (r *MongoUserRepository) UpdateUser(user *sso.User) error {
+func (r *MongoUserRepository) UpdateUser(user *ssso.User) error {
 	user.UpdatedAt = time.Now().UTC()
 	_, err := r.users.ReplaceOne(r.ctx, bson.M{"_id": user.ID}, user)
 	return err
@@ -125,12 +127,12 @@ func (r *MongoUserRepository) DeleteUser(id string) error {
 	return err
 }
 
-func (r *MongoUserRepository) CreateSession(userID string, session *sso.UserSession) error {
+func (r *MongoUserRepository) CreateSession(userID string, session *ssso.UserSession) error {
 	_, err := r.sessions.InsertOne(r.ctx, session)
 	return err
 }
 
-func (r *MongoUserRepository) GetUserSessions(userID string) ([]sso.UserSession, error) {
+func (r *MongoUserRepository) GetUserSessions(userID string) ([]ssso.UserSession, error) {
 	cursor, err := r.sessions.Find(r.ctx, bson.M{
 		"user_id":    userID,
 		"is_revoked": false,
@@ -141,15 +143,15 @@ func (r *MongoUserRepository) GetUserSessions(userID string) ([]sso.UserSession,
 	}
 	defer cursor.Close(r.ctx)
 
-	var sessions []sso.UserSession
+	var sessions []ssso.UserSession
 	if err := cursor.All(r.ctx, &sessions); err != nil {
 		return nil, err
 	}
 	return sessions, nil
 }
 
-func (r *MongoUserRepository) GetSessionByToken(accessToken string) (*sso.UserSession, error) {
-	var session sso.UserSession
+func (r *MongoUserRepository) GetSessionByToken(accessToken string) (*ssso.UserSession, error) {
+	var session ssso.UserSession
 	err := r.sessions.FindOne(r.ctx, bson.M{
 		"access_token": accessToken,
 		"is_revoked":   false,

@@ -22,7 +22,7 @@ A comprehensive OAuth 2.0 and OpenID Connect implementation in Go, providing sec
 ## Installation
 
 ```bash
-go get go.pilab.hu/sso
+go get github.com/pilab-dev/shadow-sso
 ```
 
 ## Quick Start
@@ -34,7 +34,7 @@ package main
 
 import (
     "github.com/labstack/echo/v4"
-    "go.pilab.hu/sso"
+    ssso "github.com/pilab-dev/shadow-sso"
 )
 
 func main() {
@@ -46,14 +46,14 @@ func main() {
     signingKey := loadSigningKey()
     
     // Create services
-    oauthService := sso.NewOAuthService(oauthRepo, userRepo, signingKey, "https://your-issuer.com")
-    jwksService := sso.NewJWKSService(signingKey)
+    oauthService := ssso.NewOAuthService(oauthRepo, userRepo, signingKey, "https://your-issuer.com")
+    jwksService := ssso.NewJWKSService(signingKey)
     clientService := client.NewClientService(clientStore)
-    pkceService := sso.NewPKCEService(oauthRepo)
+    pkceService := ssso.NewPKCEService(oauthRepo)
     
     // Initialize OAuth2 API
-    config := sso.NewDefaultConfig("https://your-issuer.com")
-    oauth2API := sso.NewOAuth2API(
+    config := ssso.NewDefaultConfig("https://your-issuer.com")
+    oauth2API := ssso.NewOAuth2API(
         oauthService,
         jwksService,
         clientService,
@@ -71,7 +71,7 @@ func main() {
 ### 2. Register a Client Application
 
 ```go
-client := &sso.Client{
+client := &ssso.Client{
     ID:           "client_id",
     Secret:       "client_secret",
     Name:         "Example App",
