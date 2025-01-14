@@ -1,3 +1,4 @@
+//nolint:tagliatelle
 package ssso
 
 import (
@@ -6,7 +7,7 @@ import (
 	"time"
 )
 
-// AuthCode represents an OAuth 2.0 authorization code
+// AuthCode represents an OAuth 2.0 authorization code.
 type AuthCode struct {
 	Code        string    `json:"code"`         // Unique authorization code
 	ClientID    string    `json:"client_id"`    // Client application ID
@@ -21,7 +22,7 @@ type AuthCode struct {
 	CodeChallengeMethod string `json:"code_challenge_method,omitempty"`
 }
 
-// TokenInfo represents metadata about a token
+// TokenInfo represents metadata about a token.
 type TokenInfo struct {
 	ID        string    `json:"id"`         // Unique token identifier
 	TokenType string    `json:"token_type"` // "access_token" or "refresh_token"
@@ -33,7 +34,7 @@ type TokenInfo struct {
 	IsRevoked bool      `json:"is_revoked"` // Whether token has been revoked
 }
 
-// Client represents an OAuth 2.0 client application
+// Client represents an OAuth 2.0 client application.
 type Client struct {
 	ID           string    `json:"id"`            // Unique client identifier
 	Secret       string    `json:"-"`             // Client secret (hashed)
@@ -45,7 +46,7 @@ type Client struct {
 	UpdatedAt    time.Time `json:"updated_at"`    // Last update timestamp
 }
 
-// Token represents an OAuth 2.0 token (access or refresh)
+// Token represents an OAuth 2.0 token (access or refresh).
 type Token struct {
 	ID         string    `json:"id"`           // Unique token identifier
 	TokenType  string    `json:"token_type"`   // "access_token" or "refresh_token"
@@ -59,52 +60,10 @@ type Token struct {
 	LastUsedAt time.Time `json:"last_used_at"` // Last usage timestamp
 }
 
-// OAuthRepository defines the interface for OAuth 2.0 data operations.
-// This interface provides a comprehensive set of methods to manage OAuth 2.0 entities
-// including clients, authorization codes, tokens, sessions, and PKCE challenges.
-type OAuthRepository interface {
-	io.Closer
-
-	// Client Operations
-
-	// CreateClient creates a new OAuth client in the repository.
-	// Returns an error if the client already exists or if there's a database error.
-	CreateClient(ctx context.Context, client *Client) error
-
-	// GetClient retrieves a client by its client ID.
-	// Returns the client if found, or an error if not found or if there's a database error.
-	GetClient(ctx context.Context, clientID string) (*Client, error)
-
-	// ValidateClient verifies if the provided client credentials (ID and secret) are valid.
-	// Returns nil if valid, or an error if invalid credentials or database error.
-	ValidateClient(ctx context.Context, clientID, clientSecret string) error
-
-	// UpdateClient updates an existing OAuth client's information.
-	// Returns an error if the client doesn't exist or if there's a database error.
-	UpdateClient(ctx context.Context, client *Client) error
-
-	// DeleteClient removes a client and all associated data from the repository.
-	// Returns an error if the client doesn't exist or if there's a database error.
-	DeleteClient(ctx context.Context, clientID string) error
-
-	// Authorization Code Operations
-
-	// SaveAuthCode stores a new authorization code in the repository.
-	// Returns an error if the code already exists or if there's a database error.
-	SaveAuthCode(ctx context.Context, code *AuthCode) error
-
-	// GetAuthCode retrieves an authorization code by its value.
-	// Returns the authorization code if found, or an error if not found or database error.
-	GetAuthCode(ctx context.Context, code string) (*AuthCode, error)
-
-	// MarkAuthCodeAsUsed marks an authorization code as used to prevent replay attacks.
-	// Returns an error if the code doesn't exist or if there's a database error.
-	MarkAuthCodeAsUsed(ctx context.Context, code string) error
-
-	// DeleteExpiredAuthCodes removes all expired authorization codes from the repository.
-	// Returns an error if there's a database error during cleanup.
-	DeleteExpiredAuthCodes(ctx context.Context) error
-
+// TokenRepository represents an OAuth 2.0 token repository.
+//
+//nolint:interfacebloat
+type TokenRepository interface {
 	// Token Operations
 
 	// StoreToken saves a new access or refresh token in the repository.
@@ -156,9 +115,52 @@ type OAuthRepository interface {
 	// GetTokenInfo retrieves detailed information about a token as per RFC 7662.
 	// Returns the token information if found, or an error if not found or database error.
 	GetTokenInfo(ctx context.Context, tokenValue string) (*Token, error)
+}
 
-	// Session Operations
+// ClientRepository defines the interface for OAuth 2.0 client operations.
+type ClientRepository interface {
+	// CreateClient creates a new OAuth client in the repository.
+	// Returns an error if the client already exists or if there's a database error.
+	CreateClient(ctx context.Context, client *Client) error
 
+	// GetClient retrieves a client by its client ID.
+	// Returns the client if found, or an error if not found or if there's a database error.
+	GetClient(ctx context.Context, clientID string) (*Client, error)
+
+	// ValidateClient verifies if the provided client credentials (ID and secret) are valid.
+	// Returns nil if valid, or an error if invalid credentials or database error.
+	ValidateClient(ctx context.Context, clientID, clientSecret string) error
+
+	// UpdateClient updates an existing OAuth client's information.
+	// Returns an error if the client doesn't exist or if there's a database error.
+	UpdateClient(ctx context.Context, client *Client) error
+
+	// DeleteClient removes a client and all associated data from the repository.
+	// Returns an error if the client doesn't exist or if there's a database error.
+	DeleteClient(ctx context.Context, clientID string) error
+}
+
+// AuthorizationCodeRepository defines the interface for OAuth 2.0 authorization code operations.
+type AuthorizationCodeRepository interface {
+	// SaveAuthCode stores a new authorization code in the repository.
+	// Returns an error if the code already exists or if there's a database error.
+	SaveAuthCode(ctx context.Context, code *AuthCode) error
+
+	// GetAuthCode retrieves an authorization code by its value.
+	// Returns the authorization code if found, or an error if not found or database error.
+	GetAuthCode(ctx context.Context, code string) (*AuthCode, error)
+
+	// MarkAuthCodeAsUsed marks an authorization code as used to prevent replay attacks.
+	// Returns an error if the code doesn't exist or if there's a database error.
+	MarkAuthCodeAsUsed(ctx context.Context, code string) error
+
+	// DeleteExpiredAuthCodes removes all expired authorization codes from the repository.
+	// Returns an error if there's a database error during cleanup.
+	DeleteExpiredAuthCodes(ctx context.Context) error
+}
+
+// SessionRepository defines the interface for OAuth 2.0 session operations.
+type SessionRepository interface {
 	// CreateSession creates a new user session.
 	// Returns an error if the session already exists or if there's a database error.
 	CreateSession(ctx context.Context, userID string, session *UserSession) error
@@ -182,9 +184,10 @@ type OAuthRepository interface {
 	// DeleteExpiredSessions removes all expired sessions for a user.
 	// Returns an error if there's a database error during cleanup.
 	DeleteExpiredSessions(ctx context.Context, userID string) error
+}
 
-	// PKCE methods
-
+// PkceRepository defines the interface for OAuth 2.0 PKCE operations.
+type PkceRepository interface {
 	// SaveCodeChallenge stores a PKCE code challenge for a given authorization code.
 	// Returns an error if the challenge already exists or if there's a database error.
 	SaveCodeChallenge(ctx context.Context, code, challenge string) error
@@ -196,4 +199,17 @@ type OAuthRepository interface {
 	// DeleteCodeChallenge removes a PKCE code challenge after use.
 	// Returns an error if the challenge doesn't exist or if there's a database error.
 	DeleteCodeChallenge(ctx context.Context, code string) error
+}
+
+// OAuthRepository defines the interface for OAuth 2.0 data operations.
+// This interface provides a comprehensive set of methods to manage OAuth 2.0 entities
+// including clients, authorization codes, tokens, sessions, and PKCE challenges.
+type OAuthRepository interface {
+	io.Closer
+
+	ClientRepository
+	AuthorizationCodeRepository
+	TokenRepository
+	SessionRepository
+	PkceRepository
 }
