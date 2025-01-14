@@ -1,6 +1,7 @@
 package ssso
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -27,7 +28,7 @@ func NewTokenService(repo OAuthRepository, cache TokenStore, issuer string, toke
 }
 
 // GenerateTokenPair creates a new access and refresh token pair
-func (s *TokenService) GenerateTokenPair(clientID, userID, scope string) (*TokenResponse, error) {
+func (s *TokenService) GenerateTokenPair(ctx context.Context, clientID, userID, scope string) (*TokenResponse, error) {
 	// Generate access token
 	accessToken := &Token{
 		ID:         uuid.New().String(),
@@ -55,11 +56,11 @@ func (s *TokenService) GenerateTokenPair(clientID, userID, scope string) (*Token
 	}
 
 	// Store tokens
-	if err := s.repo.StoreToken(accessToken); err != nil {
+	if err := s.repo.StoreToken(ctx, accessToken); err != nil {
 		return nil, fmt.Errorf("failed to store access token: %w", err)
 	}
 
-	if err := s.repo.StoreToken(refreshToken); err != nil {
+	if err := s.repo.StoreToken(ctx, refreshToken); err != nil {
 		return nil, fmt.Errorf("failed to store refresh token: %w", err)
 	}
 
@@ -78,7 +79,7 @@ func (s *TokenService) GenerateTokenPair(clientID, userID, scope string) (*Token
 }
 
 // ValidateToken validates an access token and returns its information
-func (s *TokenService) ValidateToken(tokenValue string) (*Token, error) {
+func (s *TokenService) ValidateToken(ctx context.Context, tokenValue string) (*Token, error) {
 	// Check cache first
 	if token, found := s.cache.Get(tokenValue); found {
 		if !token.IsRevoked && time.Now().Before(token.ExpiresAt) {
@@ -89,7 +90,7 @@ func (s *TokenService) ValidateToken(tokenValue string) (*Token, error) {
 	}
 
 	// Check repository
-	token, err := s.repo.GetAccessToken(tokenValue)
+	token, err := s.repo.GetAccessToken(ctx, tokenValue)
 	if err != nil {
 		return nil, fmt.Errorf("token not found: %w", err)
 	}

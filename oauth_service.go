@@ -1,6 +1,7 @@
 package ssso
 
 import (
+	"context"
 	"crypto/rsa"
 	"crypto/subtle"
 	"encoding/base64"
@@ -31,15 +32,15 @@ func NewOAuthService(oauthRepo OAuthRepository, userRepo UserRepository, signing
 	}
 }
 
-func (s *OAuthService) RegisterUser(username, password string) (*User, error) {
-	// Jelszó hash-elése
+func (s *OAuthService) RegisterUser(ctx context.Context, username, password string) (*User, error) {
+	// Hashing password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
 
-	// Felhasználó létrehozása
-	user, err := s.userRepo.CreateUser(username, string(hashedPassword))
+	// Create the user
+	user, err := s.userRepo.CreateUser(ctx, username, string(hashedPassword))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
@@ -47,25 +48,25 @@ func (s *OAuthService) RegisterUser(username, password string) (*User, error) {
 	return user, nil
 }
 
-func (s *OAuthService) Login(username, password, deviceInfo string) (*TokenResponse, error) {
-	// Felhasználó keresése
-	user, err := s.userRepo.GetUserByUsername(username)
+func (s *OAuthService) Login(ctx context.Context, username, password, deviceInfo string) (*TokenResponse, error) {
+	// Search for the user
+	user, err := s.userRepo.GetUserByUsername(ctx, username)
 	if err != nil {
 		return nil, fmt.Errorf("user not found: %w", err)
 	}
 
-	// Jelszó ellenőrzése
+	// Check password
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
 		return nil, fmt.Errorf("invalid password")
 	}
 
-	// Token és Session generálás
-	accessToken := uuid.New().String()
-	refreshToken := uuid.New().String()
+	// Generate token and session
+	accessToken := uuid.NewString()
+	refreshToken := uuid.NewString()
 	expiresAt := time.Now().Add(time.Hour)
 
 	session := &UserSession{
-		ID:           uuid.New().String(),
+		ID:           uuid.NewString(),
 		UserID:       user.ID,
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
@@ -76,12 +77,12 @@ func (s *OAuthService) Login(username, password, deviceInfo string) (*TokenRespo
 		IsRevoked:    false,
 	}
 
-	// Session mentése
-	if err := s.userRepo.CreateSession(user.ID, session); err != nil {
+	// Save the generated session
+	if err := s.userRepo.CreateSession(ctx, user.ID, session); err != nil {
 		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
 
-	// Token tárolása az OAuth rendszerben is
+	// Store token in the database
 	token := &Token{
 		ID:         uuid.New().String(),
 		TokenType:  "access_token",
@@ -92,7 +93,7 @@ func (s *OAuthService) Login(username, password, deviceInfo string) (*TokenRespo
 		CreatedAt:  time.Now(),
 		LastUsedAt: time.Now(),
 	}
-	if err := s.oauthRepo.StoreToken(token); err != nil {
+	if err := s.oauthRepo.StoreToken(ctx, token); err != nil {
 		return nil, fmt.Errorf("failed to store token: %w", err)
 	}
 
@@ -105,13 +106,13 @@ func (s *OAuthService) Login(username, password, deviceInfo string) (*TokenRespo
 }
 
 // Új metódus a felhasználó session-jeinek lekérdezéséhez
-func (s *OAuthService) GetUserSessions(userID string) ([]UserSession, error) {
-	return s.userRepo.GetUserSessions(userID)
+func (s *OAuthService) GetUserSessions(ctx context.Context, userID string) ([]UserSession, error) {
+	return s.userRepo.GetUserSessions(ctx, userID)
 }
 
 // Token frissítése
-func (s *OAuthService) RefreshToken(refreshToken string, clientID string) (*TokenResponse, error) {
-	session, err := s.userRepo.GetSessionByToken(refreshToken)
+func (s *OAuthService) RefreshToken(ctx context.Context, refreshToken string, clientID string) (*TokenResponse, error) {
+	session, err := s.userRepo.GetSessionByToken(ctx, refreshToken)
 	if err != nil {
 		return nil, fmt.Errorf("invalid refresh token")
 	}
@@ -131,7 +132,7 @@ func (s *OAuthService) RefreshToken(refreshToken string, clientID string) (*Toke
 	session.ExpiresAt = newExpiresAt
 	session.LastUsedAt = time.Now()
 
-	if err := s.userRepo.UpdateSessionLastUsed(session.ID); err != nil {
+	if err := s.userRepo.UpdateSessionLastUsed(ctx, session.ID); err != nil {
 		return nil, fmt.Errorf("failed to update session: %w", err)
 	}
 
@@ -146,7 +147,7 @@ func (s *OAuthService) RefreshToken(refreshToken string, clientID string) (*Toke
 		CreatedAt:  time.Now(),
 		LastUsedAt: time.Now(),
 	}
-	if err := s.oauthRepo.StoreToken(token); err != nil {
+	if err := s.oauthRepo.StoreToken(ctx, token); err != nil {
 		return nil, fmt.Errorf("failed to store token: %w", err)
 	}
 
@@ -159,13 +160,13 @@ func (s *OAuthService) RefreshToken(refreshToken string, clientID string) (*Toke
 }
 
 // Session visszavonása (kijelentkezés)
-func (s *OAuthService) RevokeSession(sessionID string) error {
-	return s.userRepo.RevokeSession(sessionID)
+func (s *OAuthService) RevokeSession(ctx context.Context, sessionID string) error {
+	return s.userRepo.RevokeSession(ctx, sessionID)
 }
 
 // Lejárt session-ök törlése
-func (s *OAuthService) CleanupExpiredSessions(userID string) error {
-	return s.userRepo.DeleteExpiredSessions(userID)
+func (s *OAuthService) CleanupExpiredSessions(ctx context.Context, userID string) error {
+	return s.userRepo.DeleteExpiredSessions(ctx, userID)
 }
 
 type JWKS struct {
@@ -204,8 +205,8 @@ func (s *OAuthService) GetJWKS() JWKS {
 }
 
 // Additional methods for OAuthService
-func (s *OAuthService) ValidateClient(clientID, clientSecret string) (*Client, error) {
-	client, err := s.oauthRepo.GetClient(clientID)
+func (s *OAuthService) ValidateClient(ctx context.Context, clientID, clientSecret string) (*Client, error) {
+	client, err := s.oauthRepo.GetClient(ctx, clientID)
 	if err != nil {
 		return nil, fmt.Errorf("client not found: %w", err)
 	}
@@ -219,9 +220,9 @@ func (s *OAuthService) ValidateClient(clientID, clientSecret string) (*Client, e
 }
 
 // DirectGrant implements the Resource Owner Password Credentials flow
-func (s *OAuthService) DirectGrant(clientID, clientSecret, username, password, scope string) (*TokenResponse, error) {
+func (s *OAuthService) DirectGrant(ctx context.Context, clientID, clientSecret, username, password, scope string) (*TokenResponse, error) {
 	// Validate client
-	client, err := s.ValidateClient(clientID, clientSecret)
+	client, err := s.ValidateClient(ctx, clientID, clientSecret)
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +233,7 @@ func (s *OAuthService) DirectGrant(clientID, clientSecret, username, password, s
 	}
 
 	// Validate user credentials
-	user, err := s.userRepo.GetUserByUsername(username)
+	user, err := s.userRepo.GetUserByUsername(ctx, username)
 	if err != nil {
 		return nil, fmt.Errorf("invalid credentials")
 	}
@@ -264,7 +265,7 @@ func (s *OAuthService) DirectGrant(clientID, clientSecret, username, password, s
 		IsRevoked:    false,
 	}
 
-	if err := s.userRepo.CreateSession(user.ID, session); err != nil {
+	if err := s.userRepo.CreateSession(ctx, user.ID, session); err != nil {
 		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
 
@@ -278,9 +279,9 @@ func (s *OAuthService) DirectGrant(clientID, clientSecret, username, password, s
 }
 
 // ClientCredentials implements the Client Credentials flow
-func (s *OAuthService) ClientCredentials(clientID, clientSecret, scope string) (*TokenResponse, error) {
+func (s *OAuthService) ClientCredentials(ctx context.Context, clientID, clientSecret, scope string) (*TokenResponse, error) {
 	// Validate client
-	client, err := s.ValidateClient(clientID, clientSecret)
+	client, err := s.ValidateClient(ctx, clientID, clientSecret)
 	if err != nil {
 		return nil, err
 	}
@@ -310,7 +311,7 @@ func (s *OAuthService) ClientCredentials(clientID, clientSecret, scope string) (
 		CreatedAt:  time.Now(),
 		LastUsedAt: time.Now(),
 	}
-	if err := s.oauthRepo.StoreToken(token); err != nil {
+	if err := s.oauthRepo.StoreToken(ctx, token); err != nil {
 		return nil, fmt.Errorf("failed to store token: %w", err)
 	}
 
@@ -354,14 +355,14 @@ func contains(slice []string, item string) bool {
 	return false
 }
 
-func (s *OAuthService) PasswordGrant(username, password, clientID, clientSecret, scope string) (*TokenResponse, error) {
+func (s *OAuthService) PasswordGrant(ctx context.Context, username, password, clientID, clientSecret, scope string) (*TokenResponse, error) {
 	// Validate client
-	if err := s.validateClient(clientID, clientSecret); err != nil {
+	if err := s.validateClient(ctx, clientID, clientSecret); err != nil {
 		return nil, err
 	}
 
 	// Validate user credentials
-	user, err := s.userRepo.GetUserByUsername(username)
+	user, err := s.userRepo.GetUserByUsername(ctx, username)
 	if err != nil {
 		return nil, fmt.Errorf("invalid credentials")
 	}
@@ -371,12 +372,12 @@ func (s *OAuthService) PasswordGrant(username, password, clientID, clientSecret,
 	}
 
 	// Generate tokens
-	return s.generateUserTokens(user.ID, clientID, scope)
+	return s.generateUserTokens(ctx, user.ID, clientID, scope)
 }
 
-func (s *OAuthService) ClientCredentialsGrant(clientID, clientSecret, scope string) (*TokenResponse, error) {
+func (s *OAuthService) ClientCredentialsGrant(ctx context.Context, clientID, clientSecret, scope string) (*TokenResponse, error) {
 	// Validate client
-	if err := s.validateClient(clientID, clientSecret); err != nil {
+	if err := s.validateClient(ctx, clientID, clientSecret); err != nil {
 		return nil, err
 	}
 
@@ -394,7 +395,7 @@ func (s *OAuthService) ClientCredentialsGrant(clientID, clientSecret, scope stri
 		CreatedAt:  time.Now(),
 		LastUsedAt: time.Now(),
 	}
-	if err := s.oauthRepo.StoreToken(token); err != nil {
+	if err := s.oauthRepo.StoreToken(ctx, token); err != nil {
 		return nil, err
 	}
 
@@ -406,14 +407,14 @@ func (s *OAuthService) ClientCredentialsGrant(clientID, clientSecret, scope stri
 	}, nil
 }
 
-func (s *OAuthService) ExchangeAuthorizationCode(code, clientID, clientSecret, redirectURI string) (*TokenResponse, error) {
+func (s *OAuthService) ExchangeAuthorizationCode(ctx context.Context, code, clientID, clientSecret, redirectURI string) (*TokenResponse, error) {
 	// Validate client
-	if err := s.validateClient(clientID, clientSecret); err != nil {
+	if err := s.validateClient(ctx, clientID, clientSecret); err != nil {
 		return nil, err
 	}
 
 	// Validate authorization code
-	authCode, err := s.oauthRepo.GetAuthCode(code)
+	authCode, err := s.oauthRepo.GetAuthCode(ctx, code)
 	if err != nil {
 		return nil, fmt.Errorf("invalid authorization code")
 	}
@@ -427,16 +428,16 @@ func (s *OAuthService) ExchangeAuthorizationCode(code, clientID, clientSecret, r
 	}
 
 	// Mark code as used
-	if err := s.oauthRepo.MarkAuthCodeAsUsed(code); err != nil {
+	if err := s.oauthRepo.MarkAuthCodeAsUsed(ctx, code); err != nil {
 		return nil, err
 	}
 
 	// Generate tokens
-	return s.generateUserTokens("", clientID, authCode.Scope)
+	return s.generateUserTokens(ctx, "", clientID, authCode.Scope)
 }
 
-func (s *OAuthService) validateClient(clientID, clientSecret string) error {
-	client, err := s.oauthRepo.GetClient(clientID)
+func (s *OAuthService) validateClient(ctx context.Context, clientID, clientSecret string) error {
+	client, err := s.oauthRepo.GetClient(ctx, clientID)
 	if err != nil {
 		return fmt.Errorf("invalid client")
 	}
@@ -448,7 +449,7 @@ func (s *OAuthService) validateClient(clientID, clientSecret string) error {
 	return nil
 }
 
-func (s *OAuthService) generateUserTokens(userID, clientID, scope string) (*TokenResponse, error) {
+func (s *OAuthService) generateUserTokens(ctx context.Context, userID, clientID, scope string) (*TokenResponse, error) {
 	accessToken := uuid.New().String()
 	refreshToken := uuid.New().String()
 	expiresAt := time.Now().Add(time.Hour)
@@ -463,7 +464,7 @@ func (s *OAuthService) generateUserTokens(userID, clientID, scope string) (*Toke
 		CreatedAt:  time.Now(),
 		LastUsedAt: time.Now(),
 	}
-	if err := s.oauthRepo.StoreToken(token); err != nil {
+	if err := s.oauthRepo.StoreToken(ctx, token); err != nil {
 		return nil, err
 	}
 
@@ -493,9 +494,9 @@ type TokenIntrospection struct {
 }
 
 // IntrospectToken implements RFC 7662 Token Introspection
-func (s *OAuthService) IntrospectToken(token, tokenTypeHint, clientID, clientSecret string) (*TokenIntrospection, error) {
+func (s *OAuthService) IntrospectToken(ctx context.Context, token, tokenTypeHint, clientID, clientSecret string) (*TokenIntrospection, error) {
 	// Validate the requesting client
-	if err := s.validateClient(clientID, clientSecret); err != nil {
+	if err := s.validateClient(ctx, clientID, clientSecret); err != nil {
 		return nil, fmt.Errorf("invalid client: %w", err)
 	}
 
@@ -505,18 +506,18 @@ func (s *OAuthService) IntrospectToken(token, tokenTypeHint, clientID, clientSec
 	// Use token_type_hint to optimize lookup
 	switch tokenTypeHint {
 	case "refresh_token":
-		tokenInfo, err = s.oauthRepo.GetRefreshTokenInfo(token)
+		tokenInfo, err = s.oauthRepo.GetRefreshTokenInfo(ctx, token)
 	case "access_token", "":
-		tokenInfo, err = s.oauthRepo.GetAccessTokenInfo(token)
+		tokenInfo, err = s.oauthRepo.GetAccessTokenInfo(ctx, token)
 		if err != nil && tokenTypeHint == "" {
 			// If no hint was provided, try refresh token as fallback
-			tokenInfo, err = s.oauthRepo.GetRefreshTokenInfo(token)
+			tokenInfo, err = s.oauthRepo.GetRefreshTokenInfo(ctx, token)
 		}
 	default:
 		// Unknown token type hint, try both
-		tokenInfo, err = s.oauthRepo.GetAccessTokenInfo(token)
+		tokenInfo, err = s.oauthRepo.GetAccessTokenInfo(ctx, token)
 		if err != nil {
-			tokenInfo, err = s.oauthRepo.GetRefreshTokenInfo(token)
+			tokenInfo, err = s.oauthRepo.GetRefreshTokenInfo(ctx, token)
 		}
 	}
 
@@ -532,7 +533,7 @@ func (s *OAuthService) IntrospectToken(token, tokenTypeHint, clientID, clientSec
 	// If we have user info, get username
 	var username string
 	if tokenInfo.UserID != "" {
-		user, err := s.userRepo.GetUserByID(tokenInfo.UserID)
+		user, err := s.userRepo.GetUserByID(ctx, tokenInfo.UserID)
 		if err == nil {
 			username = user.Username
 		}

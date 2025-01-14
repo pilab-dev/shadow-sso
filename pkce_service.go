@@ -1,6 +1,7 @@
 package ssso
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
@@ -21,8 +22,8 @@ func NewPKCEService(oauthRepo OAuthRepository) *PKCEService {
 }
 
 // ValidateCodeVerifier validates the PKCE code verifier against the stored challenge
-func (s *PKCEService) ValidateCodeVerifier(code, verifier string) error {
-	challenge, err := s.oauthRepo.GetCodeChallenge(code)
+func (s *PKCEService) ValidateCodeVerifier(ctx context.Context, code, verifier string) error {
+	challenge, err := s.oauthRepo.GetCodeChallenge(ctx, code)
 	if err != nil {
 		return fmt.Errorf("failed to get code challenge: %w", err)
 	}
@@ -32,7 +33,7 @@ func (s *PKCEService) ValidateCodeVerifier(code, verifier string) error {
 	}
 
 	// Clean up the challenge after successful validation
-	if err := s.oauthRepo.DeleteCodeChallenge(code); err != nil {
+	if err := s.oauthRepo.DeleteCodeChallenge(ctx, code); err != nil {
 		log.Error().Err(err).Msg("failed to delete code challenge")
 	}
 
@@ -53,6 +54,6 @@ func ValidatePKCEChallenge(challenge, verifier string) bool {
 	return challenge == calculatedChallenge
 }
 
-func (s *PKCEService) SavePKCEChallenge(code, challenge string) error {
-	return s.oauthRepo.SaveCodeChallenge(code, challenge)
+func (s *PKCEService) SavePKCEChallenge(ctx context.Context, code, challenge string) error {
+	return s.oauthRepo.SaveCodeChallenge(ctx, code, challenge)
 }
