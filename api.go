@@ -1,3 +1,4 @@
+//nolint:varnamelen,tagliatelle
 package ssso
 
 import (
@@ -5,7 +6,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/pilab-dev/shadow-sso/client"
 	"github.com/pilab-dev/shadow-sso/errors"
@@ -53,7 +53,9 @@ func (api *OAuth2API) RegisterRoutes(e *echo.Echo) {
 	e.GET("/.well-known/jwks.json", api.JWKSHandler)
 }
 
-// AuthorizeHandler handles the authorization requests
+// AuthorizeHandler handles OAuth 2.0 authorization requests. It validates the client, redirect URI,
+// response type, scope, and PKCE (Proof Key for Code Exchange) requirements. If all validations pass,
+// it generates an authorization code and redirects the user to the provided redirect URI with the code.
 func (api *OAuth2API) AuthorizeHandler(c echo.Context) error {
 	clientID := c.QueryParam("client_id")
 	redirectURI := c.QueryParam("redirect_uri")
@@ -111,7 +113,13 @@ func (api *OAuth2API) AuthorizeHandler(c echo.Context) error {
 	return c.Redirect(http.StatusFound, redirectURL)
 }
 
-// TokenHandler handles the token requests
+// TokenHandler handles OAuth2 token requests. It:
+//   - Extracts client_id, client_secret, and grant_type from the request form values.
+//   - Validates the client credentials and grant type.
+//   - Processes the grant type by calling one of three handler functions based on the
+//     grant type (authorization_code, refresh_token, or client_credentials).
+//   - Returns a JSON response with the token response if successful, or an error response
+//     if any of the validation or processing steps fail.
 func (api *OAuth2API) TokenHandler(c echo.Context) error {
 	clientID := c.FormValue("client_id")
 	clientSecret := c.FormValue("client_secret")
@@ -119,8 +127,8 @@ func (api *OAuth2API) TokenHandler(c echo.Context) error {
 
 	ctx := c.Request().Context()
 
-	// Validate client
-	client, err := api.clientService.ValidateClient(ctx, clientID, clientSecret)
+	// Validate cli
+	cli, err := api.clientService.ValidateClient(ctx, clientID, clientSecret)
 	if err != nil {
 		return c.JSON(http.StatusUnauthorized, errors.NewInvalidClient("Invalid client credentials"))
 	}
@@ -136,11 +144,13 @@ func (api *OAuth2API) TokenHandler(c echo.Context) error {
 
 	switch grantType {
 	case "authorization_code":
-		tokenResponse, processErr = api.handleAuthorizationCodeGrant(c, client)
+		tokenResponse, processErr = api.handleAuthorizationCodeGrant(c, cli)
 	case "refresh_token":
-		tokenResponse, processErr = api.handleRefreshTokenGrant(c, client)
+		tokenResponse, processErr = api.handleRefreshTokenGrant(c, cli)
 	case "client_credentials":
-		tokenResponse, processErr = api.handleClientCredentialsGrant(c, client)
+		tokenResponse, processErr = api.handleClientCredentialsGrant(c, cli)
+	case "password":
+		tokenResponse, processErr = api.handlePasswordGrant(c, cli)
 	default:
 		return c.JSON(http.StatusBadRequest, errors.NewUnsupportedGrantType())
 	}
@@ -156,7 +166,10 @@ func (api *OAuth2API) TokenHandler(c echo.Context) error {
 	return c.JSON(http.StatusOK, tokenResponse)
 }
 
-// UserInfoHandler returns user information
+// UserInfoHandler handles HTTP requests to retrieve user information. It expects an "Authorization"
+// header with a Bearer token, validates the token, and returns the associated user information if
+// valid. If the token is missing, invalid, or cannot be validated, it returns a JSON error response
+// with a 401 Unauthorized status code.
 func (api *OAuth2API) UserInfoHandler(c echo.Context) error {
 	authHeader := c.Request().Header.Get("Authorization")
 	if authHeader == "" {
@@ -246,62 +259,9 @@ type TokenResponse struct {
 	Scope        string `json:"scope,omitempty"`
 }
 
-// validateAuthRequest validates an authorization request
-func (api *OAuth2API) validateAuthRequest(req *AuthorizeRequest) error {
-	if req.ClientID == "" || req.RedirectURI == "" {
-		return fmt.Errorf("missing required parameters")
-	}
-
-	if req.ResponseType != "code" {
-		return fmt.Errorf("unsupported response type")
-	}
-
-	// TODO: Validate client ID exists and redirect URI matches registered URI
-	return nil
-}
-
-// validateTokenRequest validates a token request
-func (api *OAuth2API) validateTokenRequest(req *TokenRequest) error {
-	if req.ClientID == "" || req.ClientSecret == "" {
-		return fmt.Errorf("missing client credentials")
-	}
-
-	switch req.GrantType {
-	case "authorization_code":
-		if req.Code == "" || req.RedirectURI == "" {
-			return fmt.Errorf("missing required parameters for authorization code grant")
-		}
-	case "refresh_token":
-		if req.RefreshToken == "" {
-			return fmt.Errorf("missing refresh token")
-		}
-	default:
-		return fmt.Errorf("unsupported grant type")
-	}
-
-	return nil
-}
-
-// generateTokens generates new access and refresh tokens
-func (api *OAuth2API) generateTokens(userID string, scope string) (*TokenResponse, error) {
-	// Generate access token
-	accessToken := uuid.New().String()
-
-	// Generate refresh token
-	refreshToken := uuid.New().String()
-
-	// TODO: Store tokens in database with expiry time
-
-	return &TokenResponse{
-		AccessToken:  accessToken,
-		TokenType:    "Bearer",
-		ExpiresIn:    3600,
-		RefreshToken: refreshToken,
-		Scope:        scope,
-	}, nil
-}
-
 // OpenIDConfiguration represents the OpenID Connect discovery document
+//
+//nolint:tagliatelle
 type OpenIDConfiguration struct {
 	Issuer                                    string   `json:"issuer"`
 	AuthorizationEndpoint                     string   `json:"authorization_endpoint"`
@@ -345,15 +305,17 @@ func (api *OAuth2API) OpenIDConfigurationHandler(c echo.Context) error {
 	baseURL := c.Scheme() + "://" + c.Request().Host
 
 	config := OpenIDConfiguration{
-		Issuer:                            baseURL,
-		AuthorizationEndpoint:             baseURL + "/oauth2/authorize",
-		TokenEndpoint:                     baseURL + "/oauth2/token",
-		UserInfoEndpoint:                  baseURL + "/oauth2/userinfo",
-		JwksURI:                           baseURL + "/.well-known/jwks.json",
-		RevocationEndpoint:                stringPtr(baseURL + "/oauth2/revoke"),
-		IntrospectionEndpoint:             stringPtr(baseURL + "/oauth2/introspect"),
-		ScopesSupported:                   []string{"openid", "profile", "email", "offline_access"},
-		ResponseTypesSupported:            []string{"code", "token", "id_token", "code token", "code id_token", "token id_token", "code token id_token"},
+		Issuer:                baseURL,
+		AuthorizationEndpoint: baseURL + "/oauth2/authorize",
+		TokenEndpoint:         baseURL + "/oauth2/token",
+		UserInfoEndpoint:      baseURL + "/oauth2/userinfo",
+		JwksURI:               baseURL + "/.well-known/jwks.json",
+		RevocationEndpoint:    stringPtr(baseURL + "/oauth2/revoke"),
+		IntrospectionEndpoint: stringPtr(baseURL + "/oauth2/introspect"),
+		ScopesSupported:       []string{"openid", "profile", "email", "offline_access"},
+		ResponseTypesSupported: []string{
+			"code", "token", "id_token", "code token", "code id_token", "token id_token", "code token id_token",
+		},
 		ResponseModesSupported:            []string{"query", "fragment", "form_post"},
 		GrantTypesSupported:               []string{"authorization_code", "implicit", "refresh_token", "client_credentials"},
 		TokenEndpointAuthMethodsSupported: []string{"client_secret_basic", "client_secret_post", "private_key_jwt"},
@@ -432,7 +394,7 @@ func (api *OAuth2API) ClientCredentialsHandler(c echo.Context) error {
 	return c.JSON(http.StatusOK, token)
 }
 
-func (api *OAuth2API) handleAuthorizationCodeGrant(c echo.Context, client *client.Client) (*TokenResponse, error) {
+func (api *OAuth2API) handleAuthorizationCodeGrant(c echo.Context, cli *client.Client) (*TokenResponse, error) {
 	code := c.FormValue("code")
 	redirectURI := c.FormValue("redirect_uri")
 	codeVerifier := c.FormValue("code_verifier")
@@ -440,7 +402,7 @@ func (api *OAuth2API) handleAuthorizationCodeGrant(c echo.Context, client *clien
 	ctx := c.Request().Context()
 
 	// Validate PKCE if required
-	requiresPKCE, _ := api.clientService.RequiresPKCE(ctx, client.ID)
+	requiresPKCE, _ := api.clientService.RequiresPKCE(ctx, cli.ID)
 	if requiresPKCE {
 		if codeVerifier == "" {
 			return nil, errors.NewPKCERequired()
@@ -450,10 +412,10 @@ func (api *OAuth2API) handleAuthorizationCodeGrant(c echo.Context, client *clien
 		}
 	}
 
-	return api.service.ExchangeAuthorizationCode(ctx, code, client.ID, client.Secret, redirectURI)
+	return api.service.ExchangeAuthorizationCode(ctx, code, cli.ID, cli.Secret, redirectURI)
 }
 
-func (api *OAuth2API) handlePasswordGrant(c echo.Context) (*TokenResponse, error) {
+func (api *OAuth2API) handlePasswordGrant(c echo.Context, cli *client.Client) (*TokenResponse, error) {
 	username := c.FormValue("username")
 	password := c.FormValue("password")
 	clientID := c.FormValue("client_id")
@@ -461,23 +423,24 @@ func (api *OAuth2API) handlePasswordGrant(c echo.Context) (*TokenResponse, error
 	scope := c.FormValue("scope")
 
 	if username == "" || password == "" || clientID == "" || clientSecret == "" {
-		return nil, fmt.Errorf("missing required parameters")
+		return nil, errors.NewInvalidRequest("missing required parameters. " +
+			"Required parameters: username, password, client_id, client_secret")
 	}
 
 	ctx := c.Request().Context()
 
-	return api.service.PasswordGrant(ctx, username, password, clientID, clientSecret, scope)
+	return api.service.PasswordGrant(ctx, username, password, scope, cli)
 }
 
-func (api *OAuth2API) handleClientCredentialsGrant(c echo.Context, client *client.Client) (*TokenResponse, error) {
+func (api *OAuth2API) handleClientCredentialsGrant(c echo.Context, cli *client.Client) (*TokenResponse, error) {
 	scope := c.FormValue("scope")
 
 	ctx := c.Request().Context()
 
-	return api.service.ClientCredentialsGrant(ctx, client.ID, client.Secret, scope)
+	return api.service.ClientCredentialsGrant(ctx, cli.ID, cli.Secret, scope)
 }
 
-func (api *OAuth2API) handleRefreshTokenGrant(c echo.Context, client *client.Client) (*TokenResponse, error) {
+func (api *OAuth2API) handleRefreshTokenGrant(c echo.Context, cli *client.Client) (*TokenResponse, error) {
 	refreshToken := c.FormValue("refresh_token")
 	if refreshToken == "" {
 		return nil, errors.NewInvalidRequest("refresh_token is required")
@@ -485,10 +448,13 @@ func (api *OAuth2API) handleRefreshTokenGrant(c echo.Context, client *client.Cli
 
 	ctx := c.Request().Context()
 
-	return api.service.RefreshToken(ctx, refreshToken, client.ID)
+	return api.service.RefreshToken(ctx, refreshToken, cli.ID)
 }
 
-// IntrospectHandler implements RFC 7662 Token Introspection
+// IntrospectHandler implements RFC 7662 Token Introspection. It checks for required parameters
+// (client_id, client_secret, and token), authenticates the client, and then calls the
+// IntrospectToken method to inspect the token. If the introspection fails, it returns
+// a 200 OK response with active=false as per the RFC. Otherwise, it returns the introspection result.
 func (api *OAuth2API) IntrospectHandler(c echo.Context) error {
 	// Token introspection requires authentication
 	clientID := c.FormValue("client_id")

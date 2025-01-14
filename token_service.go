@@ -31,9 +31,9 @@ func NewTokenService(repo OAuthRepository, cache TokenStore, issuer string, toke
 func (s *TokenService) GenerateTokenPair(ctx context.Context, clientID, userID, scope string) (*TokenResponse, error) {
 	// Generate access token
 	accessToken := &Token{
-		ID:         uuid.New().String(),
+		ID:         uuid.NewString(),
 		TokenType:  "access_token",
-		TokenValue: uuid.New().String(),
+		TokenValue: uuid.NewString(),
 		ClientID:   clientID,
 		UserID:     userID,
 		Scope:      scope,
@@ -44,9 +44,9 @@ func (s *TokenService) GenerateTokenPair(ctx context.Context, clientID, userID, 
 
 	// Generate refresh token
 	refreshToken := &Token{
-		ID:         uuid.New().String(),
+		ID:         uuid.NewString(),
 		TokenType:  "refresh_token",
-		TokenValue: uuid.New().String(),
+		TokenValue: uuid.NewString(),
 		ClientID:   clientID,
 		UserID:     userID,
 		Scope:      scope,
@@ -65,7 +65,7 @@ func (s *TokenService) GenerateTokenPair(ctx context.Context, clientID, userID, 
 	}
 
 	// Cache access token for faster validation
-	if err := s.cache.Set(accessToken); err != nil {
+	if err := s.cache.Set(ctx, accessToken); err != nil {
 		log.Warn().Err(err).Msg("failed to cache access token")
 	}
 
@@ -81,11 +81,11 @@ func (s *TokenService) GenerateTokenPair(ctx context.Context, clientID, userID, 
 // ValidateToken validates an access token and returns its information
 func (s *TokenService) ValidateToken(ctx context.Context, tokenValue string) (*Token, error) {
 	// Check cache first
-	if token, found := s.cache.Get(tokenValue); found {
+	if token, found := s.cache.Get(ctx, tokenValue); found {
 		if !token.IsRevoked && time.Now().Before(token.ExpiresAt) {
 			return token, nil
 		}
-		s.cache.Delete(tokenValue)
+		s.cache.Delete(ctx, tokenValue)
 		return nil, fmt.Errorf("token is invalid or expired")
 	}
 
@@ -100,7 +100,7 @@ func (s *TokenService) ValidateToken(ctx context.Context, tokenValue string) (*T
 	}
 
 	// Cache valid token
-	if err := s.cache.Set(token); err != nil {
+	if err := s.cache.Set(ctx, token); err != nil {
 		log.Warn().Err(err).Msg("failed to cache token")
 	}
 

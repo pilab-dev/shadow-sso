@@ -93,9 +93,11 @@ func generateRandomString(length int) string {
 }
 
 // CreateConfidentialClient creates a new confidential client
-func (s *ClientService) CreateConfidentialClient(ctx context.Context, name string, redirectURIs []string, allowedScopes []string) (*Client, error) {
+func (s *ClientService) CreateConfidentialClient(ctx context.Context,
+	name string, redirectURIs []string, allowedScopes []string,
+) (*Client, error) {
 	client := &Client{
-		ID:            uuid.New().String(),
+		ID:            uuid.NewString(),
 		Secret:        generateRandomString(32), // Generate a 32-character random string
 		Type:          Confidential,
 		Name:          name,
@@ -122,9 +124,11 @@ func (s *ClientService) CreateConfidentialClient(ctx context.Context, name strin
 }
 
 // CreatePublicClient creates a new public client
-func (s *ClientService) CreatePublicClient(ctx context.Context, name string, redirectURIs []string, allowedScopes []string) (*Client, error) {
+func (s *ClientService) CreatePublicClient(ctx context.Context,
+	name string, redirectURIs []string, allowedScopes []string,
+) (*Client, error) {
 	client := &Client{
-		ID:            uuid.New().String(),
+		ID:            uuid.NewString(),
 		Type:          Public,
 		Name:          name,
 		RedirectURIs:  redirectURIs,
