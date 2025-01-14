@@ -185,21 +185,21 @@ type JWK struct {
 
 func (s *OAuthService) GetJWKS() JWKS {
 	// A privát kulcsot a service inicializálásakor kell beállítani
-	publicKey := s.signingKey.Public().(*rsa.PublicKey)
+	publicKey, _ := s.signingKey.Public().(*rsa.PublicKey)
 
 	// RSA kulcs komponensek Base64URL kódolása
-	e := base64.RawURLEncoding.EncodeToString(big.NewInt(int64(publicKey.E)).Bytes())
-	n := base64.RawURLEncoding.EncodeToString(publicKey.N.Bytes())
+	exp := base64.RawURLEncoding.EncodeToString(big.NewInt(int64(publicKey.E)).Bytes())
+	mod := base64.RawURLEncoding.EncodeToString(publicKey.N.Bytes())
 
 	return JWKS{
 		Keys: []JWK{
 			{
-				Kid: s.keyID, // Egyedi kulcs azonosító
+				Kid: s.keyID, // Unique Key ID
 				Kty: "RSA",   // Key Type
-				Alg: "RS256", // Algoritmus
-				Use: "sig",   // Használat (signature)
-				N:   n,       // Modulus
-				E:   e,       // Exponent
+				Alg: "RS256", // Algorithm
+				Use: "sig",   // Usage (signature)
+				N:   mod,     // Modulus
+				E:   exp,     // Exponent
 			},
 		},
 	}
@@ -207,21 +207,23 @@ func (s *OAuthService) GetJWKS() JWKS {
 
 // Additional methods for OAuthService
 func (s *OAuthService) ValidateClient(ctx context.Context, clientID, clientSecret string) (*Client, error) {
-	client, err := s.oauthRepo.GetClient(ctx, clientID)
+	cli, err := s.oauthRepo.GetClient(ctx, clientID)
 	if err != nil {
 		return nil, fmt.Errorf("client not found: %w", err)
 	}
 
 	// Compare client secret using constant-time comparison
-	if subtle.ConstantTimeCompare([]byte(client.Secret), []byte(clientSecret)) != 1 {
+	if subtle.ConstantTimeCompare([]byte(cli.Secret), []byte(clientSecret)) != 1 {
 		return nil, fmt.Errorf("invalid client credentials")
 	}
 
-	return client, nil
+	return cli, nil
 }
 
 // DirectGrant implements the Resource Owner Password Credentials flow
-func (s *OAuthService) DirectGrant(ctx context.Context, clientID, clientSecret, username, password, scope string) (*TokenResponse, error) {
+func (s *OAuthService) DirectGrant(ctx context.Context,
+	clientID, clientSecret, username, password, scope string,
+) (*TokenResponse, error) {
 	// Validate client
 	client, err := s.ValidateClient(ctx, clientID, clientSecret)
 	if err != nil {
