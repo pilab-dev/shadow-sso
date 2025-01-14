@@ -7,6 +7,7 @@ import (
 	"time"
 
 	ssso "github.com/pilab-dev/shadow-sso"
+	"github.com/pilab-dev/shadow-sso/cache"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -21,6 +22,7 @@ type OAuthRepository struct {
 	sessions   *mongo.Collection // New collection for user sessions
 }
 
+//nolint:ireturn,varnamelen
 func NewOAuthRepository(ctx context.Context, db *mongo.Database) (ssso.OAuthRepository, error) {
 	repo := &OAuthRepository{
 		db:         db,
@@ -38,6 +40,7 @@ func NewOAuthRepository(ctx context.Context, db *mongo.Database) (ssso.OAuthRepo
 	return repo, nil
 }
 
+//nolint:funlen
 func (r *OAuthRepository) createIndexes(ctx context.Context) error {
 	// Client indexes
 	_, err := r.clients.Indexes().CreateMany(ctx, []mongo.IndexModel{
@@ -75,9 +78,11 @@ func (r *OAuthRepository) createIndexes(ctx context.Context) error {
 			Keys:    bson.D{{Key: "expires_at", Value: 1}},
 			Options: options.Index().SetExpireAfterSeconds(0),
 		},
+		//nolint:exhaustruct
 		{
 			Keys: bson.D{{Key: "user_id", Value: 1}},
 		},
+		//nolint:exhaustruct
 		{
 			Keys: bson.D{{Key: "client_id", Value: 1}},
 		},
@@ -102,6 +107,7 @@ func (r *OAuthRepository) createIndexes(ctx context.Context) error {
 	}
 
 	// Session indexes
+	//nolint:exhaustruct
 	_, err = r.sessions.Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{
 			Keys:    bson.D{{Key: "session_id", Value: 1}},
@@ -126,7 +132,7 @@ func (r *OAuthRepository) createIndexes(ctx context.Context) error {
 	return err
 }
 
-// Client operations
+// CreateClient creates a new OAuth2 client and inserts it into the database.
 func (r *OAuthRepository) CreateClient(ctx context.Context, client *ssso.Client) error {
 	_, err := r.clients.InsertOne(ctx, client)
 	return err
@@ -135,8 +141,8 @@ func (r *OAuthRepository) CreateClient(ctx context.Context, client *ssso.Client)
 func (r *OAuthRepository) GetClient(ctx context.Context, clientID string) (*ssso.Client, error) {
 	var client ssso.Client
 	err := r.clients.FindOne(ctx, bson.M{"client_id": clientID}).Decode(&client)
-	if err == mongo.ErrNoDocuments {
-		return nil, fmt.Errorf("client not found")
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, fmt.Errorf("client not found: %w", err)
 	}
 	return &client, err
 }
@@ -147,8 +153,8 @@ func (r *OAuthRepository) ValidateClient(ctx context.Context, clientID, clientSe
 		"client_id": clientID,
 		"secret":    clientSecret,
 	}).Decode(&client)
-	if err == mongo.ErrNoDocuments {
-		return fmt.Errorf("invalid client credentials")
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return fmt.Errorf("invalid client credentials: %w", err)
 	}
 	return err
 }
@@ -162,8 +168,8 @@ func (r *OAuthRepository) SaveAuthCode(ctx context.Context, code *ssso.AuthCode)
 func (r *OAuthRepository) GetAuthCode(ctx context.Context, code string) (*ssso.AuthCode, error) {
 	var authCode ssso.AuthCode
 	err := r.authCodes.FindOne(ctx, bson.M{"code": code}).Decode(&authCode)
-	if err == mongo.ErrNoDocuments {
-		return nil, fmt.Errorf("auth code not found")
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, fmt.Errorf("auth code not found: %w", err)
 	}
 	return &authCode, err
 }
@@ -190,8 +196,8 @@ func (r *OAuthRepository) GetAccessToken(ctx context.Context, tokenValue string)
 		"is_revoked":  false,
 		"expires_at":  bson.M{"$gt": time.Now().UTC()},
 	}).Decode(&token)
-	if err == mongo.ErrNoDocuments {
-		return nil, fmt.Errorf("token not found")
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, fmt.Errorf("token not found: %w", err)
 	}
 	return &token, err
 }
@@ -219,8 +225,8 @@ func (r *OAuthRepository) GetCodeChallenge(ctx context.Context, code string) (st
 		Challenge string `bson:"challenge"`
 	}
 	err := r.challenges.FindOne(ctx, bson.M{"code": code}).Decode(&result)
-	if err == mongo.ErrNoDocuments {
-		return "", fmt.Errorf("challenge not found")
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return "", fmt.Errorf("challenge not found: %w", err)
 	}
 
 	return result.Challenge, err
@@ -248,8 +254,8 @@ func (r *OAuthRepository) CreateSession(ctx context.Context, userID string, sess
 	// makes it easier to find sessions by token.
 	sess := userSessionStruct{
 		UserSession:      *session,
-		AccessTokenHash:  ssso.HashToken(session.AccessToken),
-		RefreshTokenHash: ssso.HashToken(session.RefreshToken),
+		AccessTokenHash:  cache.HashToken(session.AccessToken),
+		RefreshTokenHash: cache.HashToken(session.RefreshToken),
 	}
 
 	_, err := r.sessions.InsertOne(ctx, sess)
@@ -284,6 +290,8 @@ func (r *OAuthRepository) DeleteExpiredTokens(ctx context.Context) error {
 }
 
 // GetAccessTokenInfo implements ssso.OAuthRepository.
+//
+//nolint:dupl
 func (r *OAuthRepository) GetAccessTokenInfo(ctx context.Context, tokenValue string) (*ssso.TokenInfo, error) {
 	var token ssso.Token
 	err := r.tokens.FindOne(ctx, bson.M{
@@ -294,16 +302,20 @@ func (r *OAuthRepository) GetAccessTokenInfo(ctx context.Context, tokenValue str
 	}).Decode(&token)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return nil, fmt.Errorf("access token not found or expired")
+			return nil, fmt.Errorf("access token not found or expired: %w", err)
 		}
 		return nil, err
 	}
 
 	return &ssso.TokenInfo{
+		ID:        token.ID,
+		TokenType: token.TokenType,
 		ClientID:  token.ClientID,
 		UserID:    token.UserID,
 		Scope:     token.Scope,
+		IssuedAt:  token.CreatedAt,
 		ExpiresAt: token.ExpiresAt,
+		IsRevoked: token.IsRevoked,
 	}, nil
 }
 
@@ -317,14 +329,16 @@ func (r *OAuthRepository) GetRefreshToken(ctx context.Context, tokenValue string
 		"expires_at":  bson.M{"$gt": time.Now().UTC()},
 	}).Decode(&token)
 
-	if err == mongo.ErrNoDocuments {
-		return nil, fmt.Errorf("refresh token not found")
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, fmt.Errorf("refresh token not found: %w", err)
 	}
 
 	return &token, err
 }
 
 // GetRefreshTokenInfo implements ssso.OAuthRepository.
+//
+//nolint:dupl
 func (r *OAuthRepository) GetRefreshTokenInfo(ctx context.Context, tokenValue string) (*ssso.TokenInfo, error) {
 	var token ssso.Token
 	err := r.tokens.FindOne(ctx, bson.M{
@@ -335,16 +349,20 @@ func (r *OAuthRepository) GetRefreshTokenInfo(ctx context.Context, tokenValue st
 	}).Decode(&token)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return nil, fmt.Errorf("refresh token not found or expired")
+			return nil, fmt.Errorf("refresh token not found or expired: %w", err)
 		}
 		return nil, err
 	}
 
 	return &ssso.TokenInfo{
+		ID:        token.ID,
+		TokenType: token.TokenType,
 		ClientID:  token.ClientID,
 		UserID:    token.UserID,
 		Scope:     token.Scope,
+		IssuedAt:  token.CreatedAt,
 		ExpiresAt: token.ExpiresAt,
+		IsRevoked: token.IsRevoked,
 	}, nil
 }
 
@@ -353,13 +371,13 @@ func (r *OAuthRepository) GetSessionByToken(ctx context.Context, token string) (
 	var session ssso.UserSession
 	err := r.sessions.FindOne(ctx, bson.M{
 		"$or": []bson.M{
-			{"access_token_hash": ssso.HashToken(token)},
-			{"refresh_token_hash": ssso.HashToken(token)},
+			{"access_token_hash": cache.HashToken(token)},
+			{"refresh_token_hash": cache.HashToken(token)},
 		},
 		"expires_at": bson.M{"$gt": time.Now().UTC()},
 	}).Decode(&session)
-	if err == mongo.ErrNoDocuments {
-		return nil, fmt.Errorf("session not found")
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, fmt.Errorf("session not found: %w", err)
 	}
 
 	return &session, err
@@ -373,9 +391,10 @@ func (r *OAuthRepository) GetTokenInfo(ctx context.Context, tokenValue string) (
 		"expires_at":  bson.M{"$gt": time.Now().UTC()},
 		"is_revoked":  false,
 	}).Decode(&token)
-	if err == mongo.ErrNoDocuments {
-		return nil, fmt.Errorf("token not found or expired")
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, fmt.Errorf("token not found or expired: %w", err)
 	}
+
 	return &token, err
 }
 
@@ -439,21 +458,22 @@ func (r *OAuthRepository) UpdateSessionLastUsed(ctx context.Context, sessionID s
 }
 
 // ValidateAccessToken implements ssso.OAuthRepository.
-func (r *OAuthRepository) ValidateAccessToken(ctx context.Context, token string) (string, error) {
-	var t ssso.Token
+func (r *OAuthRepository) ValidateAccessToken(ctx context.Context, tokenValue string) (string, error) {
+	var token ssso.Token
+
 	err := r.tokens.FindOne(ctx, bson.M{
-		"token_value": token,
+		"token_value": tokenValue, // ! TODO: investigate the option to change and store it as hash, for better perofrmance
 		"token_type":  "access_token",
 		"is_revoked":  false,
 		"expires_at":  bson.M{"$gt": time.Now().UTC()},
-	}).Decode(&t)
+	}).Decode(&token)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return "", fmt.Errorf("invalid access token")
+			return "", fmt.Errorf("invalid access token: %w", err)
 		}
 		return "", err
 	}
-	return t.UserID, nil
+	return token.UserID, nil
 }
 
 func (r *OAuthRepository) Close() error {

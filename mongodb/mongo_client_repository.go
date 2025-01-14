@@ -3,6 +3,7 @@ package mongodb
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/pilab-dev/shadow-sso/client"
@@ -10,18 +11,19 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-var ErrInvalidClientCredentials = errors.New("invalid client credentials")
+var (
+	ErrInvalidClientCredentials = errors.New("invalid client credentials")
+	ErrClientNotFound           = errors.New("client not found")
+)
 
 // ClientRepository implements the ClientStore interface using MongoDB.
 type ClientRepository struct {
-	db   *mongo.Database
 	coll *mongo.Collection
 }
 
 // NewClientRepository creates a new MongoStore instance.
-func NewClientRepository(ctx context.Context, db *mongo.Database) (*ClientRepository, error) {
+func NewClientRepository(db *mongo.Database) (*ClientRepository, error) {
 	return &ClientRepository{
-		db:   db,
 		coll: db.Collection("clients"),
 	}, nil
 }
@@ -38,15 +40,17 @@ func (s *ClientRepository) CreateClient(ctx context.Context, c *client.Client) e
 // GetClient implements the ClientStore interface.
 func (s *ClientRepository) GetClient(ctx context.Context, clientID string) (*client.Client, error) {
 	filter := bson.M{"client_id": clientID}
-	var c client.Client
-	err := s.coll.FindOne(ctx, filter).Decode(&c)
+	var cli client.Client
+
+	err := s.coll.FindOne(ctx, filter).Decode(&cli)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return nil, nil
+			return nil, ErrClientNotFound
 		}
 		return nil, err
 	}
-	return &c, nil
+
+	return &cli, nil
 }
 
 // UpdateClient implements the ClientStore interface.
@@ -60,7 +64,7 @@ func (s *ClientRepository) UpdateClient(ctx context.Context, c *client.Client) e
 		return err
 	}
 	if result.MatchedCount == 0 {
-		return errors.New("client not found for update")
+		return fmt.Errorf("update failed: %w", ErrClientNotFound)
 	}
 	return nil
 }
@@ -73,7 +77,7 @@ func (s *ClientRepository) DeleteClient(ctx context.Context, clientID string) er
 		return err
 	}
 	if result.DeletedCount == 0 {
-		return errors.New("client not found for deletion")
+		return fmt.Errorf("delete failed: %w", ErrClientNotFound)
 	}
 	return nil
 }
@@ -112,23 +116,24 @@ func (s *ClientRepository) ListClients(ctx context.Context, filter client.Client
 // ValidateClient implements the ClientStore interface.
 func (s *ClientRepository) ValidateClient(ctx context.Context, clientID, clientSecret string) (*client.Client, error) {
 	filter := bson.M{"client_id": clientID}
-	var c client.Client
-	err := s.coll.FindOne(ctx, filter).Decode(&c)
+	var cli client.Client
+
+	err := s.coll.FindOne(ctx, filter).Decode(&cli)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return nil, nil
+			return nil, ErrClientNotFound
 		}
 		return nil, err
 	}
 
 	// For public clients, the secret is not checked
-	if c.Type == client.Public {
-		return &c, nil
+	if cli.Type == client.Public {
+		return &cli, nil
 	}
 
 	// For confidential clients, check the secret
-	if c.Secret == clientSecret {
-		return &c, nil
+	if cli.Secret == clientSecret {
+		return &cli, nil
 	}
 
 	return nil, ErrInvalidClientCredentials

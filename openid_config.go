@@ -202,7 +202,10 @@ func NewDefaultConfig(issuer string) *OpenIDProviderConfig {
 	}
 }
 
-var ErrInvalidConfig = errors.New("invalid configuration")
+var (
+	ErrInvalidConfig       = errors.New("invalid configuration")
+	ErrInvalidScopeRequest = errors.New("invalid scope request")
+)
 
 // Validate checks if the configuration is valid
 func (c *OpenIDProviderConfig) Validate() error {

@@ -2,19 +2,22 @@ package cache
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/jellydator/ttlcache/v3"
 )
 
-// MemoryTokenStore implements TokenStore using ttlcache
+// MemoryTokenStore implements TokenStore using ttlcache.
 type MemoryTokenStore struct {
 	cache *ttlcache.Cache[string, *TokenEntry]
 }
 
-// NewMemoryTokenStore creates a new in-memory token store with automatic cleanup
-func NewMemoryTokenStore(cleanupInterval time.Duration) *MemoryTokenStore {
-	cache := ttlcache.New[string, *TokenEntry](
+// NewMemoryTokenStore creates a new in-memory token store with automatic cleanup.
+//
+//nolint:ireturn
+func NewMemoryTokenStore(cleanupInterval time.Duration) TokenStore {
+	cache := ttlcache.New(
 		ttlcache.WithTTL[string, *TokenEntry](cleanupInterval),
 		ttlcache.WithDisableTouchOnHit[string, *TokenEntry](),
 	)
@@ -27,63 +30,58 @@ func NewMemoryTokenStore(cleanupInterval time.Duration) *MemoryTokenStore {
 	}
 }
 
-// Set implements TokenStore.Set
-func (s *MemoryTokenStore) Set(ctx context.Context, token string, expiresAt time.Time, claims TokenClaims) error {
-	now := time.Date(2025, 1, 3, 3, 8, 6, 0, time.UTC)
-	ttl := expiresAt.Sub(now)
-
-	entry := &TokenEntry{
-		Token:      token,
-		ExpiresAt:  expiresAt,
-		Claims:     claims,
-		CreatedAt:  now,
-		LastUsedAt: now,
-	}
-
-	s.cache.Set(token, entry, ttl)
+// Set implements TokenStore.Set.
+func (s *MemoryTokenStore) Set(_ context.Context, token *TokenEntry) error {
+	ttl := time.Until(token.ExpiresAt)
+	tokenHash := HashToken(token.TokenValue)
+	s.cache.Set(tokenHash, token, ttl)
 	return nil
 }
 
-// Get implements TokenStore.Get
-func (s *MemoryTokenStore) Get(ctx context.Context, token string) (*TokenEntry, bool) {
-	item := s.cache.Get(token)
+// Get implements TokenStore.Get.
+func (s *MemoryTokenStore) Get(_ context.Context, token string) (*TokenEntry, error) {
+	item := s.cache.Get(HashToken(token))
 	if item == nil {
-		return nil, false
+		return nil, fmt.Errorf("token not found")
 	}
 
 	entry := item.Value()
 	now := time.Date(2025, 1, 3, 3, 8, 6, 0, time.UTC)
 	entry.LastUsedAt = now
 
-	return entry, true
+	return entry, nil
 }
 
-// Delete implements TokenStore.Delete
-func (s *MemoryTokenStore) Delete(ctx context.Context, token string) bool {
-	s.cache.Delete(token)
+// Delete removes a token from the cache.
+func (s *MemoryTokenStore) Delete(_ context.Context, token string) error {
+	s.cache.Delete(HashToken(token))
 
-	return true
+	return nil
 }
 
-// DeleteExpired implements TokenStore.DeleteExpired
-func (s *MemoryTokenStore) DeleteExpired(ctx context.Context) int {
+// DeleteExpired removes all expired tokens from the cache.
+func (s *MemoryTokenStore) DeleteExpired(_ context.Context) error {
 	// ttlcache handles expiration automatically
 	s.cache.DeleteExpired()
 
-	return 0
+	return nil
 }
 
-// Clear implements TokenStore.Clear
-func (s *MemoryTokenStore) Clear(ctx context.Context) {
+// Clear removes all tokens from the cache.
+func (s *MemoryTokenStore) Clear(_ context.Context) error {
 	s.cache.DeleteAll()
+
+	return nil
 }
 
-// Count implements TokenStore.Count
-func (s *MemoryTokenStore) Count(ctx context.Context) int {
+// Count counts the number of tokens in the cache.
+func (s *MemoryTokenStore) Count(_ context.Context) int {
 	return s.cache.Len()
 }
 
-// Close stops the cleanup goroutine
-func (s *MemoryTokenStore) Close() {
+// Close stops the cleanup goroutine.
+func (s *MemoryTokenStore) Close() error {
 	s.cache.Stop()
+
+	return nil
 }

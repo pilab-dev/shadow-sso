@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"time"
 
-	ssso "github.com/pilab-dev/shadow-sso"
+	"github.com/pilab-dev/shadow-sso/cache"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -20,8 +20,9 @@ type TokenStore struct {
 	prefix string // Optional prefix for keys
 }
 
-// NewTokenStore creates a new [TokenStore] instance
-func NewTokenStore(client *redis.Client, prefix string) ssso.TokenStore {
+// NewTokenStore creates a new [TokenStore] which implements a [cache.TokenStore] instance.
+// It uses Redis as the underlying storage.
+func NewTokenStore(client *redis.Client, prefix string) cache.TokenStore {
 	return &TokenStore{
 		client: client,
 		prefix: prefix,
@@ -33,56 +34,11 @@ func (r *TokenStore) redisKey(tokenHash string) string {
 	return fmt.Sprintf("%s:token:%s", r.prefix, tokenHash)
 }
 
-type TokenEntry struct {
-	ID         string    `redis:"id"`           // Unique token identifier
-	TokenType  string    `redis:"token_type"`   // "access_token" or "refresh_token"
-	TokenValue string    `redis:"token_value"`  // The actual token string
-	ClientID   string    `redis:"client_id"`    // Client that requested the token
-	UserID     string    `redis:"user_id"`      // User who authorized the token
-	Scope      string    `redis:"scope"`        // Authorized scopes
-	ExpiresAt  time.Time `redis:"expires_at"`   // Expiration timestamp
-	IsRevoked  bool      `redis:"is_revoked"`   // Whether token is revoked
-	CreatedAt  time.Time `redis:"created_at"`   // Creation timestamp
-	LastUsedAt time.Time `redis:"last_used_at"` // Last usage timestamp
-}
-
-func NewTokenEntry(token *ssso.Token) TokenEntry {
-	return TokenEntry{
-		ID:         token.ID,
-		TokenType:  token.TokenType,
-		TokenValue: token.TokenValue,
-		ClientID:   token.ClientID,
-		UserID:     token.UserID,
-		Scope:      token.Scope,
-		ExpiresAt:  token.ExpiresAt,
-		IsRevoked:  token.IsRevoked,
-		CreatedAt:  token.CreatedAt,
-		LastUsedAt: token.LastUsedAt,
-	}
-}
-
-func (t *TokenEntry) Token() *ssso.Token {
-	return &ssso.Token{
-		ID:         t.ID,
-		TokenType:  t.TokenType,
-		TokenValue: t.TokenValue,
-		ClientID:   t.ClientID,
-		UserID:     t.UserID,
-		Scope:      t.Scope,
-		ExpiresAt:  t.ExpiresAt,
-		IsRevoked:  t.IsRevoked,
-		CreatedAt:  t.CreatedAt,
-		LastUsedAt: t.LastUsedAt,
-	}
-}
-
 // Set stores a token with its claims and expiry time in Redis
-func (r *TokenStore) Set(ctx context.Context, token *ssso.Token) error {
-	tokenHash := ssso.HashToken(token.TokenValue)
+func (r *TokenStore) Set(ctx context.Context, entry *cache.TokenEntry) error {
+	tokenHash := cache.HashToken(entry.TokenValue)
 
 	key := r.redisKey(tokenHash)
-
-	entry := NewTokenEntry(token)
 
 	_, err := r.client.HSet(ctx, key, entry).Result()
 	if err != nil {
@@ -90,7 +46,7 @@ func (r *TokenStore) Set(ctx context.Context, token *ssso.Token) error {
 	}
 
 	// Set the expiry for the key
-	expiryDuration := time.Until(token.ExpiresAt)
+	expiryDuration := time.Until(entry.ExpiresAt)
 	_, err = r.client.Expire(ctx, key, expiryDuration).Result()
 	if err != nil {
 		return fmt.Errorf("failed to set expiry for token in Redis: %w", err)
@@ -100,29 +56,29 @@ func (r *TokenStore) Set(ctx context.Context, token *ssso.Token) error {
 }
 
 // Get retrieves a token entry from Redis
-func (r *TokenStore) Get(ctx context.Context, tokenValue string) (*ssso.Token, bool) {
-	key := r.redisKey(ssso.HashToken(tokenValue))
+func (r *TokenStore) Get(ctx context.Context, tokenValue string) (*cache.TokenEntry, error) {
+	key := r.redisKey(cache.HashToken(tokenValue))
 
-	var entry TokenEntry
+	var entry cache.TokenEntry
 
 	err := r.client.HGetAll(ctx, key).Scan(&entry)
 	if err != nil {
-		return nil, false // Consider logging the error if needed
+		return nil, fmt.Errorf("failed to get token from Redis: %w", err)
 	}
 
 	// Update LastUsedAt
-	_, err = r.client.HSet(ctx, key, "last_used_at", time.Now().Unix()).Result()
+	_, err = r.client.HSet(ctx, key, "lastUsedAt", time.Now().Unix()).Result()
 	if err != nil {
 		// Log the error, but don't fail the Get operation
-		fmt.Printf("Error updating last_used_at: %v\n", err)
+		return nil, fmt.Errorf("error updating last_used_at: %w", err)
 	}
 
-	return entry.Token(), true
+	return &entry, nil
 }
 
 // Delete removes a token from Redis
 func (r *TokenStore) Delete(ctx context.Context, token string) error {
-	key := r.redisKey(ssso.HashToken(token))
+	key := r.redisKey(cache.HashToken(token))
 
 	res, err := r.client.Del(ctx, key).Result()
 	if err != nil {
@@ -230,6 +186,7 @@ func (r *TokenStore) Count(ctx context.Context) int {
 			break
 		}
 	}
+
 	return int(count)
 }
 
