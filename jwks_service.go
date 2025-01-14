@@ -92,7 +92,7 @@ func (s *JWKSService) rotateKeys() error {
 	}
 
 	// Új kulcs ID generálása
-	newKeyID := uuid.New().String()
+	newKeyID := uuid.NewString()
 
 	// Régi kulcs megtartása egy ideig az érvényes tokenek miatt
 	if s.currentKeyID != "" {

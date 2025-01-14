@@ -21,21 +21,22 @@ type TokenCache struct {
 	cache map[string]*TokenCacheEntry
 	// cleanupInterval is how often cleanup runs
 	cleanupInterval time.Duration
-	done           chan struct{}
+	done            chan struct{}
 }
 
 // NewTokenCache creates a new token cache with the specified cleanup interval
 func NewTokenCache(cleanupInterval time.Duration) *TokenCache {
-	tc := &TokenCache{
+	cache := &TokenCache{
+		mu:              sync.RWMutex{},
 		cache:           make(map[string]*TokenCacheEntry),
 		cleanupInterval: cleanupInterval,
-		done:           make(chan struct{}),
+		done:            make(chan struct{}),
 	}
 
 	// Start cleanup goroutine
-	go tc.cleanupLoop()
+	go cache.cleanupLoop()
 
-	return tc
+	return cache
 }
 
 // Set stores a token in the cache with its expiration time and claims

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/pilab-dev/shadow-sso/client"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -27,7 +28,7 @@ func NewOAuthService(oauthRepo OAuthRepository, userRepo UserRepository, signing
 		oauthRepo:  oauthRepo,
 		userRepo:   userRepo,
 		signingKey: signingKey,
-		keyID:      uuid.New().String(),
+		keyID:      uuid.NewString(),
 		issuer:     issuer,
 	}
 }
@@ -84,7 +85,7 @@ func (s *OAuthService) Login(ctx context.Context, username, password, deviceInfo
 
 	// Store token in the database
 	token := &Token{
-		ID:         uuid.New().String(),
+		ID:         uuid.NewString(),
 		TokenType:  "access_token",
 		TokenValue: accessToken,
 		ClientID:   "",
@@ -122,8 +123,8 @@ func (s *OAuthService) RefreshToken(ctx context.Context, refreshToken string, cl
 	}
 
 	// Új tokenek generálása
-	newAccessToken := uuid.New().String()
-	newRefreshToken := uuid.New().String()
+	newAccessToken := uuid.NewString()
+	newRefreshToken := uuid.NewString()
 	newExpiresAt := time.Now().Add(time.Hour)
 
 	// Session frissítése
@@ -138,7 +139,7 @@ func (s *OAuthService) RefreshToken(ctx context.Context, refreshToken string, cl
 
 	// Token tárolása az OAuth rendszerben
 	token := &Token{
-		ID:         uuid.New().String(),
+		ID:         uuid.NewString(),
 		TokenType:  "access_token",
 		TokenValue: newAccessToken,
 		ClientID:   clientID,
@@ -248,13 +249,13 @@ func (s *OAuthService) DirectGrant(ctx context.Context, clientID, clientSecret, 
 	}
 
 	// Generate tokens
-	accessToken := uuid.New().String()
-	refreshToken := uuid.New().String()
+	accessToken := uuid.NewString()
+	refreshToken := uuid.NewString()
 	expiresAt := time.Now().Add(time.Hour)
 
 	// Create session
 	session := &UserSession{
-		ID:           uuid.New().String(),
+		ID:           uuid.NewString(),
 		UserID:       user.ID,
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
@@ -297,12 +298,12 @@ func (s *OAuthService) ClientCredentials(ctx context.Context, clientID, clientSe
 	}
 
 	// Generate access token (no refresh token for client credentials)
-	accessToken := uuid.New().String()
+	accessToken := uuid.NewString()
 	expiresAt := time.Now().Add(time.Hour)
 
 	// Store the token
 	token := &Token{
-		ID:         uuid.New().String(),
+		ID:         uuid.NewString(),
 		TokenType:  "access_token",
 		TokenValue: accessToken,
 		ClientID:   clientID,
@@ -355,12 +356,7 @@ func contains(slice []string, item string) bool {
 	return false
 }
 
-func (s *OAuthService) PasswordGrant(ctx context.Context, username, password, clientID, clientSecret, scope string) (*TokenResponse, error) {
-	// Validate client
-	if err := s.validateClient(ctx, clientID, clientSecret); err != nil {
-		return nil, err
-	}
-
+func (s *OAuthService) PasswordGrant(ctx context.Context, username, password, scope string, cli *client.Client) (*TokenResponse, error) {
 	// Validate user credentials
 	user, err := s.userRepo.GetUserByUsername(ctx, username)
 	if err != nil {
@@ -372,7 +368,7 @@ func (s *OAuthService) PasswordGrant(ctx context.Context, username, password, cl
 	}
 
 	// Generate tokens
-	return s.generateUserTokens(ctx, user.ID, clientID, scope)
+	return s.generateUserTokens(ctx, user.ID, cli.ID, scope)
 }
 
 func (s *OAuthService) ClientCredentialsGrant(ctx context.Context, clientID, clientSecret, scope string) (*TokenResponse, error) {
@@ -382,11 +378,11 @@ func (s *OAuthService) ClientCredentialsGrant(ctx context.Context, clientID, cli
 	}
 
 	// Generate client-only token (no refresh token)
-	accessToken := uuid.New().String()
+	accessToken := uuid.NewString()
 	expiresAt := time.Now().Add(time.Hour)
 
 	token := &Token{
-		ID:         uuid.New().String(),
+		ID:         uuid.NewString(),
 		TokenType:  "access_token",
 		TokenValue: accessToken,
 		ClientID:   clientID,
@@ -450,12 +446,12 @@ func (s *OAuthService) validateClient(ctx context.Context, clientID, clientSecre
 }
 
 func (s *OAuthService) generateUserTokens(ctx context.Context, userID, clientID, scope string) (*TokenResponse, error) {
-	accessToken := uuid.New().String()
-	refreshToken := uuid.New().String()
+	accessToken := uuid.NewString()
+	refreshToken := uuid.NewString()
 	expiresAt := time.Now().Add(time.Hour)
 
 	token := &Token{
-		ID:         uuid.New().String(),
+		ID:         uuid.NewString(),
 		TokenType:  "access_token",
 		TokenValue: accessToken,
 		ClientID:   clientID,

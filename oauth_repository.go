@@ -197,38 +197,3 @@ type OAuthRepository interface {
 	// Returns an error if the challenge doesn't exist or if there's a database error.
 	DeleteCodeChallenge(ctx context.Context, code string) error
 }
-
-// TokenStore represents the interface for token caching operations.
-// This interface provides methods to manage a temporary token cache for improved performance.
-type TokenStore interface {
-	// Token Cache Operations
-
-	// Set stores a token in the cache.
-	// Returns an error if the operation fails.
-	Set(token *Token) error
-
-	// Get retrieves a token from the cache by its value.
-	// Returns the token and true if found, or nil and false if not found.
-	Get(tokenValue string) (*Token, bool)
-
-	// Delete removes a token from the cache.
-	// Returns an error if the operation fails.
-	Delete(tokenValue string) error
-
-	// Clear removes all tokens from the cache.
-	// Returns an error if the operation fails.
-	Clear() error
-
-	// Maintenance Operations
-
-	// DeleteExpired removes all expired tokens from the cache.
-	// Returns an error if the operation fails.
-	DeleteExpired() error
-
-	// Count returns the number of tokens currently in the cache.
-	Count() int
-
-	// Close releases any resources used by the token store.
-	// Returns an error if the operation fails.
-	Close() error
-}

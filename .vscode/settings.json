@@ -1,0 +1,5 @@
+{
+    "go.lintTool": "golangci-lint",
+    "go.lintFlags": ["-v", "--timeout=5m"],
+    "go.lintOnSave": true
+}

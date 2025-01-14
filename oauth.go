@@ -60,13 +60,13 @@ func (s *OAuthService) GenerateTokens(ctx context.Context, code, clientID string
 	}
 
 	// Generate new tokens
-	accessToken := uuid.New().String()
-	refreshToken := uuid.New().String()
+	accessToken := uuid.NewString()
+	refreshToken := uuid.NewString()
 	expiresAt := time.Now().Add(time.Hour)
 
 	// Create token record
 	token := &Token{
-		ID:         uuid.New().String(),
+		ID:         uuid.NewString(),
 		TokenType:  "access_token",
 		TokenValue: accessToken,
 		ClientID:   clientID,
