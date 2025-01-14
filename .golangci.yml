@@ -1,0 +1,57 @@
+run:
+  timeout: 5m
+  concurrency: 10
+  # Include all files by default
+  # To exclude specific files or directories, use `exclude-rules`
+  # or `skip-dirs` and `skip-files` options.
+  tests: false # Run tests during linting
+  build-tags:
+    - integration # Example build tag, adjust as needed
+    - unit
+    - e2e
+
+linters:
+  enable-all: true # Enable all linters by default.
+  disable:
+    - mnd # Often too strict, can be enabled selectively
+    - depguard # Often too strict, can be enabled selectively
+    - wsl # Whitespace linter, often stylistic preference
+    - wrapcheck # Often adds unnecessary complexity, consider enabling selectively for specific packages
+    - cyclop # Complexity metric, consider enabling selectively
+    - nlreturn # Newline before return, stylistic choice
+    - rowserrcheck # Checks for unhandled sql.Rows.Err(), often redundant with database/sql best practices
+    - errorlint # Can be overly strict, consider enabling selectively
+
+linters-settings:
+  gocyclo:
+    min-complexity: 15 # Adjust as needed
+
+  dupl:
+    threshold: 100 # Adjust as needed
+
+  goconst:
+    min-len: 3 # Adjust as needed
+
+  misspell:
+    locale: US # or other locale
+
+  gocritic:
+    enabled-checks:
+      - boolExprSimplify
+      - builtinShadow
+      - commentedOutCode
+      - deferInLoop
+      - docStub
+      - emptyFallthrough
+      - equalFold
+      - hexLiteral
+      - importShadow
+      - indexAlloc
+      - initClause
+      - methodExprCall
+      
+output:
+  format: colored-line-number # Output format
+
+severity:
+  default: warning # Default severity level

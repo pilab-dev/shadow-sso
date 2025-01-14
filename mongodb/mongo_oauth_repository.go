@@ -1,7 +1,3 @@
-//go:build mongodb
-
-// Package mongodb implements the OAuthRepository interface using MongoDB.
-// To use this package, you need to enable the "mongodb" build tag.
 package mongodb
 
 import (
