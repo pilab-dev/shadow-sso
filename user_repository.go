@@ -11,15 +11,16 @@ import (
 
 // UserSession represents a user's login session
 type UserSession struct {
-	ID           string    `json:"id"`            // Unique session identifier
-	UserID       string    `json:"user_id"`       // User ID
-	AccessToken  string    `json:"access_token"`  // Current access token
-	RefreshToken string    `json:"refresh_token"` // Current refresh token
-	ExpiresAt    time.Time `json:"expires_at"`    // Session expiration
-	CreatedAt    time.Time `json:"created_at"`    // When session was created
-	LastUsedAt   time.Time `json:"last_used_at"`  // Last activity timestamp
-	DeviceInfo   string    `json:"device_info"`   // Client device information
-	IsRevoked    bool      `json:"is_revoked"`    // Whether session is revoked
+	ID           string    `json:"id"`           // Unique session identifier
+	UserID       string    `json:"userId"`       // User ID
+	AccessToken  string    `json:"accessToken"`  // Current access token
+	RefreshToken string    `json:"refreshToken"` // Current refresh token
+	ExpiresAt    time.Time `json:"expiresAt"`    // Session expiration
+	CreatedAt    time.Time `json:"createdAt"`    // When session was created
+	LastUsedAt   time.Time `json:"lastUsedAt"`   // Last activity timestamp
+	DeviceInfo   string    `json:"deviceInfo"`   // Client device information
+	IsRevoked    bool      `json:"isRevoked"`    // Whether session is revoked
+	Scope        string    `json:"scope"`        // ? Requested scope - is this needed? or a good place to store this?
 }
 
 // User represents a registered user in the system
@@ -58,6 +59,13 @@ type UserRepository interface {
 	// Returns an error if deletion fails
 	DeleteUser(ctx context.Context, id string) error
 
+	// UserSessionRepository defines the interface for user session-related data operations
+	// ! TODO: Temporary we are embedding, but should be a separate interface
+	UserSessionRepository
+}
+
+// UserSessionRepository defines the interface for user session-related data operations.
+type UserSessionRepository interface {
 	// CreateSession creates a new session for the given user
 	// Returns an error if session creation fails
 	CreateSession(ctx context.Context, userID string, session *UserSession) error

@@ -16,20 +16,29 @@ import (
 )
 
 type OAuthService struct {
-	oauthRepo  OAuthRepository
-	userRepo   UserRepository
-	signingKey *rsa.PrivateKey
-	keyID      string
-	issuer     string
+	oauthRepo    OAuthRepository
+	userRepo     UserRepository
+	signingKey   *rsa.PrivateKey
+	tokenService *TokenService
+	keyID        string
+	issuer       string
 }
 
-func NewOAuthService(oauthRepo OAuthRepository, userRepo UserRepository, signingKey *rsa.PrivateKey, issuer string) *OAuthService {
+// NewOAuthService creates a new instance of the OAuthService.
+func NewOAuthService(
+	oauthRepo OAuthRepository,
+	userRepo UserRepository,
+	signingKey *rsa.PrivateKey,
+	tokenService *TokenService,
+	issuer string,
+) *OAuthService {
 	return &OAuthService{
-		oauthRepo:  oauthRepo,
-		userRepo:   userRepo,
-		signingKey: signingKey,
-		keyID:      uuid.NewString(),
-		issuer:     issuer,
+		oauthRepo:    oauthRepo,
+		userRepo:     userRepo,
+		signingKey:   signingKey,
+		keyID:        uuid.NewString(), // ! This must be refactored to keystore or something.
+		tokenService: tokenService,
+		issuer:       issuer,
 	}
 }
 
@@ -49,150 +58,97 @@ func (s *OAuthService) RegisterUser(ctx context.Context, username, password stri
 	return user, nil
 }
 
-func (s *OAuthService) Login(ctx context.Context, username, password, deviceInfo string) (*TokenResponse, error) {
-	// Search for the user
-	user, err := s.userRepo.GetUserByUsername(ctx, username)
-	if err != nil {
-		return nil, fmt.Errorf("user not found: %w", err)
-	}
+// func (s *OAuthService) Login(ctx context.Context, username, password, deviceInfo string) (*TokenResponse, error) {
+// 	// Search for the user
+// 	user, err := s.userRepo.GetUserByUsername(ctx, username)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("user not found: %w", err)
+// 	}
 
-	// Check password
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
-		return nil, fmt.Errorf("invalid password")
-	}
+// 	// Check password
+// 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
+// 		return nil, ErrInvalidCredentials
+// 	}
 
-	// Generate token and session
-	accessToken := uuid.NewString()
-	refreshToken := uuid.NewString()
-	expiresAt := time.Now().Add(time.Hour)
+// 	// Generate token and session
+// 	accessToken := uuid.NewString()
+// 	refreshToken := uuid.NewString()
+// 	expiresAt := time.Now().Add(time.Hour)
 
-	session := &UserSession{
-		ID:           uuid.NewString(),
-		UserID:       user.ID,
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-		ExpiresAt:    expiresAt,
-		CreatedAt:    time.Now(),
-		LastUsedAt:   time.Now(),
-		DeviceInfo:   deviceInfo,
-		IsRevoked:    false,
-	}
+// 	session := &UserSession{
+// 		ID:           uuid.NewString(),
+// 		UserID:       user.ID,
+// 		AccessToken:  accessToken,
+// 		RefreshToken: refreshToken,
+// 		ExpiresAt:    expiresAt,
+// 		CreatedAt:    time.Now(),
+// 		LastUsedAt:   time.Now(),
+// 		DeviceInfo:   deviceInfo,
+// 		IsRevoked:    false,
+// 	}
 
-	// Save the generated session
-	if err := s.userRepo.CreateSession(ctx, user.ID, session); err != nil {
-		return nil, fmt.Errorf("failed to create session: %w", err)
-	}
+// 	// Save the generated session
+// 	if err := s.userRepo.CreateSession(ctx, user.ID, session); err != nil {
+// 		return nil, fmt.Errorf("failed to create session: %w", err)
+// 	}
 
-	// Store token in the database
-	token := &Token{
-		ID:         uuid.NewString(),
-		TokenType:  "access_token",
-		TokenValue: accessToken,
-		ClientID:   "",
-		UserID:     user.ID,
-		ExpiresAt:  expiresAt,
-		CreatedAt:  time.Now(),
-		LastUsedAt: time.Now(),
-	}
-	if err := s.oauthRepo.StoreToken(ctx, token); err != nil {
-		return nil, fmt.Errorf("failed to store token: %w", err)
-	}
+// 	// Store token in the database
+// 	token := &Token{
+// 		ID:         uuid.NewString(),
+// 		TokenType:  "access_token",
+// 		TokenValue: accessToken,
+// 		ClientID:   "",
+// 		UserID:     user.ID,
+// 		ExpiresAt:  expiresAt,
+// 		CreatedAt:  time.Now(),
+// 		LastUsedAt: time.Now(),
+// 	}
+// 	if err := s.oauthRepo.StoreToken(ctx, token); err != nil {
+// 		return nil, fmt.Errorf("failed to store token: %w", err)
+// 	}
 
-	return &TokenResponse{
-		AccessToken:  accessToken,
-		TokenType:    "Bearer",
-		ExpiresIn:    3600,
-		RefreshToken: refreshToken,
-	}, nil
-}
+// 	return &TokenResponse{
+// 		AccessToken:  accessToken,
+// 		TokenType:    "Bearer",
+// 		ExpiresIn:    3600,
+// 		RefreshToken: refreshToken,
+// 	}, nil
+// }
 
-// Új metódus a felhasználó session-jeinek lekérdezéséhez
+// GetUserSessions retrieves all active sessions for a user.
 func (s *OAuthService) GetUserSessions(ctx context.Context, userID string) ([]UserSession, error) {
 	return s.userRepo.GetUserSessions(ctx, userID)
 }
 
-// Token frissítése
+// TokenRefresh refreshes the access token with the refresh token.
 func (s *OAuthService) RefreshToken(ctx context.Context, refreshToken string, clientID string) (*TokenResponse, error) {
 	session, err := s.userRepo.GetSessionByToken(ctx, refreshToken)
 	if err != nil {
-		return nil, fmt.Errorf("invalid refresh token")
+		return nil, ErrInvalidRefreshToken
 	}
 
 	if session.IsRevoked || time.Now().After(session.ExpiresAt) {
-		return nil, fmt.Errorf("token expired or revoked")
+		return nil, ErrTokenExpiredOrRevoked
 	}
-
-	// Új tokenek generálása
-	newAccessToken := uuid.NewString()
-	newRefreshToken := uuid.NewString()
-	newExpiresAt := time.Now().Add(time.Hour)
-
-	// Session frissítése
-	session.AccessToken = newAccessToken
-	session.RefreshToken = newRefreshToken
-	session.ExpiresAt = newExpiresAt
-	session.LastUsedAt = time.Now()
 
 	if err := s.userRepo.UpdateSessionLastUsed(ctx, session.ID); err != nil {
 		return nil, fmt.Errorf("failed to update session: %w", err)
 	}
 
-	// Token tárolása az OAuth rendszerben
-	token := &Token{
-		ID:         uuid.NewString(),
-		TokenType:  "access_token",
-		TokenValue: newAccessToken,
-		ClientID:   clientID,
-		UserID:     session.UserID,
-		ExpiresAt:  newExpiresAt,
-		CreatedAt:  time.Now(),
-		LastUsedAt: time.Now(),
-	}
-	if err := s.oauthRepo.StoreToken(ctx, token); err != nil {
-		return nil, fmt.Errorf("failed to store token: %w", err)
-	}
-
-	return &TokenResponse{
-		AccessToken:  newAccessToken,
-		TokenType:    "Bearer",
-		ExpiresIn:    3600,
-		RefreshToken: newRefreshToken,
-	}, nil
+	return s.tokenService.GenerateTokenPair(ctx, clientID, session.UserID, session.Scope, time.Hour)
 }
 
-// Session visszavonása (kijelentkezés)
-func (s *OAuthService) RevokeSession(ctx context.Context, sessionID string) error {
-	return s.userRepo.RevokeSession(ctx, sessionID)
-}
-
-// Lejárt session-ök törlése
-func (s *OAuthService) CleanupExpiredSessions(ctx context.Context, userID string) error {
-	return s.userRepo.DeleteExpiredSessions(ctx, userID)
-}
-
-type JWKS struct {
-	Keys []JWK `json:"keys"`
-}
-
-type JWK struct {
-	Kid string `json:"kid"`
-	Kty string `json:"kty"`
-	Alg string `json:"alg"`
-	Use string `json:"use"`
-	N   string `json:"n"`
-	E   string `json:"e"`
-}
-
-func (s *OAuthService) GetJWKS() JWKS {
-	// A privát kulcsot a service inicializálásakor kell beállítani
+// GetJWKS returns the JSON Web Key Set (JWKS) containing the public key used to sign tokens.
+func (s *OAuthService) GetJWKS() JSONWebKeySet {
+	// The public key of the signing key. This must be set in the constructor.
 	publicKey, _ := s.signingKey.Public().(*rsa.PublicKey)
 
-	// RSA kulcs komponensek Base64URL kódolása
-	exp := base64.RawURLEncoding.EncodeToString(big.NewInt(int64(publicKey.E)).Bytes())
+	// Encode the public key components in base64. This is required by the JWKS spec.
 	mod := base64.RawURLEncoding.EncodeToString(publicKey.N.Bytes())
+	exp := base64.RawURLEncoding.EncodeToString(big.NewInt(int64(publicKey.E)).Bytes())
 
-	return JWKS{
-		Keys: []JWK{
+	return JSONWebKeySet{
+		Keys: []JSONWebKey{
 			{
 				Kid: s.keyID, // Unique Key ID
 				Kty: "RSA",   // Key Type
@@ -214,7 +170,7 @@ func (s *OAuthService) ValidateClient(ctx context.Context, clientID, clientSecre
 
 	// Compare client secret using constant-time comparison
 	if subtle.ConstantTimeCompare([]byte(cli.Secret), []byte(clientSecret)) != 1 {
-		return nil, fmt.Errorf("invalid client credentials")
+		return nil, ErrInvalidCredentials
 	}
 
 	return cli, nil
@@ -224,30 +180,30 @@ func (s *OAuthService) ValidateClient(ctx context.Context, clientID, clientSecre
 func (s *OAuthService) DirectGrant(ctx context.Context,
 	clientID, clientSecret, username, password, scope string,
 ) (*TokenResponse, error) {
-	// Validate client
-	client, err := s.ValidateClient(ctx, clientID, clientSecret)
+	// Validate cli
+	cli, err := s.ValidateClient(ctx, clientID, clientSecret)
 	if err != nil {
 		return nil, err
 	}
 
 	// Check if password grant is allowed for this client
-	if !contains(client.GrantTypes, "password") {
-		return nil, fmt.Errorf("grant type not allowed for this client")
+	if !contains(cli.GrantTypes, "password") {
+		return nil, fmt.Errorf("%w: grant type not allowed for this client", ErrInvalidConfig)
 	}
 
 	// Validate user credentials
 	user, err := s.userRepo.GetUserByUsername(ctx, username)
 	if err != nil {
-		return nil, fmt.Errorf("invalid credentials")
+		return nil, ErrInvalidCredentials
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
-		return nil, fmt.Errorf("invalid credentials")
+		return nil, ErrInvalidCredentials
 	}
 
 	// Validate requested scope
-	if !s.validateScope(scope, client.Scopes) {
-		return nil, fmt.Errorf("invalid scope requested")
+	if !s.validateScope(scope, cli.Scopes) {
+		return nil, ErrInvalidScopeRequest
 	}
 
 	// Generate tokens
@@ -266,6 +222,7 @@ func (s *OAuthService) DirectGrant(ctx context.Context,
 		LastUsedAt:   time.Now(),
 		DeviceInfo:   "Direct Grant",
 		IsRevoked:    false,
+		Scope:        scope,
 	}
 
 	if err := s.userRepo.CreateSession(ctx, user.ID, session); err != nil {
@@ -273,56 +230,53 @@ func (s *OAuthService) DirectGrant(ctx context.Context,
 	}
 
 	return &TokenResponse{
+		IDToken:      "",
 		AccessToken:  accessToken,
 		TokenType:    "Bearer",
 		ExpiresIn:    3600,
 		RefreshToken: refreshToken,
-		Scope:        scope,
 	}, nil
 }
 
 // ClientCredentials implements the Client Credentials flow
-func (s *OAuthService) ClientCredentials(ctx context.Context, clientID, clientSecret, scope string) (*TokenResponse, error) {
-	// Validate client
-	client, err := s.ValidateClient(ctx, clientID, clientSecret)
+func (s *OAuthService) ClientCredentials(ctx context.Context,
+	clientID, clientSecret, scope string,
+) (*TokenResponse, error) {
+	// Validate cli
+	cli, err := s.ValidateClient(ctx, clientID, clientSecret)
 	if err != nil {
 		return nil, err
 	}
 
 	// Check if client_credentials grant is allowed for this client
-	if !contains(client.GrantTypes, "client_credentials") {
-		return nil, fmt.Errorf("grant type not allowed for this client")
+	if !contains(cli.GrantTypes, "client_credentials") {
+		return nil, fmt.Errorf("%w: grant type not allowed for this client", ErrInvalidConfig)
 	}
 
 	// Validate requested scope
-	if !s.validateScope(scope, client.Scopes) {
-		return nil, fmt.Errorf("invalid scope requested")
+	if !s.validateScope(scope, cli.Scopes) {
+		return nil, ErrInvalidScopeRequest
 	}
 
-	// Generate access token (no refresh token for client credentials)
-	accessToken := uuid.NewString()
-	expiresAt := time.Now().Add(time.Hour)
-
-	// Store the token
-	token := &Token{
-		ID:         uuid.NewString(),
-		TokenType:  "access_token",
-		TokenValue: accessToken,
-		ClientID:   clientID,
-		UserID:     "",
-		ExpiresAt:  expiresAt,
-		CreatedAt:  time.Now(),
-		LastUsedAt: time.Now(),
-	}
-	if err := s.oauthRepo.StoreToken(ctx, token); err != nil {
-		return nil, fmt.Errorf("failed to store token: %w", err)
+	// Generate the access token
+	token, err := s.tokenService.CreateToken(ctx, CreateTokenOptions{
+		TokenID:      uuid.NewString(),
+		Scope:        scope,
+		ClientID:     clientID,
+		UserID:       "",
+		TokenType:    TokenTypeAccessToken,
+		ExpireIn:     time.Hour,
+		SigningKeyID: "",
+	}, nil)
+	if err != nil {
+		return nil, err
 	}
 
 	return &TokenResponse{
-		AccessToken: accessToken,
+		IDToken:     "",
+		AccessToken: token.TokenValue,
 		TokenType:   "Bearer",
 		ExpiresIn:   3600,
-		Scope:       scope,
 	}, nil
 }
 
@@ -358,54 +312,29 @@ func contains(slice []string, item string) bool {
 	return false
 }
 
-func (s *OAuthService) PasswordGrant(ctx context.Context, username, password, scope string, cli *client.Client) (*TokenResponse, error) {
+func (s *OAuthService) PasswordGrant(ctx context.Context,
+	username, password, scope string, cli *client.Client,
+) (*TokenResponse, error) {
 	// Validate user credentials
 	user, err := s.userRepo.GetUserByUsername(ctx, username)
 	if err != nil {
-		return nil, fmt.Errorf("invalid credentials")
+		return nil, ErrInvalidCredentials
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
-		return nil, fmt.Errorf("invalid credentials")
+		return nil, ErrInvalidCredentials
 	}
+
+	// TODO: check if the user request for an id token
+	// TODO: check the user if requests for a refresh token (offline_access)
 
 	// Generate tokens
-	return s.generateUserTokens(ctx, user.ID, cli.ID, scope)
+	return s.tokenService.GenerateTokenPair(ctx, cli.ID, user.ID, scope, time.Hour)
 }
 
-func (s *OAuthService) ClientCredentialsGrant(ctx context.Context, clientID, clientSecret, scope string) (*TokenResponse, error) {
-	// Validate client
-	if err := s.validateClient(ctx, clientID, clientSecret); err != nil {
-		return nil, err
-	}
-
-	// Generate client-only token (no refresh token)
-	accessToken := uuid.NewString()
-	expiresAt := time.Now().Add(time.Hour)
-
-	token := &Token{
-		ID:         uuid.NewString(),
-		TokenType:  "access_token",
-		TokenValue: accessToken,
-		ClientID:   clientID,
-		UserID:     "",
-		ExpiresAt:  expiresAt,
-		CreatedAt:  time.Now(),
-		LastUsedAt: time.Now(),
-	}
-	if err := s.oauthRepo.StoreToken(ctx, token); err != nil {
-		return nil, err
-	}
-
-	return &TokenResponse{
-		AccessToken: accessToken,
-		TokenType:   "Bearer",
-		ExpiresIn:   3600,
-		Scope:       scope,
-	}, nil
-}
-
-func (s *OAuthService) ExchangeAuthorizationCode(ctx context.Context, code, clientID, clientSecret, redirectURI string) (*TokenResponse, error) {
+func (s *OAuthService) ExchangeAuthorizationCode(ctx context.Context,
+	code, clientID, clientSecret, redirectURI string,
+) (*TokenResponse, error) {
 	// Validate client
 	if err := s.validateClient(ctx, clientID, clientSecret); err != nil {
 		return nil, err
@@ -430,52 +359,64 @@ func (s *OAuthService) ExchangeAuthorizationCode(ctx context.Context, code, clie
 		return nil, err
 	}
 
+	tokenResponse := new(TokenResponse)
+	tokenResponse.TokenType = "Bearer"
+	tokenResponse.ExpiresIn = 3600
+
+	// Generate refresh token
+	accessToken, err := s.tokenService.CreateToken(ctx, CreateTokenOptions{
+		TokenID:      uuid.NewString(),
+		Scope:        authCode.Scope,
+		ClientID:     clientID,
+		UserID:       authCode.UserID,
+		TokenType:    TokenTypeRefreshToken,
+		ExpireIn:     time.Hour, // 1 hour
+		SigningKeyID: "",
+	}, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	tokenResponse.AccessToken = accessToken.TokenValue
+
+	if contains(strings.Fields(authCode.Scope), "offline_access") {
+		// Generate refresh token
+		refreshToken, err := s.tokenService.CreateToken(ctx, CreateTokenOptions{
+			TokenID:      uuid.NewString(),
+			Scope:        authCode.Scope,
+			ClientID:     clientID,
+			UserID:       authCode.UserID,
+			TokenType:    TokenTypeRefreshToken,
+			ExpireIn:     time.Hour * 24 * 30, // 30 days
+			SigningKeyID: "",
+		}, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		tokenResponse.RefreshToken = refreshToken.TokenValue
+	}
+
 	// Generate tokens
-	return s.generateUserTokens(ctx, "", clientID, authCode.Scope)
+	return tokenResponse, nil
 }
 
 func (s *OAuthService) validateClient(ctx context.Context, clientID, clientSecret string) error {
-	client, err := s.oauthRepo.GetClient(ctx, clientID)
+	cli, err := s.oauthRepo.GetClient(ctx, clientID)
 	if err != nil {
-		return fmt.Errorf("invalid client")
+		return fmt.Errorf("invalid client: %w", err)
 	}
 
-	if subtle.ConstantTimeCompare([]byte(client.Secret), []byte(clientSecret)) != 1 {
-		return fmt.Errorf("invalid client credentials")
+	if cli.Secret != clientSecret {
+		return ErrInvalidClientCredentials
 	}
 
 	return nil
 }
 
-func (s *OAuthService) generateUserTokens(ctx context.Context, userID, clientID, scope string) (*TokenResponse, error) {
-	accessToken := uuid.NewString()
-	refreshToken := uuid.NewString()
-	expiresAt := time.Now().Add(time.Hour)
-
-	token := &Token{
-		ID:         uuid.NewString(),
-		TokenType:  "access_token",
-		TokenValue: accessToken,
-		ClientID:   clientID,
-		UserID:     userID,
-		ExpiresAt:  expiresAt,
-		CreatedAt:  time.Now(),
-		LastUsedAt: time.Now(),
-	}
-	if err := s.oauthRepo.StoreToken(ctx, token); err != nil {
-		return nil, err
-	}
-
-	return &TokenResponse{
-		AccessToken:  accessToken,
-		TokenType:    "Bearer",
-		ExpiresIn:    3600,
-		RefreshToken: refreshToken,
-		Scope:        scope,
-	}, nil
-}
-
 // TokenIntrospection represents the response format defined in RFC 7662
+//
+//nolint:tagliatelle
 type TokenIntrospection struct {
 	Active    bool   `json:"active"`
 	Scope     string `json:"scope,omitempty"`
@@ -492,7 +433,9 @@ type TokenIntrospection struct {
 }
 
 // IntrospectToken implements RFC 7662 Token Introspection
-func (s *OAuthService) IntrospectToken(ctx context.Context, token, tokenTypeHint, clientID, clientSecret string) (*TokenIntrospection, error) {
+func (s *OAuthService) IntrospectToken(ctx context.Context,
+	token, tokenTypeHint, clientID, clientSecret string,
+) (*TokenIntrospection, error) {
 	// Validate the requesting client
 	if err := s.validateClient(ctx, clientID, clientSecret); err != nil {
 		return nil, fmt.Errorf("invalid client: %w", err)
@@ -504,18 +447,18 @@ func (s *OAuthService) IntrospectToken(ctx context.Context, token, tokenTypeHint
 	// Use token_type_hint to optimize lookup
 	switch tokenTypeHint {
 	case "refresh_token":
-		tokenInfo, err = s.oauthRepo.GetRefreshTokenInfo(ctx, token)
+		tokenInfo, err = s.tokenService.GetRefreshTokenInfo(ctx, token)
 	case "access_token", "":
-		tokenInfo, err = s.oauthRepo.GetAccessTokenInfo(ctx, token)
+		tokenInfo, err = s.tokenService.GetAccessTokenInfo(ctx, token)
 		if err != nil && tokenTypeHint == "" {
 			// If no hint was provided, try refresh token as fallback
-			tokenInfo, err = s.oauthRepo.GetRefreshTokenInfo(ctx, token)
+			tokenInfo, err = s.tokenService.GetRefreshTokenInfo(ctx, token)
 		}
 	default:
 		// Unknown token type hint, try both
-		tokenInfo, err = s.oauthRepo.GetAccessTokenInfo(ctx, token)
+		tokenInfo, err = s.tokenService.GetAccessTokenInfo(ctx, token)
 		if err != nil {
-			tokenInfo, err = s.oauthRepo.GetRefreshTokenInfo(ctx, token)
+			tokenInfo, err = s.tokenService.GetRefreshTokenInfo(ctx, token)
 		}
 	}
 
@@ -548,5 +491,7 @@ func (s *OAuthService) IntrospectToken(ctx context.Context, token, tokenTypeHint
 		Sub:       tokenInfo.UserID,
 		Iss:       s.issuer,
 		Jti:       tokenInfo.ID,
+		Nbf:       tokenInfo.IssuedAt.Unix(),
+		Aud:       tokenInfo.ClientID,
 	}, nil
 }

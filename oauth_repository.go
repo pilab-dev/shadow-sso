@@ -5,6 +5,8 @@ import (
 	"context"
 	"io"
 	"time"
+
+	"github.com/pilab-dev/shadow-sso/cache"
 )
 
 // AuthCode represents an OAuth 2.0 authorization code.
@@ -58,6 +60,34 @@ type Token struct {
 	IsRevoked  bool      `json:"is_revoked"`   // Whether token is revoked
 	CreatedAt  time.Time `json:"created_at"`   // Creation timestamp
 	LastUsedAt time.Time `json:"last_used_at"` // Last usage timestamp
+}
+
+func (t *Token) ToEntry() *cache.TokenEntry {
+	return &cache.TokenEntry{
+		ID:         t.ID,
+		TokenType:  t.TokenType,
+		TokenValue: t.TokenValue,
+		ClientID:   t.ClientID,
+		UserID:     t.UserID,
+		Scope:      t.Scope,
+		ExpiresAt:  t.ExpiresAt,
+		IsRevoked:  t.IsRevoked,
+		CreatedAt:  t.CreatedAt,
+		LastUsedAt: t.LastUsedAt,
+	}
+}
+
+func (t *Token) FromEntry(entry *cache.TokenEntry) {
+	t.ID = entry.ID
+	t.TokenType = entry.TokenType
+	t.TokenValue = entry.TokenValue
+	t.ClientID = entry.ClientID
+	t.UserID = entry.UserID
+	t.Scope = entry.Scope
+	t.ExpiresAt = entry.ExpiresAt
+	t.IsRevoked = entry.IsRevoked
+	t.CreatedAt = entry.CreatedAt
+	t.LastUsedAt = entry.LastUsedAt
 }
 
 // TokenRepository represents an OAuth 2.0 token repository.
@@ -209,7 +239,7 @@ type OAuthRepository interface {
 
 	ClientRepository
 	AuthorizationCodeRepository
-	TokenRepository
+	// TokenRepository
 	SessionRepository
 	PkceRepository
 }

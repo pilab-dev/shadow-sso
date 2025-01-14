@@ -76,9 +76,11 @@ func (s *OAuthService) GenerateTokens(ctx context.Context, code, clientID string
 		LastUsedAt: time.Now(),
 	}
 
-	if err := s.oauthRepo.StoreToken(ctx, token); err != nil {
-		return nil, fmt.Errorf("failed to store token: %w", err)
-	}
+	_ = token
+
+	// if err := s.oauthRepo.StoreToken(ctx, token); err != nil {
+	// 	return nil, fmt.Errorf("failed to store token: %w", err)
+	// }
 
 	// Mark auth code as used
 	if err := s.oauthRepo.MarkAuthCodeAsUsed(ctx, code); err != nil {
@@ -93,14 +95,9 @@ func (s *OAuthService) GenerateTokens(ctx context.Context, code, clientID string
 	}, nil
 }
 
-// ValidateToken validates an access token and returns the associated user ID.
-func (s *OAuthService) ValidateToken(ctx context.Context, token string) (string, error) {
-	return s.oauthRepo.ValidateAccessToken(ctx, token)
-}
-
 // GetUserInfo retrieves user information for a valid access token.
 func (s *OAuthService) GetUserInfo(ctx context.Context, token string) (map[string]interface{}, error) {
-	userID, err := s.oauthRepo.ValidateAccessToken(ctx, token)
+	userID, err := s.tokenService.ValidateAccessToken(ctx, token)
 	if err != nil {
 		return nil, fmt.Errorf("invalid access token: %w", err)
 	}
@@ -115,5 +112,5 @@ func (s *OAuthService) GetUserInfo(ctx context.Context, token string) (map[strin
 
 // RevokeToken revokes an access token.
 func (s *OAuthService) RevokeToken(ctx context.Context, token string) error {
-	return s.oauthRepo.RevokeToken(ctx, token)
+	return s.tokenService.RevokeToken(ctx, token)
 }

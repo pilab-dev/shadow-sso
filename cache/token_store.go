@@ -5,34 +5,36 @@ import (
 	"time"
 )
 
-// TokenClaims represents the claims stored in the cache
-type TokenClaims interface{}
-
 // TokenEntry represents a cached token entry
 type TokenEntry struct {
-	Token      string
-	ExpiresAt  time.Time
-	Claims     TokenClaims
-	CreatedAt  time.Time
-	LastUsedAt time.Time
+	ID         string    `redis:"id"`         // Unique token identifier
+	TokenType  string    `redis:"tokenType"`  // "access_token" or "refresh_token"
+	TokenValue string    `redis:"tokenValue"` // The actual token string
+	ClientID   string    `redis:"clientId"`   // Client that requested the token
+	UserID     string    `redis:"userId"`     // User who authorized the token
+	Scope      string    `redis:"scope"`      // Authorized scopes
+	ExpiresAt  time.Time `redis:"expiresAt"`  // Expiration timestamp
+	IsRevoked  bool      `redis:"isRevoked"`  // Whether token is revoked
+	CreatedAt  time.Time `redis:"createdAt"`  // Creation timestamp
+	LastUsedAt time.Time `redis:"lastUsedAt"` // Last usage timestamp
 }
 
 // TokenStore defines the interface for token caching implementations
 type TokenStore interface {
 	// Set stores a token with its claims and expiry time
-	Set(ctx context.Context, token string, expiresAt time.Time, claims TokenClaims) error
+	Set(ctx context.Context, token *TokenEntry) error
 
 	// Get retrieves a token entry from the cache
-	Get(ctx context.Context, token string) (*TokenEntry, bool)
+	Get(ctx context.Context, token string) (*TokenEntry, error)
 
 	// Delete removes a token from the cache
-	Delete(ctx context.Context, token string) bool
+	Delete(ctx context.Context, token string) error
 
 	// DeleteExpired removes all expired tokens from the cache
-	DeleteExpired(ctx context.Context) int
+	DeleteExpired(ctx context.Context) error
 
 	// Clear removes all tokens from the cache
-	Clear(ctx context.Context)
+	Clear(ctx context.Context) error
 
 	// Count returns the number of tokens in the cache
 	Count(ctx context.Context) int

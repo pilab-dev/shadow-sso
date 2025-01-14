@@ -12,7 +12,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// OAuth2API struct to hold dependencies
+// OAuth2API struct to hold dependencies.
 type OAuth2API struct {
 	service       *OAuthService
 	jwksService   *JWKSService
@@ -21,7 +21,7 @@ type OAuth2API struct {
 	config        *OpenIDProviderConfig
 }
 
-// NewOAuth2API initializes the OAuth2 API
+// NewOAuth2API initializes the OAuth2 API.
 func NewOAuth2API(
 	service *OAuthService,
 	jwksService *JWKSService,
@@ -41,7 +41,7 @@ func NewOAuth2API(
 	}
 }
 
-// RegisterRoutes registers the OAuth2 routes
+// RegisterRoutes registers the OAuth2 routes.
 func (api *OAuth2API) RegisterRoutes(e *echo.Echo) {
 	e.POST("/oauth2/token", api.TokenHandler)
 	e.GET("/oauth2/authorize", api.AuthorizeHandler)
@@ -113,6 +113,16 @@ func (api *OAuth2API) AuthorizeHandler(c echo.Context) error {
 	return c.Redirect(http.StatusFound, redirectURL)
 }
 
+// GrantType enumeration for OAuth2 grant types.
+type GrantType string
+
+const (
+	GrantTypeAuthorizationCode GrantType = "authorization_code"
+	GrantTypeRefreshToken      GrantType = "refresh_token"
+	GrantTypeClientCredentials GrantType = "client_credentials"
+	GrantTypePassword          GrantType = "password"
+)
+
 // TokenHandler handles OAuth2 token requests. It:
 //   - Extracts client_id, client_secret, and grant_type from the request form values.
 //   - Validates the client credentials and grant type.
@@ -142,14 +152,14 @@ func (api *OAuth2API) TokenHandler(c echo.Context) error {
 	var tokenResponse *TokenResponse
 	var processErr error
 
-	switch grantType {
-	case "authorization_code":
+	switch GrantType(grantType) {
+	case GrantTypeAuthorizationCode:
 		tokenResponse, processErr = api.handleAuthorizationCodeGrant(c, cli)
-	case "refresh_token":
+	case GrantTypeRefreshToken:
 		tokenResponse, processErr = api.handleRefreshTokenGrant(c, cli)
-	case "client_credentials":
+	case GrantTypeClientCredentials:
 		tokenResponse, processErr = api.handleClientCredentialsGrant(c, cli)
-	case "password":
+	case GrantTypePassword: // ! This method is not supported by the OAuth2 2.1 spec
 		tokenResponse, processErr = api.handlePasswordGrant(c, cli)
 	default:
 		return c.JSON(http.StatusBadRequest, errors.NewUnsupportedGrantType())
@@ -194,6 +204,12 @@ func (api *OAuth2API) UserInfoHandler(c echo.Context) error {
 	return c.JSON(http.StatusOK, userInfo)
 }
 
+const (
+	TokenTypeAccessToken  = "access_token"
+	TokenTypeRefreshToken = "refresh_token"
+	TokenTypeIDToken      = "id_token"
+)
+
 // RevokeHandler handles token revocation requests according to RFC 7009.
 // It accepts both access tokens and refresh tokens and revokes them.
 // The endpoint always returns 200 OK regardless of whether the token was
@@ -209,12 +225,12 @@ func (api *OAuth2API) RevokeHandler(c echo.Context) error {
 
 	tokenType := c.FormValue("token_type_hint")
 	if tokenType == "" {
-		tokenType = "access_token"
+		tokenType = TokenTypeAccessToken
 	}
 
 	// Validate token type hint
-	if tokenType != "access_token" && tokenType != "refresh_token" {
-		tokenType = "access_token" // Default to access_token if invalid hint
+	if tokenType != TokenTypeAccessToken && tokenType != TokenTypeRefreshToken {
+		tokenType = TokenTypeAccessToken // Default to access_token if invalid hint
 	}
 
 	ctx := c.Request().Context()
@@ -252,11 +268,11 @@ type TokenRequest struct {
 
 // TokenResponse represents an OAuth 2.0 token response
 type TokenResponse struct {
+	IDToken      string `json:"id_token,omitempty"`
 	AccessToken  string `json:"access_token"`
 	TokenType    string `json:"token_type"`
 	ExpiresIn    int    `json:"expires_in"`
 	RefreshToken string `json:"refresh_token,omitempty"`
-	Scope        string `json:"scope,omitempty"`
 }
 
 // OpenIDConfiguration represents the OpenID Connect discovery document
@@ -266,6 +282,7 @@ type OpenIDConfiguration struct {
 	Issuer                                    string   `json:"issuer"`
 	AuthorizationEndpoint                     string   `json:"authorization_endpoint"`
 	TokenEndpoint                             string   `json:"token_endpoint"`
+	EndSessionEndpoint                        *string  `json:"end_session_endpoint,omitempty"`
 	UserInfoEndpoint                          string   `json:"userinfo_endpoint"`
 	JwksURI                                   string   `json:"jwks_uri"`
 	RegistrationEndpoint                      *string  `json:"registration_endpoint,omitempty"`
@@ -279,7 +296,6 @@ type OpenIDConfiguration struct {
 	UILocalesSupported                        []string `json:"ui_locales_supported,omitempty"`
 	OpPolicyURI                               *string  `json:"op_policy_uri,omitempty"`
 	OpTosURI                                  *string  `json:"op_tos_uri,omitempty"`
-	RevocationEndpoint                        *string  `json:"revocation_endpoint,omitempty"`
 	RevocationEndpointAuthMethodsSupported    []string `json:"revocation_endpoint_auth_methods_supported,omitempty"`
 	IntrospectionEndpoint                     *string  `json:"introspection_endpoint,omitempty"`
 	IntrospectionEndpointAuthMethodsSupported []string `json:"introspection_endpoint_auth_methods_supported,omitempty"`
@@ -304,20 +320,28 @@ type OpenIDConfiguration struct {
 func (api *OAuth2API) OpenIDConfigurationHandler(c echo.Context) error {
 	baseURL := c.Scheme() + "://" + c.Request().Host
 
+	//nolint:exhaustruct
 	config := OpenIDConfiguration{
 		Issuer:                baseURL,
 		AuthorizationEndpoint: baseURL + "/oauth2/authorize",
 		TokenEndpoint:         baseURL + "/oauth2/token",
 		UserInfoEndpoint:      baseURL + "/oauth2/userinfo",
 		JwksURI:               baseURL + "/.well-known/jwks.json",
-		RevocationEndpoint:    stringPtr(baseURL + "/oauth2/revoke"),
-		IntrospectionEndpoint: stringPtr(baseURL + "/oauth2/introspect"),
+		IntrospectionEndpoint: ToPtr(baseURL + "/oauth2/introspect"),
+		EndSessionEndpoint:    ToPtr(baseURL + "/oauth2/logout"),
+		RegistrationEndpoint:  ToPtr(baseURL + "/oauth2/register"),
 		ScopesSupported:       []string{"openid", "profile", "email", "offline_access"},
 		ResponseTypesSupported: []string{
-			"code", "token", "id_token", "code token", "code id_token", "token id_token", "code token id_token",
+			"code", "token", "id_token",
+			"code token",
+			"code id_token",
+			"token id_token",
+			"code token id_token",
 		},
-		ResponseModesSupported:            []string{"query", "fragment", "form_post"},
-		GrantTypesSupported:               []string{"authorization_code", "implicit", "refresh_token", "client_credentials"},
+		ResponseModesSupported: []string{"query", "fragment", "form_post"},
+		GrantTypesSupported: []string{
+			"authorization_code", "implicit", "password", "refresh_token", "client_credentials",
+		},
 		TokenEndpointAuthMethodsSupported: []string{"client_secret_basic", "client_secret_post", "private_key_jwt"},
 		SubjectTypesSupported:             []string{"public", "pairwise"},
 		IDTokenSigningAlgValuesSupported:  []string{"RS256", "RS384", "RS512"},
@@ -333,8 +357,12 @@ func (api *OAuth2API) OpenIDConfigurationHandler(c echo.Context) error {
 	return c.JSON(http.StatusOK, config)
 }
 
-// Helper function to convert string to pointer
-func stringPtr(s string) *string {
+// ToPtr returns a pointer to the given value. Its a helper function to provide a more readable code
+// Example:
+//
+//	    // Using this method the "/register" will be a pointer (*string)
+//		oidc.RegistrationEndpoint := ToPtr("/register")
+func ToPtr[T any](s T) *T {
 	return &s
 }
 
@@ -437,7 +465,7 @@ func (api *OAuth2API) handleClientCredentialsGrant(c echo.Context, cli *client.C
 
 	ctx := c.Request().Context()
 
-	return api.service.ClientCredentialsGrant(ctx, cli.ID, cli.Secret, scope)
+	return api.service.ClientCredentials(ctx, cli.ID, cli.Secret, scope)
 }
 
 func (api *OAuth2API) handleRefreshTokenGrant(c echo.Context, cli *client.Client) (*TokenResponse, error) {
@@ -468,10 +496,7 @@ func (api *OAuth2API) IntrospectHandler(c echo.Context) error {
 
 	token := c.FormValue("token")
 	if token == "" {
-		return c.JSON(http.StatusBadRequest, echo.Map{
-			"error":             "invalid_request",
-			"error_description": "token parameter is required",
-		})
+		return c.JSON(http.StatusBadRequest, errors.NewInvalidRequest("token parameter is required"))
 	}
 
 	tokenType := c.FormValue("token_type_hint")
