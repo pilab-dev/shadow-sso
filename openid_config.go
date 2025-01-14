@@ -1,6 +1,8 @@
+//nolint:tagliatelle
 package ssso
 
 import (
+	"errors"
 	"fmt"
 	"time"
 )
@@ -108,7 +110,9 @@ type ClaimsConfig struct {
 	EnableClaimsParameter bool              `json:"enable_claims_parameter"`
 }
 
-// NewDefaultConfig creates a new OpenIDProviderConfig with sensible defaults
+// NewDefaultConfig creates a new OpenIDProviderConfig with sensible defaults.
+//
+//nolint:funlen
 func NewDefaultConfig(issuer string) *OpenIDProviderConfig {
 	return &OpenIDProviderConfig{
 		Issuer:            issuer,
@@ -149,14 +153,15 @@ func NewDefaultConfig(issuer string) *OpenIDProviderConfig {
 		},
 
 		SecurityConfig: SecurityConfig{
-			RequirePKCE:                 false,
-			RequirePKCEForPublicClients: true,
-			AllowedSigningAlgs:          []string{"RS256", "RS384", "RS512"},
-			AllowedEncryptionAlgs:       []string{"RSA-OAEP", "RSA-OAEP-256"},
-			AllowedEncryptionEnc:        []string{"A128CBC-HS256", "A256CBC-HS512"},
-			RequireSignedRequestObject:  false,
-			DefaultMaxAge:               3600,
-			RequireAuthTime:             false,
+			RequirePKCE:                   false,
+			RequirePKCEForPublicClients:   true,
+			AllowedSigningAlgs:            []string{"RS256", "RS384", "RS512"},
+			AllowedEncryptionAlgs:         []string{"RSA-OAEP", "RSA-OAEP-256"},
+			AllowedEncryptionEnc:          []string{"A128CBC-HS256", "A256CBC-HS512"},
+			RequireSignedRequestObject:    false,
+			DefaultMaxAge:                 3600,
+			RequireAuthTime:               false,
+			RequireRequestURIRegistration: false,
 		},
 
 		TokenConfig: TokenConfig{
@@ -197,30 +202,34 @@ func NewDefaultConfig(issuer string) *OpenIDProviderConfig {
 	}
 }
 
+var ErrInvalidConfig = errors.New("invalid configuration")
+
 // Validate checks if the configuration is valid
 func (c *OpenIDProviderConfig) Validate() error {
 	if c.Issuer == "" {
-		return fmt.Errorf("issuer cannot be empty")
+		return fmt.Errorf("%w: issuer cannot be empty", ErrInvalidConfig)
 	}
 
 	if c.AccessTokenTTL <= 0 {
-		return fmt.Errorf("access token TTL must be positive")
+		return fmt.Errorf("%w: access token TTL must be positive", ErrInvalidConfig)
 	}
 
 	if c.RefreshTokenTTL <= 0 {
-		return fmt.Errorf("refresh token TTL must be positive")
+		return fmt.Errorf("%w: refresh token TTL must be positive", ErrInvalidConfig)
 	}
 
 	if c.AuthCodeTTL <= 0 {
-		return fmt.Errorf("auth code TTL must be positive")
+		return fmt.Errorf("%w: auth code TTL must be positive", ErrInvalidConfig)
 	}
 
 	if len(c.SecurityConfig.AllowedSigningAlgs) == 0 {
-		return fmt.Errorf("at least one signing algorithm must be allowed")
+		return fmt.Errorf("%w: at least one signing algorithm must be allowed", ErrInvalidConfig)
 	}
 
 	if c.TokenConfig.AccessTokenFormat != "jwt" && c.TokenConfig.AccessTokenFormat != "opaque" {
-		return fmt.Errorf("invalid access token format: %s", c.TokenConfig.AccessTokenFormat)
+		return fmt.Errorf("%w: invalid access token format: %s",
+			ErrInvalidConfig,
+			c.TokenConfig.AccessTokenFormat)
 	}
 
 	return nil
