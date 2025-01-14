@@ -1,6 +1,7 @@
 package ssso
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
@@ -39,47 +40,47 @@ type User struct {
 type UserRepository interface {
 	// CreateUser creates a new user with the given username and password
 	// Returns the created user or an error if creation fails
-	CreateUser(username, password string) (*User, error)
+	CreateUser(ctx context.Context, username, password string) (*User, error)
 
 	// GetUserByID retrieves a user by their unique ID
 	// Returns the user or an error if not found
-	GetUserByID(id string) (*User, error)
+	GetUserByID(ctx context.Context, id string) (*User, error)
 
 	// GetUserByUsername retrieves a user by their username
 	// Returns the user or an error if not found
-	GetUserByUsername(username string) (*User, error)
+	GetUserByUsername(ctx context.Context, username string) (*User, error)
 
 	// UpdateUser updates an existing user's information
 	// Returns an error if the update fails
-	UpdateUser(user *User) error
+	UpdateUser(ctx context.Context, user *User) error
 
 	// DeleteUser removes a user by their ID
 	// Returns an error if deletion fails
-	DeleteUser(id string) error
+	DeleteUser(ctx context.Context, id string) error
 
 	// CreateSession creates a new session for the given user
 	// Returns an error if session creation fails
-	CreateSession(userID string, session *UserSession) error
+	CreateSession(ctx context.Context, userID string, session *UserSession) error
 
 	// GetUserSessions retrieves all active sessions for a user
 	// Returns a slice of sessions or an error if retrieval fails
-	GetUserSessions(userID string) ([]UserSession, error)
+	GetUserSessions(ctx context.Context, userID string) ([]UserSession, error)
 
 	// GetSessionByToken retrieves a session by its access token
 	// Returns the session or an error if not found
-	GetSessionByToken(accessToken string) (*UserSession, error)
+	GetSessionByToken(ctx context.Context, accessToken string) (*UserSession, error)
 
 	// UpdateSessionLastUsed updates the LastUsedAt timestamp of a session
 	// Returns an error if the update fails
-	UpdateSessionLastUsed(sessionID string) error
+	UpdateSessionLastUsed(ctx context.Context, sessionID string) error
 
 	// RevokeSession marks a session as revoked
 	// Returns an error if the revocation fails
-	RevokeSession(sessionID string) error
+	RevokeSession(ctx context.Context, sessionID string) error
 
 	// DeleteExpiredSessions removes all expired sessions for a user
 	// Returns an error if the deletion fails
-	DeleteExpiredSessions(userID string) error
+	DeleteExpiredSessions(ctx context.Context, userID string) error
 }
 
 // PKCEParams represents PKCE parameters
@@ -92,14 +93,14 @@ type PKCEParams struct {
 // code: The authorization code to validate
 // codeVerifier: The PKCE code verifier provided by the client
 // Returns error if validation fails
-func (s *PKCEService) ValidatePKCE(code string, codeVerifier string) error {
+func (s *PKCEService) ValidatePKCE(ctx context.Context, code string, codeVerifier string) error {
 	// Validate inputs
 	if code == "" || codeVerifier == "" {
 		return fmt.Errorf("code and code verifier are required")
 	}
 
 	// Get stored auth code
-	authCode, err := s.oauthRepo.GetAuthCode(code)
+	authCode, err := s.oauthRepo.GetAuthCode(ctx, code)
 	if err != nil {
 		return fmt.Errorf("invalid auth code: %w", err)
 	}
