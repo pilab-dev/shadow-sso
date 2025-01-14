@@ -62,13 +62,13 @@ func (api *OAuth2API) AuthorizeHandler(c echo.Context) error {
 	state := c.QueryParam("state")
 
 	// Validate client
-	_, err := api.clientService.GetClient(clientID)
+	_, err := api.clientService.GetClient(c.Request().Context(), clientID)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, errors.NewInvalidClient("Invalid client_id"))
 	}
 
 	// Validate redirect URI
-	if err := api.clientService.ValidateRedirectURI(clientID, redirectURI); err != nil {
+	if err := api.clientService.ValidateRedirectURI(c.Request().Context(), clientID, redirectURI); err != nil {
 		return c.JSON(http.StatusBadRequest, errors.NewInvalidRequest("Invalid redirect_uri"))
 	}
 
@@ -78,12 +78,12 @@ func (api *OAuth2API) AuthorizeHandler(c echo.Context) error {
 	}
 
 	// Validate scope
-	if err := api.clientService.ValidateScope(clientID, strings.Split(scope, " ")); err != nil {
+	if err := api.clientService.ValidateScope(c.Request().Context(), clientID, strings.Split(scope, " ")); err != nil {
 		return c.JSON(http.StatusBadRequest, errors.NewInvalidScope("Invalid scope requested"))
 	}
 
 	// Check if PKCE is required
-	requiresPKCE, _ := api.clientService.RequiresPKCE(clientID)
+	requiresPKCE, _ := api.clientService.RequiresPKCE(c.Request().Context(), clientID)
 	if requiresPKCE {
 		codeChallenge := c.QueryParam("code_challenge")
 		codeChallengeMethod := c.QueryParam("code_challenge_method")
@@ -96,7 +96,7 @@ func (api *OAuth2API) AuthorizeHandler(c echo.Context) error {
 	}
 
 	// Generate authorization code
-	authCode, err := api.service.GenerateAuthCode(clientID, redirectURI, scope)
+	authCode, err := api.service.GenerateAuthCode(c.Request().Context(), clientID, redirectURI, scope)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to generate authorization code")
 		return c.JSON(http.StatusInternalServerError, errors.NewServerError("Failed to generate authorization code"))
@@ -117,14 +117,16 @@ func (api *OAuth2API) TokenHandler(c echo.Context) error {
 	clientSecret := c.FormValue("client_secret")
 	grantType := c.FormValue("grant_type")
 
+	ctx := c.Request().Context()
+
 	// Validate client
-	client, err := api.clientService.ValidateClient(clientID, clientSecret)
+	client, err := api.clientService.ValidateClient(ctx, clientID, clientSecret)
 	if err != nil {
 		return c.JSON(http.StatusUnauthorized, errors.NewInvalidClient("Invalid client credentials"))
 	}
 
 	// Validate grant type
-	if err := api.clientService.ValidateGrantType(clientID, grantType); err != nil {
+	if err := api.clientService.ValidateGrantType(ctx, clientID, grantType); err != nil {
 		return c.JSON(http.StatusBadRequest, errors.NewUnauthorizedClient("Grant type not allowed for this client"))
 	}
 
@@ -161,15 +163,17 @@ func (api *OAuth2API) UserInfoHandler(c echo.Context) error {
 		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "missing_token"})
 	}
 
-	// Bearer token kinyerése
+	ctx := c.Request().Context()
+
+	// Get bearer token
 	tokenParts := strings.Split(authHeader, " ")
 	if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
 		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "invalid_token"})
 	}
 	token := tokenParts[1]
 
-	// Token validálása és user info lekérése
-	userInfo, err := api.service.GetUserInfo(token)
+	// Validate token, and get user info
+	userInfo, err := api.service.GetUserInfo(ctx, token)
 	if err != nil {
 		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "invalid_token"})
 	}
@@ -200,7 +204,9 @@ func (api *OAuth2API) RevokeHandler(c echo.Context) error {
 		tokenType = "access_token" // Default to access_token if invalid hint
 	}
 
-	if err := api.service.RevokeToken(token); err != nil {
+	ctx := c.Request().Context()
+
+	if err := api.service.RevokeToken(ctx, token); err != nil {
 		// According to RFC 7009 section 2.2, the authorization server SHOULD
 		// respond with HTTP status code 200 even when the token was invalid
 		log.Error().
@@ -385,7 +391,9 @@ func (api *OAuth2API) DirectGrantHandler(c echo.Context) error {
 		})
 	}
 
-	token, err := api.service.DirectGrant(clientID, clientSecret, username, password, scope)
+	ctx := c.Request().Context()
+
+	token, err := api.service.DirectGrant(ctx, clientID, clientSecret, username, password, scope)
 	if err != nil {
 		log.Error().Err(err).Msg("direct grant failed")
 		return c.JSON(http.StatusBadRequest, echo.Map{
@@ -410,7 +418,9 @@ func (api *OAuth2API) ClientCredentialsHandler(c echo.Context) error {
 		})
 	}
 
-	token, err := api.service.ClientCredentials(clientID, clientSecret, scope)
+	ctx := c.Request().Context()
+
+	token, err := api.service.ClientCredentials(ctx, clientID, clientSecret, scope)
 	if err != nil {
 		log.Error().Err(err).Msg("client credentials grant failed")
 		return c.JSON(http.StatusBadRequest, echo.Map{
@@ -427,18 +437,20 @@ func (api *OAuth2API) handleAuthorizationCodeGrant(c echo.Context, client *clien
 	redirectURI := c.FormValue("redirect_uri")
 	codeVerifier := c.FormValue("code_verifier")
 
+	ctx := c.Request().Context()
+
 	// Validate PKCE if required
-	requiresPKCE, _ := api.clientService.RequiresPKCE(client.ID)
+	requiresPKCE, _ := api.clientService.RequiresPKCE(ctx, client.ID)
 	if requiresPKCE {
 		if codeVerifier == "" {
 			return nil, errors.NewPKCERequired()
 		}
-		if err := api.pkceService.ValidateCodeVerifier(code, codeVerifier); err != nil {
+		if err := api.pkceService.ValidateCodeVerifier(ctx, code, codeVerifier); err != nil {
 			return nil, errors.NewInvalidPKCE(err.Error())
 		}
 	}
 
-	return api.service.ExchangeAuthorizationCode(code, client.ID, client.Secret, redirectURI)
+	return api.service.ExchangeAuthorizationCode(ctx, code, client.ID, client.Secret, redirectURI)
 }
 
 func (api *OAuth2API) handlePasswordGrant(c echo.Context) (*TokenResponse, error) {
@@ -452,12 +464,17 @@ func (api *OAuth2API) handlePasswordGrant(c echo.Context) (*TokenResponse, error
 		return nil, fmt.Errorf("missing required parameters")
 	}
 
-	return api.service.PasswordGrant(username, password, clientID, clientSecret, scope)
+	ctx := c.Request().Context()
+
+	return api.service.PasswordGrant(ctx, username, password, clientID, clientSecret, scope)
 }
 
 func (api *OAuth2API) handleClientCredentialsGrant(c echo.Context, client *client.Client) (*TokenResponse, error) {
 	scope := c.FormValue("scope")
-	return api.service.ClientCredentialsGrant(client.ID, client.Secret, scope)
+
+	ctx := c.Request().Context()
+
+	return api.service.ClientCredentialsGrant(ctx, client.ID, client.Secret, scope)
 }
 
 func (api *OAuth2API) handleRefreshTokenGrant(c echo.Context, client *client.Client) (*TokenResponse, error) {
@@ -466,7 +483,9 @@ func (api *OAuth2API) handleRefreshTokenGrant(c echo.Context, client *client.Cli
 		return nil, errors.NewInvalidRequest("refresh_token is required")
 	}
 
-	return api.service.RefreshToken(refreshToken, client.ID)
+	ctx := c.Request().Context()
+
+	return api.service.RefreshToken(ctx, refreshToken, client.ID)
 }
 
 // IntrospectHandler implements RFC 7662 Token Introspection
@@ -491,7 +510,9 @@ func (api *OAuth2API) IntrospectHandler(c echo.Context) error {
 
 	tokenType := c.FormValue("token_type_hint")
 
-	introspection, err := api.service.IntrospectToken(token, tokenType, clientID, clientSecret)
+	ctx := c.Request().Context()
+
+	introspection, err := api.service.IntrospectToken(ctx, token, tokenType, clientID, clientSecret)
 	if err != nil {
 		log.Error().Err(err).Msg("token introspection failed")
 		// According to RFC 7662, we should still return 200 OK with active=false

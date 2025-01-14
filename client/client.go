@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"crypto/rand"
 	"fmt"
 	"time"
@@ -59,27 +60,6 @@ type JSONWebKey struct {
 	E   string `json:"e,omitempty"` // RSA public exponent
 }
 
-// ClientStore defines the interface for client storage and retrieval
-type ClientStore interface {
-	// CreateClient creates a new OAuth2 client
-	CreateClient(client *Client) error
-
-	// GetClient retrieves a client by ID
-	GetClient(clientID string) (*Client, error)
-
-	// UpdateClient updates an existing client
-	UpdateClient(client *Client) error
-
-	// DeleteClient deletes a client
-	DeleteClient(clientID string) error
-
-	// ListClients returns all clients, with optional filtering
-	ListClients(filter ClientFilter) ([]*Client, error)
-
-	// ValidateClient validates client credentials
-	ValidateClient(clientID, clientSecret string) (*Client, error)
-}
-
 // ClientFilter defines filtering options for listing clients
 type ClientFilter struct {
 	Type     ClientType
@@ -113,7 +93,7 @@ func generateRandomString(length int) string {
 }
 
 // CreateConfidentialClient creates a new confidential client
-func (s *ClientService) CreateConfidentialClient(name string, redirectURIs []string, allowedScopes []string) (*Client, error) {
+func (s *ClientService) CreateConfidentialClient(ctx context.Context, name string, redirectURIs []string, allowedScopes []string) (*Client, error) {
 	client := &Client{
 		ID:            uuid.New().String(),
 		Secret:        generateRandomString(32), // Generate a 32-character random string
@@ -134,7 +114,7 @@ func (s *ClientService) CreateConfidentialClient(name string, redirectURIs []str
 		IsActive:          true,
 	}
 
-	if err := s.store.CreateClient(client); err != nil {
+	if err := s.store.CreateClient(ctx, client); err != nil {
 		return nil, err
 	}
 
@@ -142,7 +122,7 @@ func (s *ClientService) CreateConfidentialClient(name string, redirectURIs []str
 }
 
 // CreatePublicClient creates a new public client
-func (s *ClientService) CreatePublicClient(name string, redirectURIs []string, allowedScopes []string) (*Client, error) {
+func (s *ClientService) CreatePublicClient(ctx context.Context, name string, redirectURIs []string, allowedScopes []string) (*Client, error) {
 	client := &Client{
 		ID:            uuid.New().String(),
 		Type:          Public,
@@ -161,7 +141,7 @@ func (s *ClientService) CreatePublicClient(name string, redirectURIs []string, a
 		IsActive:          true,
 	}
 
-	if err := s.store.CreateClient(client); err != nil {
+	if err := s.store.CreateClient(ctx, client); err != nil {
 		return nil, err
 	}
 
@@ -169,8 +149,8 @@ func (s *ClientService) CreatePublicClient(name string, redirectURIs []string, a
 }
 
 // ValidateRedirectURI checks if a redirect URI is valid for a client
-func (s *ClientService) ValidateRedirectURI(clientID, redirectURI string) error {
-	client, err := s.store.GetClient(clientID)
+func (s *ClientService) ValidateRedirectURI(ctx context.Context, clientID, redirectURI string) error {
+	client, err := s.store.GetClient(ctx, clientID)
 	if err != nil {
 		return err
 	}
@@ -185,8 +165,8 @@ func (s *ClientService) ValidateRedirectURI(clientID, redirectURI string) error 
 }
 
 // ValidateScope checks if requested scopes are allowed for a client
-func (s *ClientService) ValidateScope(clientID string, requestedScopes []string) error {
-	client, err := s.store.GetClient(clientID)
+func (s *ClientService) ValidateScope(ctx context.Context, clientID string, requestedScopes []string) error {
+	client, err := s.store.GetClient(ctx, clientID)
 	if err != nil {
 		return err
 	}
@@ -206,8 +186,8 @@ func (s *ClientService) ValidateScope(clientID string, requestedScopes []string)
 }
 
 // ValidateGrantType checks if a grant type is allowed for a client
-func (s *ClientService) ValidateGrantType(clientID, grantType string) error {
-	client, err := s.store.GetClient(clientID)
+func (s *ClientService) ValidateGrantType(ctx context.Context, clientID, grantType string) error {
+	client, err := s.store.GetClient(ctx, clientID)
 	if err != nil {
 		return err
 	}
@@ -222,8 +202,8 @@ func (s *ClientService) ValidateGrantType(clientID, grantType string) error {
 }
 
 // RequiresPKCE checks if PKCE is required for a client
-func (s *ClientService) RequiresPKCE(clientID string) (bool, error) {
-	client, err := s.store.GetClient(clientID)
+func (s *ClientService) RequiresPKCE(ctx context.Context, clientID string) (bool, error) {
+	client, err := s.store.GetClient(ctx, clientID)
 	if err != nil {
 		return false, err
 	}
@@ -232,11 +212,11 @@ func (s *ClientService) RequiresPKCE(clientID string) (bool, error) {
 }
 
 // GetClient retrieves a client by ID
-func (s *ClientService) GetClient(clientID string) (*Client, error) {
-	return s.store.GetClient(clientID)
+func (s *ClientService) GetClient(ctx context.Context, clientID string) (*Client, error) {
+	return s.store.GetClient(ctx, clientID)
 }
 
 // ValidateClient validates client credentials and returns the client if valid
-func (s *ClientService) ValidateClient(clientID, clientSecret string) (*Client, error) {
-	return s.store.ValidateClient(clientID, clientSecret)
+func (s *ClientService) ValidateClient(ctx context.Context, clientID, clientSecret string) (*Client, error) {
+	return s.store.ValidateClient(ctx, clientID, clientSecret)
 }
