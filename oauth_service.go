@@ -2,11 +2,8 @@ package ssso
 
 import (
 	"context"
-	"crypto/rsa"
 	"crypto/subtle"
-	"encoding/base64"
 	"fmt"
-	"math/big"
 	"strings"
 	"time"
 
@@ -18,7 +15,6 @@ import (
 type OAuthService struct {
 	oauthRepo    OAuthRepository
 	userRepo     UserRepository
-	signingKey   *rsa.PrivateKey
 	tokenService *TokenService
 	keyID        string
 	issuer       string
@@ -28,14 +24,12 @@ type OAuthService struct {
 func NewOAuthService(
 	oauthRepo OAuthRepository,
 	userRepo UserRepository,
-	signingKey *rsa.PrivateKey,
 	tokenService *TokenService,
 	issuer string,
 ) *OAuthService {
 	return &OAuthService{
 		oauthRepo:    oauthRepo,
 		userRepo:     userRepo,
-		signingKey:   signingKey,
 		keyID:        uuid.NewString(), // ! This must be refactored to keystore or something.
 		tokenService: tokenService,
 		issuer:       issuer,
@@ -140,25 +134,31 @@ func (s *OAuthService) RefreshToken(ctx context.Context, refreshToken string, cl
 
 // GetJWKS returns the JSON Web Key Set (JWKS) containing the public key used to sign tokens.
 func (s *OAuthService) GetJWKS() JSONWebKeySet {
-	// The public key of the signing key. This must be set in the constructor.
-	publicKey, _ := s.signingKey.Public().(*rsa.PublicKey)
-
-	// Encode the public key components in base64. This is required by the JWKS spec.
-	mod := base64.RawURLEncoding.EncodeToString(publicKey.N.Bytes())
-	exp := base64.RawURLEncoding.EncodeToString(big.NewInt(int64(publicKey.E)).Bytes())
-
-	return JSONWebKeySet{
-		Keys: []JSONWebKey{
-			{
-				Kid: s.keyID, // Unique Key ID
-				Kty: "RSA",   // Key Type
-				Alg: "RS256", // Algorithm
-				Use: "sig",   // Usage (signature)
-				N:   mod,     // Modulus
-				E:   exp,     // Exponent
-			},
-		},
+	keyset := JSONWebKeySet{
+		Keys: make([]JSONWebKey, 0),
 	}
+
+	if false {
+		// The public key of the signing key. This must be set in the constructor.
+		// publicKey, _ := s.signingKey.Public().(*rsa.PublicKey)
+
+		// Encode the public key components in base64. This is required by the JWKS spec.
+		// mod := base64.RawURLEncoding.EncodeToString(publicKey.N.Bytes())
+		// exp := base64.RawURLEncoding.EncodeToString(big.NewInt(int64(publicKey.E)).Bytes())
+
+		// []JSONWebKey{
+		// 	{
+		// 		Kid: s.keyID, // Unique Key ID
+		// 		Kty: "RSA",   // Key Type
+		// 		Alg: "RS256", // Algorithm
+		// 		Use: "sig",   // Usage (signature)
+		// 		N:   mod,     // Modulus
+		// 		E:   exp,     // Exponent
+		// 	},
+		// }
+	}
+
+	return keyset
 }
 
 // Additional methods for OAuthService
