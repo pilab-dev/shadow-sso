@@ -10,6 +10,10 @@
 
 Shadow SSO provides a complete suite of tools to implement secure authentication and authorization in your Go applications. We've crafted it with clarity and modularity, making it easier to protect your APIs and data. This package is compliant with industry standards, ensuring smooth integration with any client that also adheres to OAuth 2.0 and OIDC principles.
 
+## Activity
+
+![Activity](https://repobeats.axiom.co/api/embed/d3928fa3b3baa758e899f0e6924a65bc10622127.svg "Repobeats analytics image")
+
 ## ✨ Key Features
 
 Shadow SSO is packed with essential functionality to ensure top-tier security and control over access:
