@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/pilab-dev/shadow-sso/api"
 	"github.com/rs/zerolog/log"
 )
 
@@ -40,7 +41,7 @@ func (s *OAuthService) GenerateAuthCode(ctx context.Context, clientID, redirectU
 
 // GenerateTokens exchanges an authorization code for access and refresh tokens.
 // It validates the code and client ID before generating new tokens.
-func (s *OAuthService) GenerateTokens(ctx context.Context, code, clientID string) (*TokenResponse, error) {
+func (s *OAuthService) GenerateTokens(ctx context.Context, code, clientID string) (*api.TokenResponse, error) {
 	// Get and validate the stored auth code
 	authCode, err := s.oauthRepo.GetAuthCode(ctx, code)
 	if err != nil {
@@ -87,7 +88,7 @@ func (s *OAuthService) GenerateTokens(ctx context.Context, code, clientID string
 		return nil, fmt.Errorf("failed to mark auth code as used: %w", err)
 	}
 
-	return &TokenResponse{
+	return &api.TokenResponse{
 		AccessToken:  accessToken,
 		TokenType:    "Bearer",
 		ExpiresIn:    3600,
