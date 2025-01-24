@@ -26,14 +26,14 @@ type AuthCode struct {
 
 // TokenInfo represents metadata about a token.
 type TokenInfo struct {
-	ID        string    `json:"id"`         // Unique token identifier
-	TokenType string    `json:"token_type"` // "access_token" or "refresh_token"
-	ClientID  string    `json:"client_id"`  // Client that the token was issued to
-	UserID    string    `json:"user_id"`    // User that authorized the token
-	Scope     string    `json:"scope"`      // Authorized scopes
-	IssuedAt  time.Time `json:"issued_at"`  // When the token was issued
-	ExpiresAt time.Time `json:"expires_at"` // When the token expires
-	IsRevoked bool      `json:"is_revoked"` // Whether token has been revoked
+	ID        string    `bson:"_id"        json:"id"`         // Unique token identifier
+	TokenType string    `bson:"token_type" json:"token_type"` // "access_token" or "refresh_token"
+	ClientID  string    `bson:"client_id"  json:"client_id"`  // Client that the token was issued to
+	UserID    string    `bson:"user_id"    json:"user_id"`    // User that authorized the token
+	Scope     string    `bson:"scope"      json:"scope"`      // Authorized scopes
+	IssuedAt  time.Time `bson:"issued_at"  json:"issued_at"`  // When the token was issued
+	ExpiresAt time.Time `bson:"expires_at" json:"expires_at"` // When the token expires
+	IsRevoked bool      `bson:"is_revoked" json:"is_revoked"` // Whether token has been revoked
 }
 
 // Client represents an OAuth 2.0 client application.
@@ -50,16 +50,16 @@ type Client struct {
 
 // Token represents an OAuth 2.0 token (access or refresh).
 type Token struct {
-	ID         string    `json:"id"`           // Unique token identifier
-	TokenType  string    `json:"token_type"`   // "access_token" or "refresh_token"
-	TokenValue string    `json:"token_value"`  // The actual token string
-	ClientID   string    `json:"client_id"`    // Client that requested the token
-	UserID     string    `json:"user_id"`      // User who authorized the token
-	Scope      string    `json:"scope"`        // Authorized scopes
-	ExpiresAt  time.Time `json:"expires_at"`   // Expiration timestamp
-	IsRevoked  bool      `json:"is_revoked"`   // Whether token is revoked
-	CreatedAt  time.Time `json:"created_at"`   // Creation timestamp
-	LastUsedAt time.Time `json:"last_used_at"` // Last usage timestamp
+	ID         string    `bson:"_id"          json:"id"`           // Unique token identifier
+	TokenType  string    `bson:"token_type"   json:"token_type"`   // "access_token" or "refresh_token"
+	TokenValue string    `bson:"token_value"  json:"token_value"`  // The actual token string
+	ClientID   string    `bson:"cluent_id"    json:"client_id"`    // Client that requested the token
+	UserID     string    `bson:"user_id"      json:"user_id"`      // User who authorized the token
+	Scope      string    `bson:"scope"        json:"scope"`        // Authorized scopes
+	ExpiresAt  time.Time `bson:"expires_at"   json:"expires_at"`   // Expiration timestamp
+	IsRevoked  bool      `bson:"is_revoked"   json:"is_revoked"`   // Whether token is revoked
+	CreatedAt  time.Time `bson:"created_at"   json:"created_at"`   // Creation timestamp
+	LastUsedAt time.Time `bson:"last_used_at" json:"last_used_at"` // Last usage timestamp
 }
 
 func (t *Token) ToEntry() *cache.TokenEntry {
@@ -166,32 +166,32 @@ type AuthorizationCodeRepository interface {
 	DeleteExpiredAuthCodes(ctx context.Context) error
 }
 
-// SessionRepository defines the interface for OAuth 2.0 session operations.
-type SessionRepository interface {
-	// CreateSession creates a new user session.
-	// Returns an error if the session already exists or if there's a database error.
-	CreateSession(ctx context.Context, userID string, session *UserSession) error
+// // SessionRepository defines the interface for OAuth 2.0 session operations.
+// type SessionRepository interface {
+// 	// CreateSession creates a new user session.
+// 	// Returns an error if the session already exists or if there's a database error.
+// 	CreateSession(ctx context.Context, userID string, session *UserSession) error
 
-	// GetUserSessions retrieves all active sessions for a user.
-	// Returns a slice of sessions if found, or an error if not found or database error.
-	GetUserSessions(ctx context.Context, userID string) ([]UserSession, error)
+// 	// GetUserSessions retrieves all active sessions for a user.
+// 	// Returns a slice of sessions if found, or an error if not found or database error.
+// 	GetUserSessions(ctx context.Context, userID string) ([]UserSession, error)
 
-	// GetSessionByToken retrieves a session by its associated token.
-	// Returns the session if found, or an error if not found or database error.
-	GetSessionByToken(ctx context.Context, token string) (*UserSession, error)
+// 	// GetSessionByToken retrieves a session by its associated token.
+// 	// Returns the session if found, or an error if not found or database error.
+// 	GetSessionByToken(ctx context.Context, token string) (*UserSession, error)
 
-	// UpdateSessionLastUsed updates the last used timestamp of a session.
-	// Returns an error if the session doesn't exist or if there's a database error.
-	UpdateSessionLastUsed(ctx context.Context, sessionID string) error
+// 	// UpdateSessionLastUsed updates the last used timestamp of a session.
+// 	// Returns an error if the session doesn't exist or if there's a database error.
+// 	UpdateSessionLastUsed(ctx context.Context, sessionID string) error
 
-	// RevokeSession invalidates a specific session.
-	// Returns an error if the session doesn't exist or if there's a database error.
-	RevokeSession(ctx context.Context, sessionID string) error
+// 	// RevokeSession invalidates a specific session.
+// 	// Returns an error if the session doesn't exist or if there's a database error.
+// 	RevokeSession(ctx context.Context, sessionID string) error
 
-	// DeleteExpiredSessions removes all expired sessions for a user.
-	// Returns an error if there's a database error during cleanup.
-	DeleteExpiredSessions(ctx context.Context, userID string) error
-}
+// 	// DeleteExpiredSessions removes all expired sessions for a user.
+// 	// Returns an error if there's a database error during cleanup.
+// 	DeleteExpiredSessions(ctx context.Context, userID string) error
+// }
 
 // PkceRepository defines the interface for OAuth 2.0 PKCE operations.
 type PkceRepository interface {
@@ -216,6 +216,6 @@ type OAuthRepository interface {
 
 	AuthorizationCodeRepository
 	// TokenRepository
-	SessionRepository
+	// SessionRepository
 	PkceRepository
 }
