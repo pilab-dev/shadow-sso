@@ -26,15 +26,15 @@ type UserSession struct {
 // User represents a registered user in the system
 type User struct {
 	// Unique identifier for the user
-	ID string
+	ID string `bson:"_id" json:"id"`
 	// Username used for authentication
-	Username string
-	// Hashed password for authentication
-	Password string
+	Username string `bson:"username" json:"username"`
+	// Password is a hashed password for authentication
+	Password string `bson:"password" json:"password"`
 	// Time when the user account was created
-	CreatedAt time.Time
+	CreatedAt time.Time `bson:"created_at" json:"createdAt"`
 	// Time when the user account was last updated
-	UpdatedAt time.Time
+	UpdatedAt time.Time `bson:"updated_at" json:"updatedAt"`
 }
 
 // UserStore defines the interface for user-related data operations
