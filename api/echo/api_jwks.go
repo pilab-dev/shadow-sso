@@ -1,4 +1,4 @@
-package echo
+package sssoecho
 
 import (
 	"net/http"

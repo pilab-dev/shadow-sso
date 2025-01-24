@@ -1,5 +1,5 @@
 //nolint:varnamelen
-package echo
+package sssoecho
 
 import (
 	"fmt"
