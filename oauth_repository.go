@@ -147,29 +147,6 @@ type TokenRepository interface {
 	GetTokenInfo(ctx context.Context, tokenValue string) (*Token, error)
 }
 
-// // ClientRepository defines the interface for OAuth 2.0 client operations.
-// type ClientRepository interface {
-// 	// CreateClient creates a new OAuth client in the repository.
-// 	// Returns an error if the client already exists or if there's a database error.
-// 	CreateClient(ctx context.Context, client *Client) error
-
-// 	// GetClient retrieves a client by its client ID.
-// 	// Returns the client if found, or an error if not found or if there's a database error.
-// 	GetClient(ctx context.Context, clientID string) (*Client, error)
-
-// 	// ValidateClient verifies if the provided client credentials (ID and secret) are valid.
-// 	// Returns nil if valid, or an error if invalid credentials or database error.
-// 	ValidateClient(ctx context.Context, clientID, clientSecret string) error
-
-// 	// UpdateClient updates an existing OAuth client's information.
-// 	// Returns an error if the client doesn't exist or if there's a database error.
-// 	UpdateClient(ctx context.Context, client *Client) error
-
-// 	// DeleteClient removes a client and all associated data from the repository.
-// 	// Returns an error if the client doesn't exist or if there's a database error.
-// 	DeleteClient(ctx context.Context, clientID string) error
-// }
-
 // AuthorizationCodeRepository defines the interface for OAuth 2.0 authorization code operations.
 type AuthorizationCodeRepository interface {
 	// SaveAuthCode stores a new authorization code in the repository.
