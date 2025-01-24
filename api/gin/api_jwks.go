@@ -1,4 +1,4 @@
-package gin
+package sssogin
 
 import (
 	"net/http"

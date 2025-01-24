@@ -1,5 +1,5 @@
 //nolint:varnamelen,tagliatelle
-package gin
+package sssogin
 
 import (
 	"fmt"
