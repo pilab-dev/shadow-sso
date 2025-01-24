@@ -14,7 +14,7 @@ import (
 
 type OAuthService struct {
 	oauthRepo    OAuthRepository
-	userRepo     UserRepository
+	userRepo     UserStore
 	clientRepo   client.ClientStore
 	tokenService *TokenService
 	keyID        string
@@ -24,7 +24,7 @@ type OAuthService struct {
 // NewOAuthService creates a new instance of the OAuthService.
 func NewOAuthService(
 	oauthRepo OAuthRepository,
-	userRepo UserRepository,
+	userRepo UserStore,
 	tokenService *TokenService,
 	issuer string,
 ) *OAuthService {

@@ -17,7 +17,7 @@ type UserRepository struct {
 	sessions *mongo.Collection
 }
 
-func NewUserRepository(ctx context.Context, db *mongo.Database) (ssso.UserRepository, error) {
+func NewUserRepository(ctx context.Context, db *mongo.Database) (ssso.UserStore, error) {
 	repo := &UserRepository{
 		db:       db,
 		users:    db.Collection("users"),

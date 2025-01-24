@@ -11,16 +11,16 @@ import (
 
 // UserSession represents a user's login session
 type UserSession struct {
-	ID           string    `json:"id"`           // Unique session identifier
-	UserID       string    `json:"userId"`       // User ID
-	AccessToken  string    `json:"accessToken"`  // Current access token
-	RefreshToken string    `json:"refreshToken"` // Current refresh token
-	ExpiresAt    time.Time `json:"expiresAt"`    // Session expiration
-	CreatedAt    time.Time `json:"createdAt"`    // When session was created
-	LastUsedAt   time.Time `json:"lastUsedAt"`   // Last activity timestamp
-	DeviceInfo   string    `json:"deviceInfo"`   // Client device information
-	IsRevoked    bool      `json:"isRevoked"`    // Whether session is revoked
-	Scope        string    `json:"scope"`        // ? Requested scope - is this needed? or a good place to store this?
+	ID           string    `bson:"id"            json:"id"`           // Unique session identifier
+	UserID       string    `bson:"user_id"       json:"userId"`       // User ID
+	AccessToken  string    `bson:"access_token"  json:"accessToken"`  // Current access token
+	RefreshToken string    `bson:"refresh_token" json:"refreshToken"` // Current refresh token
+	ExpiresAt    time.Time `bson:"expires_at"    json:"expiresAt"`    // Session expiration
+	CreatedAt    time.Time `bson:"created_at"    json:"createdAt"`    // When session was created
+	LastUsedAt   time.Time `bson:"last_used_at"  json:"lastUsedAt"`   // Last activity timestamp
+	DeviceInfo   string    `bson:"device_info"   json:"deviceInfo"`   // Client device information
+	IsRevoked    bool      `bson:"is_revoked"    json:"isRevoked"`    // Whether session is revoked
+	Scope        string    `bson:"scope"         json:"scope"`        // ? Requested scope - is this needed? or a good place to store this?
 }
 
 // User represents a registered user in the system
@@ -37,8 +37,8 @@ type User struct {
 	UpdatedAt time.Time
 }
 
-// UserRepository defines the interface for user-related data operations
-type UserRepository interface {
+// UserStore defines the interface for user-related data operations
+type UserStore interface {
 	// CreateUser creates a new user with the given username and password
 	// Returns the created user or an error if creation fails
 	CreateUser(ctx context.Context, username, password string) (*User, error)
@@ -61,11 +61,11 @@ type UserRepository interface {
 
 	// UserSessionRepository defines the interface for user session-related data operations
 	// ! TODO: Temporary we are embedding, but should be a separate interface
-	UserSessionRepository
+	UserSessionStore
 }
 
-// UserSessionRepository defines the interface for user session-related data operations.
-type UserSessionRepository interface {
+// UserSessionStore defines the interface for user session-related data operations.
+type UserSessionStore interface {
 	// CreateSession creates a new session for the given user
 	// Returns an error if session creation fails
 	CreateSession(ctx context.Context, userID string, session *UserSession) error

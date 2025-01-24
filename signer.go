@@ -28,7 +28,7 @@ func (s *TokenSigner) AddKeySigner(secretKey string) {
 		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
 		// Sign and get the complete encoded token as a string using the secret
-		tokenString, err := token.SignedString(secretKey)
+		tokenString, err := token.SignedString([]byte(secretKey))
 		if err != nil {
 			return "", fmt.Errorf("failed to sign token: %w", err)
 		}

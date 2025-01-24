@@ -20,29 +20,31 @@ const (
 )
 
 // Client represents an OAuth2 client application
+//
+//nolint:tagliatelle
 type Client struct {
-	ID                string     `json:"client_id"`
-	Secret            string     `json:"client_secret,omitempty"`
-	Type              ClientType `json:"client_type"`
-	Name              string     `json:"client_name"`
-	Description       string     `json:"description,omitempty"`
-	RedirectURIs      []string   `json:"redirect_uris"`
-	PostLogoutURIs    []string   `json:"post_logout_redirect_uris,omitempty"`
-	AllowedScopes     []string   `json:"allowed_scopes"`
-	AllowedGrantTypes []string   `json:"allowed_grant_types"`
-	TokenEndpointAuth string     `json:"token_endpoint_auth_method"`
-	JWKS              *JWKS      `json:"jwks,omitempty"`
-	JWKSUri           string     `json:"jwks_uri,omitempty"`
-	Contacts          []string   `json:"contacts,omitempty"`
-	LogoURI           string     `json:"logo_uri,omitempty"`
-	PolicyURI         string     `json:"policy_uri,omitempty"`
-	TermsURI          string     `json:"tos_uri,omitempty"`
-	RequireConsent    bool       `json:"require_consent"`
-	RequirePKCE       bool       `json:"require_pkce"`
-	CreatedAt         time.Time  `json:"created_at"`
-	UpdatedAt         time.Time  `json:"updated_at"`
-	LastUsed          time.Time  `json:"last_used,omitempty"`
-	IsActive          bool       `json:"is_active"`
+	ID                string     `bson:"client_id" json:"client_id,omitempty"`
+	Secret            string     `bson:"client_secret,omitempty" json:"secret,omitempty"`
+	Type              ClientType `bson:"client_type" json:"type,omitempty"`
+	Name              string     `bson:"client_name" json:"name,omitempty"`
+	Description       string     `bson:"description,omitempty" json:"description,omitempty"`
+	RedirectURIs      []string   `bson:"redirect_uris" json:"redirect_ur_is,omitempty"`
+	PostLogoutURIs    []string   `bson:"post_logout_redirect_uris,omitempty" json:"post_logout_uris,omitempty"`
+	AllowedScopes     []string   `bson:"allowed_scopes" json:"allowed_scopes,omitempty"`
+	AllowedGrantTypes []string   `bson:"allowed_grant_types" json:"allowed_grant_types,omitempty"`
+	TokenEndpointAuth string     `bson:"token_endpoint_auth_method" json:"token_endpoint_auth,omitempty"`
+	JWKS              *JWKS      `bson:"jwks,omitempty" json:"jwks,omitempty"`
+	JWKSUri           string     `bson:"jwks_uri,omitempty" json:"jwks_uri,omitempty"`
+	Contacts          []string   `bson:"contacts,omitempty" json:"contacts,omitempty"`
+	LogoURI           string     `bson:"logo_uri,omitempty" json:"logo_uri,omitempty"`
+	PolicyURI         string     `bson:"policy_uri,omitempty" json:"policy_uri,omitempty"`
+	TermsURI          string     `bson:"tos_uri,omitempty" json:"terms_uri,omitempty"`
+	RequireConsent    bool       `bson:"require_consent" json:"require_consent,omitempty"`
+	RequirePKCE       bool       `bson:"require_pkce" json:"require_pkce,omitempty"`
+	CreatedAt         time.Time  `bson:"created_at" json:"created_at,omitempty"`
+	UpdatedAt         time.Time  `bson:"updated_at" json:"updated_at,omitempty"`
+	LastUsed          time.Time  `bson:"last_used,omitempty" json:"last_used,omitempty"`
+	IsActive          bool       `bson:"is_active" json:"is_active,omitempty"`
 }
 
 // JWKS represents a JSON Web Key Set for client authentication

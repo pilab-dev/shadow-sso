@@ -455,12 +455,11 @@ func (api *OAuth2API) handlePasswordGrant(c echo.Context, cli *client.Client) (*
 	username := c.FormValue("username")
 	password := c.FormValue("password")
 	clientID := c.FormValue("client_id")
-	clientSecret := c.FormValue("client_secret")
 	scope := c.FormValue("scope")
 
-	if username == "" || password == "" || clientID == "" || clientSecret == "" {
+	if username == "" || password == "" || clientID == "" {
 		return nil, errors.NewInvalidRequest("missing required parameters. " +
-			"Required parameters: username, password, client_id, client_secret")
+			"Required parameters: username, password, client_id")
 	}
 
 	ctx := c.Request().Context()
