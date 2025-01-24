@@ -140,11 +140,15 @@ func (api *OAuth2API) TokenHandler(c echo.Context) error {
 	// Validate cli
 	cli, err := api.clientService.ValidateClient(ctx, clientID, clientSecret)
 	if err != nil {
+		log.Error().Err(err).Msg("Invalid client credentials")
+
 		return c.JSON(http.StatusUnauthorized, errors.NewInvalidClient("Invalid client credentials"))
 	}
 
 	// Validate grant type
 	if err := api.clientService.ValidateGrantType(ctx, clientID, grantType); err != nil {
+		log.Error().Err(err).Msg("Grant type not allowed for this client")
+
 		return c.JSON(http.StatusBadRequest, errors.NewUnauthorizedClient("Grant type not allowed for this client"))
 	}
 
@@ -167,9 +171,13 @@ func (api *OAuth2API) TokenHandler(c echo.Context) error {
 
 	if processErr != nil {
 		if oauthErr, ok := processErr.(*errors.OAuth2Error); ok {
+			log.Error().Err(oauthErr).Msg("Token generation failed")
+
 			return c.JSON(http.StatusBadRequest, oauthErr)
 		}
+
 		log.Error().Err(processErr).Msg("Token generation failed")
+
 		return c.JSON(http.StatusInternalServerError, errors.NewServerError("Failed to generate token"))
 	}
 

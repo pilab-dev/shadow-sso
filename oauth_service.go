@@ -15,6 +15,7 @@ import (
 type OAuthService struct {
 	oauthRepo    OAuthRepository
 	userRepo     UserRepository
+	clientRepo   client.ClientStore
 	tokenService *TokenService
 	keyID        string
 	issuer       string
@@ -162,8 +163,8 @@ func (s *OAuthService) GetJWKS() JSONWebKeySet {
 }
 
 // Additional methods for OAuthService
-func (s *OAuthService) ValidateClient(ctx context.Context, clientID, clientSecret string) (*Client, error) {
-	cli, err := s.oauthRepo.GetClient(ctx, clientID)
+func (s *OAuthService) ValidateClient(ctx context.Context, clientID, clientSecret string) (*client.Client, error) {
+	cli, err := s.clientRepo.GetClient(ctx, clientID)
 	if err != nil {
 		return nil, fmt.Errorf("client not found: %w", err)
 	}
@@ -187,7 +188,7 @@ func (s *OAuthService) DirectGrant(ctx context.Context,
 	}
 
 	// Check if password grant is allowed for this client
-	if !contains(cli.GrantTypes, "password") {
+	if !contains(cli.AllowedGrantTypes, "password") {
 		return nil, fmt.Errorf("%w: grant type not allowed for this client", ErrInvalidConfig)
 	}
 
@@ -202,7 +203,7 @@ func (s *OAuthService) DirectGrant(ctx context.Context,
 	}
 
 	// Validate requested scope
-	if !s.validateScope(scope, cli.Scopes) {
+	if !s.validateScope(scope, cli.AllowedScopes) {
 		return nil, ErrInvalidScopeRequest
 	}
 
@@ -249,12 +250,12 @@ func (s *OAuthService) ClientCredentials(ctx context.Context,
 	}
 
 	// Check if client_credentials grant is allowed for this client
-	if !contains(cli.GrantTypes, "client_credentials") {
+	if !contains(cli.AllowedGrantTypes, "client_credentials") {
 		return nil, fmt.Errorf("%w: grant type not allowed for this client", ErrInvalidConfig)
 	}
 
 	// Validate requested scope
-	if !s.validateScope(scope, cli.Scopes) {
+	if !s.validateScope(scope, cli.AllowedScopes) {
 		return nil, ErrInvalidScopeRequest
 	}
 
@@ -332,6 +333,7 @@ func (s *OAuthService) PasswordGrant(ctx context.Context,
 	return s.tokenService.GenerateTokenPair(ctx, cli.ID, user.ID, scope, time.Hour)
 }
 
+//nolint:funlen
 func (s *OAuthService) ExchangeAuthorizationCode(ctx context.Context,
 	code, clientID, clientSecret, redirectURI string,
 ) (*TokenResponse, error) {
@@ -402,7 +404,7 @@ func (s *OAuthService) ExchangeAuthorizationCode(ctx context.Context,
 }
 
 func (s *OAuthService) validateClient(ctx context.Context, clientID, clientSecret string) error {
-	cli, err := s.oauthRepo.GetClient(ctx, clientID)
+	cli, err := s.clientRepo.GetClient(ctx, clientID)
 	if err != nil {
 		return fmt.Errorf("invalid client: %w", err)
 	}
