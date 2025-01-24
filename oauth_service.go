@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/pilab-dev/shadow-sso/api"
 	"github.com/pilab-dev/shadow-sso/client"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -116,7 +117,7 @@ func (s *OAuthService) GetUserSessions(ctx context.Context, userID string) ([]Us
 }
 
 // TokenRefresh refreshes the access token with the refresh token.
-func (s *OAuthService) RefreshToken(ctx context.Context, refreshToken string, clientID string) (*TokenResponse, error) {
+func (s *OAuthService) RefreshToken(ctx context.Context, refreshToken string, clientID string) (*api.TokenResponse, error) {
 	session, err := s.userRepo.GetSessionByToken(ctx, refreshToken)
 	if err != nil {
 		return nil, ErrInvalidRefreshToken
@@ -180,7 +181,7 @@ func (s *OAuthService) ValidateClient(ctx context.Context, clientID, clientSecre
 // DirectGrant implements the Resource Owner Password Credentials flow
 func (s *OAuthService) DirectGrant(ctx context.Context,
 	clientID, clientSecret, username, password, scope string,
-) (*TokenResponse, error) {
+) (*api.TokenResponse, error) {
 	// Validate cli
 	cli, err := s.ValidateClient(ctx, clientID, clientSecret)
 	if err != nil {
@@ -230,7 +231,7 @@ func (s *OAuthService) DirectGrant(ctx context.Context,
 		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
 
-	return &TokenResponse{
+	return &api.TokenResponse{
 		IDToken:      "",
 		AccessToken:  accessToken,
 		TokenType:    "Bearer",
@@ -242,7 +243,7 @@ func (s *OAuthService) DirectGrant(ctx context.Context,
 // ClientCredentials implements the Client Credentials flow
 func (s *OAuthService) ClientCredentials(ctx context.Context,
 	clientID, clientSecret, scope string,
-) (*TokenResponse, error) {
+) (*api.TokenResponse, error) {
 	// Validate cli
 	cli, err := s.ValidateClient(ctx, clientID, clientSecret)
 	if err != nil {
@@ -265,7 +266,7 @@ func (s *OAuthService) ClientCredentials(ctx context.Context,
 		Scope:        scope,
 		ClientID:     clientID,
 		UserID:       "",
-		TokenType:    TokenTypeAccessToken,
+		TokenType:    api.TokenTypeAccessToken,
 		ExpireIn:     time.Hour,
 		SigningKeyID: "",
 	}, nil)
@@ -273,7 +274,7 @@ func (s *OAuthService) ClientCredentials(ctx context.Context,
 		return nil, err
 	}
 
-	return &TokenResponse{
+	return &api.TokenResponse{
 		IDToken:     "",
 		AccessToken: token.TokenValue,
 		TokenType:   "Bearer",
@@ -315,7 +316,7 @@ func contains(slice []string, item string) bool {
 
 func (s *OAuthService) PasswordGrant(ctx context.Context,
 	username, password, scope string, cli *client.Client,
-) (*TokenResponse, error) {
+) (*api.TokenResponse, error) {
 	// Validate user credentials
 	user, err := s.userRepo.GetUserByUsername(ctx, username)
 	if err != nil {
@@ -336,7 +337,7 @@ func (s *OAuthService) PasswordGrant(ctx context.Context,
 //nolint:funlen
 func (s *OAuthService) ExchangeAuthorizationCode(ctx context.Context,
 	code, clientID, clientSecret, redirectURI string,
-) (*TokenResponse, error) {
+) (*api.TokenResponse, error) {
 	// Validate client
 	if err := s.validateClient(ctx, clientID, clientSecret); err != nil {
 		return nil, err
@@ -361,7 +362,7 @@ func (s *OAuthService) ExchangeAuthorizationCode(ctx context.Context,
 		return nil, err
 	}
 
-	tokenResponse := new(TokenResponse)
+	tokenResponse := new(api.TokenResponse)
 	tokenResponse.TokenType = "Bearer"
 	tokenResponse.ExpiresIn = 3600
 
@@ -371,7 +372,7 @@ func (s *OAuthService) ExchangeAuthorizationCode(ctx context.Context,
 		Scope:        authCode.Scope,
 		ClientID:     clientID,
 		UserID:       authCode.UserID,
-		TokenType:    TokenTypeRefreshToken,
+		TokenType:    api.TokenTypeRefreshToken,
 		ExpireIn:     time.Hour, // 1 hour
 		SigningKeyID: "",
 	}, nil)
@@ -388,7 +389,7 @@ func (s *OAuthService) ExchangeAuthorizationCode(ctx context.Context,
 			Scope:        authCode.Scope,
 			ClientID:     clientID,
 			UserID:       authCode.UserID,
-			TokenType:    TokenTypeRefreshToken,
+			TokenType:    api.TokenTypeRefreshToken,
 			ExpireIn:     time.Hour * 24 * 30, // 30 days
 			SigningKeyID: "",
 		}, nil)

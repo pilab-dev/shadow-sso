@@ -7,6 +7,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/pilab-dev/shadow-sso/api"
 	"github.com/pilab-dev/shadow-sso/cache"
 	"github.com/rs/zerolog/log"
 )
@@ -87,7 +88,7 @@ func (s *TokenService) CreateToken(ctx context.Context, opts CreateTokenOptions,
 		return nil, err
 	}
 
-	if opts.TokenType == TokenTypeAccessToken {
+	if opts.TokenType == api.TokenTypeAccessToken {
 		// Store token in cache
 		if err := s.cache.Set(ctx, token.ToEntry()); err != nil {
 			// return nil, fmt.Errorf("failed to cache token: %w", err)
@@ -200,7 +201,7 @@ func (s *TokenService) BuildToken(token *Token) error {
 // GenerateTokenPair creates a new access and refresh token pair
 func (s *TokenService) GenerateTokenPair(ctx context.Context,
 	clientID, userID, scope string, tokenTTL time.Duration,
-) (*TokenResponse, error) {
+) (*api.TokenResponse, error) {
 	// Generate access token
 	accessToken := &Token{
 		ID:         uuid.NewString(),
@@ -249,7 +250,7 @@ func (s *TokenService) GenerateTokenPair(ctx context.Context,
 		log.Warn().Err(err).Msg("failed to cache access token")
 	}
 
-	return &TokenResponse{
+	return &api.TokenResponse{
 		IDToken:      "",
 		AccessToken:  accessToken.TokenValue,
 		TokenType:    "Bearer",
