@@ -35,29 +35,40 @@ type User struct {
 	CreatedAt time.Time `bson:"created_at" json:"createdAt"`
 	// Time when the user account was last updated
 	UpdatedAt time.Time `bson:"updated_at" json:"updatedAt"`
+	// External provider mappings. Useful for external authentication providers,
+	// such as Google, GitHub, etc. The key is the provider name, and the value is
+	// the provider-specific user ID.
+	ExternalProviderMapping map[string]string `bson:"external_provider_mapping" json:"externalProviderMapping"`
+	// Additional user-specific information, such as full name, email, etc.
+	AdditionalUserInfo map[string]any `bson:"additional_user_info" json:"additionalUserInfo"`
 }
 
-// UserStore defines the interface for user-related data operations
+// UserStore defines the interface for user-related data operations.
 type UserStore interface {
-	// CreateUser creates a new user with the given username and password
-	// Returns the created user or an error if creation fails
+	// CreateUser creates a new user with the given username and password.
+	// Returns the created user or an error if creation fails.
 	CreateUser(ctx context.Context, username, password string) (*User, error)
 
-	// GetUserByID retrieves a user by their unique ID
-	// Returns the user or an error if not found
+	// GetUserByID retrieves a user by their unique ID.
+	// Returns the user or an error if not found.
 	GetUserByID(ctx context.Context, id string) (*User, error)
 
-	// GetUserByUsername retrieves a user by their username
-	// Returns the user or an error if not found
+	// GetUserByUsername retrieves a user by their username.
+	// Returns the user or an error if not found.
 	GetUserByUsername(ctx context.Context, username string) (*User, error)
 
-	// UpdateUser updates an existing user's information
-	// Returns an error if the update fails
+	// UpdateUser updates an existing user's information.
+	// Returns an error if the update fails.
 	UpdateUser(ctx context.Context, user *User) error
 
-	// DeleteUser removes a user by their ID
-	// Returns an error if deletion fails
+	// DeleteUser removes a user by their ID.
+	// Returns an error if deletion fails.
 	DeleteUser(ctx context.Context, id string) error
+
+	// FindUserByExternalProviderID retrieves a user by their external provider ID. The
+	// providerID is the name of the external provider, such as "google" or "github".
+	// Returns the user or an error if not found.
+	FindUserByExternalProviderID(ctx context.Context, providerID string, externalID string) (*User, error)
 
 	// UserSessionRepository defines the interface for user session-related data operations
 	// ! TODO: Temporary we are embedding, but should be a separate interface
