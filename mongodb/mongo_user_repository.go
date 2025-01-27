@@ -2,6 +2,7 @@ package mongodb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -10,12 +11,6 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
-
-type UserRepository struct {
-	db       *mongo.Database
-	users    *mongo.Collection
-	sessions *mongo.Collection
-}
 
 func NewUserRepository(ctx context.Context, db *mongo.Database) (ssso.UserStore, error) {
 	repo := &UserRepository{
@@ -30,6 +25,12 @@ func NewUserRepository(ctx context.Context, db *mongo.Database) (ssso.UserStore,
 	}
 
 	return repo, nil
+}
+
+type UserRepository struct {
+	db       *mongo.Database
+	users    *mongo.Collection
+	sessions *mongo.Collection
 }
 
 func (r *UserRepository) createIndexes(ctx context.Context) error {
@@ -61,19 +62,23 @@ func (r *UserRepository) createIndexes(ctx context.Context) error {
 	return err
 }
 
+// CreateUser creates a new user with the given username and password.
+// Returns the created user or an error if creation fails.
 func (r *UserRepository) CreateUser(ctx context.Context, username, password string) (*ssso.User, error) {
 	user := &ssso.User{
-		ID:        NewObjectID(),
-		Username:  username,
-		Password:  password,
-		CreatedAt: time.Now().UTC(),
-		UpdatedAt: time.Now().UTC(),
+		ID:                      NewObjectID(),
+		Username:                username,
+		Password:                password,
+		CreatedAt:               time.Now(),
+		UpdatedAt:               time.Now(),
+		ExternalProviderMapping: map[string]string{},
+		AdditionalUserInfo:      map[string]any{},
 	}
 
 	_, err := r.users.InsertOne(ctx, user)
 	if err != nil {
 		if mongo.IsDuplicateKeyError(err) {
-			return nil, fmt.Errorf("username already exists")
+			return nil, fmt.Errorf("username already exists: %w", err)
 		}
 		return nil, err
 	}
@@ -81,36 +86,50 @@ func (r *UserRepository) CreateUser(ctx context.Context, username, password stri
 	return user, nil
 }
 
+// GetUserByID retrieves a user by their unique ID.
+// Returns the user or an error if not found.
 func (r *UserRepository) GetUserByID(ctx context.Context, id string) (*ssso.User, error) {
 	var user ssso.User
+
 	err := r.users.FindOne(ctx, bson.M{"_id": id}).Decode(&user)
-	if err == mongo.ErrNoDocuments {
-		return nil, fmt.Errorf("user not found")
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, fmt.Errorf("user not found: %w", err)
 	}
+
 	return &user, err
 }
 
+// GetUserByUsername retrieves a user by their username.
+// Returns the user or an error if not found.
 func (r *UserRepository) GetUserByUsername(ctx context.Context, username string) (*ssso.User, error) {
 	var user ssso.User
+
 	err := r.users.FindOne(ctx, bson.M{"username": username}).Decode(&user)
-	if err == mongo.ErrNoDocuments {
-		return nil, fmt.Errorf("user not found")
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, fmt.Errorf("user not found: %w", err)
 	}
+
 	return &user, err
 }
 
+// UpdateUser updates an existing user's information.
+// Returns an error if the update fails.
 func (r *UserRepository) UpdateUser(ctx context.Context, user *ssso.User) error {
 	user.UpdatedAt = time.Now().UTC()
 	_, err := r.users.ReplaceOne(ctx, bson.M{"_id": user.ID}, user)
 	return err
 }
 
+// DeleteUser removes a user by their ID.
+// Returns an error if deletion fails.
 func (r *UserRepository) DeleteUser(ctx context.Context, id string) error {
 	_, err := r.users.DeleteOne(ctx, bson.M{"_id": id})
 	return err
 }
 
-func (r *UserRepository) CreateSession(ctx context.Context, userID string, session *ssso.UserSession) error {
+// CreateSession creates a new session for the given user.
+// Returns an error if session creation fails.
+func (r *UserRepository) CreateSession(ctx context.Context, _ string, session *ssso.UserSession) error {
 	_, err := r.sessions.InsertOne(ctx, session)
 	return err
 }
@@ -141,8 +160,8 @@ func (r *UserRepository) GetSessionByToken(ctx context.Context, accessToken stri
 		"is_revoked":   false,
 		"expires_at":   bson.M{"$gt": time.Now().UTC()},
 	}).Decode(&session)
-	if err == mongo.ErrNoDocuments {
-		return nil, fmt.Errorf("session not found")
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, fmt.Errorf("session not found: %w", err)
 	}
 	return &session, err
 }
@@ -172,6 +191,29 @@ func (r *UserRepository) DeleteExpiredSessions(ctx context.Context, userID strin
 		},
 	})
 	return err
+}
+
+// FindUserByExternalProviderID implements ssso.UserStore.
+func (r *UserRepository) FindUserByExternalProviderID(ctx context.Context,
+	providerID string, externalID string,
+) (*ssso.User, error) {
+	filter := bson.M{
+		"external_provider_mapping": bson.M{
+			providerID: externalID,
+		},
+	}
+
+	var user ssso.User
+
+	err := r.users.FindOne(ctx, filter).Decode(&user)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, fmt.Errorf("user not found: %w", err)
+		}
+		return nil, err
+	}
+
+	return &user, nil
 }
 
 func (r *UserRepository) Close() error {
