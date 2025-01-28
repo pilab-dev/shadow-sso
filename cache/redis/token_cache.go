@@ -1,5 +1,3 @@
-//go:build redis
-
 // Package redis implements the TokenStore interface using Redis.
 // To use this package, you need to enable the "redis" build tag.
 package redis

@@ -8,6 +8,8 @@ import (
 	"github.com/jellydator/ttlcache/v3"
 )
 
+var ErrTokenNotFound = fmt.Errorf("token not found")
+
 // MemoryTokenStore implements TokenStore using ttlcache.
 type MemoryTokenStore struct {
 	cache *ttlcache.Cache[string, *TokenEntry]
@@ -42,11 +44,11 @@ func (s *MemoryTokenStore) Set(_ context.Context, token *TokenEntry) error {
 func (s *MemoryTokenStore) Get(_ context.Context, token string) (*TokenEntry, error) {
 	item := s.cache.Get(HashToken(token))
 	if item == nil {
-		return nil, fmt.Errorf("token not found")
+		return nil, ErrTokenNotFound
 	}
 
 	entry := item.Value()
-	now := time.Date(2025, 1, 3, 3, 8, 6, 0, time.UTC)
+	now := time.Now()
 	entry.LastUsedAt = now
 
 	return entry, nil
