@@ -7,16 +7,16 @@ import (
 	"time"
 
 	ssso "github.com/pilab-dev/shadow-sso"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 func NewUserRepository(ctx context.Context, db *mongo.Database) (ssso.UserStore, error) {
 	repo := &UserRepository{
 		db:       db,
-		users:    db.Collection("users"),
-		sessions: db.Collection("sessions"),
+		users:    db.Collection(UsersCollection),
+		sessions: db.Collection(UserSessionsCollection),
 	}
 
 	// Create indexes

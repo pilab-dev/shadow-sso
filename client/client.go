@@ -54,12 +54,20 @@ type JWKS struct {
 
 // JSONWebKey represents a public key in JWK format
 type JSONWebKey struct {
-	Kid string `json:"kid"`
-	Kty string `json:"kty"`
-	Alg string `json:"alg"`
-	Use string `json:"use"`
+	Kid string `json:"kid"`         // Key ID
+	Kty string `json:"kty"`         // Key type
+	Alg string `json:"alg"`         // Algorithm
+	Use string `json:"use"`         // Key usage (e.g., "sig" for signature)
 	N   string `json:"n,omitempty"` // RSA modulus
 	E   string `json:"e,omitempty"` // RSA public exponent
+
+	P string `json:"p,omitempty"` // RSA prime factor
+	Q string `json:"q,omitempty"` // RSA private exponent
+	D string `json:"d,omitempty"` // RSA private exponent
+
+	Qi string `json:"qi,omitempty"` // RSA other prime factor
+	Dq string `json:"dq,omitempty"` // RSA private exponent
+	Dp string `json:"dp,omitempty"` // RSA private exponent
 }
 
 // ClientFilter defines filtering options for listing clients

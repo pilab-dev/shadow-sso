@@ -192,12 +192,14 @@ func (oa *OAuth2API) TokenHandler(c *gin.Context) {
 			log.Error().Err(oauthErr).Msg("Token generation failed")
 
 			c.JSON(http.StatusBadRequest, oauthErr)
+
 			return
 		}
 
 		log.Error().Err(processErr).Msg("Token generation failed")
 
 		c.JSON(http.StatusInternalServerError, errors.NewServerError("Failed to generate token"))
+
 		return
 	}
 

@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/pilab-dev/shadow-sso/client"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
 var (
@@ -24,7 +24,7 @@ type ClientRepository struct {
 // NewClientRepository creates a new MongoStore instance.
 func NewClientRepository(db *mongo.Database) (*ClientRepository, error) {
 	return &ClientRepository{
-		coll: db.Collection("clients"),
+		coll: db.Collection("oauth_clients"),
 	}, nil
 }
 

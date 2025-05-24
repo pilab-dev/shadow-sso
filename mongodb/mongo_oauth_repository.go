@@ -8,9 +8,9 @@ import (
 
 	ssso "github.com/pilab-dev/shadow-sso"
 	"github.com/pilab-dev/shadow-sso/cache"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 type OAuthRepository struct {
@@ -26,11 +26,11 @@ type OAuthRepository struct {
 func NewOAuthRepository(ctx context.Context, db *mongo.Database) (ssso.OAuthRepository, error) {
 	repo := &OAuthRepository{
 		db:         db,
-		clients:    db.Collection("oauth_clients"),
-		authCodes:  db.Collection("auth_codes"),
-		tokens:     db.Collection("tokens"),
-		challenges: db.Collection("pkce_challenges"),
-		sessions:   db.Collection("user_sessions"), // Initialize sessions collection
+		clients:    db.Collection(ClientsCollection),
+		authCodes:  db.Collection(CodesCollection),
+		tokens:     db.Collection(TokensCollection),
+		challenges: db.Collection(ChallengesCollection),
+		sessions:   db.Collection(UserSessionsCollection), // Initialize sessions collection
 	}
 
 	if err := repo.createIndexes(ctx); err != nil {
@@ -182,7 +182,7 @@ func (r *OAuthRepository) MarkAuthCodeAsUsed(ctx context.Context, code string) e
 	return err
 }
 
-// Token operations
+// StoreToken saves a new access or refresh token in the repository.
 func (r *OAuthRepository) StoreToken(ctx context.Context, token *ssso.Token) error {
 	_, err := r.tokens.InsertOne(ctx, token)
 	return err
