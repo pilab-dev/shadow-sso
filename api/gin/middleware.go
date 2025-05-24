@@ -72,10 +72,11 @@ func UserAuthMiddleware(tokenService *ssso.TokenService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tp := otel.GetTracerProvider()
 		ctx, span := tp.Tracer("").Start(c.Request.Context(), "JWTAuthMiddleware")
-		defer span.End()
 
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
+			span.End()
+
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"code": "missing_authorization_header",
 				"msg":  "Missing Authorization header",
@@ -88,6 +89,9 @@ func UserAuthMiddleware(tokenService *ssso.TokenService) gin.HandlerFunc {
 		log.Warn().Ctx(ctx).Msg("Token is not introspected. With a zero-trust architecture, we should introspect the token.")
 
 		if err != nil {
+			span.RecordError(fmt.Errorf("invalid authorization header: %w", err))
+			span.End()
+
 			c.AbortWithStatusJSON(401, gin.H{
 				"code": "invalid_authorization_header",
 				"msg":  "Invalid Authorization header",
@@ -100,6 +104,9 @@ func UserAuthMiddleware(tokenService *ssso.TokenService) gin.HandlerFunc {
 		if err != nil {
 			log.Ctx(c.Request.Context()).Error().Ctx(ctx).Err(err).Msg("failed to validate JWT token")
 
+			span.RecordError(err)
+			span.End()
+
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"code": "invalid_token",
 				"msg":  "Invalid token",
@@ -108,17 +115,7 @@ func UserAuthMiddleware(tokenService *ssso.TokenService) gin.HandlerFunc {
 			return
 		}
 
-		// ! Do not need to check the signature, as it is already checked in the middleware
-		// claims, err := ParseClaims(jwtToken)
-		// if err != nil {
-		// 	log.Ctx(c.Request.Context()).Error().Ctx(ctx).Err(err).Msg("failed to parse JWT token")
-		// 	c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-		// 		"code": "invalid_token",
-		// 		"msg":  "Invalid token",
-		// 	})
-
-		// 	return
-		// }
+		span.End()
 
 		c.Set(AuthUserIDKey, token.UserID)
 		c.Set("scope", token.Scope)
