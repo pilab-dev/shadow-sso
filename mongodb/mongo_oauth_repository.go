@@ -7,7 +7,7 @@ import (
 	"time"
 
 	ssso "github.com/pilab-dev/shadow-sso"
-	"github.com/pilab-dev/shadow-sso/cache"
+	"github.com/pilab-dev/shadow-sso/v1/cache"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"

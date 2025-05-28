@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/pilab-dev/shadow-sso/api"
+	"github.com/pilab-dev/shadow-sso/v1/api"
 	"github.com/rs/zerolog/log"
 )
 

@@ -5,7 +5,7 @@
 <p align="center">
    <a href="https://github.com/pilab-dev/shadow-sso"><img src="https://img.shields.io/github/stars/pilab-dev/shadow-sso?style=social" alt="GitHub stars"></a>
    <a href="https://pkg.go.dev/github.com/pilab-dev/shadow-sso"><img src="https://pkg.go.dev/badge/github.com/pilab-dev/shadow-sso" alt="Go Reference"></a>
-   <a href="https://github.com/pilab-dev/shadow-sso/blob/main/LICENSE"><img src="https://img.shields.io/github/license/pilab-dev/shadow-sso" alt="License"></a>
+   <a href="https://github.com/pilab-dev/shadow-sso/v1/blob/main/LICENSE"><img src="https://img.shields.io/github/license/pilab-dev/shadow-sso" alt="License"></a>
  </p>
 
 Shadow SSO provides a complete suite of tools to implement secure authentication and authorization in your Go applications. We've crafted it with clarity and modularity, making it easier to protect your APIs and data. This package is compliant with industry standards, ensuring smooth integration with any client that also adheres to OAuth 2.0 and OIDC principles.
@@ -53,7 +53,7 @@ Here's a glimpse of what you need to launch Shadow SSO. Make sure that you fill 
     import (
         "github.com/labstack/echo/v4"
         ssso "github.com/pilab-dev/shadow-sso"
-        "github.com/pilab-dev/shadow-sso/client"
+        "github.com/pilab-dev/shadow-sso/v1/client"
         "crypto/rsa"
         "log"
     )
@@ -234,7 +234,7 @@ This package adopts the best practices when reporting errors during processes. I
 
 ## ❤️ Contributing
 
-We appreciate any form of contribution! Please take time to follow the rules on the official guidelines, you are always welcomed: **https://github.com/pilab-dev/shadow-sso/blob/main/.github/CONTRIBUTING.md**.
+We appreciate any form of contribution! Please take time to follow the rules on the official guidelines, you are always welcomed: **https://github.com/pilab-dev/shadow-sso/v1/blob/main/.github/CONTRIBUTING.md**.
 
 ## 📜 License
 

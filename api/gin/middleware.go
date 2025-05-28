@@ -1,3 +1,5 @@
+//go:build gin
+
 // ! TODO: Check the validity of the token
 package sssogin
 

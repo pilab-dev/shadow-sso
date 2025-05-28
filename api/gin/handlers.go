@@ -1,3 +1,5 @@
+//go:build gin
+
 //nolint:varnamelen,tagliatelle
 package sssogin
 
@@ -8,9 +10,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	ssso "github.com/pilab-dev/shadow-sso"
-	sssoapi "github.com/pilab-dev/shadow-sso/api"
-	"github.com/pilab-dev/shadow-sso/client"
-	"github.com/pilab-dev/shadow-sso/errors"
+	sssoapi "github.com/pilab-dev/shadow-sso/v1/api"
+	"github.com/pilab-dev/shadow-sso/v1/client"
+	"github.com/pilab-dev/shadow-sso/v1/errors"
 	"github.com/rs/zerolog/log"
 )
 

@@ -1,3 +1,5 @@
+//go:build echo
+
 package sssoecho
 
 import (

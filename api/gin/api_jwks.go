@@ -1,3 +1,5 @@
+//go:build gin
+
 package sssogin
 
 import (

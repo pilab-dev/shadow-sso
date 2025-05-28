@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pilab-dev/shadow-sso/client"
+	"github.com/pilab-dev/shadow-sso/v1/client"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )
