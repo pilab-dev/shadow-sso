@@ -6,7 +6,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/pilab-dev/shadow-sso/cache"
+	"github.com/pilab-dev/shadow-sso/v1/cache"
 )
 
 // AuthCode represents an OAuth 2.0 authorization code.
