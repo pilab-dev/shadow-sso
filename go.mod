@@ -1,4 +1,4 @@
-module github.com/pilab-dev/shadow-sso
+module github.com/pilab-dev/shadow-sso/v1
 
 go 1.23.4
 

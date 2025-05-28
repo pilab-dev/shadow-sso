@@ -1,0 +1,41 @@
+name: Tag the development version
+
+on:
+  push:
+    branches:
+      - v*
+      - develop
+
+jobs:
+  version_and_tag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Grant write permissions for creating tags and commits
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: '0' # Fetch all history for accurate versioning
+
+      - name: Configure Git
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+
+      - name: Determine Version Bump and Tag
+        id: semver # Give this step an ID to reference its outputs
+        uses: anothrNick/github-tag-action@v1 # Use a specific version for stability
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # if you don't want to set write permissions use a PAT token
+          TAG_PREFIX: v
+          PRERELEASE: false
+          RELEASE_BRANCHES: release.*,hotfix.*,master
+          DEFAULT_BUMP: patch
+ 
+      - name: Display new version (for debugging)
+        run: |
+          echo "New Tag created: ${{ steps.semver.outputs.new_tag }}"
+          echo "Old tag: ${{ steps.semver.outputs.old_tag }}"
+          echo "The value of the latest tag after running this action: ${{ steps.semver.outputs.tag }}"
+          echo "Part: ${{ steps.semver.outputs.part }}"
