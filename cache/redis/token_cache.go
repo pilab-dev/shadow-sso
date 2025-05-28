@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/pilab-dev/shadow-sso/v1/cache"
+	"github.com/pilab-dev/shadow-sso/cache"
 	"github.com/redis/go-redis/v9"
 )
 

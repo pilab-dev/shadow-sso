@@ -10,9 +10,9 @@ import (
 
 	"github.com/labstack/echo/v4"
 	ssso "github.com/pilab-dev/shadow-sso"
-	sssoapi "github.com/pilab-dev/shadow-sso/v1/api"
-	"github.com/pilab-dev/shadow-sso/v1/client"
-	"github.com/pilab-dev/shadow-sso/v1/errors"
+	sssoapi "github.com/pilab-dev/shadow-sso/api"
+	"github.com/pilab-dev/shadow-sso/client"
+	"github.com/pilab-dev/shadow-sso/errors"
 	"github.com/rs/zerolog/log"
 )
 
