@@ -8,7 +8,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jellydator/ttlcache/v3 v3.3.0
 	github.com/labstack/echo/v4 v4.13.4
-	github.com/redis/go-redis/v9 v9.7.3
+	github.com/redis/go-redis/v9 v9.9.0
 	github.com/rs/zerolog v1.34.0
 	go.mongodb.org/mongo-driver/v2 v2.2.1
 	go.opentelemetry.io/otel v1.35.0
