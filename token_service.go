@@ -7,8 +7,8 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
-	"github.com/pilab-dev/shadow-sso/v1/api"
-	"github.com/pilab-dev/shadow-sso/v1/cache"
+	"github.com/pilab-dev/shadow-sso/api"
+	"github.com/pilab-dev/shadow-sso/cache"
 	"github.com/rs/zerolog/log"
 )
 
