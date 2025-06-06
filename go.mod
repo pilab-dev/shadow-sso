@@ -10,7 +10,7 @@ require (
 	github.com/labstack/echo/v4 v4.13.4
 	github.com/redis/go-redis/v9 v9.9.0
 	github.com/rs/zerolog v1.34.0
-	go.mongodb.org/mongo-driver/v2 v2.2.1
+	go.mongodb.org/mongo-driver/v2 v2.2.2
 	go.opentelemetry.io/otel v1.36.0
 	golang.org/x/crypto v0.38.0
 )
