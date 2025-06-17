@@ -19,6 +19,29 @@ import (
 
 var errMissingKidSAValidation = errors.New("missing kid header, not a service account token, try other validation")
 
+// TokenInfo is a simplified struct for token introspection results.
+type TokenInfo struct {
+	ID         string
+	TokenType  string
+	ClientID   string
+	UserID     string
+	Scope      string
+	IssuedAt   time.Time
+	ExpiresAt  time.Time
+	IsRevoked  bool
+	// Add Issuer string if needed from introspection
+}
+
+// TokenRepository defines the interface for storing and retrieving user OAuth tokens.
+type TokenRepository interface {
+	StoreToken(ctx context.Context, token *Token) error
+	GetAccessToken(ctx context.Context, tokenValue string) (*Token, error) // Used by TokenService fallback
+	RevokeToken(ctx context.Context, tokenValue string) error             // Used by TokenService.RevokeToken
+	GetRefreshTokenInfo(ctx context.Context, tokenValue string) (*TokenInfo, error) // Used by TokenService
+	GetAccessTokenInfo(ctx context.Context, tokenValue string) (*TokenInfo, error)  // Used by TokenService
+	// Potentially GetRefreshToken(ctx, tokenValue) (*Token, error) if refresh grant is fully supported
+}
+
 // TokenService handles token generation and validation
 type TokenService struct {
 	repo   TokenRepository

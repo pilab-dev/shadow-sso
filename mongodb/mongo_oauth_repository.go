@@ -482,3 +482,6 @@ func (r *OAuthRepository) Close() error {
 
 	return r.db.Client().Disconnect(ctx)
 }
+
+// Compile-time check to ensure OAuthRepository implements ssso.TokenRepository
+var _ ssso.TokenRepository = (*OAuthRepository)(nil)
