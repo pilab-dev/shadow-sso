@@ -16,22 +16,22 @@ import (
 // AuthServer implements the ssov1connect.AuthServiceHandler interface.
 type AuthServer struct {
 	ssov1connect.UnimplementedAuthServiceHandler // Embed for forward compatibility
-	userRepo     domain.UserRepository
-	// sessionRepo domain.SessionRepository // Assuming SessionRepository is also in domain package
-	tokenService   *ssso.TokenService // Use concrete type
+	userRepo       domain.UserRepository
+	sessionRepo    domain.SessionRepository // Added SessionRepository
+	tokenService   *ssso.TokenService
 	passwordHasher PasswordHasher
 }
 
 // NewAuthServer creates a new AuthServer.
 func NewAuthServer(
 	userRepo domain.UserRepository,
-	// sessionRepo domain.SessionRepository,
-	tokenService *ssso.TokenService, // Use concrete type
+	sessionRepo domain.SessionRepository, // Added SessionRepository
+	tokenService *ssso.TokenService,
 	passwordHasher PasswordHasher,
 ) *AuthServer {
 	return &AuthServer{
 		userRepo:       userRepo,
-		// sessionRepo:    sessionRepo,
+		sessionRepo:    sessionRepo, // Initialize SessionRepository
 		tokenService:   tokenService,
 		passwordHasher: passwordHasher,
 	}

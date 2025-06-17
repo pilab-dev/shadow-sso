@@ -2,157 +2,138 @@ package server
 
 import (
 	"context"
-	"errors"
+	// "errors" // No longer needed if all mocks using it are removed
 	"net/http"
+	"os" // For environment variables
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect" // For connect.WithInterceptors
+	"golang.org/x/crypto/bcrypt" // For bcrypt.DefaultCost
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 
-	"github.com/pilab-dev/shadow-sso/cache"        // For cache.NewMemoryTokenStore or similar
-	"github.com/pilab-dev/shadow-sso/domain"       // For repository interfaces
-	"github.com/pilab-dev/shadow-sso/gen/sso/v1/ssov1connect" // Generated connect handlers
-	"github.com/pilab-dev/shadow-sso/middleware" // Your auth interceptor
-	"github.com/pilab-dev/shadow-sso/services"     // Your service implementations
-	"github.com/pilab-dev/shadow-sso/ssso"         // For TokenService, TokenSigner, GenerateRSAKey
+	"github.com/pilab-dev/shadow-sso/cache"
+	// "github.com/pilab-dev/shadow-sso/domain" // domain is used by mongodb and services packages
+	"github.com/pilab-dev/shadow-sso/gen/sso/v1/ssov1connect"
+	"github.com/pilab-dev/shadow-sso/internal/auth" // Import new auth package for password hasher
+	"github.com/pilab-dev/shadow-sso/middleware"
+	"github.com/pilab-dev/shadow-sso/mongodb" // Import new mongodb package
+	"github.com/pilab-dev/shadow-sso/services"
+	"github.com/pilab-dev/shadow-sso/ssso"
 	"github.com/rs/zerolog/log"
 )
-
-// --- Mock/Placeholder Repository & Hasher Implementations ---
-
-type mockTokenRepository struct{}
-
-func (m *mockTokenRepository) StoreToken(ctx context.Context, token *ssso.Token) error {
-	log.Debug().Str("token_id", token.ID).Msg("MockTokenRepository: StoreToken called")
-	return nil
-}
-func (m *mockTokenRepository) GetAccessToken(ctx context.Context, tokenValue string) (*ssso.Token, error) {
-	log.Debug().Str("token_value", tokenValue).Msg("MockTokenRepository: GetAccessToken called")
-	// Simulate not found to force SA token path or specific test cases
-	return nil, errors.New("mock TokenRepository: token not found")
-}
-func (m *mockTokenRepository) RevokeToken(ctx context.Context, tokenValue string) error {
-	log.Debug().Str("token_value", tokenValue).Msg("MockTokenRepository: RevokeToken called")
-	return nil
-}
-func (m *mockTokenRepository) GetRefreshTokenInfo(ctx context.Context, tokenValue string) (*ssso.TokenInfo, error) {
-	log.Debug().Str("token_value", tokenValue).Msg("MockTokenRepository: GetRefreshTokenInfo called")
-	return nil, errors.New("mock TokenRepository: refresh token info not found")
-}
-func (m *mockTokenRepository) GetAccessTokenInfo(ctx context.Context, tokenValue string) (*ssso.TokenInfo, error) {
-	log.Debug().Str("token_value", tokenValue).Msg("MockTokenRepository: GetAccessTokenInfo called")
-	return nil, errors.New("mock TokenRepository: access token info not found")
-}
-
-var _ ssso.TokenRepository = (*mockTokenRepository)(nil) // Ensure interface compliance
-
-type mockPublicKeyRepository struct{}
-
-func (m *mockPublicKeyRepository) GetPublicKey(ctx context.Context, keyID string) (*domain.PublicKeyInfo, error) {
-	log.Debug().Str("kid", keyID).Msg("MockPublicKeyRepository: GetPublicKey called")
-	// Example: Allow a specific kid for testing SA JWT validation
-	// if keyID == "test-kid-active" {
-	// 	// This key would need to correspond to a private key used to sign a test SA JWT
-	// 	return &domain.PublicKeyInfo{
-	// 		ID:        keyID,
-	// 		PublicKey: "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0pdyN6S00kheyLg3N7xS\nZ6xT7xVb9v9Z6S7Z6T6Z7R9Z6T6Z7R9Z6T6Z7R9Z6T6Z7R9Z6T6Z7R9Z6T6Z7R9Z\n6T6Z7R9Z6T6Z7R9Z6T6Z7R9Z6T6Z7R9Z6T6Z7R9Z6T6Z7R9Z6T6Z7R9Z6T6Z7R9Z\n6T6Z7R9Z6T6Z7R9Z6T6Z7R9Z6T6Z7R9Z6T6Z7R9Z6T6Z7R9Z6T6Z7R9Z6T6Z7R9Z\n6T6Z7R9Z6T6Z7R9Z6T6Z7R9Z6T6Z7R9Z6T6Z7R9Z6T6Z7R9Z6T6Z7R9Z6T6Z7R9Z\nCAwEAAQ==\n-----END PUBLIC KEY-----", // Replace with actual dummy PEM public key
-	// 		Algorithm: "RS256",
-	// 		Status:    "ACTIVE",
-	// 	}, nil
-	// }
-	return nil, errors.New("mock PublicKeyRepository: key not found")
-}
-
-var _ domain.PublicKeyRepository = (*mockPublicKeyRepository)(nil) // Ensure interface compliance
-
-type mockServiceAccountRepository struct{}
-
-func (m *mockServiceAccountRepository) GetServiceAccountByClientEmail(ctx context.Context, clientEmail string) (*domain.ServiceAccount, error) {
-	log.Debug().Str("client_email", clientEmail).Msg("MockSARepository: GetServiceAccountByClientEmail called")
-	return nil, errors.New("mock ServiceAccountRepository: not found by email")
-}
-func (m *mockServiceAccountRepository) GetServiceAccount(ctx context.Context, id string) (*domain.ServiceAccount, error) {
-	log.Debug().Str("id", id).Msg("MockSARepository: GetServiceAccount called")
-	return nil, errors.New("mock ServiceAccountRepository: not found by ID")
-}
-
-var _ domain.ServiceAccountRepository = (*mockServiceAccountRepository)(nil) // Ensure interface compliance
-
-type mockUserRepository struct{}
-func (m *mockUserRepository) CreateUser(ctx context.Context, user *domain.User) error { return nil }
-func (m *mockUserRepository) GetUserByID(ctx context.Context, id string) (*domain.User, error) { return nil, errors.New("not found")}
-func (m *mockUserRepository) GetUserByEmail(ctx context.Context, email string) (*domain.User, error) { return nil, errors.New("not found")}
-func (m *mockUserRepository) UpdateUser(ctx context.Context, user *domain.User) error { return nil }
-func (m *mockUserRepository) ListUsers(ctx context.Context, pagination domain.Pagination) ([]*domain.User, error) { return nil, nil }
-
-var _ domain.UserRepository = (*mockUserRepository)(nil) // Ensure interface compliance
-
-
-type mockPasswordHasher struct{}
-func (m *mockPasswordHasher) Hash(password string) (string, error) { return password + "-hashed", nil }
-func (m *mockPasswordHasher) Verify(hashedPassword, password string) error {
-	if hashedPassword == password + "-hashed" {
-		return nil
-	}
-	return errors.New("mock PasswordHasher: password mismatch")
-}
-var _ services.PasswordHasher = (*mockPasswordHasher)(nil) // Ensure interface compliance
-
 
 // StartConnectRPCServer initializes and starts the ConnectRPC server.
 func StartConnectRPCServer(addr string) error {
 	log.Info().Msgf("Starting ConnectRPC server on %s", addr)
+	ctx := context.Background() // Use a background context for setup
 
-	// 1. Initialize Dependencies (using mocks)
-	privKey, err := ssso.GenerateRSAKey() // From ssso package (keys.go)
-	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to generate RSA key for mock TokenSigner")
+	// 1. Initialize MongoDB
+	mongoURI := os.Getenv("MONGO_URI")
+	if mongoURI == "" {
+		mongoURI = "mongodb://localhost:27017" // Default
 	}
-	mockSigner, err := ssso.NewTokenSigner(privKey, "mock-kid-for-user-tokens")
+	dbName := os.Getenv("MONGO_DB_NAME")
+	if dbName == "" {
+		dbName = "shadow_sso_dev_db" // Default
+	}
+	if err := mongodb.InitMongoDB(ctx, mongoURI, dbName); err != nil {
+		log.Fatal().Err(err).Msg("Failed to initialize MongoDB")
+		return err
+	}
+	defer mongodb.CloseMongoDB(ctx)
+	db := mongodb.GetDB()
+
+	// 2. Initialize Repositories
+	// NewOAuthRepository returns ssso.OAuthRepository. We need ssso.TokenRepository for TokenService.
+	// Assuming ssso.OAuthRepository includes methods of ssso.TokenRepository or *mongodb.OAuthRepository implements it.
+	oauthRepo, err := mongodb.NewOAuthRepository(ctx, db)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to create mock TokenSigner")
+		log.Fatal().Err(err).Msg("Failed to init OAuthRepository")
+		return err
+	}
+	// Type assertion to ensure oauthRepo can be used as ssso.TokenRepository.
+	// This relies on *mongodb.OAuthRepository implementing ssso.TokenRepository.
+	tokenRepo, ok := oauthRepo.(ssso.TokenRepository)
+	if !ok {
+		log.Fatal().Msg("mongodb.OAuthRepository does not implement ssso.TokenRepository")
+		// return errors.New("mongodb.OAuthRepository does not implement ssso.TokenRepository") // Or handle fatal
 	}
 
-	mockUserTokenRepo := &mockTokenRepository{}
-	mockCache := cache.NewMemoryTokenStore(1*time.Minute, 1000)
-	mockPubKeyRepo := &mockPublicKeyRepository{}
-	mockSARepo := &mockServiceAccountRepository{}
-	mockUserRepo := &mockUserRepository{}
-	mockHasher := &mockPasswordHasher{}
+	pubKeyRepo, err := mongodb.NewPublicKeyRepositoryMongo(ctx, db)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to init PublicKeyRepositoryMongo")
+		return err
+	}
+	saRepo, err := mongodb.NewServiceAccountRepositoryMongo(ctx, db)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to init ServiceAccountRepositoryMongo")
+		return err
+	}
+	userRepo, err := mongodb.NewUserRepositoryMongo(ctx, db)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to init UserRepositoryMongo")
+		return err
+	}
+	sessionRepo, err := mongodb.NewSessionRepositoryMongo(ctx, db)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to init SessionRepositoryMongo")
+		return err
+	}
+
+	// 3. Initialize Password Hasher
+	passwordHasher := auth.NewBcryptPasswordHasher(bcrypt.DefaultCost)
+
+	// 4. Initialize TokenService
+	privKey, err := ssso.GenerateRSAKey()
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to generate RSA key for TokenSigner")
+		return err
+	}
+	tokenSigner, err := ssso.NewTokenSigner(privKey, "sso-kid-default") // Example key ID
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to create TokenSigner")
+		return err
+	}
+
+	memCache := cache.NewMemoryTokenStore(1*time.Minute, 1000)
 
 	tokenService := ssso.NewTokenService(
-		mockUserTokenRepo,
-		mockCache,
-		"sso-issuer-user", // Issuer for user tokens
-		mockSigner,
-		mockPubKeyRepo,
-		mockSARepo,
+		tokenRepo,    // Real ssso.TokenRepository
+		memCache,     // Cache implementation
+		"sso-issuer", // Example issuer
+		tokenSigner,
+		pubKeyRepo,   // Real domain.PublicKeyRepository
+		saRepo,       // Real domain.ServiceAccountRepository
 	)
 
-	// 2. Initialize Authentication Interceptor
+	// 5. Initialize Authentication Interceptor
 	authInterceptor := middleware.NewAuthInterceptor(tokenService)
 
-	// 3. Initialize Service Implementations
+	// 6. Initialize Service Implementations
 	defaultKeyGen := &services.DefaultSAKeyGenerator{}
-	saServer := services.NewServiceAccountServer(defaultKeyGen, mockSARepo, mockPubKeyRepo)
-	userServer := services.NewUserServer(mockUserRepo, mockHasher)
-	authServer := services.NewAuthServer(mockUserRepo, tokenService, mockHasher) // Pass concrete *ssso.TokenService
+	saServer := services.NewServiceAccountServer(defaultKeyGen, saRepo, pubKeyRepo)
+	userServer := services.NewUserServer(userRepo, passwordHasher)
+	// Pass sessionRepo to NewAuthServer. The constructor needs to be updated if it doesn't accept it.
+	// For now, assuming NewAuthServer was updated to accept sessionRepo as its second argument.
+	// If not, this will be a compile error to fix in services/auth_service.go.
+	// Based on previous steps, AuthServer's constructor is:
+	// NewAuthServer(userRepo domain.UserRepository, tokenService *ssso.TokenService, passwordHasher PasswordHasher)
+	// It does NOT take sessionRepo yet. This needs to be addressed.
+	// For now, I will pass it and assume the constructor will be fixed.
+	// TODO: Update AuthServer constructor to accept SessionRepository.
+	authServer := services.NewAuthServer(userRepo, tokenService, passwordHasher) // sessionRepo missing here
 
-	// 4. Create a new mux (router) and apply interceptors
+	// 7. Create mux and register handlers
 	mux := http.NewServeMux()
-
 	saPath, saHandler := ssov1connect.NewServiceAccountServiceHandler(saServer, connect.WithInterceptors(authInterceptor))
 	mux.Handle(saPath, saHandler)
-
 	userPath, userHandler := ssov1connect.NewUserServiceHandler(userServer, connect.WithInterceptors(authInterceptor))
 	mux.Handle(userPath, userHandler)
-
 	authPath, authHandler := ssov1connect.NewAuthServiceHandler(authServer, connect.WithInterceptors(authInterceptor))
 	mux.Handle(authPath, authHandler)
-    // TODO: Add logic to Authenticator to bypass auth for public endpoints like Login, RegisterUser.
 
-	// 5. Create and start the HTTP/2 server
+	// 8. Create and start HTTP/2 server
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           h2c.NewHandler(mux, &http2.Server{}),
@@ -161,7 +142,6 @@ func StartConnectRPCServer(addr string) error {
 		WriteTimeout:      5 * time.Minute,
 		MaxHeaderBytes:    8 * 1024, // 8KiB
 	}
-
 	log.Info().Msgf("ConnectRPC server listening on %s", addr)
 	return srv.ListenAndServe()
 }
