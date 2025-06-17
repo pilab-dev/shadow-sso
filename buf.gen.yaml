@@ -1,0 +1,10 @@
+version: v1
+plugins:
+  # Go type definitions
+  - plugin: buf.build/protocolbuffers/go:v1.31.0 # Use a recent version
+    out: gen
+    opt: paths=source_relative
+  # Connect RPC service definitions
+  - plugin: buf.build/connectrpc/go:v1.11.1 # Use a recent version of connect-go generator
+    out: gen
+    opt: paths=source_relative
