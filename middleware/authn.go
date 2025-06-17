@@ -62,16 +62,16 @@ func (a *Authenticator) Authenticate(ctx context.Context, req authn.Request) (au
 	claimsData := authn.Claims{
 		internalTokenClaimKey: validatedToken,
 		"sub":                 validatedToken.UserID, // Standard subject claim
-		// "iss": validatedToken.Issuer, // If Issuer is part of ssso.Token
 	}
-    if validatedToken.Scope != "" {
-        claimsData["scope"] = validatedToken.Scope
-    }
-    if validatedToken.Issuer != "" { // Assuming Issuer field exists in ssso.Token
-        claimsData["iss"] = validatedToken.Issuer
-    }
-
-
+	if validatedToken.Scope != "" {
+		claimsData["scope"] = validatedToken.Scope
+	}
+	if validatedToken.Issuer != "" { // Assuming Issuer field exists in ssso.Token
+		claimsData["iss"] = validatedToken.Issuer
+	}
+	if len(validatedToken.Roles) > 0 { // New: Add roles to claims
+		claimsData["roles"] = validatedToken.Roles
+	}
 	return claimsData, nil
 }
 
@@ -108,3 +108,22 @@ func GetAuthenticatedTokenFromContext(ctx context.Context) (*ssso.Token, bool) {
 
 // Ensure Authenticator implements the interface
 var _ authn.Authenticator = (*Authenticator)(nil)
+
+// GetRolesFromContext retrieves roles from the authn.Claims in the context.
+func GetRolesFromContext(ctx context.Context) ([]string, bool) {
+	claims := authn.ClaimsFromContext(ctx)
+	if claims == nil {
+		return nil, false
+	}
+	rolesVal, ok := claims.Get("roles")
+	if !ok {
+		return nil, false
+	}
+	roles, typeAssertionOk := rolesVal.([]string)
+	if !typeAssertionOk {
+		// Log this error: stored "roles" claim is not []string
+		// For now, treat as no roles found if type assertion fails.
+		return nil, false
+	}
+	return roles, true
+}

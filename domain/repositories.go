@@ -62,3 +62,13 @@ type SessionRepository interface {
 // This interface should also be formally defined here or in the ssso package if not already.
 // For now, we assume it's defined in ssso package or implicitly by its usage.
 // If ssso.TokenRepository is a concrete type, it might need refactoring to an interface.
+
+// IdPRepository defines methods for Identity Provider configuration persistence.
+type IdPRepository interface {
+	AddIdP(ctx context.Context, idp *IdentityProvider) error
+	GetIdPByID(ctx context.Context, id string) (*IdentityProvider, error)
+	GetIdPByName(ctx context.Context, name string) (*IdentityProvider, error) // Name should be unique
+	ListIdPs(ctx context.Context, onlyEnabled bool) ([]*IdentityProvider, error) // Option to list only enabled IdPs
+	UpdateIdP(ctx context.Context, idp *IdentityProvider) error
+	DeleteIdP(ctx context.Context, id string) error
+}
