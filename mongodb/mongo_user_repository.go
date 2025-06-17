@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/pilab-dev/shadow-sso/domain" // Use the new domain.User
+	"github.com/pilab-dev/shadow-sso/internal/auth/rbac" // Import rbac package
 	"github.com/rs/zerolog/log"             // Assuming logger
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -69,6 +70,27 @@ func (r *UserRepositoryMongo) CreateUser(ctx context.Context, user *domain.User)
 	user.UpdatedAt = time.Now().UTC()
 	if user.Status == "" { // Default status if not provided
 		user.Status = domain.UserStatusActive // Or UserStatusPending if activation flow exists
+	}
+
+	// Initialize 2FA fields to default values
+	user.IsTwoFactorEnabled = false
+	user.TwoFactorMethod = "NONE" // Or a specific constant domain.TwoFactorMethodNone
+	user.TwoFactorSecret = ""     // Explicitly empty
+	user.TwoFactorRecoveryCodes = []string{} // Explicitly empty slice
+
+	// Initial Role Assignment Logic
+	if len(user.Roles) == 0 { // If roles are not preset (e.g. by an admin call)
+		count, err := r.users.CountDocuments(ctx, bson.M{})
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to count users for role assignment")
+			return fmt.Errorf("failed to count existing users: %w", err)
+		}
+		if count == 0 {
+			user.Roles = []string{rbac.RoleAdmin, rbac.RoleUser} // First user is Admin + User
+			log.Info().Str("userID", user.ID).Str("email", user.Email).Msg("First user registered, assigned Admin and User roles.")
+		} else {
+			user.Roles = []string{rbac.RoleUser} // Subsequent users are just User by default
+		}
 	}
 
 	_, err := r.users.InsertOne(ctx, user)

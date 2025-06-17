@@ -108,7 +108,11 @@ func StartConnectRPCServer(addr string) error {
 	)
 
 	// 5. Initialize Authentication Interceptor
-	authInterceptor := middleware.NewAuthInterceptor(tokenService)
+	authInterceptor := middleware.NewAuthInterceptor(tokenService) // Existing
+	authzInterceptor := middleware.NewAuthorizationInterceptor()   // New
+
+	// Apply interceptors: authN then authZ
+	interceptors := connect.WithInterceptors(authInterceptor, authzInterceptor)
 
 	// 6. Initialize Service Implementations
 	defaultKeyGen := &services.DefaultSAKeyGenerator{}

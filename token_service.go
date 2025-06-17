@@ -53,6 +53,7 @@ type TokenService struct {
 	// Added for SA token validation
 	pubKeyRepo domain.PublicKeyRepository
 	saRepo     domain.ServiceAccountRepository
+	userRepo   domain.UserRepository // New dependency
 }
 
 // NewTokenService creates a new TokenService instance
@@ -61,8 +62,9 @@ func NewTokenService(
 	tokenCache cache.TokenStore,
 	issuer string, // Issuer for user tokens
 	signer *TokenSigner,
-	pubKeyRepo domain.PublicKeyRepository, // New
-	saRepo domain.ServiceAccountRepository, // New
+	pubKeyRepo domain.PublicKeyRepository,
+	saRepo domain.ServiceAccountRepository,
+	userRepo domain.UserRepository, // New
 ) *TokenService {
 	return &TokenService{
 		repo:       repo,
@@ -71,6 +73,7 @@ func NewTokenService(
 		signer:     signer,
 		pubKeyRepo: pubKeyRepo,
 		saRepo:     saRepo,
+		userRepo:   userRepo, // New
 	}
 }
 
@@ -87,33 +90,27 @@ type Token struct {
 	CreatedAt  time.Time `bson:"created_at" json:"created_at"`
 	LastUsedAt time.Time `bson:"last_used_at" json:"last_used_at"`
 	IsRevoked  bool      `bson:"is_revoked,omitempty" json:"is_revoked,omitempty"`
-	Issuer     string    `bson:"issuer,omitempty" json:"issuer,omitempty"` // Added
+	Issuer     string    `bson:"issuer,omitempty" json:"issuer,omitempty"`
+	Roles      []string  `bson:"roles,omitempty" json:"roles,omitempty"` // New field
 }
 
 // ToEntry converts a Token to a cache.TokenEntry.
-func (t *Token) ToEntry() *cache.TokenEntry {
+func (t *Token) ToEntry() *cache.TokenEntry { // Ensure cache pkg is imported
 	return &cache.TokenEntry{
-		ID:        t.ID,
-		UserID:    t.UserID,
-		ClientID:  t.ClientID,
-		Scope:     t.Scope,
-		ExpiresAt: t.ExpiresAt,
-		IsRevoked: t.IsRevoked,
-		// Issuer is not part of TokenEntry
+		ID:        t.ID, UserID:    t.UserID, ClientID:  t.ClientID,
+		Scope:     t.Scope, ExpiresAt: t.ExpiresAt, IsRevoked: t.IsRevoked,
+		Roles:     t.Roles, // Add Roles
+		// Issuer and other fields not in TokenEntry are omitted
 	}
 }
 
 // FromEntry populates a Token from a cache.TokenEntry.
-// Fields like TokenValue, CreatedAt, LastUsedAt, Issuer are not typically in a cache entry
-// and will need to be populated from the main repository if needed beyond basic validation.
-func (t *Token) FromEntry(entry *cache.TokenEntry) {
-	t.ID = entry.ID
-	t.UserID = entry.UserID
-	t.ClientID = entry.ClientID
-	t.Scope = entry.Scope
-	t.ExpiresAt = entry.ExpiresAt
-	t.IsRevoked = entry.IsRevoked
-	// TokenValue, CreatedAt, LastUsedAt, Issuer are not in cache.TokenEntry
+func (t *Token) FromEntry(entry *cache.TokenEntry) { // Ensure cache pkg is imported
+	t.ID = entry.ID; t.UserID = entry.UserID; t.ClientID = entry.ClientID;
+	t.Scope = entry.Scope; t.ExpiresAt = entry.ExpiresAt; t.IsRevoked = entry.IsRevoked;
+	t.Roles = entry.Roles; // Add Roles
+	// TokenValue, CreatedAt, LastUsedAt, Issuer are not in TokenEntry.
+	// These will be missing if token is only populated from cache.
 }
 
 type CreateTokenOptions struct {
@@ -139,18 +136,32 @@ func (s *TokenService) CreateToken(ctx context.Context, opts CreateTokenOptions,
 	// ? This is a default claim object, it can be used for both access and refresh tokens.
 	// ? Later it should be changed to a specific one for access_token, and id_token
 	// Access token claims
-	tokenClaims := jwt.RegisteredClaims{
-		Issuer:    s.issuer,
-		Subject:   opts.UserID,
-		Audience:  jwt.ClaimStrings{opts.ClientID},
-		ExpiresAt: jwt.NewNumericDate(expiresAt),
-		IssuedAt:  jwt.NewNumericDate(time.Now()),
-		NotBefore: jwt.NewNumericDate(time.Now()),
-		ID:        opts.TokenID,
+	tokenClaimsMap := jwt.MapClaims{
+		"iss": s.issuer,
+		"sub": opts.UserID,
+		"aud": jwt.ClaimStrings{opts.ClientID},
+		"exp": jwt.NewNumericDate(expiresAt).Unix(),
+		"iat": jwt.NewNumericDate(time.Now()).Unix(),
+		"nbf": jwt.NewNumericDate(time.Now()).Unix(),
+		"jti": opts.TokenID,
+	}
+
+	var userRoles []string
+	if opts.UserID != "" {
+		user, errUser := s.userRepo.GetUserByID(ctx, opts.UserID)
+		if errUser != nil {
+			log.Warn().Err(errUser).Str("userID", opts.UserID).Msg("CreateToken: failed to get user for roles, proceeding without roles claim.")
+		} else if user != nil {
+			userRoles = user.Roles
+			if len(userRoles) > 0 {
+				tokenClaimsMap["roles"] = userRoles
+			}
+		}
 	}
 
 	// Generate access token with the signer
-	signedToken, err := s.signer.Sign(tokenClaims, opts.SigningKeyID)
+	// s.signer.Sign now accepts jwt.Claims (which jwt.MapClaims implements)
+	signedToken, err := s.signer.Sign(tokenClaimsMap, opts.SigningKeyID)
 	if err != nil {
 		return nil, err
 	}
@@ -166,6 +177,7 @@ func (s *TokenService) CreateToken(ctx context.Context, opts CreateTokenOptions,
 		ExpiresAt:  expiresAt,
 		CreatedAt:  time.Now(),
 		LastUsedAt: time.Now(),
+		Roles:      userRoles, // Store roles in the token struct
 	}
 	if err := s.repo.StoreToken(ctx, token); err != nil {
 		return nil, err
@@ -186,18 +198,35 @@ func (s *TokenService) BuildToken(token *Token) error {
 	// ? This is a default claim object, it can be used for both access and refresh tokens.
 	// ? Later it should be changed to a specific one for access_token, and id_token
 	// Access token claims
-	tokenClaims := jwt.RegisteredClaims{
-		Issuer:    s.issuer,
-		Subject:   token.UserID,
-		Audience:  jwt.ClaimStrings{token.ClientID},
-		ExpiresAt: jwt.NewNumericDate(token.ExpiresAt),
-		IssuedAt:  jwt.NewNumericDate(token.CreatedAt),
-		NotBefore: jwt.NewNumericDate(token.CreatedAt),
-		ID:        token.ID,
+	tokenMapClaims := jwt.MapClaims{
+		"iss": s.issuer,
+		"sub": token.UserID,
+		"aud": jwt.ClaimStrings{token.ClientID},
+		"exp": jwt.NewNumericDate(token.ExpiresAt).Unix(),
+		"iat": jwt.NewNumericDate(token.CreatedAt).Unix(),
+		"nbf": jwt.NewNumericDate(token.CreatedAt).Unix(),
+		"jti": token.ID,
 	}
 
+	// Fetch and add roles if UserID is present (context needed for repo call)
+	// BuildToken might need to accept context if it's to fetch roles.
+	// For now, let's assume if token.Roles is already populated, it uses that.
+	// If not, and UserID is present, it would ideally fetch. This implies BuildToken needs context.
+	// Let's simplify: if token.Roles is already populated (e.g. by caller), use it.
+	// This is a limitation if BuildToken is called with a Token struct that hasn't had Roles populated yet.
+	// A better BuildToken would take context and fetch roles if needed.
+	// For this subtask, we will assume token.Roles might be pre-populated by the caller if roles are desired.
+	// Or, more realistically, BuildToken is primarily for re-signing an existing ssso.Token, which should have roles.
+	if len(token.Roles) > 0 {
+		tokenMapClaims["roles"] = token.Roles
+	}
+	// If UserID is present and token.Roles is empty, one might fetch roles here if context was available.
+	// else if token.UserID != "" && s.userRepo != nil { /* fetch roles - needs context */ }
+
+
 	// Generate access token with the signer
-	signedToken, err := s.signer.Sign(tokenClaims, "")
+	// Assuming s.signer.Sign takes jwt.Claims (jwt.MapClaims implements this)
+	signedToken, err := s.signer.Sign(tokenMapClaims, "") // Pass empty keyID for default signer key
 	if err != nil {
 		return fmt.Errorf("cannot sign token: %w", err)
 	}
@@ -406,17 +435,17 @@ func (s *TokenService) ValidateAccessToken(ctx context.Context, tokenValue strin
 				tokenScope = scope
 			}
 			jtiClaim, _ := (*claims)["jti"].(string) // JTI is optional for some SA JWTs, use if present for ID
-			return &Token{ // Assumes Token struct has an Issuer field
-				ID:         jtiClaim, // Use JTI as ID if available, otherwise could be hash of tokenValue or empty
+			return &Token{
+				ID:         jtiClaim,
 				TokenType:  "service_account_jwt",
 				TokenValue: tokenValue,
-				UserID:     issuerClaim, // For SA JWTs, UserID is the issuer (e.g. service account client_email)
+				UserID:     issuerClaim,
 				Scope:      tokenScope,
 				ExpiresAt:  expiresAt,
 				CreatedAt:  issuedAt,
-				IsRevoked:  false,       // SA JWTs are typically not statefully revoked like this in this system
-				Issuer:     issuerClaim, // Store the issuer from the JWT
-				// ClientID might be derivable from 'aud' claim if needed, or from the SA itself if fetched
+				IsRevoked:  false,
+				Issuer:     issuerClaim,
+				Roles:      []string{}, // Service Accounts do not have user roles in this model
 			}, nil
 		} else {
 			// This case should ideally not be reached if jwt-go behaves as expected:
