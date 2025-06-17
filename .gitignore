@@ -1,3 +1,4 @@
 tools
-/gen
+# Do not ignore the gen folder
+#/gen
 /ssoctl
