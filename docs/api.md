@@ -4,22 +4,30 @@ This document outlines the gRPC API services provided by Shadow SSO.
 
 ## Services Overview
 
--   **AuthService**: Handles user authentication (login, logout) and session management.
+-   **AuthService**: Handles user authentication (login, logout, 2FA verification) and session management.
 -   **UserService**: Manages user lifecycle operations (registration, profile updates, status changes).
 -   **ServiceAccountService**: Manages service accounts and their downloadable JSON keys.
+-   **TwoFactorService**: Provides methods for users to manage their Two-Factor Authentication (2FA) settings, primarily TOTP.
+-   **ClientManagementService**: Manages OAuth2 client configurations (registration, updates, etc.).
+-   **IdPManagementService**: Manages external Identity Provider (IdP) configurations.
 
 ---
 
 ## AuthService
 
-Handles user authentication and session management.
+Handles user authentication, 2FA verification, and session management.
 
 ### Methods
 
 #### `Login(LoginRequest) returns (LoginResponse)`
-Authenticates a user with email and password.
+Authenticates a user with email and password. If 2FA is enabled for the user, this response will indicate that a second factor is required.
 -   **Request**: `LoginRequest` (contains email, password)
--   **Response**: `LoginResponse` (contains access token, refresh token, user info)
+-   **Response**: `LoginResponse` (may contain access/refresh tokens and user info if 2FA is not required, OR `two_factor_required=true` and a `two_factor_session_token` if 2FA is the next step).
+
+#### `Verify2FA(Verify2FARequest) returns (LoginResponse)`
+Verifies a Two-Factor Authentication code (TOTP or recovery code) after a successful primary authentication (e.g., password login) that indicated 2FA was required.
+-   **Request**: `Verify2FARequest` (contains `user_id`, `totp_code`, and `two_factor_session_token` from the initial login step)
+-   **Response**: `LoginResponse` (contains access token, refresh token, user info upon successful 2FA verification)
 
 #### `Logout(LogoutRequest) returns (google.protobuf.Empty)`
 Logs out the currently authenticated user by invalidating their session/token.
@@ -33,7 +41,7 @@ Lists active sessions for a user. Defaults to the current authenticated user if 
 
 #### `ClearUserSessions(ClearUserSessionsRequest) returns (google.protobuf.Empty)`
 Clears (revokes) sessions for a user.
--   **Request**: `ClearUserSessionsRequest` (contains optional `user_id` and `session_ids` to clear specific ones; if `session_ids` is empty, clears all for the target user)
+-   **Request**: `ClearUserSessionsRequest` (contains optional `user_id` and `session_ids` to clear specific ones; if `session_ids` is empty, clears all for the target user, or all *other* sessions if target is self)
 -   **Response**: `google.protobuf.Empty`
 
 ---
@@ -99,4 +107,98 @@ Deletes (revokes) a specific service account key.
 
 ---
 
-*Further details on message structures can be found in the `proto/sso/v1/services.proto` file.*
+## TwoFactorService
+
+Provides methods for users to manage their Two-Factor Authentication (2FA) settings, primarily TOTP. These are typically self-service operations.
+
+### Methods
+
+#### `InitiateTOTPSetup(InitiateTOTPSetupRequest) returns (InitiateTOTPSetupResponse)`
+Initiates TOTP setup for the authenticated user. Generates a new secret and QR code URI.
+-   **Request**: `InitiateTOTPSetupRequest` (empty)
+-   **Response**: `InitiateTOTPSetupResponse` (contains `secret`, `qr_code_uri`)
+
+#### `VerifyAndEnableTOTP(VerifyAndEnableTOTPRequest) returns (VerifyAndEnableTOTPResponse)`
+Verifies a TOTP code and enables 2FA for the user. Returns recovery codes.
+-   **Request**: `VerifyAndEnableTOTPRequest` (contains `totp_code`)
+-   **Response**: `VerifyAndEnableTOTPResponse` (contains `recovery_codes`)
+
+#### `Disable2FA(Disable2FARequest) returns (google.protobuf.Empty)`
+Disables 2FA for the authenticated user. Requires re-authentication (password or 2FA code).
+-   **Request**: `Disable2FARequest` (contains `password_or_2fa_code`)
+-   **Response**: `google.protobuf.Empty`
+
+#### `GenerateRecoveryCodes(GenerateRecoveryCodesRequest) returns (GenerateRecoveryCodesResponse)`
+Generates new recovery codes for a 2FA-enabled user, invalidating old ones. May require re-authentication.
+-   **Request**: `GenerateRecoveryCodesRequest` (contains optional `password_or_2fa_code`)
+-   **Response**: `GenerateRecoveryCodesResponse` (contains new `recovery_codes`)
+
+---
+
+## ClientManagementService
+
+Manages OAuth2 client configurations. These operations typically require administrator privileges.
+
+### Methods
+
+#### `RegisterClient(RegisterClientRequest) returns (RegisterClientResponse)`
+Registers a new OAuth2 client application.
+-   **Request**: `RegisterClientRequest` (contains client details like name, type, redirect URIs, scopes, etc.)
+-   **Response**: `RegisterClientResponse` (contains the registered `ClientProto`, including generated `client_id` and `client_secret` if confidential)
+
+#### `GetClient(GetClientRequest) returns (GetClientResponse)`
+Retrieves details for a specific OAuth2 client by its ID.
+-   **Request**: `GetClientRequest` (contains `client_id`)
+-   **Response**: `GetClientResponse` (contains `ClientProto`; `client_secret` is omitted)
+
+#### `ListClients(ListClientsRequest) returns (ListClientsResponse)`
+Lists registered OAuth2 clients with pagination.
+-   **Request**: `ListClientsRequest` (contains `page_size`, `page_token`)
+-   **Response**: `ListClientsResponse` (contains a list of `ClientProto` and `next_page_token`; `client_secret` is omitted)
+
+#### `UpdateClient(UpdateClientRequest) returns (UpdateClientResponse)`
+Updates an existing OAuth2 client's configuration.
+-   **Request**: `UpdateClientRequest` (contains `client_id` and fields to update)
+-   **Response**: `UpdateClientResponse` (contains the updated `ClientProto`; `client_secret` is omitted)
+
+#### `DeleteClient(DeleteClientRequest) returns (google.protobuf.Empty)`
+Deletes an OAuth2 client by its ID.
+-   **Request**: `DeleteClientRequest` (contains `client_id`)
+-   **Response**: `google.protobuf.Empty`
+
+---
+
+## IdPManagementService
+
+Manages configurations for external Identity Providers (IdPs) like OIDC or SAML providers. These operations typically require administrator privileges.
+
+### Methods
+
+#### `AddIdP(AddIdPRequest) returns (AddIdPResponse)`
+Adds a new external IdP configuration.
+-   **Request**: `AddIdPRequest` (contains IdP details like name, type, OIDC settings, attribute mappings)
+-   **Response**: `AddIdPResponse` (contains the created `IdentityProviderProto`; OIDC client secret is omitted)
+
+#### `GetIdP(GetIdPRequest) returns (GetIdPResponse)`
+Retrieves an IdP configuration by its ID.
+-   **Request**: `GetIdPRequest` (contains `id`)
+-   **Response**: `GetIdPResponse` (contains `IdentityProviderProto`; OIDC client secret is omitted)
+
+#### `ListIdPs(ListIdPsRequest) returns (ListIdPsResponse)`
+Lists all configured IdPs, with an option to filter by enabled status.
+-   **Request**: `ListIdPsRequest` (contains `only_enabled` flag)
+-   **Response**: `ListIdPsResponse` (contains a list of `IdentityProviderProto`; OIDC client secrets are omitted)
+
+#### `UpdateIdP(UpdateIdPRequest) returns (UpdateIdPResponse)`
+Updates an existing IdP configuration.
+-   **Request**: `UpdateIdPRequest` (contains `id` and fields to update)
+-   **Response**: `UpdateIdPResponse` (contains the updated `IdentityProviderProto`; OIDC client secret is omitted)
+
+#### `DeleteIdP(DeleteIdPRequest) returns (google.protobuf.Empty)`
+Deletes an IdP configuration by its ID.
+-   **Request**: `DeleteIdPRequest` (contains `id`)
+-   **Response**: `google.protobuf.Empty`
+
+---
+
+*Further details on message structures can be found in the respective `.proto` files in `proto/sso/v1/`.*

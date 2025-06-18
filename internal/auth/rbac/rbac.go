@@ -143,4 +143,11 @@ var MethodPermissions = map[string]string{
 	"/sso.v1.ServiceAccountService/CreateServiceAccountKey": PermServiceAccountsManage,
 	"/sso.v1.ServiceAccountService/ListServiceAccountKeys":  PermServiceAccountsManage,
 	"/sso.v1.ServiceAccountService/DeleteServiceAccountKey": PermServiceAccountsManage,
+
+	// IdPManagementService (All admin)
+	"/sso.v1.IdPManagementService/AddIdP":    PermIdPsCreate,
+	"/sso.v1.IdPManagementService/GetIdP":    PermIdPsRead,
+	"/sso.v1.IdPManagementService/ListIdPs":  PermIdPsRead,
+	"/sso.v1.IdPManagementService/UpdateIdP": PermIdPsUpdate,
+	"/sso.v1.IdPManagementService/DeleteIdP": PermIdPsDelete,
 }

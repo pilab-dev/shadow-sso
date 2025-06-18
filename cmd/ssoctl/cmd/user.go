@@ -282,4 +282,172 @@ func init() {
 
 	userChangePasswordCmd.Flags().String("old-password", "", "Current password (if user is changing their own)")
 	userChangePasswordCmd.Flags().String("new-password", "", "New password (will prompt if not provided)")
+
+	// Add 2fa command group to userCmd
+	userCmd.AddCommand(user2faCmd)
+	user2faCmd.AddCommand(user2faSetupCmd)
+	user2faCmd.AddCommand(user2faVerifyCmd)
+	user2faCmd.AddCommand(user2faDisableCmd)
+	user2faCmd.AddCommand(user2faRecoveryCodesCmd)
+
+	user2faDisableCmd.Flags().StringP("password-or-code", "p", "", "Current password, TOTP code, or a recovery code to confirm disabling 2FA")
+	user2faRecoveryCodesCmd.Flags().StringP("password-or-code", "p", "", "Current password or a TOTP code for re-authentication (optional, server may require if not recently authenticated)")
+}
+
+// --- 2FA Commands ---
+
+var user2faCmd = &cobra.Command{
+	Use:   "2fa",
+	Short: "Manage Two-Factor Authentication for your account",
+}
+
+var user2faSetupCmd = &cobra.Command{
+	Use:   "setup",
+	Short: "Initiate TOTP setup for your account",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		currentCtx, err := config.GetCurrentContext()
+		if err != nil {
+			return err
+		}
+		apiClient, err := client.TwoFactorServiceClient(currentCtx) // Use TwoFactorServiceClient
+		if err != nil {
+			return err
+		}
+
+		req := &ssov1.InitiateTOTPSetupRequest{}
+		resp, err := apiClient.InitiateTOTPSetup(context.Background(), connect.NewRequest(req))
+		if err != nil {
+			return fmt.Errorf("failed to initiate TOTP setup: %w", err)
+		}
+
+		if resp.Msg == nil {
+			return errors.New("no response from server")
+		}
+
+		fmt.Println("TOTP Setup Initiated:")
+		fmt.Printf("  Secret (for manual entry): %s\n", resp.Msg.Secret)
+		fmt.Printf("  QR Code URI: %s\n", resp.Msg.QrCodeUri)
+		fmt.Println("\nScan the QR code with your authenticator app (e.g., Google Authenticator, Authy).")
+		fmt.Println("You can also display the QR code in the terminal if your terminal supports it.")
+
+		// Attempt to display QR code in terminal
+		// Using github.com/skip2/go-qrcode to generate PNG then attempting to display
+		// This is a placeholder as direct terminal QR display is complex.
+		// A library like github.com/mdp/qrterminal would be better for console text.
+		_, errQr := qrcode.New(resp.Msg.QrCodeUri, qrcode.Medium)
+		if errQr == nil {
+			fmt.Println("\nAlternatively, use a QR code generator with the URI above, or a CLI QR tool to display the URI.")
+			// Example: qrterminal.GenerateHalfBlock(resp.Msg.QrCodeUri, qrterminal.L, os.Stdout)
+			// Would require importing "github.com/mdp/qrterminal"
+		} else {
+			fmt.Printf("\n(Could not instantiate QR code for further processing: %v)\n", errQr)
+			fmt.Println("Please use the URI/secret manually with your authenticator app.")
+		}
+
+		fmt.Println("\nAfter scanning/entering, use 'ssoctl user 2fa verify <TOTP_CODE>' to enable 2FA.")
+		return nil
+	},
+}
+
+var user2faVerifyCmd = &cobra.Command{
+	Use:   "verify [TOTP_CODE]",
+	Short: "Verify a TOTP code to enable 2FA for your account",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		totpCode := args[0]
+		currentCtx, err := config.GetCurrentContext()
+		if err != nil {
+			return err
+		}
+		apiClient, err := client.TwoFactorServiceClient(currentCtx)
+		if err != nil {
+			return err
+		}
+
+		req := &ssov1.VerifyAndEnableTOTPRequest{TotpCode: totpCode}
+		resp, err := apiClient.VerifyAndEnableTOTP(context.Background(), connect.NewRequest(req))
+		if err != nil {
+			return fmt.Errorf("failed to verify TOTP code and enable 2FA: %w", err)
+		}
+
+		if resp.Msg == nil {
+			return errors.New("no response from server")
+		}
+		fmt.Println("2FA (TOTP) enabled successfully!")
+		fmt.Println("Store these recovery codes securely. They can be used if you lose access to your 2FA device:")
+		for i, code := range resp.Msg.RecoveryCodes {
+			fmt.Printf("  %d. %s\n", i+1, code)
+		}
+		return nil
+	},
+}
+
+var user2faDisableCmd = &cobra.Command{
+	Use:   "disable",
+	Short: "Disable 2FA for your account",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		passwordOrCode, _ := cmd.Flags().GetString("password-or-code")
+		if passwordOrCode == "" {
+			fmt.Print("Enter current password or a 2FA code (TOTP/Recovery) to confirm disabling 2FA: ")
+			byteInput, err := term.ReadPassword(int(syscall.Stdin))
+			fmt.Println()
+			if err != nil {
+				return fmt.Errorf("failed to read confirmation: %w", err)
+			}
+			passwordOrCode = string(byteInput)
+		}
+		if passwordOrCode == "" {
+			return errors.New("confirmation (password or 2FA code) is required")
+		}
+
+		currentCtx, err := config.GetCurrentContext()
+		if err != nil {
+			return err
+		}
+		apiClient, err := client.TwoFactorServiceClient(currentCtx)
+		if err != nil {
+			return err
+		}
+
+		req := &ssov1.Disable2FARequest{PasswordOr_2FaCode: passwordOrCode}
+		_, err = apiClient.Disable2FA(context.Background(), connect.NewRequest(req))
+		if err != nil {
+			return fmt.Errorf("failed to disable 2FA: %w", err)
+		}
+
+		fmt.Println("2FA disabled successfully for your account.")
+		return nil
+	},
+}
+
+var user2faRecoveryCodesCmd = &cobra.Command{
+	Use:   "recovery-codes",
+	Short: "Generate a new set of recovery codes (invalidates old ones)",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		passwordOrCode, _ := cmd.Flags().GetString("password-or-code") // Optional for re-auth
+
+		currentCtx, err := config.GetCurrentContext()
+		if err != nil {
+			return err
+		}
+		apiClient, err := client.TwoFactorServiceClient(currentCtx)
+		if err != nil {
+			return err
+		}
+
+		req := &ssov1.GenerateRecoveryCodesRequest{PasswordOr_2FaCode: passwordOrCode}
+		resp, err := apiClient.GenerateRecoveryCodes(context.Background(), connect.NewRequest(req))
+		if err != nil {
+			return fmt.Errorf("failed to generate new recovery codes: %w", err)
+		}
+
+		if resp.Msg == nil {
+			return errors.New("no response from server")
+		}
+		fmt.Println("New recovery codes generated. Store these securely (they replace any old codes):")
+		for i, code := range resp.Msg.RecoveryCodes {
+			fmt.Printf("  %d. %s\n", i+1, code)
+		}
+		return nil
+	},
 }
