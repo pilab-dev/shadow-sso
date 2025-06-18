@@ -1,0 +1,156 @@
+syntax = "proto3";
+
+package sso.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+
+option go_package = "github.com/pilab-dev/shadow-sso/gen/sso/v1;ssov1";
+
+// ClientManagementService provides CRUD operations for OAuth2 clients.
+service ClientManagementService {
+  // Registers a new OAuth2 client.
+  rpc RegisterClient(RegisterClientRequest) returns (RegisterClientResponse);
+  // Retrieves an OAuth2 client by its ID.
+  rpc GetClient(GetClientRequest) returns (GetClientResponse);
+  // Lists OAuth2 clients with pagination.
+  rpc ListClients(ListClientsRequest) returns (ListClientsResponse);
+  // Updates an existing OAuth2 client.
+  rpc UpdateClient(UpdateClientRequest) returns (UpdateClientResponse);
+  // Deletes an OAuth2 client by its ID.
+  rpc DeleteClient(DeleteClientRequest) returns (google.protobuf.Empty);
+}
+
+// Corresponds to client.ClientType
+enum ClientTypeProto {
+  CLIENT_TYPE_UNSPECIFIED = 0;
+  CLIENT_TYPE_CONFIDENTIAL = 1;
+  CLIENT_TYPE_PUBLIC = 2;
+}
+
+// JSONWebKey message (simplified, without private parts for response)
+message JSONWebKeyProto {
+  string kid = 1;
+  string kty = 2;
+  string alg = 3;
+  string use = 4;
+  string n = 5;   // RSA modulus
+  string e = 6;   // RSA public exponent
+}
+
+// JWKS message for client's JSON Web Key Set URI
+message JWKSProto {
+  repeated JSONWebKeyProto keys = 1;
+}
+
+// Client message, mirroring fields from client.Client struct
+message ClientProto {
+  string client_id = 1;
+  string client_secret = 2; // Only sent in RegisterClientResponse, otherwise masked or omitted.
+  ClientTypeProto client_type = 3;
+  string client_name = 4;
+  string description = 5;
+  repeated string redirect_uris = 6;
+  repeated string post_logout_redirect_uris = 7;
+  repeated string allowed_scopes = 8;
+  repeated string allowed_grant_types = 9;
+  string token_endpoint_auth_method = 10;
+  JWKSProto jwks = 11; // For client assertion using private_key_jwt
+  string jwks_uri = 12;
+  repeated string contacts = 13;
+  string logo_uri = 14;
+  string policy_uri = 15;
+  string terms_uri = 16;
+  bool require_consent = 17;
+  bool require_pkce = 18;
+  google.protobuf.Timestamp created_at = 19;
+  google.protobuf.Timestamp updated_at = 20;
+  // LastUsed not included in proto for now
+  bool is_active = 21;
+}
+
+// --- RegisterClient ---
+message RegisterClientRequest {
+  // Client ID can be optional if server generates it. For now, assume client can suggest or it's generated.
+  // string client_id_suggestion = 1; // Optional: if client wants to suggest an ID
+  ClientTypeProto client_type = 2; // Required: confidential or public
+  string client_name = 3;          // Required
+  string description = 4;          // Optional
+  repeated string redirect_uris = 5; // Required for some grant types
+  repeated string post_logout_redirect_uris = 6; // Optional
+  repeated string allowed_scopes = 7;          // Optional, server might enforce defaults
+  repeated string allowed_grant_types = 8;   // Optional, server might set defaults based on type
+  string token_endpoint_auth_method = 9;   // Optional, server defaults based on type
+  // JWKS/JWKSUri for advanced clients
+  string jwks_uri = 10;
+  // JWKSProto jwks_content = 11; // If providing full JWKS at registration
+  repeated string contacts = 12;
+  string logo_uri = 13;
+  string policy_uri = 14;
+  string terms_uri = 15;
+  bool require_consent = 16; // Server might override
+  // require_pkce is often determined by client_type
+}
+
+message RegisterClientResponse {
+  ClientProto client = 1; // Will include generated client_id and client_secret (for confidential)
+}
+
+// --- GetClient ---
+message GetClientRequest {
+  string client_id = 1;
+}
+
+message GetClientResponse {
+  ClientProto client = 1; // client_secret should be masked or omitted
+}
+
+// --- ListClients ---
+message ListClientsRequest {
+  int32 page_size = 1;
+  string page_token = 2; // Could be offset or cursor
+  // Add filters, e.g., by client_type
+  // ClientTypeProto filter_client_type = 3;
+}
+
+message ListClientsResponse {
+  repeated ClientProto clients = 1; // client_secret should be masked or omitted
+  string next_page_token = 2;
+}
+
+// --- UpdateClient ---
+message UpdateClientRequest {
+  string client_id = 1; // Required to identify client to update
+
+  // Fields to update (use FieldMask in production for partial updates)
+  // For simplicity, this request includes all modifiable fields.
+  // Server should only update fields that are actually provided (non-zero/non-empty).
+  // This is better handled with google.protobuf.FieldMask.
+  // For now, include common fields.
+  string client_name = 2;
+  string description = 3;
+  repeated string redirect_uris = 4;
+  repeated string post_logout_redirect_uris = 5;
+  repeated string allowed_scopes = 6;
+  // Grant types and token auth method are usually not changed post-creation without care.
+  // string token_endpoint_auth_method = 7;
+  string jwks_uri = 8;
+  // JWKSProto jwks_content = 9;
+  repeated string contacts = 10;
+  string logo_uri = 11;
+  string policy_uri = 12;
+  string terms_uri = 13;
+  bool require_consent = 14;
+  bool is_active = 15; // To activate/deactivate client
+}
+
+message UpdateClientResponse {
+  ClientProto client = 1; // Updated client, secret masked
+}
+
+// --- DeleteClient ---
+message DeleteClientRequest {
+  string client_id = 1;
+}
+
+// (google.protobuf.Empty is used for DeleteClientResponse)

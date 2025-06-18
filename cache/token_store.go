@@ -17,6 +17,7 @@ type TokenEntry struct {
 	IsRevoked  bool      `redis:"isRevoked"`  // Whether token is revoked
 	CreatedAt  time.Time `redis:"createdAt"`  // Creation timestamp
 	LastUsedAt time.Time `redis:"lastUsedAt"` // Last usage timestamp
+	Roles      []string  `redis:"roles,omitempty"` // New field
 }
 
 // TokenStore defines the interface for token caching implementations

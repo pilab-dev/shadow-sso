@@ -1,0 +1,75 @@
+syntax = "proto3";
+
+package sso.v1;
+
+import "google/protobuf/empty.proto";
+
+option go_package = "github.com/pilab-dev/shadow-sso/gen/sso/v1;ssov1";
+
+// TwoFactorService provides methods for managing Two-Factor Authentication (2FA) for users.
+// Initially, this service will focus on Time-based One-Time Password (TOTP).
+service TwoFactorService {
+  // Initiates the setup process for TOTP.
+  // Generates a new TOTP secret and a corresponding QR code URI for the authenticated user.
+  // The user must verify with a TOTP code from their authenticator app to enable 2FA.
+  rpc InitiateTOTPSetup(InitiateTOTPSetupRequest) returns (InitiateTOTPSetupResponse);
+
+  // Verifies a TOTP code provided by the user during setup and enables 2FA if the code is valid.
+  // This should be called after InitiateTOTPSetup.
+  // Returns a list of recovery codes upon successful enablement.
+  rpc VerifyAndEnableTOTP(VerifyAndEnableTOTPRequest) returns (VerifyAndEnableTOTPResponse);
+
+  // Disables 2FA for the authenticated user.
+  // May require current password or a 2FA code (if already enabled) for verification.
+  rpc Disable2FA(Disable2FARequest) returns (google.protobuf.Empty);
+
+  // Generates a new set of recovery codes for a user who already has 2FA enabled.
+  // This invalidates any previously issued recovery codes.
+  // Requires the user to be authenticated (e.g., via password or existing 2FA).
+  rpc GenerateRecoveryCodes(GenerateRecoveryCodesRequest) returns (GenerateRecoveryCodesResponse);
+
+  // (Future consideration: Admin methods to disable user's 2FA or view status, protected by RBAC)
+}
+
+// --- InitiateTOTPSetup ---
+message InitiateTOTPSetupRequest {
+  // No fields needed; operates on the currently authenticated user.
+  // string user_id = 1; // Could be added for admin use cases later.
+}
+
+message InitiateTOTPSetupResponse {
+  string secret = 1;         // The base32 encoded TOTP secret. (For manual entry if QR fails)
+  string qr_code_uri = 2;    // The otpauth:// URI to be rendered as a QR code.
+  // string issuer = 3;      // Issuer name shown in authenticator app (e.g., "YourAppName") - often part of qr_code_uri
+  // string account_name = 4; // Account name shown in authenticator app (e.g., user's email) - often part of qr_code_uri
+}
+
+// --- VerifyAndEnableTOTP ---
+message VerifyAndEnableTOTPRequest {
+  string totp_code = 1; // The TOTP code from the user's authenticator app.
+  // string user_id = 2; // For admin use cases. For self-service, uses authenticated user.
+  // The server will use the secret generated during InitiateTOTPSetup for this user.
+}
+
+message VerifyAndEnableTOTPResponse {
+  repeated string recovery_codes = 1; // A new set of recovery codes.
+}
+
+// --- Disable2FA ---
+message Disable2FARequest {
+  // For security, disabling 2FA often requires re-authentication.
+  string password_or_2fa_code = 1; // User provides current password or a 2FA code to confirm.
+                                   // Server determines which is expected/valid.
+  // string user_id = 2; // For admin use cases.
+}
+
+// --- GenerateRecoveryCodes ---
+message GenerateRecoveryCodesRequest {
+  // User must be 2FA enabled. May require re-authentication (password or current 2FA code).
+  string password_or_2fa_code = 1; // Optional: for re-authentication before generating new codes.
+  // string user_id = 2; // For admin use cases.
+}
+
+message GenerateRecoveryCodesResponse {
+  repeated string recovery_codes = 1; // A new set of recovery codes.
+}
