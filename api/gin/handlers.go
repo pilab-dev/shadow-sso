@@ -462,32 +462,38 @@ func (oa *OAuth2API) TokenHandler(c *gin.Context) {
 		return
 	}
 
-	if !c.Writer.Written() {
-		if tokenResponse == nil {
-			log.Error().Msg("Token response is nil but no error and response not written")
-			c.JSON(http.StatusInternalServerError, ssoerrors.NewServerError("Internal error during token generation"))
-			return
-		}
-		log.Info().
-			Str("client_id", clientID).
-			Str("grant_type", grantType).
-			Msg("Token generated")
-		c.Header("Cache-Control", "no-store")
-		c.Header("Pragma", "no-cache")
-		c.JSON(http.StatusOK, tokenResponse)
+	// If we reach here, processErr is nil.
+	// The sub-handlers for device_code grant might write the response directly.
+	if c.Writer.Written() {
+		// If response already written (e.g., by handleDeviceCodeGrant for pending/slow_down),
+		// it means the sub-handler took control of the response. We should just return.
+		// The sub-handler is responsible for its own logging if needed.
+		return
 	}
 
+	// If tokenResponse is nil and response wasn't written by a sub-handler, it's an internal error.
+	if tokenResponse == nil {
+		log.Error().Str("client_id", clientID).Str("grant_type", grantType).Msg("Token response is nil after grant processing and response not written by sub-handler")
+		c.JSON(http.StatusInternalServerError, ssoerrors.NewServerError("Internal error during token generation"))
+		return
+	}
+
+	// Log successful token generation with details
 	log.Info().
 		Str("client_id", clientID).
 		Str("grant_type", grantType).
 		Int("expires_in", tokenResponse.ExpiresIn).
 		Str("token_type", tokenResponse.TokenType).
-		Str("access_token", tokenResponse.AccessToken).
-		Str("refresh_token", tokenResponse.RefreshToken).
-		Str("id_token", tokenResponse.IDToken).
+		// AccessToken and RefreshToken are sensitive, consider logging only their presence or a hash.
+		// For this consolidation, matching Echo's detail by logging presence.
+		Bool("access_token_present", tokenResponse.AccessToken != "").
+		Bool("refresh_token_present", tokenResponse.RefreshToken != "").
+		Bool("id_token_present", tokenResponse.IDToken != "").
 		Msg("Token generated")
 
-	// Return token
+	// Set headers and send response
+	c.Header("Cache-Control", "no-store")
+	c.Header("Pragma", "no-cache")
 	c.JSON(http.StatusOK, tokenResponse)
 }
 
@@ -532,7 +538,7 @@ func (oa *OAuth2API) UserInfoHandler(c *gin.Context) {
 func (oa *OAuth2API) RevokeHandler(c *gin.Context) {
 	token := c.PostForm("token")
 	if token == "" {
-		c.JSON(http.StatusBadRequest, errors.NewInvalidRequest("token parameter is required"))
+		c.JSON(http.StatusBadRequest, ssoerrors.NewInvalidRequest("token parameter is required"))
 		return
 	}
 
@@ -548,7 +554,7 @@ func (oa *OAuth2API) RevokeHandler(c *gin.Context) {
 		// but RFC 7009 suggests POST body params for client_id for public clients.
 		// For confidential clients, Authorization header is also common.
 		// Here, we are strictly checking POST body for client_id and client_secret.
-		c.JSON(http.StatusBadRequest, errors.NewInvalidRequest("client_id parameter is required"))
+		c.JSON(http.StatusBadRequest, ssoerrors.NewInvalidRequest("client_id parameter is required"))
 		return
 	}
 	// Note: client_secret might be optional for public clients.
@@ -559,15 +565,16 @@ func (oa *OAuth2API) RevokeHandler(c *gin.Context) {
 	err := oa.service.RevokeToken(ctx, token, tokenTypeHint, clientID, clientSecret)
 	if err != nil {
 		// Check for specific OAuth errors to return appropriate status codes
-		if oerr, ok := err.(*errors.OAuth2Error); ok {
-			if oerr.Err == errors.ErrInvalidClientCredentials.Err || oerr.Err == errors.ErrInvalidClient.Err {
+		if oerr, ok := err.(*ssoerrors.OAuth2Error); ok { // Use ssoerrors.OAuth2Error
+			// Compare with error codes from ssoerrors
+			if oerr.Code == ssoerrors.InvalidClient || oerr.Code == ssoerrors.UnauthorizedClient { // Example comparison
 				log.Warn().Err(err).Str("client_id", clientID).Msg("Client authentication failed during token revocation")
 				c.JSON(http.StatusUnauthorized, oerr)
 				return
 			}
 			// For other OAuth2 specific errors that are client's fault
 			log.Warn().Err(err).Str("client_id", clientID).Str("token_type_hint", tokenTypeHint).Msg("OAuth error during token revocation")
-			c.JSON(http.StatusBadRequest, oerr)
+			c.JSON(http.StatusBadRequest, oerr) // Default to Bad Request for other client errors
 			return
 		}
 
@@ -588,7 +595,7 @@ func (oa *OAuth2API) RevokeHandler(c *gin.Context) {
 		// so this specific path for internal errors from RevokeToken (post-client-auth) is less likely.
 		// The error here would most likely be from `validateClient` within `RevokeToken`.
 		// If `validateClient` fails, `RevokeToken` returns that error.
-		c.JSON(http.StatusInternalServerError, errors.NewServerError("Internal server error"))
+		c.JSON(http.StatusInternalServerError, ssoerrors.NewServerError("Internal server error")) // Use ssoerrors.NewServerError
 		return
 	}
 
@@ -657,6 +664,9 @@ func (oa *OAuth2API) OpenIDConfigurationHandler(c *gin.Context) {
 	}
 	if cfg.EnabledEndpoints.Registration {
 		resp.RegistrationEndpoint = ToPtr(baseURL + "/oauth2/register") // Assuming /oauth2/register
+	}
+	if cfg.EnabledEndpoints.DeviceAuthorization { // Check if Device Authorization endpoint is enabled
+		resp.DeviceAuthorizationEndpoint = ToPtr(baseURL + "/oauth2/device_authorization")
 	}
 
 	// 4. Supported Grant Types
@@ -773,70 +783,6 @@ func (oa *OAuth2API) OpenIDConfigurationHandler(c *gin.Context) {
 	// For now, focusing on explicitly mentioned fields.
 
 	c.JSON(http.StatusOK, resp)
-	// baseURL := c.Request.URL.Scheme + "://" + c.Request.Host // This might be problematic if behind a proxy
-	// Prefer using oa.config.Issuer if it's correctly set to the public base URL
-	baseURL := oa.config.Issuer // Assuming oa.config.Issuer is the public base URL.
-	if baseURL == "" {
-		// Fallback if issuer is not set in config, though it should be.
-		scheme := "http"
-		if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
-			scheme = "https"
-		}
-		baseURL = fmt.Sprintf("%s://%s", scheme, c.Request.Host)
-		log.Warn().Str("baseURL", baseURL).Msg("OpenIDConfigurationHandler: oa.config.Issuer is empty, derived baseURL from request.")
-	}
-
-	// Ensure GrantTypesSupported includes the new device grant type.
-	// It's better to define the base list of grant types and append to it if not present.
-	grantTypes := []string{
-		"authorization_code" /*"implicit",*/, "password", "refresh_token", "client_credentials", // Implicit typically not recommended with confidential clients
-		string(GrantTypeDeviceCode), // Add the device code grant type constant
-	}
-	// Remove duplicates just in case (though unlikely with constants)
-	grantTypes = uniqueStrings(grantTypes)
-
-	config := sssoapi.OpenIDConfiguration{ // Use the aliased sssoapi if that's the convention
-		Issuer:                            baseURL,
-		AuthorizationEndpoint:             baseURL + "/oauth2/authorize",
-		TokenEndpoint:                     baseURL + "/oauth2/token",
-		DeviceAuthorizationEndpoint:       ToPtr(baseURL + "/oauth2/device_authorization"), // New field
-		UserInfoEndpoint:                  baseURL + "/oauth2/userinfo",
-		JwksURI:                           baseURL + "/.well-known/jwks.json",
-		IntrospectionEndpoint:             ToPtr(baseURL + "/oauth2/introspect"),
-		EndSessionEndpoint:                ToPtr(baseURL + "/oauth2/logout"),
-		RegistrationEndpoint:              ToPtr(baseURL + "/oauth2/register"),                          // Consider if registration is supported
-		ScopesSupported:                   []string{"openid", "profile", "email", "offline_access"},     // Static default
-		ResponseTypesSupported:            []string{"code"},                                             // Only code flow fully supported
-		ResponseModesSupported:            []string{"query", "fragment", "form_post"},                   // form_post for JARM if supported
-		GrantTypesSupported:               grantTypes,                                                   // Use the updated list
-		TokenEndpointAuthMethodsSupported: []string{"client_secret_basic", "client_secret_post"},        // Static default
-		SubjectTypesSupported:             []string{"public"},                                           // Static default
-		IDTokenSigningAlgValuesSupported:  []string{"RS256"},                                            // Static default, ensure server supports this
-		UserinfoSigningAlgValuesSupported: []string{"RS256"},                                            // Static default
-		CodeChallengeMethodsSupported:     []string{"S256", "plain"},                                    // Static default
-		ClaimsSupported:                   []string{"sub", "iss", "aud", "exp", "iat", "name", "email"}, // Static default
-		ClaimsParameterSupported:          false,                                                        // Static default
-		RequestParameterSupported:         false,                                                        // Static default
-		RequestURIParameterSupported:      false,                                                        // Static default
-		RequireRequestURIRegistration:     false,                                                        // Static default
-		// Potentially add these if available in oa.config or define sensible defaults
-		// TokenEndpointAuthSigningAlgSupported:      []string{},
-		// ServiceDocumentation:                      oa.config.ServiceDocumentation,
-		// UILocalesSupported:                        oa.config.UILocalesSupported,
-		// OpPolicyURI:                               oa.config.OpPolicyURI,
-		// OpTosURI:                                  oa.config.OpTosURI,
-		// RevocationEndpointAuthMethodsSupported:    oa.config.RevocationEndpointAuthMethodsSupported,
-		// IntrospectionEndpointAuthMethodsSupported: oa.config.IntrospectionEndpointAuthMethodsSupported,
-		// IDTokenEncryptionAlgValuesSupported:       oa.config.IDTokenEncryptionAlgValuesSupported,
-		// IDTokenEncryptionEncValuesSupported:       oa.config.IDTokenEncryptionEncValuesSupported,
-		// UserinfoEncryptionAlgValuesSupported:      oa.config.UserinfoEncryptionAlgValuesSupported,
-		// UserinfoEncryptionEncValuesSupported:      oa.config.UserinfoEncryptionEncValuesSupported,
-		// RequestObjectSigningAlgValuesSupported:    oa.config.RequestObjectSigningAlgValuesSupported,
-		// RequestObjectEncryptionAlgValuesSupported: oa.config.RequestObjectEncryptionAlgValuesSupported,
-		// RequestObjectEncryptionEncValuesSupported: oa.config.RequestObjectEncryptionEncValuesSupported,
-	}
-
-	c.JSON(http.StatusOK, config)
 }
 
 // uniqueStrings helper function to remove duplicates from a slice of strings
