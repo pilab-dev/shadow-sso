@@ -498,3 +498,18 @@ func (s *OAuthService) IntrospectToken(ctx context.Context,
 		Aud:       tokenInfo.ClientID,
 	}, nil
 }
+
+// RevokeToken revokes a token.
+// It implements RFC 7009 Token Revocation.
+func (s *OAuthService) RevokeToken(ctx context.Context, tokenToRevoke, tokenTypeHint, clientID, clientSecret string) error {
+	if err := s.validateClient(ctx, clientID, clientSecret); err != nil {
+		return fmt.Errorf("invalid client: %w", err)
+	}
+
+	// According to RFC 7009, the server should return a 200 OK response even if the token is invalid.
+	// So we ignore the error from RevokeToken and always return nil.
+	// The primary purpose is to ensure the token, if valid and present, is marked as revoked.
+	_ = s.tokenService.RevokeToken(ctx, tokenToRevoke) //nolint:errcheck
+
+	return nil
+}

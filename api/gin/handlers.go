@@ -51,6 +51,7 @@ func (oa *OAuth2API) RegisterRoutes(e *gin.Engine) {
 	e.GET("/oauth2/authorize", oa.AuthorizeHandler)
 	e.GET("/oauth2/userinfo", oa.UserInfoHandler)
 	e.POST("/oauth2/revoke", oa.RevokeHandler)
+	e.POST("/oauth2/introspect", oa.IntrospectHandler)
 
 	// OpenID Configuration endpoints
 	e.GET("/.well-known/openid-configuration", oa.OpenIDConfigurationHandler)
@@ -252,40 +253,78 @@ func (oa *OAuth2API) UserInfoHandler(c *gin.Context) {
 
 // RevokeHandler handles token revocation requests according to RFC 7009.
 // It accepts both access tokens and refresh tokens and revokes them.
-// The endpoint always returns 200 OK regardless of whether the token was
-// successfully revoked or not.
+// Client authentication is required.
+// The endpoint returns 200 OK if the request was processed, regardless of
+// whether the token was found or valid, as per RFC 7009.
+// Errors related to client authentication or invalid requests will result in
+// appropriate HTTP error responses.
 func (oa *OAuth2API) RevokeHandler(c *gin.Context) {
 	token := c.PostForm("token")
 	if token == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":             "invalid_request",
-			"error_description": "token parameter is required",
-		})
+		c.JSON(http.StatusBadRequest, errors.NewInvalidRequest("token parameter is required"))
 		return
 	}
 
-	tokenType := c.PostForm("token_type_hint")
-	if tokenType == "" {
-		tokenType = sssoapi.TokenTypeAccessToken
-	}
+	tokenTypeHint := c.PostForm("token_type_hint")
+	// Optional: Validate token_type_hint if specific values are enforced.
+	// For now, we pass it along. If empty, service might default or try to infer.
 
-	// Validate token type hint
-	if tokenType != sssoapi.TokenTypeAccessToken && tokenType != sssoapi.TokenTypeRefreshToken {
-		tokenType = sssoapi.TokenTypeAccessToken // Default to access_token if invalid hint
+	clientID := c.PostForm("client_id")
+	clientSecret := c.PostForm("client_secret")
+
+	if clientID == "" {
+		// Client authentication can also be done via Basic Auth header,
+		// but RFC 7009 suggests POST body params for client_id for public clients.
+		// For confidential clients, Authorization header is also common.
+		// Here, we are strictly checking POST body for client_id and client_secret.
+		c.JSON(http.StatusBadRequest, errors.NewInvalidRequest("client_id parameter is required"))
+		return
 	}
+	// Note: client_secret might be optional for public clients.
+	// The service.RevokeToken will ultimately decide based on client's configuration.
 
 	ctx := c.Request.Context()
 
-	if err := oa.service.RevokeToken(ctx, token); err != nil {
-		// According to RFC 7009 section 2.2, the authorization server SHOULD
-		// respond with HTTP status code 200 even when the token was invalid
+	err := oa.service.RevokeToken(ctx, token, tokenTypeHint, clientID, clientSecret)
+	if err != nil {
+		// Check for specific OAuth errors to return appropriate status codes
+		if oerr, ok := err.(*errors.OAuth2Error); ok {
+			if oerr.Err == errors.ErrInvalidClientCredentials.Err || oerr.Err == errors.ErrInvalidClient.Err {
+				log.Warn().Err(err).Str("client_id", clientID).Msg("Client authentication failed during token revocation")
+				c.JSON(http.StatusUnauthorized, oerr)
+				return
+			}
+			// For other OAuth2 specific errors that are client's fault
+			log.Warn().Err(err).Str("client_id", clientID).Str("token_type_hint", tokenTypeHint).Msg("OAuth error during token revocation")
+			c.JSON(http.StatusBadRequest, oerr)
+			return
+		}
+
+		// Log internal server errors
 		log.Error().
 			Err(err).
-			Str("token_type", tokenType).
-			Msg("Failed to revoke token")
+			Str("client_id", clientID).
+			Str("token_type_hint", tokenTypeHint).
+			Msg("Internal server error during token revocation")
+		// Even for internal errors, RFC 7009 is a bit ambiguous.
+		// It says "the server responds with HTTP status code 200 OK to indicate that it has processed the request".
+		// However, an internal server error means the request might not have been fully processed as intended.
+		// For now, adhering strictly to "always 200 OK" for any error post client auth might be too broad.
+		// Let's assume client auth errors are separate and lead to 400/401.
+		// If RevokeToken itself has an internal issue *after* client auth,
+		// we might still return 200, or choose 500 for operational insight.
+		// The previous implementation of OAuthService.RevokeToken now always returns nil,
+		// so this specific path for internal errors from RevokeToken (post-client-auth) is less likely.
+		// The error here would most likely be from `validateClient` within `RevokeToken`.
+		// If `validateClient` fails, `RevokeToken` returns that error.
+		c.JSON(http.StatusInternalServerError, errors.NewServerError("Internal server error"))
+		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{})
+	// As per RFC 7009, if the client authentication was successful,
+	// the server MUST respond with HTTP 200 OK status code, regardless of whether
+	// the token was found or is invalid.
+	c.Status(http.StatusOK)
 }
 
 // AuthorizeRequest represents an OAuth 2.0 authorization request.
@@ -309,42 +348,160 @@ type TokenRequest struct {
 
 func (oa *OAuth2API) OpenIDConfigurationHandler(c *gin.Context) {
 	baseURL := c.Request.URL.Scheme + "://" + c.Request.Host
+	cfg := oa.config // Use the injected OpenIDProviderConfig
 
-	//nolint:exhaustruct
-	config := sssoapi.OpenIDConfiguration{
-		Issuer:                baseURL,
-		AuthorizationEndpoint: baseURL + "/oauth2/authorize",
-		TokenEndpoint:         baseURL + "/oauth2/token",
-		UserInfoEndpoint:      baseURL + "/oauth2/userinfo",
-		JwksURI:               baseURL + "/.well-known/jwks.json",
-		IntrospectionEndpoint: ToPtr(baseURL + "/oauth2/introspect"),
-		EndSessionEndpoint:    ToPtr(baseURL + "/oauth2/logout"),
-		RegistrationEndpoint:  ToPtr(baseURL + "/oauth2/register"),
-		ScopesSupported:       []string{"openid", "profile", "email", "offline_access"},
-		ResponseTypesSupported: []string{
-			"code", "token", "id_token",
-			"code token",
-			"code id_token",
-			"token id_token",
-			"code token id_token",
-		},
-		ResponseModesSupported: []string{"query", "fragment", "form_post"},
-		GrantTypesSupported: []string{
-			"authorization_code", "implicit", "password", "refresh_token", "client_credentials",
-		},
-		TokenEndpointAuthMethodsSupported: []string{"client_secret_basic", "client_secret_post", "private_key_jwt"},
-		SubjectTypesSupported:             []string{"public", "pairwise"},
-		IDTokenSigningAlgValuesSupported:  []string{"RS256", "RS384", "RS512"},
-		UserinfoSigningAlgValuesSupported: []string{"RS256", "RS384", "RS512"},
-		CodeChallengeMethodsSupported:     []string{"plain", "S256"},
-		ClaimsSupported:                   []string{"sub", "iss", "auth_time", "name", "given_name", "family_name", "email"},
-		ClaimsParameterSupported:          true,
-		RequestParameterSupported:         true,
-		RequestURIParameterSupported:      true,
-		RequireRequestURIRegistration:     true,
+	// Initialize the response struct
+	resp := sssoapi.OpenIDConfiguration{}
+
+	// 1. Issuer
+	if cfg.Issuer != "" {
+		resp.Issuer = cfg.Issuer
+	} else {
+		resp.Issuer = baseURL // Fallback to baseURL if config issuer is empty
 	}
 
-	c.JSON(http.StatusOK, config)
+	// 2. Standard Endpoints
+	if cfg.EnabledEndpoints.Authorization {
+		resp.AuthorizationEndpoint = baseURL + "/oauth2/authorize"
+	}
+	if cfg.EnabledEndpoints.Token {
+		resp.TokenEndpoint = baseURL + "/oauth2/token"
+	}
+	if cfg.EnabledEndpoints.UserInfo {
+		resp.UserInfoEndpoint = baseURL + "/oauth2/userinfo"
+	}
+	if cfg.EnabledEndpoints.JWKS {
+		resp.JwksURI = baseURL + "/.well-known/jwks.json"
+	}
+
+	// 3. Conditional Endpoints
+	if cfg.EnabledEndpoints.Revocation {
+		resp.RevocationEndpoint = ToPtr(baseURL + "/oauth2/revoke")
+	}
+	if cfg.EnabledEndpoints.Introspection {
+		resp.IntrospectionEndpoint = ToPtr(baseURL + "/oauth2/introspect")
+	}
+	if cfg.EnabledEndpoints.EndSession {
+		resp.EndSessionEndpoint = ToPtr(baseURL + "/oauth2/logout") // Assuming /oauth2/logout
+	}
+	if cfg.EnabledEndpoints.Registration {
+		resp.RegistrationEndpoint = ToPtr(baseURL + "/oauth2/register") // Assuming /oauth2/register
+	}
+
+	// 4. Supported Grant Types
+	grantTypesSupported := []string{}
+	if cfg.EnabledGrantTypes.AuthorizationCode {
+		grantTypesSupported = append(grantTypesSupported, "authorization_code")
+	}
+	if cfg.EnabledGrantTypes.ClientCredentials {
+		grantTypesSupported = append(grantTypesSupported, "client_credentials")
+	}
+	if cfg.EnabledGrantTypes.RefreshToken {
+		grantTypesSupported = append(grantTypesSupported, "refresh_token")
+	}
+	if cfg.EnabledGrantTypes.Password {
+		grantTypesSupported = append(grantTypesSupported, "password")
+	}
+	if cfg.EnabledGrantTypes.Implicit {
+		// "implicit" is not a grant type for the token endpoint but often listed.
+		// It enables flows that result in tokens being issued directly from the authorization endpoint.
+		grantTypesSupported = append(grantTypesSupported, "implicit")
+	}
+	if cfg.EnabledGrantTypes.JWTBearer {
+		grantTypesSupported = append(grantTypesSupported, "urn:ietf:params:oauth:grant-type:jwt-bearer")
+	}
+	if cfg.EnabledGrantTypes.DeviceCode {
+		grantTypesSupported = append(grantTypesSupported, "urn:ietf:params:oauth:grant-type:device_code")
+	}
+	if len(grantTypesSupported) > 0 {
+		resp.GrantTypesSupported = grantTypesSupported
+	} else {
+		resp.GrantTypesSupported = []string{} // Ensure empty array if none are supported
+	}
+
+	// 5. Supported Response Types
+	if len(cfg.TokenConfig.SupportedResponseTypes) > 0 {
+		resp.ResponseTypesSupported = cfg.TokenConfig.SupportedResponseTypes
+	} else {
+		resp.ResponseTypesSupported = []string{}
+	}
+
+	// 6. Supported Response Modes
+	if len(cfg.TokenConfig.SupportedResponseModes) > 0 {
+		resp.ResponseModesSupported = cfg.TokenConfig.SupportedResponseModes
+	} else {
+		// Default if not specified, as per previous hardcoding
+		resp.ResponseModesSupported = []string{"query", "fragment", "form_post"}
+	}
+
+	// 7. Supported Scopes
+	if len(cfg.ClaimsConfig.SupportedScopes) > 0 {
+		resp.ScopesSupported = cfg.ClaimsConfig.SupportedScopes
+	} else {
+		resp.ScopesSupported = []string{}
+	}
+
+	// 8. Supported Subject Types (Defaulting as per previous hardcoding if no specific config field)
+	// Assuming no direct field in cfg. For now, keep previous default.
+	// If a field like cfg.SubjectTypesSupported exists, it should be used.
+	resp.SubjectTypesSupported = []string{"public", "pairwise"} // Default or from cfg if available
+
+	// 9. Supported Token Endpoint Auth Methods
+	if len(cfg.TokenConfig.SupportedTokenEndpointAuth) > 0 {
+		resp.TokenEndpointAuthMethodsSupported = cfg.TokenConfig.SupportedTokenEndpointAuth
+	} else {
+		resp.TokenEndpointAuthMethodsSupported = []string{}
+	}
+
+	// 10. Supported Signing Algorithms
+	// Assuming SecurityConfig.AllowedSigningAlgs is the source for these
+	if len(cfg.SecurityConfig.AllowedSigningAlgs) > 0 {
+		resp.IDTokenSigningAlgValuesSupported = cfg.SecurityConfig.AllowedSigningAlgs
+		resp.UserinfoSigningAlgValuesSupported = cfg.SecurityConfig.AllowedSigningAlgs      // Or a more specific field if exists
+		resp.RequestObjectSigningAlgValuesSupported = cfg.SecurityConfig.AllowedSigningAlgs // Or a more specific field
+	} else {
+		resp.IDTokenSigningAlgValuesSupported = []string{}
+		resp.UserinfoSigningAlgValuesSupported = []string{}
+		resp.RequestObjectSigningAlgValuesSupported = []string{}
+	}
+	// Encryption related algs (id_token_encryption_alg_values_supported, etc.)
+	// would follow a similar pattern if configured in SecurityConfig.AllowedEncryptionAlgs/Enc
+
+	// 11. Supported Claims
+	if len(cfg.ClaimsConfig.SupportedClaims) > 0 {
+		resp.ClaimsSupported = cfg.ClaimsConfig.SupportedClaims
+	} else {
+		resp.ClaimsSupported = []string{}
+	}
+
+	// 12. PKCE Support
+	if cfg.PKCEConfig.Enabled && len(cfg.PKCEConfig.SupportedMethods) > 0 {
+		resp.CodeChallengeMethodsSupported = cfg.PKCEConfig.SupportedMethods
+	} else {
+		// If PKCE is disabled, or no methods specified, omit or provide empty array
+		resp.CodeChallengeMethodsSupported = []string{}
+	}
+
+	// 13. Other Boolean Flags
+	resp.ClaimsParameterSupported = cfg.ClaimsConfig.EnableClaimsParameter
+	// For RequestParameterSupported & RequestURIParameterSupported, using true as per previous hardcoding
+	// if no direct config field. Assume these are generally supported.
+	resp.RequestParameterSupported = true  // Default or from cfg if available
+	resp.RequestURIParameterSupported = true // Default or from cfg if available
+	resp.RequireRequestURIRegistration = cfg.SecurityConfig.RequireRequestURIRegistration
+
+	// Other fields from sssoapi.OpenIDConfiguration that might need mapping or defaults:
+	// TokenEndpointAuthSigningAlgSupported, ServiceDocumentation, UILocalesSupported,
+	// OpPolicyURI, OpTosURI, RevocationEndpointAuthMethodsSupported,
+	// IntrospectionEndpointAuthMethodsSupported, IDTokenEncryptionAlgValuesSupported,
+	// IDTokenEncryptionEncValuesSupported, UserinfoEncryptionAlgValuesSupported,
+	// UserinfoEncryptionEncValuesSupported, RequestObjectEncryptionAlgValuesSupported,
+	// RequestObjectEncryptionEncValuesSupported.
+	// These are omitted if not directly available in oa.config or not specified in the task.
+	// For example, if token endpoint supports JWT auth, TokenEndpointAuthSigningAlgSupported would list algs.
+	// For now, focusing on explicitly mentioned fields.
+
+	c.JSON(http.StatusOK, resp)
 }
 
 // ToPtr returns a pointer to the given value. Its a helper function to provide a more readable code
