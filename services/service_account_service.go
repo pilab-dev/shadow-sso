@@ -6,7 +6,9 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt" // For error formatting
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid" // For generating key IDs
@@ -29,13 +31,12 @@ func (g *DefaultSAKeyGenerator) GenerateRSAKey() (*rsa.PrivateKey, error) {
 	return rsa.GenerateKey(rand.Reader, 2048)
 }
 
-
 // ServiceAccountServer implements the ssov1connect.ServiceAccountServiceHandler interface.
 type ServiceAccountServer struct {
 	ssov1connect.UnimplementedServiceAccountServiceHandler // Embed for forward compatibility
-	saRepo         domain.ServiceAccountRepository
-	pubKeyRepo     domain.PublicKeyRepository
-	KeyGenerator   SAKeyGenerator
+	saRepo                                                 domain.ServiceAccountRepository
+	pubKeyRepo                                             domain.PublicKeyRepository
+	KeyGenerator                                           SAKeyGenerator
 }
 
 // NewServiceAccountServer creates a new ServiceAccountServer.
@@ -52,54 +53,98 @@ func NewServiceAccountServer(
 }
 
 func (s *ServiceAccountServer) CreateServiceAccountKey(ctx context.Context, req *connect.Request[ssov1.CreateServiceAccountKeyRequest]) (*connect.Response[ssov1.CreateServiceAccountKeyResponse], error) {
-	// 1. Validate input: req.GetProjectId()
-	// 2. Find or Create ServiceAccount in saRepo:
-	//    - If client_email is provided, try to find by that.
-	//    - Otherwise, generate a client_email (e.g., sa-<uuid>@<project_id>.iam.sso.dev)
-	//    - Store/update ServiceAccount (domain.ServiceAccount)
-	// 3. Generate RSA private key using s.KeyGenerator.GenerateRSAKey()
-	// 4. Generate PrivateKeyID (e.g., hex of SHA256 of public key bytes or simple UUID)
-	// 5. Store Public Key Info (domain.PublicKeyInfo) in pubKeyRepo:
-	//    - PEM encode public key
-	//    - Store PrivateKeyID, ServiceAccountID, PublicKey (PEM), Algorithm ("RS256"), Status ("ACTIVE")
-	// 6. Format private key into JSON structure (ssov1.ServiceAccountKey):
-	//    - Type: "service_account"
-	//    - ProjectID: from request or SA
-	//    - PrivateKeyID: generated
-	//    - PrivateKey: PEM encode private key
-	//    - ClientEmail: from SA
-	//    - ClientID: from SA (if applicable)
-	//    - AuthURI: "https://sso.example.com/auth" (config)
-	//    - TokenURI: "https://sso.example.com/token" (config)
-	//    - AuthProviderX509CertURL: "https://sso.example.com/certs" (config)
-	//    - ClientX509CertURL: "https://sso.example.com/certs/<client_id>" (config, hypothetical)
-	// 7. Return CreateServiceAccountKeyResponse
+	projectID := req.Msg.GetProjectId()
+	clientEmail := req.Msg.GetClientEmail()
+	displayName := req.Msg.GetDisplayName()
 
-	privateKeyID := uuid.New().String()
-	saID := uuid.New().String() // Placeholder for actual service account ID
+	if projectID == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("project_id is required"))
+	}
+	if clientEmail == "" {
+		// Generate client email if not provided
+		uid := uuid.New().String()
+		clientEmail = fmt.Sprintf("sa-%s@%s.iam.sso.dev", uid[:8], projectID)
+	}
 
-	// Example of using the KeyGenerator
-	_, err := s.KeyGenerator.GenerateRSAKey()
+	// Try to find existing service account
+	var serviceAccount *domain.ServiceAccount
+	sa, err := s.saRepo.GetServiceAccountByClientEmail(ctx, clientEmail)
+	if err != nil {
+		// Create new service account if not found
+		now := time.Now().Unix()
+		serviceAccount = &domain.ServiceAccount{
+			ProjectID:   projectID,
+			ClientEmail: clientEmail,
+			DisplayName: displayName,
+			Disabled:    false,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		}
+		if err := s.saRepo.CreateServiceAccount(ctx, serviceAccount); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to create service account: %w", err))
+		}
+	} else {
+		serviceAccount = sa
+	}
+
+	// Generate RSA key
+	privateKey, err := s.KeyGenerator.GenerateRSAKey()
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to generate RSA key: %w", err))
 	}
-	// ... rest of the logic for PEM encoding, etc.
 
-	return nil, connect.NewError(connect.CodeUnimplemented, "CreateServiceAccountKey not implemented")
+	// Generate Private Key ID and prepare Public Key Info
+	privateKeyID := uuid.New().String()
+	pubKeyPEM, err := publicKeyToPEM(&privateKey.PublicKey)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to PEM encode public key: %w", err))
+	}
+
+	// Store Public Key Info
+	pubKeyInfo := &domain.PublicKeyInfo{
+		ID:               privateKeyID,
+		ServiceAccountID: serviceAccount.ID,
+		PublicKey:        string(pubKeyPEM),
+		Algorithm:        "RS256",
+		Status:           "ACTIVE",
+		CreatedAt:        time.Now().Unix(),
+	}
+	if err := s.pubKeyRepo.CreatePublicKey(ctx, pubKeyInfo); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to store public key: %w", err))
+	}
+
+	// Format private key into JSON response
+	saKey := &ssov1.ServiceAccountKey{
+		Type:                    "service_account",
+		ProjectId:               serviceAccount.ProjectID,
+		PrivateKeyId:            privateKeyID,
+		PrivateKey:              string(privateKeyToPEM(privateKey)),
+		ClientEmail:             serviceAccount.ClientEmail,
+		ClientId:                serviceAccount.ClientID,
+		AuthUri:                 "https://sso.pilab.hu/auth",                                            // TODO: Get from config
+		TokenUri:                "https://sso.pilab.hu/token",                                           // TODO: Get from config
+		AuthProviderX509CertUrl: "https://sso.pilab.hu/certs",                                           // TODO: Get from config
+		ClientX509CertUrl:       fmt.Sprintf("https://sso..pilab.hu/certs/%s", serviceAccount.ClientID), // TODO: Get from config
+	}
+
+	return connect.NewResponse(&ssov1.CreateServiceAccountKeyResponse{
+		ServiceAccountId: serviceAccount.ID,
+		Key:              saKey,
+	}), nil
 }
 
 func (s *ServiceAccountServer) ListServiceAccountKeys(ctx context.Context, req *connect.Request[ssov1.ListServiceAccountKeysRequest]) (*connect.Response[ssov1.ListServiceAccountKeysResponse], error) {
 	// 1. Validate req.GetServiceAccountId()
 	// 2. Fetch active public keys (domain.PublicKeyInfo) for the service_account_id from pubKeyRepo
 	// 3. Convert to ssov1.StoredServiceAccountKeyInfo
-	return nil, connect.NewError(connect.CodeUnimplemented, "ListServiceAccountKeys not implemented")
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ListServiceAccountKeys not implemented"))
 }
 
 func (s *ServiceAccountServer) DeleteServiceAccountKey(ctx context.Context, req *connect.Request[ssov1.DeleteServiceAccountKeyRequest]) (*connect.Response[emptypb.Empty], error) {
 	// 1. Validate req.GetServiceAccountId() and req.GetKeyId()
 	// 2. Update key status to "REVOKED" or delete from pubKeyRepo
 	//    (Consider if actual deletion or just marking as revoked is better for audit)
-	return nil, connect.NewError(connect.CodeUnimplemented, "DeleteServiceAccountKey not implemented")
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("DeleteServiceAccountKey not implemented"))
 }
 
 // Helper function (can be moved to a util package)
@@ -124,5 +169,6 @@ func publicKeyToPEM(pubKey *rsa.PublicKey) ([]byte, error) {
 		},
 	), nil
 }
+
 // Ensure ServiceAccountServer implements ssov1connect.ServiceAccountServiceHandler
 var _ ssov1connect.ServiceAccountServiceHandler = (*ServiceAccountServer)(nil)

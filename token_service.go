@@ -19,29 +19,6 @@ import (
 
 var errMissingKidSAValidation = errors.New("missing kid header, not a service account token, try other validation")
 
-// TokenInfo is a simplified struct for token introspection results.
-type TokenInfo struct {
-	ID         string
-	TokenType  string
-	ClientID   string
-	UserID     string
-	Scope      string
-	IssuedAt   time.Time
-	ExpiresAt  time.Time
-	IsRevoked  bool
-	// Add Issuer string if needed from introspection
-}
-
-// TokenRepository defines the interface for storing and retrieving user OAuth tokens.
-type TokenRepository interface {
-	StoreToken(ctx context.Context, token *Token) error
-	GetAccessToken(ctx context.Context, tokenValue string) (*Token, error) // Used by TokenService fallback
-	RevokeToken(ctx context.Context, tokenValue string) error             // Used by TokenService.RevokeToken
-	GetRefreshTokenInfo(ctx context.Context, tokenValue string) (*TokenInfo, error) // Used by TokenService
-	GetAccessTokenInfo(ctx context.Context, tokenValue string) (*TokenInfo, error)  // Used by TokenService
-	// Potentially GetRefreshToken(ctx, tokenValue) (*Token, error) if refresh grant is fully supported
-}
-
 // TokenService handles token generation and validation
 type TokenService struct {
 	repo   TokenRepository
@@ -97,18 +74,22 @@ type Token struct {
 // ToEntry converts a Token to a cache.TokenEntry.
 func (t *Token) ToEntry() *cache.TokenEntry { // Ensure cache pkg is imported
 	return &cache.TokenEntry{
-		ID:        t.ID, UserID:    t.UserID, ClientID:  t.ClientID,
-		Scope:     t.Scope, ExpiresAt: t.ExpiresAt, IsRevoked: t.IsRevoked,
-		Roles:     t.Roles, // Add Roles
+		ID: t.ID, UserID: t.UserID, ClientID: t.ClientID,
+		Scope: t.Scope, ExpiresAt: t.ExpiresAt, IsRevoked: t.IsRevoked,
+		Roles: t.Roles, // Add Roles
 		// Issuer and other fields not in TokenEntry are omitted
 	}
 }
 
 // FromEntry populates a Token from a cache.TokenEntry.
 func (t *Token) FromEntry(entry *cache.TokenEntry) { // Ensure cache pkg is imported
-	t.ID = entry.ID; t.UserID = entry.UserID; t.ClientID = entry.ClientID;
-	t.Scope = entry.Scope; t.ExpiresAt = entry.ExpiresAt; t.IsRevoked = entry.IsRevoked;
-	t.Roles = entry.Roles; // Add Roles
+	t.ID = entry.ID
+	t.UserID = entry.UserID
+	t.ClientID = entry.ClientID
+	t.Scope = entry.Scope
+	t.ExpiresAt = entry.ExpiresAt
+	t.IsRevoked = entry.IsRevoked
+	t.Roles = entry.Roles // Add Roles
 	// TokenValue, CreatedAt, LastUsedAt, Issuer are not in TokenEntry.
 	// These will be missing if token is only populated from cache.
 }
@@ -222,7 +203,6 @@ func (s *TokenService) BuildToken(token *Token) error {
 	}
 	// If UserID is present and token.Roles is empty, one might fetch roles here if context was available.
 	// else if token.UserID != "" && s.userRepo != nil { /* fetch roles - needs context */ }
-
 
 	// Generate access token with the signer
 	// Assuming s.signer.Sign takes jwt.Claims (jwt.MapClaims implements this)
@@ -468,7 +448,7 @@ func (s *TokenService) ValidateAccessToken(ctx context.Context, tokenValue strin
 				userToken.Issuer = s.issuer // Default issuer for user tokens
 				return &userToken, nil
 			}
-			_ = s.cache.Delete(ctx, tokenValue) // Delete expired/revoked from cache
+			_ = s.cache.Delete(ctx, tokenValue)  // Delete expired/revoked from cache
 			return nil, ErrTokenExpiredOrRevoked // Assumes ErrTokenExpiredOrRevoked is defined
 		}
 		// Check repository (for user tokens)
@@ -494,14 +474,14 @@ func (s *TokenService) ValidateAccessToken(ctx context.Context, tokenValue strin
 
 	// If error is not errMissingKidSAValidation, it's a genuine SA JWT processing/validation error
 	// or other jwt.ValidationError that occurred during ParseWithClaims.
-	var validationError *jwt.ValidationError
-	if errors.As(err, &validationError) { // Check if it's a standard JWT validation error
-		if validationError.Is(jwt.ErrTokenExpired) {
-			return nil, ErrTokenExpiredOrRevoked // Map to our existing error
-		}
-		// Could map other validationError types like ErrTokenNotValidYet, ErrTokenSignatureInvalid
-		return nil, fmt.Errorf("SA JWT validation failed: %w", err) // General SA JWT error
-	}
+	// var validationError *jwt.ValidationError
+	// if errors.As(err, &validationError) { // Check if it's a standard JWT validation error
+	// 	if validationError.Is(jwt.ErrTokenExpired) {
+	// 		return nil, ErrTokenExpiredOrRevoked // Map to our existing error
+	// 	}
+	// 	// Could map other validationError types like ErrTokenNotValidYet, ErrTokenSignatureInvalid
+	// 	return nil, fmt.Errorf("SA JWT validation failed: %w", err) // General SA JWT error
+	// }
 	// Other errors (e.g. from Keyfunc like DB error, PEM error, non-JWT error from ParseWithClaims)
 	return nil, fmt.Errorf("SA JWT processing error: %w", err)
 }

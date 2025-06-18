@@ -3,14 +3,16 @@ package totp
 import (
 	"bytes"
 	"crypto/rand"
-	// "crypto/subtle" // Not directly used, bcrypt handles constant-time for hash comparison
-	"encoding/base32"
-	"errors" // For bcrypt.ErrMismatchedHashAndPassword
 	"fmt"
 	"image/png"
+	"strings"
+
+	// "crypto/subtle" // Not directly used, bcrypt handles constant-time for hash comparison
+
+	"errors" // For bcrypt.ErrMismatchedHashAndPassword
+
 	// "net/url" // Not directly used in this final version of code
 	"os" // For VerifyRecoveryCode error logging
-	"strings"
 
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
@@ -30,9 +32,9 @@ func GenerateTOTPSecret(issuer, accountName string) (*otp.Key, string, error) {
 	key, err := totp.Generate(totp.GenerateOpts{
 		Issuer:      issuer,
 		AccountName: accountName,
-		Period:      30,    // Standard 30 seconds
-		SecretSize:  20,    // Standard 20 bytes for base32 secret (produces 32 char base32 string)
-		Digits:      otp.DigitsSix, // Standard 6 digits
+		Period:      30,                // Standard 30 seconds
+		SecretSize:  20,                // Standard 20 bytes for base32 secret (produces 32 char base32 string)
+		Digits:      otp.DigitsSix,     // Standard 6 digits
 		Algorithm:   otp.AlgorithmSHA1, // Standard algorithm
 	})
 	if err != nil {
@@ -142,5 +144,5 @@ func VerifyRecoveryCode(hashedCodes []string, providedCode string) (bool, int) {
 // Base32Secret returns the base32 encoded string of the secret from an otp.Key.
 // This is what should be stored persistently for TOTP validation.
 func Base32Secret(key *otp.Key) string {
-    return key.Secret()
+	return key.Secret()
 }

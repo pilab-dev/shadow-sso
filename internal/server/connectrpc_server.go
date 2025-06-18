@@ -7,19 +7,17 @@ import (
 	"os" // For environment variables
 	"time"
 
-	"connectrpc.com/connect" // For connect.WithInterceptors
+	"connectrpc.com/connect"     // For connect.WithInterceptors
 	"golang.org/x/crypto/bcrypt" // For bcrypt.DefaultCost
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 
 	"github.com/pilab-dev/shadow-sso/cache"
 	// "github.com/pilab-dev/shadow-sso/domain" // domain is used by mongodb and services packages
-	"github.com/pilab-dev/shadow-sso/gen/sso/v1/ssov1connect"
 	"github.com/pilab-dev/shadow-sso/internal/auth" // Import new auth package for password hasher
 	"github.com/pilab-dev/shadow-sso/middleware"
 	"github.com/pilab-dev/shadow-sso/mongodb" // Import new mongodb package
 	"github.com/pilab-dev/shadow-sso/services"
-	"github.com/pilab-dev/shadow-sso/ssso"
 	"github.com/rs/zerolog/log"
 )
 
@@ -60,12 +58,12 @@ func StartConnectRPCServer(addr string) error {
 		// return errors.New("mongodb.OAuthRepository does not implement ssso.TokenRepository") // Or handle fatal
 	}
 
-	pubKeyRepo, err := mongodb.NewPublicKeyRepositoryMongo(ctx, db)
+	pubKeyRepo, err := mongodb.NewPublicKeyRepositoryMongo(db)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to init PublicKeyRepositoryMongo")
 		return err
 	}
-	saRepo, err := mongodb.NewServiceAccountRepositoryMongo(ctx, db)
+	saRepo, err := mongodb.NewServiceAccountRepositoryMongo(db)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to init ServiceAccountRepositoryMongo")
 		return err
@@ -103,8 +101,8 @@ func StartConnectRPCServer(addr string) error {
 		memCache,     // Cache implementation
 		"sso-issuer", // Example issuer
 		tokenSigner,
-		pubKeyRepo,   // Real domain.PublicKeyRepository
-		saRepo,       // Real domain.ServiceAccountRepository
+		pubKeyRepo, // Real domain.PublicKeyRepository
+		saRepo,     // Real domain.ServiceAccountRepository
 	)
 
 	// 5. Initialize Authentication Interceptor

@@ -257,13 +257,9 @@ type OAuthRepository interface {
 	ValidateClient(ctx context.Context, clientID, clientSecret string) error // Added from mongo_oauth_repository method list
 
 	AuthorizationCodeRepository
-<<<<<<< HEAD
 	TokenRepository // Uncommented and included
 	// SessionRepository // Keep commented for now, as it's a separate domain interface
-=======
-	// TokenRepository  // Assuming this will be added or is part of a larger refactor not in scope
 	// SessionRepository // Assuming this will be added or is part of a larger refactor not in scope
->>>>>>> feat/device-flow-auth
 	PkceRepository
 	DeviceAuthorizationRepository // Embed the new interface
 }
