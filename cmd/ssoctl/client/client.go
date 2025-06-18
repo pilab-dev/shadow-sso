@@ -8,7 +8,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/pilab-dev/shadow-sso/cmd/ssoctl/config"
-	"github.com/pilab-dev/shadow-sso/gen/sso/v1/ssov1connect"
+	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
 )
 
 // AuthServiceClient returns a new AuthService client.
@@ -37,81 +37,81 @@ func AuthServiceClient(cfg *config.Context) (ssov1connect.AuthServiceClient, err
 
 // UserServiceClient returns a new UserService client.
 func UserServiceClient(cfg *config.Context) (ssov1connect.UserServiceClient, error) {
-    if cfg == nil || cfg.ServerEndpoint == "" {
-        return nil, fmt.Errorf("invalid context or server endpoint for UserService client")
-    }
-    if cfg.UserAuthToken == "" { // Most user commands will require auth
-        return nil, fmt.Errorf("user authentication token not found in current context. Please login using 'ssoctl auth login'")
-    }
+	if cfg == nil || cfg.ServerEndpoint == "" {
+		return nil, fmt.Errorf("invalid context or server endpoint for UserService client")
+	}
+	if cfg.UserAuthToken == "" { // Most user commands will require auth
+		return nil, fmt.Errorf("user authentication token not found in current context. Please login using 'ssoctl auth login'")
+	}
 	httpClient := &http.Client{ /* Consider sharing httpClient or transport config if used across clients */ }
 	opts := []connect.ClientOption{
-        connect.WithProtoJSON(),
-        connect.WithInterceptors(&authInterceptor{token: cfg.UserAuthToken}), // Always add auth for UserService
-    }
+		connect.WithProtoJSON(),
+		connect.WithInterceptors(&authInterceptor{token: cfg.UserAuthToken}), // Always add auth for UserService
+	}
 	return ssov1connect.NewUserServiceClient(httpClient, cfg.ServerEndpoint, opts...), nil
 }
 
 // ServiceAccountServiceClient returns a new ServiceAccountService client.
 func ServiceAccountServiceClient(cfg *config.Context) (ssov1connect.ServiceAccountServiceClient, error) {
-    if cfg == nil || cfg.ServerEndpoint == "" {
-        return nil, fmt.Errorf("invalid context or server endpoint for ServiceAccountService client")
-    }
-    if cfg.UserAuthToken == "" { // Service account management requires auth
-        return nil, fmt.Errorf("user authentication token not found in current context. Please login using 'ssoctl auth login'")
-    }
+	if cfg == nil || cfg.ServerEndpoint == "" {
+		return nil, fmt.Errorf("invalid context or server endpoint for ServiceAccountService client")
+	}
+	if cfg.UserAuthToken == "" { // Service account management requires auth
+		return nil, fmt.Errorf("user authentication token not found in current context. Please login using 'ssoctl auth login'")
+	}
 	httpClient := &http.Client{ /* ... consider shared transport ... */ }
 	opts := []connect.ClientOption{
-        connect.WithProtoJSON(),
-        connect.WithInterceptors(&authInterceptor{token: cfg.UserAuthToken}),
-    }
+		connect.WithProtoJSON(),
+		connect.WithInterceptors(&authInterceptor{token: cfg.UserAuthToken}),
+	}
 	return ssov1connect.NewServiceAccountServiceClient(httpClient, cfg.ServerEndpoint, opts...), nil
 }
 
 // ClientManagementServiceClient returns a new ClientManagementService client.
 func ClientManagementServiceClient(cfg *config.Context) (ssov1connect.ClientManagementServiceClient, error) {
-    if cfg == nil || cfg.ServerEndpoint == "" {
-        return nil, fmt.Errorf("invalid context or server endpoint for ClientManagementService client")
-    }
-    if cfg.UserAuthToken == "" { // Client management requires auth (admin)
-        return nil, fmt.Errorf("user authentication token not found in current context. Please login using 'ssoctl auth login'")
-    }
+	if cfg == nil || cfg.ServerEndpoint == "" {
+		return nil, fmt.Errorf("invalid context or server endpoint for ClientManagementService client")
+	}
+	if cfg.UserAuthToken == "" { // Client management requires auth (admin)
+		return nil, fmt.Errorf("user authentication token not found in current context. Please login using 'ssoctl auth login'")
+	}
 	httpClient := &http.Client{ /* ... consider shared transport ... */ }
 	opts := []connect.ClientOption{
-        connect.WithProtoJSON(),
-        connect.WithInterceptors(&authInterceptor{token: cfg.UserAuthToken}),
-    }
+		connect.WithProtoJSON(),
+		connect.WithInterceptors(&authInterceptor{token: cfg.UserAuthToken}),
+	}
 	return ssov1connect.NewClientManagementServiceClient(httpClient, cfg.ServerEndpoint, opts...), nil
 }
 
 // IdPManagementServiceClient returns a new IdPManagementService client.
 func IdPManagementServiceClient(cfg *config.Context) (ssov1connect.IdPManagementServiceClient, error) {
-    if cfg == nil || cfg.ServerEndpoint == "" {
-        return nil, fmt.Errorf("invalid context or server endpoint for IdPManagementService client")
-    }
-    if cfg.UserAuthToken == "" { // IdP management requires auth (admin)
-        return nil, fmt.Errorf("user authentication token not found in current context. Please login using 'ssoctl auth login'")
-    }
+	if cfg == nil || cfg.ServerEndpoint == "" {
+		return nil, fmt.Errorf("invalid context or server endpoint for IdPManagementService client")
+	}
+	if cfg.UserAuthToken == "" { // IdP management requires auth (admin)
+		return nil, fmt.Errorf("user authentication token not found in current context. Please login using 'ssoctl auth login'")
+	}
 	httpClient := &http.Client{ /* ... consider shared transport ... */ }
 	opts := []connect.ClientOption{
-        connect.WithProtoJSON(),
-        connect.WithInterceptors(&authInterceptor{token: cfg.UserAuthToken}),
-    }
+		connect.WithProtoJSON(),
+		connect.WithInterceptors(&authInterceptor{token: cfg.UserAuthToken}),
+	}
 	return ssov1connect.NewIdPManagementServiceClient(httpClient, cfg.ServerEndpoint, opts...), nil
 }
 
 // TwoFactorServiceClient returns a new TwoFactorService client.
 func TwoFactorServiceClient(cfg *config.Context) (ssov1connect.TwoFactorServiceClient, error) {
-    if cfg == nil || cfg.ServerEndpoint == "" {
-        return nil, fmt.Errorf("invalid context or server endpoint for TwoFactorService client")
-    }
-    if cfg.UserAuthToken == "" { // 2FA self-management requires auth
-        return nil, fmt.Errorf("user authentication token not found in current context. Please login using 'ssoctl auth login'")
-    }
+	if cfg == nil || cfg.ServerEndpoint == "" {
+		return nil, fmt.Errorf("invalid context or server endpoint for TwoFactorService client")
+	}
+	if cfg.UserAuthToken == "" { // 2FA self-management requires auth
+		return nil, fmt.Errorf("user authentication token not found in current context. Please login using 'ssoctl auth login'")
+	}
 	httpClient := &http.Client{ /* ... consider shared transport ... */ }
 	opts := []connect.ClientOption{
-        connect.WithProtoJSON(),
-        connect.WithInterceptors(&authInterceptor{token: cfg.UserAuthToken}),
-    }
+		connect.WithProtoJSON(),
+		connect.WithInterceptors(&authInterceptor{token: cfg.UserAuthToken}),
+	}
 	return ssov1connect.NewTwoFactorServiceClient(httpClient, cfg.ServerEndpoint, opts...), nil
 }
 

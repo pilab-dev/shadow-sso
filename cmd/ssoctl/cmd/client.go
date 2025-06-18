@@ -1,7 +1,10 @@
 package cmd
 
 import (
+	"bufio"
 	"context"
+	"time"
+
 	// "encoding/json" // Not used directly, yaml is used for general struct output
 	"errors"
 	"fmt"
@@ -10,7 +13,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/pilab-dev/shadow-sso/cmd/ssoctl/client"
 	"github.com/pilab-dev/shadow-sso/cmd/ssoctl/config"
-	ssov1 "github.com/pilab-dev/shadow-sso/gen/sso/v1"
+	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -87,7 +90,6 @@ var clientRegisterCmd = &cobra.Command{
 			fmt.Println("Warning: No redirect URIs provided for a public client using authorization_code grant type.")
 		}
 
-
 		currentCtx, err := config.GetCurrentContext()
 		if err != nil {
 			return err
@@ -101,7 +103,7 @@ var clientRegisterCmd = &cobra.Command{
 			ClientName:              name,
 			ClientType:              clientTypeProto,
 			RedirectUris:            redirectURIs,
-			PostLogoutRedirectUris: postLogoutRedirectUris,
+			PostLogoutRedirectUris:  postLogoutRedirectURIs,
 			AllowedScopes:           scopes,
 			AllowedGrantTypes:       grantTypes,
 			TokenEndpointAuthMethod: tokenEndpointAuthMethod,
@@ -123,24 +125,24 @@ var clientRegisterCmd = &cobra.Command{
 
 		fmt.Println("Client registered successfully:")
 		clientOutput := map[string]interface{}{
-			"client_id":                   resp.Msg.Client.ClientId,
-			"client_name":                 resp.Msg.Client.ClientName,
-			"client_type":                 resp.Msg.Client.ClientType.String(),
-			"redirect_uris":               resp.Msg.Client.RedirectUris,
+			"client_id":                  resp.Msg.Client.ClientId,
+			"client_name":                resp.Msg.Client.ClientName,
+			"client_type":                resp.Msg.Client.ClientType.String(),
+			"redirect_uris":              resp.Msg.Client.RedirectUris,
 			"post_logout_redirect_uris":  resp.Msg.Client.PostLogoutRedirectUris,
-			"allowed_scopes":              resp.Msg.Client.AllowedScopes,
-			"allowed_grant_types":         resp.Msg.Client.AllowedGrantTypes,
+			"allowed_scopes":             resp.Msg.Client.AllowedScopes,
+			"allowed_grant_types":        resp.Msg.Client.AllowedGrantTypes,
 			"token_endpoint_auth_method": resp.Msg.Client.TokenEndpointAuthMethod,
-			"jwks_uri":                    resp.Msg.Client.JwksUri,
-			"contacts":                    resp.Msg.Client.Contacts,
-			"logo_uri":                    resp.Msg.Client.LogoUri,
-			"policy_uri":                  resp.Msg.Client.PolicyUri,
-			"terms_uri":                   resp.Msg.Client.TermsUri,
-			"require_consent":             resp.Msg.Client.RequireConsent,
-			"require_pkce":                resp.Msg.Client.RequirePkce,
-			"is_active":                   resp.Msg.Client.IsActive,
-			"created_at":                  resp.Msg.Client.CreatedAt.AsTime().Format(time.RFC3339),
-			"updated_at":                  resp.Msg.Client.UpdatedAt.AsTime().Format(time.RFC3339),
+			"jwks_uri":                   resp.Msg.Client.JwksUri,
+			"contacts":                   resp.Msg.Client.Contacts,
+			"logo_uri":                   resp.Msg.Client.LogoUri,
+			"policy_uri":                 resp.Msg.Client.PolicyUri,
+			"terms_uri":                  resp.Msg.Client.TermsUri,
+			"require_consent":            resp.Msg.Client.RequireConsent,
+			"require_pkce":               resp.Msg.Client.RequirePkce,
+			"is_active":                  resp.Msg.Client.IsActive,
+			"created_at":                 resp.Msg.Client.CreatedAt.AsTime().Format(time.RFC3339),
+			"updated_at":                 resp.Msg.Client.UpdatedAt.AsTime().Format(time.RFC3339),
 		}
 		if resp.Msg.Client.ClientType == ssov1.ClientTypeProto_CLIENT_TYPE_CONFIDENTIAL && resp.Msg.Client.ClientSecret != "" {
 			clientOutput["client_secret"] = resp.Msg.Client.ClientSecret
@@ -253,7 +255,7 @@ var clientUpdateCmd = &cobra.Command{
 		}
 		if cmd.Flags().Changed("jwks-uri") {
 			jwksURI, _ := cmd.Flags().GetString("jwks-uri")
-			updateReq.JwksUri = &jwksURI // Proto field is optional string
+			updateReq.JwksUri = jwksURI // Proto field is optional string
 			changed = true
 		}
 		if cmd.Flags().Changed("contacts") {
@@ -263,17 +265,17 @@ var clientUpdateCmd = &cobra.Command{
 		}
 		if cmd.Flags().Changed("logo-uri") {
 			logoURI, _ := cmd.Flags().GetString("logo-uri")
-			updateReq.LogoUri = &logoURI
+			updateReq.LogoUri = logoURI
 			changed = true
 		}
 		if cmd.Flags().Changed("policy-uri") {
 			policyURI, _ := cmd.Flags().GetString("policy-uri")
-			updateReq.PolicyUri = &policyURI
+			updateReq.PolicyUri = policyURI
 			changed = true
 		}
 		if cmd.Flags().Changed("terms-uri") {
 			termsURI, _ := cmd.Flags().GetString("terms-uri")
-			updateReq.TermsUri = &termsURI
+			updateReq.TermsUri = termsURI
 			changed = true
 		}
 		if cmd.Flags().Changed("require-consent") {

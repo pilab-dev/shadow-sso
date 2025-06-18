@@ -4,17 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"strings" // For password confirmation
+	"os"      // For password confirmation
 	"syscall" // For password reading
 
 	"connectrpc.com/connect"
+	"github.com/mdp/qrterminal"
 	"github.com/pilab-dev/shadow-sso/cmd/ssoctl/client"
 	"github.com/pilab-dev/shadow-sso/cmd/ssoctl/config"
-	ssov1 "github.com/pilab-dev/shadow-sso/gen/sso/v1"
+	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/spf13/cobra"
 	"golang.org/x/term" // For password reading
-	"gopkg.in/yaml.v3"   // For pretty printing user/list
+	"gopkg.in/yaml.v3"  // For pretty printing user/list
 )
 
 var userCmd = &cobra.Command{
@@ -334,15 +334,16 @@ var user2faSetupCmd = &cobra.Command{
 		// Using github.com/skip2/go-qrcode to generate PNG then attempting to display
 		// This is a placeholder as direct terminal QR display is complex.
 		// A library like github.com/mdp/qrterminal would be better for console text.
-		_, errQr := qrcode.New(resp.Msg.QrCodeUri, qrcode.Medium)
-		if errQr == nil {
-			fmt.Println("\nAlternatively, use a QR code generator with the URI above, or a CLI QR tool to display the URI.")
-			// Example: qrterminal.GenerateHalfBlock(resp.Msg.QrCodeUri, qrterminal.L, os.Stdout)
-			// Would require importing "github.com/mdp/qrterminal"
-		} else {
-			fmt.Printf("\n(Could not instantiate QR code for further processing: %v)\n", errQr)
-			fmt.Println("Please use the URI/secret manually with your authenticator app.")
-		}
+		// _, errQr := qrcode.New(resp.Msg.QrCodeUri, qrcode.Medium)
+		qrterminal.GenerateHalfBlock(resp.Msg.QrCodeUri, qrterminal.L, os.Stdout)
+		// if errQr == nil {
+		// 	fmt.Println("\nAlternatively, use a QR code generator with the URI above, or a CLI QR tool to display the URI.")
+		// 	// Example: qrterminal.GenerateHalfBlock(resp.Msg.QrCodeUri, qrterminal.L, os.Stdout)
+		// 	// Would require importing "github.com/mdp/qrterminal"
+		// } else {
+		// 	fmt.Printf("\n(Could not instantiate QR code for further processing: %v)\n", errQr)
+		// 	fmt.Println("Please use the URI/secret manually with your authenticator app.")
+		// }
 
 		fmt.Println("\nAfter scanning/entering, use 'ssoctl user 2fa verify <TOTP_CODE>' to enable 2FA.")
 		return nil

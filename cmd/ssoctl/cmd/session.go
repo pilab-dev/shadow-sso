@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+
 	// "os" // Not directly used, fmt.Fprintf(os.Stderr,...) is okay
 
 	"connectrpc.com/connect"
 	"github.com/pilab-dev/shadow-sso/cmd/ssoctl/client" // Path to your client package
 	"github.com/pilab-dev/shadow-sso/cmd/ssoctl/config"
-	ssov1 "github.com/pilab-dev/shadow-sso/gen/sso/v1"
+	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3" // For pretty printing session list
 )
@@ -138,10 +140,13 @@ If clearing all sessions for the current user, this will effectively log out the
 				// For simplicity, assume if a specific session ID was targeted, it might NOT be the current ssoctl session.
 				// However, if --all or no specific ID was given for self, then the current session is definitely gone.
 				isCurrentSessionCleared = false // Be conservative: only clear local token if explicitly clearing all for self.
-				if clearAll { isCurrentSessionCleared = true } // if --all was specified for self.
-				if !clearAll && sessionID == "" { isCurrentSessionCleared = true } // if no flags specified for self (default to all)
+				if clearAll {
+					isCurrentSessionCleared = true
+				} // if --all was specified for self.
+				if !clearAll && sessionID == "" {
+					isCurrentSessionCleared = true
+				} // if no flags specified for self (default to all)
 			}
-
 
 			if isCurrentSessionCleared {
 				fmt.Println("Current user's session(s) including potentially the active ssoctl session were cleared. Updating local token state.")

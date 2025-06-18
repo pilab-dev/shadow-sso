@@ -5,7 +5,7 @@ package sso.v1;
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/empty.proto";
 
-option go_package = "github.com/pilab-dev/shadow-sso/gen/sso/v1;ssov1";
+option go_package = "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1;ssov1";
 
 // ServiceAccountService manages service account keys
 service ServiceAccountService {

@@ -3,7 +3,6 @@ package mongodb
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/pilab-dev/shadow-sso/domain"
