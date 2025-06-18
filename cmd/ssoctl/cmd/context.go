@@ -3,7 +3,6 @@ package cmd
 import (
 	"errors" // Added for setContextCmd
 	"fmt"
-	"os"
 
 	"github.com/pilab-dev/shadow-sso/cmd/ssoctl/config"
 	"github.com/spf13/cobra"

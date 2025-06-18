@@ -4,7 +4,7 @@ package sso.v1;
 
 import "google/protobuf/empty.proto";
 
-option go_package = "github.com/pilab-dev/shadow-sso/gen/sso/v1;ssov1";
+option go_package = "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1;ssov1";
 
 // TwoFactorService provides methods for managing Two-Factor Authentication (2FA) for users.
 // Initially, this service will focus on Time-based One-Time Password (TOTP).

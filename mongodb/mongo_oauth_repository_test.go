@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pilab-dev/shadow-sso/ssso" // For ssso.Token, ssso.TokenInfo, ssso.TokenRepository
+	// "github.com/pilab-dev/shadow-sso/ssso" // For ssso.Token, ssso.TokenInfo, ssso.TokenRepository
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -27,7 +27,7 @@ func setupOAuthTokenRepoTest(t *testing.T) (ssso.TokenRepository, func(), error)
 	defer cancelSetup()
 
 	// Direct client connection for test isolation
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(mongoURI).SetConnectTimeout(10*time.Second))
+	client, err := mongo.Connect(options.Client().ApplyURI(mongoURI).SetConnectTimeout(10 * time.Second))
 	if err != nil {
 		return nil, func() {}, fmt.Errorf("mongo.Connect failed for oauth repo test: %w", err)
 	}
@@ -156,7 +156,6 @@ func TestOAuthRepository_TokenMethods_Integration(t *testing.T) {
 		errStore := repo.StoreToken(ctx, token1)
 		require.NoError(t, errStore)
 
-
 		err := repo.RevokeToken(ctx, token1.TokenValue)
 		require.NoError(t, err, "RevokeToken for token1 should succeed")
 
@@ -171,7 +170,6 @@ func TestOAuthRepository_TokenMethods_Integration(t *testing.T) {
 		refreshToken1.TokenValue = "refresh_token_value_for_info_test" // Unique value
 		errStoreRefresh := repo.StoreToken(ctx, refreshToken1)
 		require.NoError(t, errStoreRefresh)
-
 
 		activeAccessToken := &ssso.Token{
 			ID: "active-info-access", TokenType: accessTokenType, TokenValue: "active_info_access_value_unique",

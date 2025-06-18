@@ -12,7 +12,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/pilab-dev/shadow-sso/cmd/ssoctl/client" // Path to your client package
 	"github.com/pilab-dev/shadow-sso/cmd/ssoctl/config"
-	ssov1 "github.com/pilab-dev/shadow-sso/gen/sso/v1"
+	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/spf13/cobra"
 	"golang.org/x/term" // For reading password
 )
