@@ -11,4 +11,5 @@ const (
 	// New collections
 	ServiceAccountsCollection = "service_accounts"
 	PublicKeysCollection      = "public_keys" // For service account public keys
+	IdPsCollection            = "identity_providers" // New
 )

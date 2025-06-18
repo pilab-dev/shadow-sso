@@ -45,9 +45,6 @@ type Client struct {
 	GrantTypes   []string  `json:"grant_types"`   // Allowed grant types
 	Scopes       []string  `json:"scopes"`        // Allowed scopes
 	CreatedAt    time.Time `json:"created_at"`    // Creation timestamp
-	UpdatedAt    time.Time `json:"updated_at"`    // Last update timestamp
-}
-
 // Token represents an OAuth 2.0 token (access or refresh).
 type Token struct {
 	ID         string    `bson:"_id"          json:"id"`           // Unique token identifier
@@ -214,8 +211,16 @@ type PkceRepository interface {
 type OAuthRepository interface {
 	io.Closer
 
+	// Client methods
+	CreateClient(ctx context.Context, c *client.Client) error // Changed to client.Client
+	GetClient(ctx context.Context, clientID string) (*client.Client, error) // Changed to client.Client
+	UpdateClient(ctx context.Context, c *client.Client) error // Changed to client.Client
+	DeleteClient(ctx context.Context, clientID string) error
+	ListClients(ctx context.Context, pageSize int32, pageToken string) ([]*client.Client, string, error) // Changed to client.Client
+	ValidateClient(ctx context.Context, clientID, clientSecret string) error // Added from mongo_oauth_repository method list
+
 	AuthorizationCodeRepository
-	// TokenRepository
-	// SessionRepository
+	TokenRepository // Uncommented and included
+	// SessionRepository // Keep commented for now, as it's a separate domain interface
 	PkceRepository
 }
