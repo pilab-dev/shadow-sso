@@ -9,6 +9,34 @@ import (
 	"github.com/pilab-dev/shadow-sso/cache"
 )
 
+// ... (keep existing structs like AuthCode, TokenInfo, Client, Token) ...
+
+// DeviceCodeStatus represents the status of a device authorization request.
+type DeviceCodeStatus string
+
+const (
+	DeviceCodeStatusPending    DeviceCodeStatus = "pending"
+	DeviceCodeStatusAuthorized DeviceCodeStatus = "authorized"
+	DeviceCodeStatusDenied     DeviceCodeStatus = "denied"
+	DeviceCodeStatusExpired    DeviceCodeStatus = "expired"
+	DeviceCodeStatusRedeemed   DeviceCodeStatus = "redeemed" // Added for when tokens have been issued
+)
+
+// DeviceCode holds the information for a device authorization grant.
+type DeviceCode struct {
+	ID           string    `bson:"_id" json:"id"` // Unique ID for the device code entry
+	DeviceCode   string    `bson:"device_code" json:"device_code"` // The code the device uses to poll
+	UserCode     string    `bson:"user_code" json:"user_code"`     // The code the user enters on another device
+	ClientID     string    `bson:"client_id" json:"client_id"`
+	Scope        string    `bson:"scope" json:"scope"`
+	Status       DeviceCodeStatus `bson:"status" json:"status"`
+	UserID       string    `bson:"user_id,omitempty" json:"user_id,omitempty"` // Associated user ID once authorized
+	ExpiresAt    time.Time `bson:"expires_at" json:"expires_at"` // Expiration time for both device_code and user_code
+	Interval     int       `bson:"interval" json:"interval"`     // Polling interval for the device
+	CreatedAt    time.Time `bson:"created_at" json:"created_at"`
+	LastPolledAt time.Time `bson:"last_polled_at,omitempty" json:"last_polled_at,omitempty"` // Tracks when the device last polled
+}
+
 // AuthCode represents an OAuth 2.0 authorization code.
 type AuthCode struct {
 	Code        string    `json:"code"`         // Unique authorization code
@@ -205,9 +233,18 @@ type PkceRepository interface {
 	DeleteCodeChallenge(ctx context.Context, code string) error
 }
 
+// DeviceAuthorizationRepository defines methods for managing device authorization flow data.
+type DeviceAuthorizationRepository interface {
+	SaveDeviceAuth(ctx context.Context, auth *DeviceCode) error
+	GetDeviceAuthByDeviceCode(ctx context.Context, deviceCode string) (*DeviceCode, error)
+	GetDeviceAuthByUserCode(ctx context.Context, userCode string) (*DeviceCode, error)
+	ApproveDeviceAuth(ctx context.Context, userCode string, userID string) (*DeviceCode, error)
+	UpdateDeviceAuthStatus(ctx context.Context, deviceCode string, status DeviceCodeStatus) error
+	UpdateDeviceAuthLastPolledAt(ctx context.Context, deviceCode string) error
+	DeleteExpiredDeviceAuths(ctx context.Context) error // For cleanup
+}
+
 // OAuthRepository defines the interface for OAuth 2.0 data operations.
-// This interface provides a comprehensive set of methods to manage OAuth 2.0 entities
-// including clients, authorization codes, tokens, sessions, and PKCE challenges.
 type OAuthRepository interface {
 	io.Closer
 
@@ -220,7 +257,13 @@ type OAuthRepository interface {
 	ValidateClient(ctx context.Context, clientID, clientSecret string) error // Added from mongo_oauth_repository method list
 
 	AuthorizationCodeRepository
+<<<<<<< HEAD
 	TokenRepository // Uncommented and included
 	// SessionRepository // Keep commented for now, as it's a separate domain interface
+=======
+	// TokenRepository  // Assuming this will be added or is part of a larger refactor not in scope
+	// SessionRepository // Assuming this will be added or is part of a larger refactor not in scope
+>>>>>>> feat/device-flow-auth
 	PkceRepository
+	DeviceAuthorizationRepository // Embed the new interface
 }
