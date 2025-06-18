@@ -1,0 +1,130 @@
+syntax = "proto3";
+
+package sso.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+// Might need import "google/protobuf/field_mask.proto"; for UpdateIdP if using FieldMask
+
+option go_package = "github.com/pilab-dev/shadow-sso/gen/sso/v1;ssov1";
+
+// IdPManagementService provides CRUD operations for external Identity Provider (IdP) configurations.
+service IdPManagementService {
+  // Adds a new IdP configuration.
+  rpc AddIdP(AddIdPRequest) returns (AddIdPResponse);
+  // Retrieves an IdP configuration by its ID.
+  rpc GetIdP(GetIdPRequest) returns (GetIdPResponse);
+  // Lists all configured IdPs.
+  rpc ListIdPs(ListIdPsRequest) returns (ListIdPsResponse);
+  // Updates an existing IdP configuration.
+  rpc UpdateIdP(UpdateIdPRequest) returns (UpdateIdPResponse);
+  // Deletes an IdP configuration by its ID.
+  rpc DeleteIdP(DeleteIdPRequest) returns (google.protobuf.Empty);
+}
+
+// Enum for IdP types, mirroring domain.IdPType
+enum IdPTypeProto {
+  IDP_TYPE_UNSPECIFIED = 0;
+  IDP_TYPE_OIDC = 1;
+  IDP_TYPE_SAML = 2; // Future support
+}
+
+// Message for attribute mapping, mirroring domain.AttributeMapping
+message AttributeMappingProto {
+  string external_attribute_name = 1;
+  string local_user_attribute = 2; // e.g., "Email", "FirstName", "LastName", "Roles"
+}
+
+// Message for IdP configuration, mirroring domain.IdentityProvider
+message IdentityProviderProto {
+  string id = 1;                            // Unique ID for this IdP config
+  string name = 2;                          // User-friendly name (e.g., "Login with Google")
+  IdPTypeProto type = 3;                    // OIDC or SAML
+  bool is_enabled = 4;                      // Whether this IdP is active for login
+
+  // OIDC Specific Fields
+  string oidc_client_id = 5;
+  string oidc_client_secret = 6;            // Should be write-only or handled carefully if returned (omitted in Get/List responses)
+  string oidc_issuer_url = 7;
+  repeated string oidc_scopes = 8;
+
+  // SAML Specific Fields (placeholders)
+  // string saml_entity_id = 9;
+  // string saml_idp_metadata_url = 10;
+
+  repeated AttributeMappingProto attribute_mappings = 11;
+
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp updated_at = 13;
+}
+
+// --- AddIdP ---
+message AddIdPRequest {
+  string name = 1;
+  IdPTypeProto type = 2;
+  bool is_enabled = 3;
+
+  // OIDC config
+  optional string oidc_client_id = 4;
+  optional string oidc_client_secret = 5; // Sent on creation/update
+  optional string oidc_issuer_url = 6;
+  repeated string oidc_scopes = 7;
+
+  // SAML config (placeholders)
+
+  repeated AttributeMappingProto attribute_mappings = 8;
+}
+
+message AddIdPResponse {
+  IdentityProviderProto idp = 1; // Returns the created IdP (secret should be omitted by server logic if field exists in IdentityProviderProto)
+}
+
+// --- GetIdP ---
+message GetIdPRequest {
+  string id = 1; // ID of the IdP configuration
+}
+
+message GetIdPResponse {
+  IdentityProviderProto idp = 1; // Secret should be omitted by server logic
+}
+
+// --- ListIdPs ---
+message ListIdPsRequest {
+  bool only_enabled = 1; // Option to list only enabled IdPs
+  // Add pagination if needed:
+  // int32 page_size = 2;
+  // string page_token = 3;
+}
+
+message ListIdPsResponse {
+  repeated IdentityProviderProto idps = 1; // Secrets should be omitted by server logic
+  // string next_page_token = 2;
+}
+
+// --- UpdateIdP ---
+message UpdateIdPRequest {
+  string id = 1; // Required to identify IdP to update
+
+  // Fields to update. Use google.protobuf.FieldMask for partial updates.
+  // For simplicity, include all modifiable fields. Server updates provided fields.
+  string name = 2;
+  // Type is usually not updatable.
+  bool is_enabled = 3;
+
+  optional string oidc_client_id = 4;
+  optional string oidc_client_secret = 5; // Allow updating secret
+  optional string oidc_issuer_url = 6;
+  repeated string oidc_scopes = 7;
+
+  repeated AttributeMappingProto attribute_mappings = 8;
+}
+
+message UpdateIdPResponse {
+  IdentityProviderProto idp = 1; // Updated IdP, secret omitted by server logic
+}
+
+// --- DeleteIdP ---
+message DeleteIdPRequest {
+  string id = 1; // ID of the IdP configuration to delete
+}
+// (google.protobuf.Empty is used for DeleteIdPResponse)

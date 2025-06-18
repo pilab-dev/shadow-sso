@@ -1,0 +1,191 @@
+syntax = "proto3";
+
+package sso.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+
+option go_package = "github.com/pilab-dev/shadow-sso/gen/sso/v1;ssov1";
+
+// ServiceAccountService manages service account keys
+service ServiceAccountService {
+  rpc CreateServiceAccountKey(CreateServiceAccountKeyRequest) returns (CreateServiceAccountKeyResponse);
+  rpc ListServiceAccountKeys(ListServiceAccountKeysRequest) returns (ListServiceAccountKeysResponse);
+  rpc DeleteServiceAccountKey(DeleteServiceAccountKeyRequest) returns (google.protobuf.Empty);
+}
+
+// UserService manages user lifecycle
+service UserService {
+  rpc RegisterUser(RegisterUserRequest) returns (RegisterUserResponse);
+  rpc ActivateUser(ActivateUserRequest) returns (google.protobuf.Empty);
+  rpc LockUser(LockUserRequest) returns (google.protobuf.Empty);
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+  rpc GetUser(GetUserRequest) returns (GetUserResponse);
+  rpc ChangePassword(ChangePasswordRequest) returns (google.protobuf.Empty);
+}
+
+// AuthService handles authentication and session management
+service AuthService {
+  rpc Login(LoginRequest) returns (LoginResponse);
+  rpc Logout(LogoutRequest) returns (google.protobuf.Empty); // Requires auth token
+  rpc ListUserSessions(ListUserSessionsRequest) returns (ListUserSessionsResponse); // Requires auth token, admin or self
+  rpc ClearUserSessions(ClearUserSessionsRequest) returns (google.protobuf.Empty); // Requires auth token, admin or self
+}
+
+// --- ServiceAccountService Messages ---
+
+message ServiceAccountKey {
+  string type = 1;
+  string project_id = 2;
+  string private_key_id = 3;
+  string private_key = 4;
+  string client_email = 5;
+  string client_id = 6;
+  string auth_uri = 7;
+  string token_uri = 8;
+  string auth_provider_x509_cert_url = 9;
+  string client_x509_cert_url = 10;
+}
+
+message CreateServiceAccountKeyRequest {
+  string project_id = 1;
+  string client_email = 2; // Optional: if not provided, can be generated
+  string display_name = 3; // Optional: for the service account
+}
+
+message CreateServiceAccountKeyResponse {
+  ServiceAccountKey key = 1;
+  string service_account_id = 2;
+}
+
+message StoredServiceAccountKeyInfo {
+    string key_id = 1; // private_key_id
+    string service_account_id = 2;
+    string algorithm = 3;
+    string status = 4; // ACTIVE, REVOKED
+    google.protobuf.Timestamp created_at = 5;
+    google.protobuf.Timestamp expires_at = 6; // Optional
+}
+
+message ListServiceAccountKeysRequest {
+  string service_account_id = 1; // The ID of the service account itself
+}
+
+message ListServiceAccountKeysResponse {
+  repeated StoredServiceAccountKeyInfo keys = 1;
+}
+
+message DeleteServiceAccountKeyRequest {
+  string service_account_id = 1;
+  string key_id = 2; // private_key_id
+}
+
+// --- UserService Messages ---
+
+enum UserStatus {
+  USER_STATUS_UNSPECIFIED = 0;
+  USER_STATUS_ACTIVE = 1;
+  USER_STATUS_LOCKED = 2;
+  USER_STATUS_PENDING_ACTIVATION = 3;
+}
+
+message User {
+  string id = 1;
+  string email = 2;
+  UserStatus status = 3;
+  string first_name = 4;
+  string last_name = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+  google.protobuf.Timestamp last_login_at = 8;
+}
+
+message RegisterUserRequest {
+  string email = 1;
+  string password = 2;
+  string first_name = 3;
+  string last_name = 4;
+}
+
+message RegisterUserResponse {
+  User user = 1;
+  // Potentially an activation token if USER_STATUS_PENDING_ACTIVATION is used
+}
+
+message ActivateUserRequest {
+  string user_id = 1; // or email
+  // string activation_token = 2; // if used
+}
+
+message LockUserRequest {
+  string user_id = 1; // or email
+}
+
+message ListUsersRequest {
+  int32 page_size = 1; // For pagination
+  string page_token = 2; // For pagination
+  // Add filters if needed, e.g., by status
+}
+
+message ListUsersResponse {
+  repeated User users = 1;
+  string next_page_token = 2;
+}
+
+message GetUserRequest {
+  string user_id = 1; // or email
+}
+
+message GetUserResponse {
+  User user = 1;
+}
+
+message ChangePasswordRequest {
+  string user_id = 1; // or email
+  string old_password = 2; // Required if user changes their own, not for admin reset
+  string new_password = 3;
+}
+
+// --- AuthService Messages ---
+
+message LoginRequest {
+  string email = 1;
+  string password = 2;
+  // string scope = 3; // Optional: requested scopes
+}
+
+message LoginResponse {
+  string access_token = 1;
+  string token_type = 2; // Usually "Bearer"
+  int32 expires_in = 3;  // Seconds
+  string refresh_token = 4; // Optional
+  User user_info = 5; // Basic user info
+}
+
+message LogoutRequest {
+  // Token from Authorization header will be used
+  // string token = 1; // Can be explicit if needed
+}
+
+message SessionInfo {
+    string id = 1; // Session ID
+    string user_id = 2;
+    string user_agent = 3;
+    string ip_address = 4;
+    google.protobuf.Timestamp created_at = 5;
+    google.protobuf.Timestamp expires_at = 6;
+    bool is_current_session = 7; // To highlight the session that made the request
+}
+
+message ListUserSessionsRequest {
+  string user_id = 1; // Required, can be "me" for current user or specific ID for admin
+}
+
+message ListUserSessionsResponse {
+  repeated SessionInfo sessions = 1;
+}
+
+message ClearUserSessionsRequest {
+  string user_id = 1; // Required, can be "me" or specific ID for admin
+  repeated string session_ids = 2; // Optional: if empty, clear all sessions for the user_id
+}
