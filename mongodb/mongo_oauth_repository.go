@@ -14,6 +14,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
+	"github.com/google/uuid"
 )
 
 // OAuthRepository struct definition remains the same, fields are collection pointers
@@ -288,4 +289,123 @@ var _ ssso.OAuthRepository = (*OAuthRepository)(nil)
 // Utility for generating ObjectIDs if needed elsewhere in mongodb package
 func NewObjectID() string {
 	return mongo.NewObjectID().Hex()
+// DeviceAuthorizationRepository implementation
+
+// SaveDeviceAuth stores a new device authorization request.
+func (r *OAuthRepository) SaveDeviceAuth(ctx context.Context, auth *ssso.DeviceCode) error {
+	collection := r.db.Collection(deviceAuthCollectionName)
+	auth.ID = uuid.NewString()
+	auth.CreatedAt = time.Now().UTC()
+	_, err := collection.InsertOne(ctx, auth)
+	if err != nil {
+		// Handle potential duplicate key errors if UserCode or DeviceCode should be unique globally
+		// if mongo.IsDuplicateKeyError(err) { ... } // Note: mongo.IsDuplicateKeyError is for older driver versions. v2 uses a different approach.
+		// For v2, you might check for err.HasErrorCode(11000) or err.HasErrorLabel("DuplicateKey")
+		return err
+	}
+	return nil
+}
+
+// GetDeviceAuthByDeviceCode retrieves a device authorization record by its device_code.
+func (r *OAuthRepository) GetDeviceAuthByDeviceCode(ctx context.Context, deviceCode string) (*ssso.DeviceCode, error) {
+	collection := r.db.Collection(deviceAuthCollectionName)
+	var result ssso.DeviceCode
+	err := collection.FindOne(ctx, bson.M{"device_code": deviceCode}).Decode(&result)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, ssso.ErrDeviceCodeNotFound // Define this error in ssso package
+		}
+		return nil, err
+	}
+	return &result, nil
+}
+
+// GetDeviceAuthByUserCode retrieves a device authorization record by its user_code.
+func (r *OAuthRepository) GetDeviceAuthByUserCode(ctx context.Context, userCode string) (*ssso.DeviceCode, error) {
+	collection := r.db.Collection(deviceAuthCollectionName)
+	var result ssso.DeviceCode
+	filter := bson.M{
+		"user_code":  userCode,
+		"expires_at": bson.M{"$gt": time.Now().UTC()},
+		// "status": ssso.DeviceCodeStatusPending, // Add this if direct lookups should only find pending codes
+	}
+	err := collection.FindOne(ctx, filter).Decode(&result)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, ssso.ErrUserCodeNotFound // Define this error in ssso package
+		}
+		return nil, err
+	}
+	return &result, nil
+}
+
+// ApproveDeviceAuth marks a device authorization as approved by a user.
+func (r *OAuthRepository) ApproveDeviceAuth(ctx context.Context, userCode string, userID string) (*ssso.DeviceCode, error) {
+	collection := r.db.Collection(deviceAuthCollectionName)
+	filter := bson.M{
+		"user_code":  userCode,
+		"expires_at": bson.M{"$gt": time.Now().UTC()},
+		"status":     ssso.DeviceCodeStatusPending,
+	}
+	update := bson.M{
+		"$set": bson.M{
+			"status":  ssso.DeviceCodeStatusAuthorized,
+			"user_id": userID,
+		},
+	}
+	opt := options.FindOneAndUpdate().SetReturnDocument(options.After)
+	var updatedDoc ssso.DeviceCode
+	err := collection.FindOneAndUpdate(ctx, filter, update, opt).Decode(&updatedDoc)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			// Could be expired, already approved, or code never existed
+			return nil, ssso.ErrCannotApproveDeviceAuth // Define this error
+		}
+		return nil, err
+	}
+	return &updatedDoc, nil
+}
+
+// UpdateDeviceAuthStatus updates the status of a device authorization record.
+func (r *OAuthRepository) UpdateDeviceAuthStatus(ctx context.Context, deviceCode string, status ssso.DeviceCodeStatus) error {
+	collection := r.db.Collection(deviceAuthCollectionName)
+	filter := bson.M{"device_code": deviceCode}
+	update := bson.M{"$set": bson.M{"status": status}}
+	result, err := collection.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return err
+	}
+	if result.MatchedCount == 0 {
+		return ssso.ErrDeviceCodeNotFound // Use a defined error
+	}
+	return nil
+}
+
+// UpdateDeviceAuthLastPolledAt updates the last polled timestamp for a device code.
+func (r *OAuthRepository) UpdateDeviceAuthLastPolledAt(ctx context.Context, deviceCode string) error {
+	collection := r.db.Collection(deviceAuthCollectionName)
+	filter := bson.M{"device_code": deviceCode}
+	update := bson.M{"$set": bson.M{"last_polled_at": time.Now().UTC()}}
+	result, err := collection.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return err
+	}
+	if result.MatchedCount == 0 {
+		return ssso.ErrDeviceCodeNotFound
+	}
+	return nil
+}
+
+// DeleteExpiredDeviceAuths removes device authorization records that have expired.
+func (r *OAuthRepository) DeleteExpiredDeviceAuths(ctx context.Context) error {
+	collection := r.db.Collection(deviceAuthCollectionName)
+	filter := bson.M{
+		"$or": []bson.M{
+			{"expires_at": bson.M{"$lte": time.Now().UTC()}},
+			// Could also delete already redeemed and old codes
+			// {"status": ssso.DeviceCodeStatusRedeemed, "created_at": bson.M{"$lt": time.Now().Add(-someOldDuration)}},
+		},
+	}
+	_, err := collection.DeleteMany(ctx, filter)
+	return err
 }

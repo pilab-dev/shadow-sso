@@ -8,6 +8,17 @@ import (
 
 var ErrMissingRequiredParameter = errors.New("missing required parameter")
 
+var (
+	// ... existing errors ... // This comment will be kept as is, as the new errors are added below it.
+	ErrDeviceCodeNotFound      = errors.New("device code not found")
+	ErrUserCodeNotFound        = errors.New("user code not found or expired")
+	ErrCannotApproveDeviceAuth = errors.New("cannot approve device authorization; code may be invalid, expired, or already used")
+	ErrAuthorizationPending    = errors.New("authorization pending") // Specific error for device flow polling
+	ErrSlowDown                = errors.New("slow down")             // Specific error for device flow polling if too frequent
+	ErrDeviceFlowAccessDenied  = errors.New("access denied")         // User denied the request
+	ErrDeviceFlowTokenExpired  = errors.New("token expired")         // Device code or user code expired
+)
+
 // OAuth2Error represents a standardized OAuth 2.0 error.
 type OAuth2Error struct {
 	Code        string `json:"error"`

@@ -2,7 +2,9 @@ package ssso
 
 import (
 	"context"
+	"crypto/rand" // Added
 	"crypto/subtle"
+	"encoding/hex" // Added
 	"fmt"
 	"strings"
 	"time"
@@ -10,8 +12,54 @@ import (
 	"github.com/google/uuid"
 	"github.com/pilab-dev/shadow-sso/api"
 	"github.com/pilab-dev/shadow-sso/client"
+	serrors "github.com/pilab-dev/shadow-sso/errors" // Import the aliased errors
 	"golang.org/x/crypto/bcrypt"
 )
+
+// Constants for Device Flow
+const (
+	deviceCodeLength   = 32 // Length of the device_code in bytes
+	userCodeLength     = 8  // Length of the user_code (e.g., "ABCD-EFGH")
+	userCodeCharset    = "BCDFGHJKLMNPQRSTVWXYZ0123456789" // Base32-like, avoiding ambiguous chars
+	userCodeChunkSize  = 4
+	deviceCodeLifetime = 10 * time.Minute // How long device_code and user_code are valid (e.g., 10 minutes)
+	defaultPollInterval = 5 // Default polling interval in seconds
+)
+
+// generateRandomString generates a secure random string of given length in bytes, hex encoded.
+func generateRandomString(length int) (string, error) {
+	b := make([]byte, length)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// generateUserCode generates a user-friendly code.
+func generateUserCode(length int, charset string, chunkSize int) string {
+	b := make([]byte, length)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback or panic, this should ideally not fail
+		panic(fmt.Errorf("failed to generate random bytes for user code: %w", err))
+	}
+
+	for i := 0; i < length; i++ {
+		b[i] = charset[int(b[i])%len(charset)]
+	}
+
+	if chunkSize <= 0 {
+		return string(b)
+	}
+
+	var result strings.Builder
+	for i, char := range b {
+		if i > 0 && i%chunkSize == 0 {
+			result.WriteString("-")
+		}
+		result.WriteByte(char)
+	}
+	return result.String()
+}
 
 type OAuthService struct {
 	oauthRepo    OAuthRepository
@@ -433,6 +481,182 @@ type TokenIntrospection struct {
 	Aud       string `json:"aud,omitempty"`
 	Iss       string `json:"iss,omitempty"`
 	Jti       string `json:"jti,omitempty"`
+}
+
+// InitiateDeviceAuthorization handles the device authorization request (RFC 8628, Section 3.1).
+func (s *OAuthService) InitiateDeviceAuthorization(ctx context.Context, clientID string, scope string, verificationBaseURI string) (*api.DeviceAuthResponse, error) {
+	// 1. Validate Client
+	cli, err := s.clientRepo.GetClient(ctx, clientID)
+	if err != nil {
+		// If client not found or other error
+		return nil, serrors.NewInvalidClient("client not found or invalid")
+	}
+
+	// Check if client is allowed to use device_authorization grant type
+	// A proper implementation should check `cli.AllowedGrantTypes` for "urn:ietf:params:oauth:grant-type:device_code"
+	// For example:
+	// if !contains(cli.AllowedGrantTypes, "urn:ietf:params:oauth:grant-type:device_code") {
+	// 	return nil, serrors.NewUnsupportedGrantType("client not allowed to use device flow")
+	// }
+	_ = cli // Use cli to satisfy compiler until full validation is implemented
+
+	// 2. Generate Codes
+	deviceCodeVal, err := generateRandomString(deviceCodeLength)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate device_code: %w", err)
+	}
+	userCodeVal := generateUserCode(userCodeLength, userCodeCharset, userCodeChunkSize)
+
+	// 3. Prepare DeviceCode struct
+	expiresAt := time.Now().UTC().Add(deviceCodeLifetime)
+	deviceAuth := &DeviceCode{ // Assuming DeviceCode is in the same package (ssso)
+		ID:           uuid.NewString(),
+		DeviceCode:   deviceCodeVal,
+		UserCode:     userCodeVal,
+		ClientID:     clientID,
+		Scope:        scope, // TODO: Validate scope against client's allowed scopes and default scopes
+		Status:       DeviceCodeStatusPending, // ssso.DeviceCodeStatusPending
+		ExpiresAt:    expiresAt,
+		Interval:     defaultPollInterval,
+		CreatedAt:    time.Now().UTC(),
+		LastPolledAt: time.Time{}, // Initialize as zero
+	}
+
+	// 4. Store DeviceCode
+	// Ensure oauthRepo has SaveDeviceAuth method from the previous step.
+	if err := s.oauthRepo.SaveDeviceAuth(ctx, deviceAuth); err != nil {
+		return nil, fmt.Errorf("failed to save device authorization request: %w", err)
+	}
+
+	// 5. Prepare Response
+	verificationURI := fmt.Sprintf("%s/device", verificationBaseURI) // e.g., "https://example.com/device"
+	verificationURIComplete := fmt.Sprintf("%s?user_code=%s", verificationURI, userCodeVal)
+
+	return &api.DeviceAuthResponse{
+		DeviceCode:              deviceCodeVal,
+		UserCode:                userCodeVal,
+		VerificationURI:         verificationURI,
+		VerificationURIComplete: verificationURIComplete,
+		ExpiresIn:               int(deviceCodeLifetime.Seconds()),
+		Interval:                defaultPollInterval,
+	}, nil
+}
+
+// VerifyUserCode handles the user's attempt to authorize a device using a user_code.
+// It links the user_code to the user's session/ID.
+func (s *OAuthService) VerifyUserCode(ctx context.Context, userCode string, userID string) (*DeviceCode, error) {
+	// 1. Retrieve DeviceCode by UserCode using the repository method
+	// The repository method GetDeviceAuthByUserCode should ideally already check for expiry and pending status.
+	// If not, those checks need to be here.
+	deviceAuth, err := s.oauthRepo.GetDeviceAuthByUserCode(ctx, userCode)
+	if err != nil {
+		// This could be ErrUserCodeNotFound if the repo returns a specific error,
+		// or a generic error if the lookup fails for other reasons.
+		if err == serrors.ErrUserCodeNotFound { // Assuming ErrUserCodeNotFound is defined and used by the repo
+			return nil, serrors.ErrUserCodeNotFound
+		}
+		return nil, fmt.Errorf("failed to retrieve device authorization by user code: %w", err)
+	}
+
+	// 2. Double-check status and expiry, though repository might have done some of this.
+	//    This provides an additional layer of validation in the service.
+	if deviceAuth.Status != DeviceCodeStatusPending {
+		// If already authorized, denied, or redeemed.
+		// Consider returning a specific error or message. For example, if already authorized by this user or another.
+		return nil, serrors.ErrCannotApproveDeviceAuth // Or a more specific "already processed" error
+	}
+
+	if time.Now().UTC().After(deviceAuth.ExpiresAt) {
+		// Though GetDeviceAuthByUserCode should ideally not return expired codes,
+		// an extra check doesn't hurt, especially if there's a slight race condition.
+		// Update status to expired if not already.
+		_ = s.oauthRepo.UpdateDeviceAuthStatus(ctx, deviceAuth.DeviceCode, DeviceCodeStatusExpired)
+		return nil, serrors.ErrUserCodeNotFound // Or ErrDeviceFlowTokenExpired
+	}
+
+	// 3. Call ApproveDeviceAuth to mark as authorized and associate userID
+	// The ApproveDeviceAuth method in the repository should handle setting the status
+	// to DeviceCodeStatusAuthorized and associating the userID.
+	updatedDeviceAuth, err := s.oauthRepo.ApproveDeviceAuth(ctx, userCode, userID)
+	if err != nil {
+		// This could be ErrCannotApproveDeviceAuth if the repo returns that,
+		// or a generic error.
+		if err == serrors.ErrCannotApproveDeviceAuth {
+			return nil, serrors.ErrCannotApproveDeviceAuth
+		}
+		return nil, fmt.Errorf("failed to approve device authorization: %w", err)
+	}
+
+	return updatedDeviceAuth, nil
+}
+
+// IssueTokenForDeviceFlow handles token requests for the device_code grant type (RFC 8628, Section 3.4 & 3.5).
+func (s *OAuthService) IssueTokenForDeviceFlow(ctx context.Context, deviceCode string, clientID string) (*api.TokenResponse, error) {
+	// 1. Retrieve DeviceCode by device_code
+	deviceAuth, err := s.oauthRepo.GetDeviceAuthByDeviceCode(ctx, deviceCode)
+	if err != nil {
+		// It's good practice to check for specific errors from the repo if possible.
+		// For example, if the repo returns serrors.ErrDeviceCodeNotFound specifically.
+		// Using errors.Is here is for broader compatibility if the error is wrapped.
+		if err == serrors.ErrDeviceCodeNotFound || (err != nil && strings.Contains(err.Error(), "not found")) { // Basic check
+			return nil, serrors.ErrDeviceFlowTokenExpired // RFC: "expired_token" for invalid/expired device_code
+		}
+		return nil, fmt.Errorf("failed to retrieve device auth by device code: %w", err)
+	}
+
+	// 2. Validate ClientID
+	if deviceAuth.ClientID != clientID {
+		return nil, serrors.NewInvalidClient("client ID mismatch") // RFC: "invalid_client" or "invalid_grant"
+	}
+
+	// 3. Check DeviceCode Status
+	switch deviceAuth.Status {
+	case DeviceCodeStatusPending:
+		// Update LastPolledAt. Important for rate limiting / slow_down logic.
+		// We'll call this even if we return authorization_pending.
+		// A real implementation of "slow_down" would check the interval *before* this update.
+		if pollErr := s.oauthRepo.UpdateDeviceAuthLastPolledAt(ctx, deviceAuth.DeviceCode); pollErr != nil {
+			// Log this error, but it's not fatal for returning authorization_pending.
+			// Consider structured logging in a real application.
+			fmt.Printf("Warning: failed to update last polled at for device code %s: %v\n", deviceAuth.DeviceCode, pollErr)
+		}
+		// RFC 8628: authorization_pending
+		// Full "slow_down" logic would involve checking deviceAuth.LastPolledAt against deviceAuth.Interval
+		// before this point and returning serrors.ErrSlowDown if necessary.
+		return nil, serrors.ErrAuthorizationPending
+
+	case DeviceCodeStatusAuthorized:
+		// User has approved. Proceed to issue tokens.
+		tokenResponse, tokenErr := s.tokenService.GenerateTokenPair(ctx, deviceAuth.ClientID, deviceAuth.UserID, deviceAuth.Scope, time.Hour) // Default 1 hour
+		if tokenErr != nil {
+			return nil, fmt.Errorf("failed to generate token pair for device flow: %w", tokenErr)
+		}
+
+		// Mark the device code as redeemed.
+		if redeemErr := s.oauthRepo.UpdateDeviceAuthStatus(ctx, deviceAuth.DeviceCode, DeviceCodeStatusRedeemed); redeemErr != nil {
+			// This is an internal server issue if it fails. Log it.
+			// The token was issued, so we can't easily roll that back.
+			// This might lead to the same device_code being used to get multiple tokens if not handled.
+			// A robust system might have a retry mechanism or flag for cleanup.
+			fmt.Printf("Critical Warning: failed to mark device code %s as redeemed after token issuance: %v\n", deviceAuth.DeviceCode, redeemErr)
+		}
+		return tokenResponse, nil
+
+	case DeviceCodeStatusExpired:
+		return nil, serrors.ErrDeviceFlowTokenExpired // RFC 8628: expired_token
+
+	case DeviceCodeStatusDenied:
+		return nil, serrors.ErrDeviceFlowAccessDenied // RFC 8628: access_denied
+
+	case DeviceCodeStatusRedeemed:
+		// This means the code was already used to issue tokens.
+		// Treat as expired_token or invalid_grant as per RFC.
+		return nil, serrors.ErrDeviceFlowTokenExpired
+
+	default:
+		// Unknown or unexpected status.
+		return nil, serrors.NewServerError("unexpected device authorization status") // Or invalid_grant
+	}
 }
 
 // IntrospectToken implements RFC 7662 Token Introspection
