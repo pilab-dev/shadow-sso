@@ -15,6 +15,17 @@ type TokenResponse struct {
 	RefreshToken string `json:"refresh_token,omitempty"`
 }
 
+// DeviceAuthResponse is the response from the device authorization endpoint.
+// See RFC 8628, Section 3.2.
+type DeviceAuthResponse struct {
+	DeviceCode              string `json:"device_code"`
+	UserCode                string `json:"user_code"`
+	VerificationURI         string `json:"verification_uri"`
+	VerificationURIComplete string `json:"verification_uri_complete,omitempty"`
+	ExpiresIn               int    `json:"expires_in"` // Lifetime in seconds of the device_code and user_code
+	Interval                int    `json:"interval,omitempty"` // Minimum polling interval in seconds for the device
+}
+
 // OpenIDConfiguration represents the OpenID Connect discovery document
 //
 //nolint:tagliatelle
@@ -22,6 +33,7 @@ type OpenIDConfiguration struct {
 	Issuer                                    string   `json:"issuer"`
 	AuthorizationEndpoint                     string   `json:"authorization_endpoint"`
 	TokenEndpoint                             string   `json:"token_endpoint"`
+	DeviceAuthorizationEndpoint               *string  `json:"device_authorization_endpoint,omitempty"` // New field
 	EndSessionEndpoint                        *string  `json:"end_session_endpoint,omitempty"`
 	UserInfoEndpoint                          string   `json:"userinfo_endpoint"`
 	JwksURI                                   string   `json:"jwks_uri"`
