@@ -7,4 +7,5 @@ const (
 	TokensCollection       = "oauth_tokens"
 	ChallengesCollection   = "oauth_pkce_challenges"
 	UserSessionsCollection = "oauth_user_sessions"
+	deviceAuthCollectionName = "device_authorizations"
 )
