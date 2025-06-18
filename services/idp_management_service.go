@@ -5,12 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"strings" // For error checking and string manipulation
-	"time"    // For timestamps
 
+	// For timestamps
 	"connectrpc.com/connect"
 	"github.com/pilab-dev/shadow-sso/domain"
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/sso/v1"
 	"github.com/pilab-dev/shadow-sso/gen/sso/v1/ssov1connect"
+
 	// "github.com/pilab-dev/shadow-sso/internal/auth/rbac" // Not directly used here, authz interceptor handles
 	// "github.com/pilab-dev/shadow-sso/middleware" // Not directly used here
 	"github.com/rs/zerolog/log"
@@ -66,15 +67,14 @@ func toIdPProto(idp *domain.IdentityProvider, includeSecret bool) *ssov1.Identit
 	if includeSecret { // Only used if caller explicitly needs to show a newly set plain secret
 		proto.OidcClientSecret = idp.OIDCClientSecret
 	} else {
-        // Ensure secret is never sent in GET/LIST responses, even if it's accidentally in the domain model passed.
-        // The domain model itself has json:"-" for OIDCClientSecret, so it wouldn't be marshalled to JSON,
-        // but for proto conversion, we explicitly omit it unless includeSecret is true.
-        // For Add/Update response, the secret is typically not returned, or a message saying "secret set/updated".
-        // The IdentityProviderProto field definition has `oidc_client_secret` but it's a server responsibility
-        // to not populate it in read operations.
-         proto.OidcClientSecret = "" // Always omit unless specifically requested (which is rare for reads)
-    }
-
+		// Ensure secret is never sent in GET/LIST responses, even if it's accidentally in the domain model passed.
+		// The domain model itself has json:"-" for OIDCClientSecret, so it wouldn't be marshalled to JSON,
+		// but for proto conversion, we explicitly omit it unless includeSecret is true.
+		// For Add/Update response, the secret is typically not returned, or a message saying "secret set/updated".
+		// The IdentityProviderProto field definition has `oidc_client_secret` but it's a server responsibility
+		// to not populate it in read operations.
+		proto.OidcClientSecret = "" // Always omit unless specifically requested (which is rare for reads)
+	}
 
 	for i, am := range idp.AttributeMappings {
 		proto.AttributeMappings[i] = &ssov1.AttributeMappingProto{
@@ -110,7 +110,6 @@ func (s *IdPManagementServer) AddIdP(ctx context.Context, req *connect.Request[s
 	if domainIdPType == "" && req.Msg.Type == ssov1.IdPTypeProto_IDP_TYPE_UNSPECIFIED {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("IdP type must be specified (e.g., OIDC)"))
 	}
-
 
 	domainIdP := &domain.IdentityProvider{
 		Name:      req.Msg.Name,

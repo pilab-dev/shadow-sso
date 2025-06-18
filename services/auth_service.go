@@ -8,13 +8,11 @@ import (
 	"time"    // Needed for GenerateTokenPair TTL and session expiry
 
 	"connectrpc.com/connect"
-	"github.com/pilab-dev/shadow-sso/api"                // For api.TokenResponse
 	"github.com/pilab-dev/shadow-sso/domain"
-	ssov1 "github.com/pilab-dev/shadow-sso/gen/sso/v1"
-	"github.com/pilab-dev/shadow-sso/gen/sso/v1/ssov1connect"
+	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
+	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
 	"github.com/pilab-dev/shadow-sso/internal/auth/totp" // For TOTP validation
 	"github.com/pilab-dev/shadow-sso/middleware"         // For GetAuthenticatedTokenFromContext
-	"github.com/pilab-dev/shadow-sso/ssso"               // For *ssso.TokenService
 	"github.com/rs/zerolog/log"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb" // For mapping time to proto
@@ -23,17 +21,17 @@ import (
 // AuthServer implements the ssov1connect.AuthServiceHandler interface.
 type AuthServer struct {
 	ssov1connect.UnimplementedAuthServiceHandler // Embed for forward compatibility
-	userRepo       domain.UserRepository
-	sessionRepo    domain.SessionRepository
-	tokenService   *ssso.TokenService
-	passwordHasher PasswordHasher
+	userRepo                                     domain.UserRepository
+	sessionRepo                                  domain.SessionRepository
+	tokenService                                 *TokenService
+	passwordHasher                               PasswordHasher
 }
 
 // NewAuthServer creates a new AuthServer.
 func NewAuthServer(
 	userRepo domain.UserRepository,
 	sessionRepo domain.SessionRepository,
-	tokenService *ssso.TokenService,
+	tokenService *TokenService,
 	passwordHasher PasswordHasher,
 ) *AuthServer {
 	return &AuthServer{
@@ -166,7 +164,7 @@ func (s *AuthServer) completeLogin(ctx context.Context, user *domain.User) (*con
 		IdToken:               tokenPair.IDToken,
 		UserInfo:              userInfoProto,
 		TwoFactorRequired:     false, // Final response, 2FA already passed or not needed
-		TwoFactorSessionToken: "",      // Not needed in final response
+		TwoFactorSessionToken: "",    // Not needed in final response
 	}), nil
 }
 
@@ -179,7 +177,7 @@ func (s *AuthServer) Verify2FA(ctx context.Context, req *connect.Request[ssov1.V
 	// It should involve validating a short-lived, server-generated token (e.g., JWT or opaque token).
 	expectedTFASessionTokenPrefix := "placeholder_2fa_session_token_for_"
 	if !strings.HasPrefix(req.Msg.TwoFactorSessionToken, expectedTFASessionTokenPrefix) ||
-	   req.Msg.TwoFactorSessionToken != expectedTFASessionTokenPrefix+req.Msg.UserId {
+		req.Msg.TwoFactorSessionToken != expectedTFASessionTokenPrefix+req.Msg.UserId {
 		log.Warn().Str("userID", req.Msg.UserId).Str("receivedToken", req.Msg.TwoFactorSessionToken).Msg("Verify2FA: Invalid or missing two_factor_session_token")
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid or expired 2FA session"))
 	}
@@ -227,47 +225,46 @@ func (s *AuthServer) Verify2FA(ctx context.Context, req *connect.Request[ssov1.V
 
 // Logout method (existing, ensure it's compatible with any context changes if needed)
 func (s *AuthServer) Logout(ctx context.Context, req *connect.Request[ssov1.LogoutRequest]) (*connect.Response[emptypb.Empty], error) {
-    authedToken, ok := middleware.GetAuthenticatedTokenFromContext(ctx)
-    if !ok || authedToken == nil {
-        return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated for logout"))
-    }
+	authedToken, ok := middleware.GetAuthenticatedTokenFromContext(ctx)
+	if !ok || authedToken == nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated for logout"))
+	}
 
-    // Assuming token.ID from context is the JTI, which is stored as TokenID in domain.Session
-    session, err := s.sessionRepo.GetSessionByTokenID(ctx, authedToken.ID)
-    if err != nil {
-        if strings.Contains(err.Error(), "not found") { // Check for domain/repo specific "not found"
-            log.Warn().Str("jti", authedToken.ID).Msg("Logout: No active session found for token JTI, perhaps already logged out or session expired.")
-             // If no session, maybe token is already effectively invalid. Can still try to revoke from denylist.
-        } else {
-            log.Error().Err(err).Str("jti", authedToken.ID).Msg("Logout: Error retrieving session by JTI")
-            // Fall through to try token revocation anyway
-        }
-    }
+	// Assuming token.ID from context is the JTI, which is stored as TokenID in domain.Session
+	session, err := s.sessionRepo.GetSessionByTokenID(ctx, authedToken.ID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") { // Check for domain/repo specific "not found"
+			log.Warn().Str("jti", authedToken.ID).Msg("Logout: No active session found for token JTI, perhaps already logged out or session expired.")
+			// If no session, maybe token is already effectively invalid. Can still try to revoke from denylist.
+		} else {
+			log.Error().Err(err).Str("jti", authedToken.ID).Msg("Logout: Error retrieving session by JTI")
+			// Fall through to try token revocation anyway
+		}
+	}
 
-    if session != nil {
-        session.IsRevoked = true
-        session.ExpiresAt = time.Now() // Expire immediately
-        if errUpdate := s.sessionRepo.UpdateSession(ctx, session); errUpdate != nil {
-            log.Error().Err(errUpdate).Str("sessionID", session.ID).Msg("Logout: Failed to update session to revoked")
-            // Non-fatal for logout, proceed to revoke token itself
-        } else {
-            log.Info().Str("sessionID", session.ID).Str("userID", session.UserID).Msg("Logout: Session marked as revoked")
-        }
-    }
+	if session != nil {
+		session.IsRevoked = true
+		session.ExpiresAt = time.Now() // Expire immediately
+		if errUpdate := s.sessionRepo.UpdateSession(ctx, session); errUpdate != nil {
+			log.Error().Err(errUpdate).Str("sessionID", session.ID).Msg("Logout: Failed to update session to revoked")
+			// Non-fatal for logout, proceed to revoke token itself
+		} else {
+			log.Info().Str("sessionID", session.ID).Str("userID", session.UserID).Msg("Logout: Session marked as revoked")
+		}
+	}
 
-    // Also attempt to revoke the token via TokenService (e.g., if it maintains a denylist)
-    // TokenService.RevokeToken might expect the raw token value or JTI.
-    // Current ssso.TokenRepository.RevokeToken expects tokenValue.
-    // If authedToken.TokenValue is available, use it. Otherwise, JTI (authedToken.ID).
-    // Let's assume the TokenService's RevokeToken is designed to handle JTI for this scenario.
-    if errRevoke := s.tokenService.RevokeToken(ctx, authedToken.ID); errRevoke != nil {
-        log.Error().Err(errRevoke).Str("jti", authedToken.ID).Msg("Logout: Failed to revoke token via TokenService (e.g., denylist)")
-        // This might not be fatal if session is already marked.
-    }
+	// Also attempt to revoke the token via TokenService (e.g., if it maintains a denylist)
+	// TokenService.RevokeToken might expect the raw token value or JTI.
+	// Current ssso.TokenRepository.RevokeToken expects tokenValue.
+	// If authedToken.TokenValue is available, use it. Otherwise, JTI (authedToken.ID).
+	// Let's assume the TokenService's RevokeToken is designed to handle JTI for this scenario.
+	if errRevoke := s.tokenService.RevokeToken(ctx, authedToken.ID); errRevoke != nil {
+		log.Error().Err(errRevoke).Str("jti", authedToken.ID).Msg("Logout: Failed to revoke token via TokenService (e.g., denylist)")
+		// This might not be fatal if session is already marked.
+	}
 
-    return connect.NewResponse(&emptypb.Empty{}), nil
+	return connect.NewResponse(&emptypb.Empty{}), nil
 }
-
 
 // ListUserSessions method (existing)
 func (s *AuthServer) ListUserSessions(ctx context.Context, req *connect.Request[ssov1.ListUserSessionsRequest]) (*connect.Response[ssov1.ListUserSessionsResponse], error) {
@@ -340,8 +337,8 @@ func (s *AuthServer) ClearUserSessions(ctx context.Context, req *connect.Request
 					// Continue to try others, or return partial error?
 				}
 			} else if errGet != nil {
-                log.Warn().Err(errGet).Str("sessionID", sessionID).Msg("ClearUserSessions: Failed to get session to revoke or session does not belong to user.")
-            }
+				log.Warn().Err(errGet).Str("sessionID", sessionID).Msg("ClearUserSessions: Failed to get session to revoke or session does not belong to user.")
+			}
 		}
 	} else { // Clear all sessions for the target user (or all but current if self and not specified)
 		var exceptSessionID string
@@ -364,7 +361,6 @@ func (s *AuthServer) ClearUserSessions(ctx context.Context, req *connect.Request
 
 	return connect.NewResponse(&emptypb.Empty{}), nil
 }
-
 
 // Ensure AuthServer implements ssov1connect.AuthServiceHandler
 var _ ssov1connect.AuthServiceHandler = (*AuthServer)(nil)
