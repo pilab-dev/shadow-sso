@@ -1,10 +1,12 @@
 package rbac
 
-// Roles
-const (
-	RoleAdmin = "ROLE_ADMIN"
-	RoleUser  = "ROLE_USER"
-)
+import "github.com/pilab-dev/shadow-sso/domain"
+
+// Roles - Constants are now defined in the domain package (domain.RoleAdmin, domain.RoleUser)
+// const (
+// 	RoleAdmin = "ROLE_ADMIN" // Now domain.RoleAdmin
+// 	RoleUser  = "ROLE_USER"  // Now domain.RoleUser
+// )
 
 // Permissions
 // User Management
@@ -61,7 +63,7 @@ const (
 // RoleToPermissionsMap maps roles to their granted permissions.
 // This can be used by the authorization interceptor.
 var RoleToPermissionsMap = map[string][]string{
-	RoleUser: {
+	domain.RoleUser: { // Use domain.RoleUser
 		PermUsersReadSelf,
 		PermUsersUpdateSelf,
 		PermUsersChangePasswordSelf,
@@ -71,7 +73,7 @@ var RoleToPermissionsMap = map[string][]string{
 		PermSessionsListSelf,
 		PermSessionsClearSelf,
 	},
-	RoleAdmin: {
+	domain.RoleAdmin: { // Use domain.RoleAdmin
 		PermUsersCreate,
 		PermUsersReadAll,
 		PermUsersReadSelf, // Admin also has self permissions

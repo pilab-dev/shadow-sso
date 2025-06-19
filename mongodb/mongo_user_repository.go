@@ -7,9 +7,9 @@ import (
 	"strconv" // For ListUsers pageToken as offset
 	"time"
 
-	"github.com/pilab-dev/shadow-sso/domain"             // Use the new domain.User
-	"github.com/pilab-dev/shadow-sso/internal/auth/rbac" // Import rbac package
-	"github.com/rs/zerolog/log"                          // Assuming logger
+	"github.com/pilab-dev/shadow-sso/domain" // Use the new domain.User
+	// "github.com/pilab-dev/shadow-sso/internal/auth/rbac" // No longer needed for Role constants
+	"github.com/rs/zerolog/log" // Assuming logger
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -87,10 +87,10 @@ func (r *UserRepositoryMongo) CreateUser(ctx context.Context, user *domain.User)
 			return fmt.Errorf("failed to count existing users: %w", err)
 		}
 		if count == 0 {
-			user.Roles = []string{rbac.RoleAdmin, rbac.RoleUser} // First user is Admin + User
+			user.Roles = []string{domain.RoleAdmin, domain.RoleUser} // First user is Admin + User
 			log.Info().Str("userID", user.ID).Str("email", user.Email).Msg("First user registered, assigned Admin and User roles.")
 		} else {
-			user.Roles = []string{rbac.RoleUser} // Subsequent users are just User by default
+			user.Roles = []string{domain.RoleUser} // Subsequent users are just User by default
 		}
 	}
 

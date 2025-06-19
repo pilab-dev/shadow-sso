@@ -12,52 +12,31 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/v2/mongo"
-	"go.mongodb.org/mongo-driver/v2/mongo/options"
+	// "go.mongodb.org/mongo-driver/v2/mongo/options" // Options likely handled by testutil or default
 	// "go.mongodb.org/mongo-driver/v2/bson"
+	"github.com/pilab-dev/shadow-sso/mongodb/testutil" // Corrected import path
 )
 
 // Helper function to setup DB for OAuthRepository (TokenRepository part) tests
 func setupOAuthTokenRepoTest(t *testing.T) (ssso.TokenRepository, func(), error) {
-	mongoURI := os.Getenv("TEST_MONGO_URI")
-	if mongoURI == "" {
-		mongoURI = "mongodb://localhost:27017"
-	}
-	dbName := fmt.Sprintf("test_sso_oauth_repo_%d", time.Now().UnixNano())
+	db, cleanup := testutil.SetupTestMongoDB(t, "sso_oauth_repo") // Using the new testutil
 
-	ctx, cancelSetup := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancelSetup()
-
-	// Direct client connection for test isolation
-	client, err := mongo.Connect(options.Client().ApplyURI(mongoURI).SetConnectTimeout(10 * time.Second))
-	if err != nil {
-		return nil, func() {}, fmt.Errorf("mongo.Connect failed for oauth repo test: %w", err)
-	}
-	if errPing := client.Ping(ctx, nil); errPing != nil {
-		client.Disconnect(ctx)
-		return nil, func() {}, fmt.Errorf("mongo.Ping failed for oauth repo test: %w", errPing)
-	}
-	db := client.Database(dbName)
+	// Context for NewOAuthRepository - short duration, as DB connection is already established
+	ctx, cancelRepoSetup := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelRepoSetup()
 
 	// NewOAuthRepository returns a broader ssso.OAuthRepository,
 	// but it also implements ssso.TokenRepository.
 	oauthRepoExt, err := NewOAuthRepository(ctx, db)
 	if err != nil {
-		client.Disconnect(ctx)
+		cleanup() // Call original cleanup from testutil if NewOAuthRepository fails
 		return nil, func() {}, fmt.Errorf("NewOAuthRepository failed: %w", err)
 	}
 
 	var tokenRepo ssso.TokenRepository = oauthRepoExt // Ensure compatibility
 
-	cleanupFunc := func() {
-		mainCtx := context.Background()
-		if errDbDrop := db.Drop(mainCtx); errDbDrop != nil {
-			t.Logf("Warning: failed to drop database %s during cleanup: %v", dbName, errDbDrop)
-		}
-		if errDisconnect := client.Disconnect(mainCtx); errDisconnect != nil {
-			t.Logf("Warning: failed to disconnect test client during cleanup: %v", errDisconnect)
-		}
-	}
-	return tokenRepo, cleanupFunc, nil
+	// The cleanup function from SetupTestMongoDB already handles db drop and client disconnect.
+	return tokenRepo, cleanup, nil
 }
 
 func TestOAuthRepository_TokenMethods_Integration(t *testing.T) {

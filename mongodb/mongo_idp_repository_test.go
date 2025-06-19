@@ -11,47 +11,26 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/v2/mongo"
-	"go.mongodb.org/mongo-driver/v2/mongo/options"
+	// "go.mongodb.org/mongo-driver/v2/mongo/options" // Options likely handled by testutil or default
+	"github.com/pilab-dev/shadow-sso/mongodb/testutil" // Corrected import path
 )
 
 // Helper function to setup DB for IdPRepository tests
 func setupIdPRepoTest(t *testing.T) (domain.IdPRepository, func(), error) {
-	mongoURI := os.Getenv("TEST_MONGO_URI")
-	if mongoURI == "" {
-		mongoURI = "mongodb://localhost:27017"
-	}
-	dbName := fmt.Sprintf("test_sso_idp_repo_%d", time.Now().UnixNano())
+	db, cleanup := testutil.SetupTestMongoDB(t, "sso_idp_repo") // Using the new testutil
 
-	ctx, cancelSetup := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancelSetup()
-
-	// Direct client connection for test isolation
-	client, err := mongo.Connect(options.Client().ApplyURI(mongoURI).SetConnectTimeout(10 * time.Second))
-	if err != nil {
-		return nil, func() {}, fmt.Errorf("mongo.Connect failed for idp repo test: %w", err)
-	}
-	if errPing := client.Ping(ctx, nil); errPing != nil {
-		client.Disconnect(ctx)
-		return nil, func() {}, fmt.Errorf("mongo.Ping failed for idp repo test: %w", errPing)
-	}
-	db := client.Database(dbName)
+	// Context for NewIdPRepositoryMongo - short duration, as DB connection is already established
+	ctx, cancelRepoSetup := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelRepoSetup()
 
 	idpRepo, err := NewIdPRepositoryMongo(ctx, db) // Creates collection and indexes
 	if err != nil {
-		client.Disconnect(ctx)
+		cleanup() // Call original cleanup from testutil if NewIdPRepositoryMongo fails
 		return nil, func() {}, fmt.Errorf("NewIdPRepositoryMongo failed: %w", err)
 	}
 
-	cleanupFunc := func() {
-		mainCtx := context.Background()
-		if errDbDrop := db.Drop(mainCtx); errDbDrop != nil {
-			t.Logf("Warning: failed to drop database %s during cleanup: %v", dbName, errDbDrop)
-		}
-		if errDisconnect := client.Disconnect(mainCtx); errDisconnect != nil {
-			t.Logf("Warning: failed to disconnect test client during cleanup: %v", errDisconnect)
-		}
-	}
-	return idpRepo, cleanupFunc, nil
+	// The cleanup function from SetupTestMongoDB already handles db drop and client disconnect.
+	return idpRepo, cleanup, nil
 }
 
 func TestIdPRepositoryMongo_Integration(t *testing.T) {

@@ -1,0 +1,32 @@
+# config.yaml.example - Configuration for Shadow SSO Server
+
+# Server Ports
+HTTP_PORT: "8080" # Port for the main HTTP server (Gin: OAuth2, OIDC, etc.)
+GRPC_PORT: "8081" # Port for the gRPC/ConnectRPC server (Management APIs)
+
+# MongoDB Configuration
+MONGO_URI: "mongodb://localhost:27017/shadow_sso_main" # Main DB
+MONGO_DB_NAME: "shadow_sso_main" # Explicit DB name if not in URI
+
+# Logging Configuration
+LOG_LEVEL: "debug"  # Supported levels: trace, debug, info, warn, error, fatal, panic
+LOG_PRETTY: true   # Set to false for structured JSON logging in production
+
+# OpenTelemetry (OTel) Configuration
+OTEL_SERVICE_NAME: "shadow-sso-server"
+# OTEL_EXPORTER_ENDPOINT: "http://localhost:14268/api/traces" # Example for Jaeger gRPC
+# OTEL_EXPORTER_ENDPOINT: "http://localhost:4318/v1/traces" # Example for OTLP HTTP
+# OTEL_SAMPLING_RATIO: "0.1" # Example: 0.1 for 10% sampling, 1.0 for always sample
+
+# JWT Configuration (Example)
+JWT_SECRET_KEY: "a_very_secret_jwt_key_please_change_me_in_production_and_use_env_var"
+ACCESS_TOKEN_TTL_MIN: 60  # Access token lifetime in minutes
+REFRESH_TOKEN_TTL_HOUR: 720 # Refresh token lifetime in hours (e.g., 30 days)
+
+# Add other service-specific configurations below
+# Example:
+# OIDC_ISSUER_URL: "https://sso.example.com"
+# DEFAULT_CLIENT_ID: "my-default-spa"
+# DEFAULT_CLIENT_SECRET: "spa-secret" # Only for confidential clients if needed by default setup
+# RATE_LIMIT_RPS: 100
+# RATE_LIMIT_BURST: 200
