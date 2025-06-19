@@ -8,6 +8,7 @@ import (
 	"time"
 
 	// "github.com/pilab-dev/shadow-sso/ssso" // For ssso.Token, ssso.TokenInfo, ssso.TokenRepository
+	ssso "github.com/pilab-dev/shadow-sso"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/v2/mongo"

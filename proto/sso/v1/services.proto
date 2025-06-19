@@ -30,6 +30,14 @@ service AuthService {
   rpc Logout(LogoutRequest) returns (google.protobuf.Empty); // Requires auth token
   rpc ListUserSessions(ListUserSessionsRequest) returns (ListUserSessionsResponse); // Requires auth token, admin or self
   rpc ClearUserSessions(ClearUserSessionsRequest) returns (google.protobuf.Empty); // Requires auth token, admin or self
+  rpc Verify2FA(Verify2FARequest) returns (LoginResponse);
+}
+
+// Verify 2FA Request
+message Verify2FARequest {
+  string user_id = 1;
+  string two_factor_session_token = 2;
+  string totp_code = 3;
 }
 
 // --- ServiceAccountService Messages ---
@@ -98,6 +106,7 @@ message User {
   google.protobuf.Timestamp created_at = 6;
   google.protobuf.Timestamp updated_at = 7;
   google.protobuf.Timestamp last_login_at = 8;
+  repeated string roles = 9; // Comma-separated roles or a repeated field if needed
 }
 
 message RegisterUserRequest {
@@ -160,6 +169,9 @@ message LoginResponse {
   int32 expires_in = 3;  // Seconds
   string refresh_token = 4; // Optional
   User user_info = 5; // Basic user info
+  string id_token = 6;
+  bool two_factor_required = 7;
+  string two_factor_session_token = 8;
 }
 
 message LogoutRequest {

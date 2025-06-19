@@ -29,7 +29,7 @@ func setupPublicKeyRepoTest(t *testing.T) (domain.PublicKeyRepository, func(), e
 	defer cancelSetup()
 
 	// Direct client connection for test isolation
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(mongoURI).SetConnectTimeout(10*time.Second))
+	client, err := mongo.Connect(options.Client().ApplyURI(mongoURI).SetConnectTimeout(10 * time.Second))
 	if err != nil {
 		return nil, func() {}, fmt.Errorf("mongo.Connect failed for pubkey repo test: %w", err)
 	}
@@ -39,8 +39,7 @@ func setupPublicKeyRepoTest(t *testing.T) (domain.PublicKeyRepository, func(), e
 	}
 	db := client.Database(dbName)
 
-
-	pubKeyRepo, err := NewPublicKeyRepositoryMongo(ctx, db) // Creates collection and indexes
+	pubKeyRepo, err := NewPublicKeyRepositoryMongo(db) // Creates collection and indexes
 	if err != nil {
 		client.Disconnect(ctx)
 		return nil, func() {}, fmt.Errorf("NewPublicKeyRepositoryMongo failed: %w", err)

@@ -27,8 +27,6 @@ service TwoFactorService {
   // This invalidates any previously issued recovery codes.
   // Requires the user to be authenticated (e.g., via password or existing 2FA).
   rpc GenerateRecoveryCodes(GenerateRecoveryCodesRequest) returns (GenerateRecoveryCodesResponse);
-
-  // (Future consideration: Admin methods to disable user's 2FA or view status, protected by RBAC)
 }
 
 // --- InitiateTOTPSetup ---

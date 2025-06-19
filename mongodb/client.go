@@ -35,7 +35,7 @@ func InitMongoDB(ctx context.Context, uri, dbName string) error {
 		clientOptions.SetConnectTimeout(10 * time.Second)
 		// Add other client options as needed (e.g., auth, replica set)
 
-		client, clientErr := mongo.Connect(ctx, clientOptions)
+		client, clientErr := mongo.Connect(clientOptions)
 		if clientErr != nil {
 			err = clientErr // Capture error for outer scope
 			log.Fatal().Err(clientErr).Msg("Failed to connect to MongoDB")

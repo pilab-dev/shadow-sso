@@ -1,6 +1,7 @@
 package ssso
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/base64"
@@ -48,6 +49,35 @@ func NewJWKSService(keyRotation time.Duration) (*JWKSService, error) {
 	go service.startKeyRotation()
 
 	return service, nil
+}
+
+func (s *JWKSService) GetPublicJWKS(ctx context.Context) (*JSONWebKeySet, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if len(s.keys) == 0 {
+		return nil, fmt.Errorf("no keys available in JWKS service")
+	}
+
+	var keys []JSONWebKey
+	for kid, privateKey := range s.keys {
+		publicKey := privateKey.Public().(*rsa.PublicKey)
+
+		// RSA kulcs komponensek kódolása
+		n := base64.RawURLEncoding.EncodeToString(publicKey.N.Bytes())
+		e := base64.RawURLEncoding.EncodeToString(big.NewInt(int64(publicKey.E)).Bytes())
+
+		keys = append(keys, JSONWebKey{
+			Kid: kid,
+			Kty: "RSA",
+			Alg: "RS256",
+			Use: "sig",
+			N:   n,
+			E:   e,
+		})
+	}
+
+	return &JSONWebKeySet{Keys: keys}, nil
 }
 
 func (s *JWKSService) GetJWKS() JSONWebKeySet {

@@ -9,6 +9,17 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// TODO: this is a temporary solution.
+func GetRolesFromContext(ctx context.Context) ([]string, bool) {
+	// This function should extract user roles from the context.
+	// It assumes that the authentication interceptor has already set the roles in the context.
+	// Adjust this according to your actual context structure.
+	if roles, ok := ctx.Value("user_roles").([]string); ok {
+		return roles, true
+	}
+	return nil, false
+}
+
 // NewAuthorizationInterceptor creates a Connect interceptor for RBAC authorization.
 // It should run *after* the authentication interceptor.
 func NewAuthorizationInterceptor() connect.Interceptor {

@@ -4,27 +4,23 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	// "os" // For bcrypt error logging in totp package if that's kept
 
 	"connectrpc.com/connect"
 	"github.com/pilab-dev/shadow-sso/domain"
-	ssov1 "github.com/pilab-dev/shadow-sso/gen/sso/v1"         // Use actual generated types
-	"github.com/pilab-dev/shadow-sso/gen/sso/v1/ssov1connect" // For Handler interface
-	// "github.com/pilab-dev/shadow-sso/internal/auth/rbac" // For permissions if needed for admin ops later
+	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
+	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
 	"github.com/pilab-dev/shadow-sso/internal/auth/totp" // The new TOTP utility
 	"github.com/pilab-dev/shadow-sso/middleware"         // For GetAuthenticatedTokenFromContext
-	// "github.com/pilab-dev/shadow-sso/ssso"      // For ssso.Token if needed from context
 	"github.com/rs/zerolog/log"
 	"google.golang.org/protobuf/types/known/emptypb"
-	// "golang.org/x/crypto/bcrypt" // If verifying password for Disable2FA/GenerateRecoveryCodes
 )
 
 // TwoFactorServer implements the ssov1connect.TwoFactorServiceHandler interface.
 type TwoFactorServer struct {
 	ssov1connect.UnimplementedTwoFactorServiceHandler // Embed for forward compatibility
-	userRepo       domain.UserRepository
-	passwordHasher PasswordHasher // For verifying password in Disable2FA/GenerateRecoveryCodes
-	ssoAppName     string         // Used as issuer in TOTP (e.g., "ShadowSSO")
+	userRepo                                          domain.UserRepository
+	passwordHasher                                    PasswordHasher // For verifying password in Disable2FA/GenerateRecoveryCodes
+	ssoAppName                                        string         // Used as issuer in TOTP (e.g., "ShadowSSO")
 	// secretEncrypter Decrypter // For encrypting/decrypting TOTP secret in DB (future)
 }
 
@@ -65,7 +61,7 @@ func (s *TwoFactorServer) InitiateTOTPSetup(ctx context.Context, req *connect.Re
 	}
 
 	user.TwoFactorSecret = otpKey.Secret() // Store base32 secret
-	user.TwoFactorMethod = "TOTP"         // Tentatively set method
+	user.TwoFactorMethod = "TOTP"          // Tentatively set method
 	// user.IsTwoFactorEnabled = false; // Stays false until verified
 
 	if err := s.userRepo.UpdateUser(ctx, user); err != nil {
@@ -158,12 +154,12 @@ func (s *TwoFactorServer) Disable2FA(ctx context.Context, req *connect.Request[s
 	}
 
 	recoveryVerified := false
-    var usedRecoveryCodeIndex = -1
+	usedRecoveryCodeIndex := -1
 	if !passwordVerified && !totpVerified {
 		validRecovery, idx := totp.VerifyRecoveryCode(user.TwoFactorRecoveryCodes, req.Msg.PasswordOr_2FaCode)
 		if validRecovery {
 			recoveryVerified = true
-            usedRecoveryCodeIndex = idx
+			usedRecoveryCodeIndex = idx
 		}
 	}
 
@@ -176,13 +172,12 @@ func (s *TwoFactorServer) Disable2FA(ctx context.Context, req *connect.Request[s
 	user.TwoFactorSecret = ""
 	user.TwoFactorRecoveryCodes = []string{}
 
-    if recoveryVerified { // If a recovery code was used, it should be invalidated
-        if usedRecoveryCodeIndex >= 0 && usedRecoveryCodeIndex < len(user.TwoFactorRecoveryCodes) {
-            // This line was causing issues, should be handled by service logic if needed
-            // For Disable2FA, all recovery codes are cleared anyway.
-        }
-    }
-
+	if recoveryVerified { // If a recovery code was used, it should be invalidated
+		if usedRecoveryCodeIndex >= 0 && usedRecoveryCodeIndex < len(user.TwoFactorRecoveryCodes) {
+			// This line was causing issues, should be handled by service logic if needed
+			// For Disable2FA, all recovery codes are cleared anyway.
+		}
+	}
 
 	if err := s.userRepo.UpdateUser(ctx, user); err != nil {
 		log.Error().Err(err).Str("userID", user.ID).Msg("Disable2FA: Failed to update user to disable 2FA")
@@ -215,7 +210,7 @@ func (s *TwoFactorServer) GenerateRecoveryCodes(ctx context.Context, req *connec
 				totpVerified = true
 			}
 		}
-        // Typically, using a recovery code to generate new recovery codes is disallowed.
+		// Typically, using a recovery code to generate new recovery codes is disallowed.
 		if !passwordVerified && !totpVerified {
 			return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid password or TOTP code for re-authentication"))
 		}

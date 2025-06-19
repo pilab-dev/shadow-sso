@@ -4,23 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings" // For error checking and string manipulation
+	"strings"
 
-	// For timestamps
 	"connectrpc.com/connect"
 	"github.com/pilab-dev/shadow-sso/domain"
-	ssov1 "github.com/pilab-dev/shadow-sso/gen/sso/v1"
-	"github.com/pilab-dev/shadow-sso/gen/sso/v1/ssov1connect"
-
-	// "github.com/pilab-dev/shadow-sso/internal/auth/rbac" // Not directly used here, authz interceptor handles
-	// "github.com/pilab-dev/shadow-sso/middleware" // Not directly used here
+	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
+	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
-	// We might need a way to encrypt/decrypt oidc_client_secret if stored encrypted
-	// For now, assume it's stored as provided (e.g. by admin) or plaintext if that's the policy.
-	// Best practice: encrypt at rest. This service would handle decryption for use, encryption for storage.
-	// This detail is omitted for current implementation simplicity.
 )
 
 // IdPManagementServer implements the ssov1connect.IdPManagementServiceHandler interface.

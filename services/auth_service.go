@@ -8,9 +8,11 @@ import (
 	"time"    // Needed for GenerateTokenPair TTL and session expiry
 
 	"connectrpc.com/connect"
+	ssso "github.com/pilab-dev/shadow-sso"
 	"github.com/pilab-dev/shadow-sso/domain"
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
+	"github.com/pilab-dev/shadow-sso/internal/auth/rbac"
 	"github.com/pilab-dev/shadow-sso/internal/auth/totp" // For TOTP validation
 	"github.com/pilab-dev/shadow-sso/middleware"         // For GetAuthenticatedTokenFromContext
 	"github.com/rs/zerolog/log"
@@ -23,7 +25,7 @@ type AuthServer struct {
 	ssov1connect.UnimplementedAuthServiceHandler // Embed for forward compatibility
 	userRepo                                     domain.UserRepository
 	sessionRepo                                  domain.SessionRepository
-	tokenService                                 *TokenService
+	tokenService                                 *ssso.TokenService
 	passwordHasher                               PasswordHasher
 }
 
@@ -31,7 +33,7 @@ type AuthServer struct {
 func NewAuthServer(
 	userRepo domain.UserRepository,
 	sessionRepo domain.SessionRepository,
-	tokenService *TokenService,
+	tokenService *ssso.TokenService,
 	passwordHasher PasswordHasher,
 ) *AuthServer {
 	return &AuthServer{
@@ -159,7 +161,7 @@ func (s *AuthServer) completeLogin(ctx context.Context, user *domain.User) (*con
 	return connect.NewResponse(&ssov1.LoginResponse{
 		AccessToken:           tokenPair.AccessToken,
 		TokenType:             tokenPair.TokenType,
-		ExpiresIn:             tokenPair.ExpiresIn,
+		ExpiresIn:             int32(tokenPair.ExpiresIn),
 		RefreshToken:          tokenPair.RefreshToken,
 		IdToken:               tokenPair.IDToken,
 		UserInfo:              userInfoProto,

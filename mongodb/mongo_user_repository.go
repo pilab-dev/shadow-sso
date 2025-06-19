@@ -7,9 +7,9 @@ import (
 	"strconv" // For ListUsers pageToken as offset
 	"time"
 
-	"github.com/pilab-dev/shadow-sso/domain" // Use the new domain.User
+	"github.com/pilab-dev/shadow-sso/domain"             // Use the new domain.User
 	"github.com/pilab-dev/shadow-sso/internal/auth/rbac" // Import rbac package
-	"github.com/rs/zerolog/log"             // Assuming logger
+	"github.com/rs/zerolog/log"                          // Assuming logger
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -38,7 +38,7 @@ func NewUserRepositoryMongo(ctx context.Context, db *mongo.Database) (domain.Use
 func (r *UserRepositoryMongo) createIndexes(ctx context.Context) error {
 	indexModels := []mongo.IndexModel{
 		{
-			Keys:    bson.D{{Key: "email", Value: 1}}, // Changed from username to email
+			Keys:    bson.D{{Key: "email", Value: 1}},                                                            // Changed from username to email
 			Options: options.Index().SetUnique(true).SetCollation(&options.Collation{Locale: "en", Strength: 2}), // Case-insensitive unique email
 		},
 		// _id index is created automatically by MongoDB.
@@ -47,7 +47,8 @@ func (r *UserRepositoryMongo) createIndexes(ctx context.Context) error {
 			Options: options.Index().SetUnique(false),
 		},
 	}
-	opts := options.CreateIndexes().SetMaxTime(10 * time.Second)
+
+	opts := options.CreateIndexes()
 	_, err := r.users.Indexes().CreateMany(ctx, indexModels, opts)
 	if err != nil {
 		// It's common for index creation to fail if indexes already exist with different options.
@@ -74,8 +75,8 @@ func (r *UserRepositoryMongo) CreateUser(ctx context.Context, user *domain.User)
 
 	// Initialize 2FA fields to default values
 	user.IsTwoFactorEnabled = false
-	user.TwoFactorMethod = "NONE" // Or a specific constant domain.TwoFactorMethodNone
-	user.TwoFactorSecret = ""     // Explicitly empty
+	user.TwoFactorMethod = "NONE"            // Or a specific constant domain.TwoFactorMethodNone
+	user.TwoFactorSecret = ""                // Explicitly empty
 	user.TwoFactorRecoveryCodes = []string{} // Explicitly empty slice
 
 	// Initial Role Assignment Logic
@@ -180,8 +181,8 @@ func (r *UserRepositoryMongo) ListUsers(ctx context.Context, pageToken string, p
 		if err == nil && parsedSkip > 0 {
 			skip = parsedSkip
 		} else if err != nil {
-            log.Warn().Err(err).Str("pageToken", pageToken).Msg("Invalid pageToken, using default skip 0")
-        }
+			log.Warn().Err(err).Str("pageToken", pageToken).Msg("Invalid pageToken, using default skip 0")
+		}
 	}
 
 	findOptions := options.Find()
