@@ -30,7 +30,7 @@ func NewSessionRepositoryMongo(ctx context.Context, db *mongo.Database) (domain.
 			Options: options.Index().SetUnique(true),
 		},
 		{
-			Keys:    bson.D{{Key: "token_id", Value: 1}}, // JWT JTI, should be unique if used as main lookup
+			Keys:    bson.D{{Key: "token_id", Value: 1}},             // JWT JTI, should be unique if used as main lookup
 			Options: options.Index().SetUnique(true).SetSparse(true), // Sparse if not all sessions have it
 		},
 		{
@@ -41,20 +41,22 @@ func NewSessionRepositoryMongo(ctx context.Context, db *mongo.Database) (domain.
 			Keys:    bson.D{{Key: "expires_at", Value: 1}},
 			Options: options.Index().SetExpireAfterSeconds(0), // TTL index for automatic cleanup
 		},
-        {
+		{
 			Keys:    bson.D{{Key: "is_revoked", Value: 1}},
 			Options: options.Index(),
 		},
 	}
-	opts := options.CreateIndexes().SetMaxTime(10 * time.Second)
+
+	opts := options.CreateIndexes()
 	_, err := repo.collection.Indexes().CreateMany(ctx, indexModels, opts)
 	if err != nil {
 		// Log and continue or return error based on desired strictness
 		log.Warn().Err(err).Msg("Issue creating indexes for user_sessions collection (might already exist or other error)")
 		// return nil, fmt.Errorf("failed to create session indexes: %w", err) // Stricter option
 	} else {
-        log.Info().Msg("Indexes for user_sessions collection ensured.")
-    }
+		log.Info().Msg("Indexes for user_sessions collection ensured.")
+	}
+
 	return repo, nil
 }
 
@@ -66,13 +68,13 @@ func (r *SessionRepositoryMongo) StoreSession(ctx context.Context, session *doma
 	if session.CreatedAt.IsZero() {
 		session.CreatedAt = time.Now().UTC()
 	}
-    // ExpiresAt should be set by the caller (AuthService)
+	// ExpiresAt should be set by the caller (AuthService)
 
 	_, err := r.collection.InsertOne(ctx, session)
 	if err != nil {
 		if mongo.IsDuplicateKeyError(err) {
-            return errors.New("session with this ID or TokenID already exists")
-        }
+			return errors.New("session with this ID or TokenID already exists")
+		}
 		log.Error().Err(err).Msg("Error storing session in MongoDB")
 		return err
 	}
@@ -107,27 +109,26 @@ func (r *SessionRepositoryMongo) GetSessionByTokenID(ctx context.Context, tokenI
 	return &session, nil
 }
 
-
 // UpdateSession updates an existing session, e.g., to mark it as revoked.
 func (r *SessionRepositoryMongo) UpdateSession(ctx context.Context, session *domain.Session) error {
 	if session.ID == "" {
 		return errors.New("session ID is required for update")
 	}
 	filter := bson.M{"_id": session.ID}
-    // Example: update IsRevoked and ExpiresAt if needed
+	// Example: update IsRevoked and ExpiresAt if needed
 	update := bson.M{"$set": bson.M{
 		"is_revoked": session.IsRevoked,
 		"expires_at": session.ExpiresAt, // Allow extending or shortening session
-        // Potentially other fields like UserAgent, IPAddress if they can change post-creation
+		// Potentially other fields like UserAgent, IPAddress if they can change post-creation
 	}}
 	result, err := r.collection.UpdateOne(ctx, filter, update)
 	if err != nil {
 		log.Error().Err(err).Str("sessionID", session.ID).Msg("Error updating session in MongoDB")
 		return err
 	}
-    if result.MatchedCount == 0 {
-        return errors.New("session not found for update")
-    }
+	if result.MatchedCount == 0 {
+		return errors.New("session not found for update")
+	}
 	return nil
 }
 
@@ -138,9 +139,9 @@ func (r *SessionRepositoryMongo) DeleteSession(ctx context.Context, id string) e
 		log.Error().Err(err).Str("id", id).Msg("Error deleting session from MongoDB")
 		return err
 	}
-    if result.DeletedCount == 0 {
-        return errors.New("session not found for deletion")
-    }
+	if result.DeletedCount == 0 {
+		return errors.New("session not found for deletion")
+	}
 	return nil
 }
 
@@ -164,9 +165,9 @@ func (r *SessionRepositoryMongo) ListSessionsByUserID(ctx context.Context, userI
 		}
 		mongoFilter["created_at"] = dateFilter // Or use 'expires_at' or another relevant date field
 	}
-    if filter.IsRevoked != nil {
-        mongoFilter["is_revoked"] = *filter.IsRevoked
-    }
+	if filter.IsRevoked != nil {
+		mongoFilter["is_revoked"] = *filter.IsRevoked
+	}
 
 	cursor, err := r.collection.Find(ctx, mongoFilter, options.Find().SetSort(bson.D{{"created_at", -1}}))
 	if err != nil {
@@ -197,7 +198,6 @@ func (r *SessionRepositoryMongo) DeleteSessionsByUserID(ctx context.Context, use
 	}
 	return result.DeletedCount, nil
 }
-
 
 // Ensure interface compliance
 var _ domain.SessionRepository = (*SessionRepositoryMongo)(nil)

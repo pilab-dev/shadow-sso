@@ -13,8 +13,8 @@ import (
 	"connectrpc.com/connect"
 	"github.com/google/uuid" // For generating key IDs
 	"github.com/pilab-dev/shadow-sso/domain"
-	ssov1 "github.com/pilab-dev/shadow-sso/gen/sso/v1"
-	"github.com/pilab-dev/shadow-sso/gen/sso/v1/ssov1connect"
+	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
+	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
 	"google.golang.org/protobuf/types/known/emptypb"
 	// Add other necessary imports like service_account_repository, public_key_repository
 )

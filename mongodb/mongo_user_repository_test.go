@@ -4,14 +4,15 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/pilab-dev/shadow-sso/domain"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"go.mongodb.org/mongo-driver/v2/bson" // For cleanup
+	"github.com/stretchr/testify/require" // For cleanup
 	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 // Helper function to setup DB for tests
@@ -35,7 +36,7 @@ func setupUserRepoTest(t *testing.T) (domain.UserRepository, func(), error) {
 	// A simple approach for testing might be to directly use mongo.Connect and get a db instance.
 	// Let's refine this to directly connect for test isolation if InitMongoDB is strictly singleton.
 
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(mongoURI).SetConnectTimeout(10*time.Second))
+	client, err := mongo.Connect(options.Client().ApplyURI(mongoURI).SetConnectTimeout(10 * time.Second))
 	if err != nil {
 		return nil, func() {}, fmt.Errorf("mongo.Connect failed: %w", err)
 	}
@@ -44,7 +45,6 @@ func setupUserRepoTest(t *testing.T) (domain.UserRepository, func(), error) {
 		return nil, func() {}, fmt.Errorf("mongo.Ping failed: %w", err)
 	}
 	db := client.Database(dbName)
-
 
 	// Create repository instance
 	userRepo, err := NewUserRepositoryMongo(ctx, db) // NewUserRepositoryMongo already handles index creation.
@@ -194,7 +194,6 @@ func TestUserRepositoryMongo_Integration(t *testing.T) {
 		allUsersBeforeListTest, _, _ := userRepo.ListUsers(ctx, "", 1000) // Get all current users
 		initialUserCount = len(allUsersBeforeListTest)
 
-
 		// Create 3 more users for a total of at least initialUserCount + 3
 		for i := 0; i < 3; i++ {
 			err := userRepo.CreateUser(ctx, &domain.User{
@@ -214,7 +213,6 @@ func TestUserRepositoryMongo_Integration(t *testing.T) {
 			assert.Empty(t, nextPageToken1, "Next page token for page 1 should be empty if total <= 2")
 		}
 
-
 		// Page 2: Get next 2 users
 		if nextPageToken1 != "" {
 			usersPage2, nextPageToken2, err := userRepo.ListUsers(ctx, nextPageToken1, 2)
@@ -222,7 +220,11 @@ func TestUserRepositoryMongo_Integration(t *testing.T) {
 
 			expectedPage2Count := 0
 			if totalExpectedUsers-2 > 0 { // Users remaining after page 1
-				if totalExpectedUsers-2 >= 2 { expectedPage2Count = 2 } else { expectedPage2Count = totalExpectedUsers-2 }
+				if totalExpectedUsers-2 >= 2 {
+					expectedPage2Count = 2
+				} else {
+					expectedPage2Count = totalExpectedUsers - 2
+				}
 			}
 			assert.Len(t, usersPage2, expectedPage2Count, fmt.Sprintf("Page 2 should have %d users", expectedPage2Count))
 
@@ -233,27 +235,31 @@ func TestUserRepositoryMongo_Integration(t *testing.T) {
 			}
 
 			// Page 3: Get remaining users
-            if nextPageToken2 != "" {
-                usersPage3, nextPageToken3, err := userRepo.ListUsers(ctx, nextPageToken2, 2)
-                require.NoError(t, err)
-                expectedPage3Count := 0
-                if totalExpectedUsers-4 > 0 { // Users remaining after page 2
-                    if totalExpectedUsers-4 >=2 { expectedPage3Count = 2 } else { expectedPage3Count = totalExpectedUsers-4}
-                }
-                assert.Len(t, usersPage3, expectedPage3Count, fmt.Sprintf("Page 3 should have %d users", expectedPage3Count))
-                if totalExpectedUsers > 6 { // If more than 2+2+2 users
-                    assert.NotEmpty(t, nextPageToken3, "Next page token for page 3 should not be empty if total > 6")
-                } else {
-                    assert.Empty(t, nextPageToken3, "Next page token for page 3 should be empty if total <= 6")
-                }
-            }
+			if nextPageToken2 != "" {
+				usersPage3, nextPageToken3, err := userRepo.ListUsers(ctx, nextPageToken2, 2)
+				require.NoError(t, err)
+				expectedPage3Count := 0
+				if totalExpectedUsers-4 > 0 { // Users remaining after page 2
+					if totalExpectedUsers-4 >= 2 {
+						expectedPage3Count = 2
+					} else {
+						expectedPage3Count = totalExpectedUsers - 4
+					}
+				}
+				assert.Len(t, usersPage3, expectedPage3Count, fmt.Sprintf("Page 3 should have %d users", expectedPage3Count))
+				if totalExpectedUsers > 6 { // If more than 2+2+2 users
+					assert.NotEmpty(t, nextPageToken3, "Next page token for page 3 should not be empty if total > 6")
+				} else {
+					assert.Empty(t, nextPageToken3, "Next page token for page 3 should be empty if total <= 6")
+				}
+			}
 		}
 
 		// Test listing all in one go if fewer than page size
 		allUsers, finalToken, err := userRepo.ListUsers(ctx, "", 10)
 		require.NoError(t, err)
 		assert.Len(t, allUsers, totalExpectedUsers, "Listing all should match total created in this test scope")
-        assert.Empty(t, finalToken, "Final token should be empty when all users are fetched")
+		assert.Empty(t, finalToken, "Final token should be empty when all users are fetched")
 	})
 
 	t.Run("DeleteUser", func(t *testing.T) {
@@ -272,16 +278,3 @@ func TestUserRepositoryMongo_Integration(t *testing.T) {
 		assert.Contains(t, err.Error(), "user not found for deletion")
 	})
 }
-
-// Note: NewObjectID() used by CreateUser is defined in mongodb/utils.go
-// This test requires mongodb/utils.go to exist and define NewObjectID()
-// For example:
-// package mongodb
-// import "go.mongodb.org/mongo-driver/v2/bson/primitive"
-// func NewObjectID() string { return primitive.NewObjectID().Hex() }
-// If this is not present, the test will not compile.
-// This subtask assumes it is or will be handled.
-// Adding strconv for unique DB name.
-import "strconv"
-// Adding options for client.Connect
-import "go.mongodb.org/mongo-driver/v2/mongo/options"

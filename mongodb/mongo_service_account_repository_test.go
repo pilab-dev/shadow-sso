@@ -26,7 +26,7 @@ func setupServiceAccountRepoTest(t *testing.T) (domain.ServiceAccountRepository,
 	defer cancelSetup()
 
 	// Direct client connection for test isolation
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(mongoURI).SetConnectTimeout(10*time.Second))
+	client, err := mongo.Connect(options.Client().ApplyURI(mongoURI).SetConnectTimeout(10 * time.Second))
 	if err != nil {
 		return nil, func() {}, fmt.Errorf("mongo.Connect failed for sa repo test: %w", err)
 	}
@@ -36,7 +36,7 @@ func setupServiceAccountRepoTest(t *testing.T) (domain.ServiceAccountRepository,
 	}
 	db := client.Database(dbName)
 
-	saRepo, err := NewServiceAccountRepositoryMongo(ctx, db) // Creates collection and indexes
+	saRepo, err := NewServiceAccountRepositoryMongo(db) // Creates collection and indexes
 	if err != nil {
 		client.Disconnect(ctx)
 		return nil, func() {}, fmt.Errorf("NewServiceAccountRepositoryMongo failed: %w", err)

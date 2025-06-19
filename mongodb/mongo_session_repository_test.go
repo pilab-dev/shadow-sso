@@ -27,7 +27,7 @@ func setupSessionRepoTest(t *testing.T) (domain.SessionRepository, func(), error
 	defer cancelSetup()
 
 	// Direct client connection for test isolation
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(mongoURI).SetConnectTimeout(10*time.Second))
+	client, err := mongo.Connect(options.Client().ApplyURI(mongoURI).SetConnectTimeout(10 * time.Second))
 	if err != nil {
 		return nil, func() {}, fmt.Errorf("mongo.Connect failed for session repo test: %w", err)
 	}
@@ -167,7 +167,7 @@ func TestSessionRepositoryMongo_Integration(t *testing.T) {
 
 		// List only active for userID1
 		activeFilter := domain.SessionFilter{IsRevoked: new(bool)} // *IsRevoked = false
-		*activeFilter.IsRevoked = false // Explicitly set to false for clarity
+		*activeFilter.IsRevoked = false                            // Explicitly set to false for clarity
 		sessionsUser1Active, err := repo.ListSessionsByUserID(ctx, userID1, activeFilter)
 		require.NoError(t, err)
 		assert.Len(t, sessionsUser1Active, 1, "Should be 1 active session for userID1")

@@ -44,14 +44,15 @@ type OpenIDProviderConfig struct {
 
 // EndpointConfig controls which endpoints are enabled
 type EndpointConfig struct {
-	Authorization bool `json:"authorization"`
-	Token         bool `json:"token"`
-	UserInfo      bool `json:"userinfo"`
-	JWKS          bool `json:"jwks"`
-	Registration  bool `json:"registration"`
-	Revocation    bool `json:"revocation"`
-	Introspection bool `json:"introspection"`
-	EndSession    bool `json:"end_session"`
+	Authorization       bool `json:"authorization"`
+	Token               bool `json:"token"`
+	UserInfo            bool `json:"userinfo"`
+	JWKS                bool `json:"jwks"`
+	Registration        bool `json:"registration"`
+	Revocation          bool `json:"revocation"`
+	Introspection       bool `json:"introspection"`
+	EndSession          bool `json:"end_session"`
+	DeviceAuthorization bool `json:"device_authorization"`
 }
 
 // FlowConfig controls which OAuth2/OIDC flows are enabled

@@ -6,7 +6,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/pilab-dev/shadow-sso/cache"
+	"github.com/pilab-dev/shadow-sso/client"
 )
 
 // ... (keep existing structs like AuthCode, TokenInfo, Client, Token) ...
@@ -24,17 +24,17 @@ const (
 
 // DeviceCode holds the information for a device authorization grant.
 type DeviceCode struct {
-	ID           string    `bson:"_id" json:"id"` // Unique ID for the device code entry
-	DeviceCode   string    `bson:"device_code" json:"device_code"` // The code the device uses to poll
-	UserCode     string    `bson:"user_code" json:"user_code"`     // The code the user enters on another device
-	ClientID     string    `bson:"client_id" json:"client_id"`
-	Scope        string    `bson:"scope" json:"scope"`
+	ID           string           `bson:"_id" json:"id"`                  // Unique ID for the device code entry
+	DeviceCode   string           `bson:"device_code" json:"device_code"` // The code the device uses to poll
+	UserCode     string           `bson:"user_code" json:"user_code"`     // The code the user enters on another device
+	ClientID     string           `bson:"client_id" json:"client_id"`
+	Scope        string           `bson:"scope" json:"scope"`
 	Status       DeviceCodeStatus `bson:"status" json:"status"`
-	UserID       string    `bson:"user_id,omitempty" json:"user_id,omitempty"` // Associated user ID once authorized
-	ExpiresAt    time.Time `bson:"expires_at" json:"expires_at"` // Expiration time for both device_code and user_code
-	Interval     int       `bson:"interval" json:"interval"`     // Polling interval for the device
-	CreatedAt    time.Time `bson:"created_at" json:"created_at"`
-	LastPolledAt time.Time `bson:"last_polled_at,omitempty" json:"last_polled_at,omitempty"` // Tracks when the device last polled
+	UserID       string           `bson:"user_id,omitempty" json:"user_id,omitempty"` // Associated user ID once authorized
+	ExpiresAt    time.Time        `bson:"expires_at" json:"expires_at"`               // Expiration time for both device_code and user_code
+	Interval     int              `bson:"interval" json:"interval"`                   // Polling interval for the device
+	CreatedAt    time.Time        `bson:"created_at" json:"created_at"`
+	LastPolledAt time.Time        `bson:"last_polled_at,omitempty" json:"last_polled_at,omitempty"` // Tracks when the device last polled
 }
 
 // AuthCode represents an OAuth 2.0 authorization code.
@@ -62,6 +62,7 @@ type TokenInfo struct {
 	IssuedAt  time.Time `bson:"issued_at"  json:"issued_at"`  // When the token was issued
 	ExpiresAt time.Time `bson:"expires_at" json:"expires_at"` // When the token expires
 	IsRevoked bool      `bson:"is_revoked" json:"is_revoked"` // Whether token has been revoked
+	Roles     []string  `bson:"roles"      json:"roles"`
 }
 
 // Client represents an OAuth 2.0 client application.
@@ -73,46 +74,6 @@ type Client struct {
 	GrantTypes   []string  `json:"grant_types"`   // Allowed grant types
 	Scopes       []string  `json:"scopes"`        // Allowed scopes
 	CreatedAt    time.Time `json:"created_at"`    // Creation timestamp
-// Token represents an OAuth 2.0 token (access or refresh).
-type Token struct {
-	ID         string    `bson:"_id"          json:"id"`           // Unique token identifier
-	TokenType  string    `bson:"token_type"   json:"token_type"`   // "access_token" or "refresh_token"
-	TokenValue string    `bson:"token_value"  json:"token_value"`  // The actual token string
-	ClientID   string    `bson:"cluent_id"    json:"client_id"`    // Client that requested the token
-	UserID     string    `bson:"user_id"      json:"user_id"`      // User who authorized the token
-	Scope      string    `bson:"scope"        json:"scope"`        // Authorized scopes
-	ExpiresAt  time.Time `bson:"expires_at"   json:"expires_at"`   // Expiration timestamp
-	IsRevoked  bool      `bson:"is_revoked"   json:"is_revoked"`   // Whether token is revoked
-	CreatedAt  time.Time `bson:"created_at"   json:"created_at"`   // Creation timestamp
-	LastUsedAt time.Time `bson:"last_used_at" json:"last_used_at"` // Last usage timestamp
-}
-
-func (t *Token) ToEntry() *cache.TokenEntry {
-	return &cache.TokenEntry{
-		ID:         t.ID,
-		TokenType:  t.TokenType,
-		TokenValue: t.TokenValue,
-		ClientID:   t.ClientID,
-		UserID:     t.UserID,
-		Scope:      t.Scope,
-		ExpiresAt:  t.ExpiresAt,
-		IsRevoked:  t.IsRevoked,
-		CreatedAt:  t.CreatedAt,
-		LastUsedAt: t.LastUsedAt,
-	}
-}
-
-func (t *Token) FromEntry(entry *cache.TokenEntry) {
-	t.ID = entry.ID
-	t.TokenType = entry.TokenType
-	t.TokenValue = entry.TokenValue
-	t.ClientID = entry.ClientID
-	t.UserID = entry.UserID
-	t.Scope = entry.Scope
-	t.ExpiresAt = entry.ExpiresAt
-	t.IsRevoked = entry.IsRevoked
-	t.CreatedAt = entry.CreatedAt
-	t.LastUsedAt = entry.LastUsedAt
 }
 
 // TokenRepository represents an OAuth 2.0 token repository.
@@ -249,12 +210,12 @@ type OAuthRepository interface {
 	io.Closer
 
 	// Client methods
-	CreateClient(ctx context.Context, c *client.Client) error // Changed to client.Client
+	CreateClient(ctx context.Context, c *client.Client) error               // Changed to client.Client
 	GetClient(ctx context.Context, clientID string) (*client.Client, error) // Changed to client.Client
-	UpdateClient(ctx context.Context, c *client.Client) error // Changed to client.Client
+	UpdateClient(ctx context.Context, c *client.Client) error               // Changed to client.Client
 	DeleteClient(ctx context.Context, clientID string) error
 	ListClients(ctx context.Context, pageSize int32, pageToken string) ([]*client.Client, string, error) // Changed to client.Client
-	ValidateClient(ctx context.Context, clientID, clientSecret string) error // Added from mongo_oauth_repository method list
+	ValidateClient(ctx context.Context, clientID, clientSecret string) error                             // Added from mongo_oauth_repository method list
 
 	AuthorizationCodeRepository
 	TokenRepository // Uncommented and included

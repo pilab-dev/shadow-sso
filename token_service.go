@@ -474,6 +474,8 @@ func (s *TokenService) ValidateAccessToken(ctx context.Context, tokenValue strin
 
 	// If error is not errMissingKidSAValidation, it's a genuine SA JWT processing/validation error
 	// or other jwt.ValidationError that occurred during ParseWithClaims.
+
+	// FIXME: fix this error check case
 	// var validationError *jwt.ValidationError
 	// if errors.As(err, &validationError) { // Check if it's a standard JWT validation error
 	// 	if validationError.Is(jwt.ErrTokenExpired) {

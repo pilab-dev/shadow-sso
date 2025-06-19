@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand" // Added
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex" // Added
 	"fmt"
 	"strings"
@@ -13,17 +14,18 @@ import (
 	"github.com/pilab-dev/shadow-sso/api"
 	"github.com/pilab-dev/shadow-sso/client"
 	serrors "github.com/pilab-dev/shadow-sso/errors" // Import the aliased errors
+	"github.com/rs/zerolog/log"
 	"golang.org/x/crypto/bcrypt"
 )
 
 // Constants for Device Flow
 const (
-	deviceCodeLength   = 32 // Length of the device_code in bytes
-	userCodeLength     = 8  // Length of the user_code (e.g., "ABCD-EFGH")
-	userCodeCharset    = "BCDFGHJKLMNPQRSTVWXYZ0123456789" // Base32-like, avoiding ambiguous chars
-	userCodeChunkSize  = 4
-	deviceCodeLifetime = 10 * time.Minute // How long device_code and user_code are valid (e.g., 10 minutes)
-	defaultPollInterval = 5 // Default polling interval in seconds
+	deviceCodeLength    = 32                                // Length of the device_code in bytes
+	userCodeLength      = 8                                 // Length of the user_code (e.g., "ABCD-EFGH")
+	userCodeCharset     = "BCDFGHJKLMNPQRSTVWXYZ0123456789" // Base32-like, avoiding ambiguous chars
+	userCodeChunkSize   = 4
+	deviceCodeLifetime  = 10 * time.Minute // How long device_code and user_code are valid (e.g., 10 minutes)
+	defaultPollInterval = 5                // Default polling interval in seconds
 )
 
 // generateRandomString generates a secure random string of given length in bytes, hex encoded.
@@ -102,62 +104,62 @@ func (s *OAuthService) RegisterUser(ctx context.Context, username, password stri
 	return user, nil
 }
 
-// func (s *OAuthService) Login(ctx context.Context, username, password, deviceInfo string) (*TokenResponse, error) {
-// 	// Search for the user
-// 	user, err := s.userRepo.GetUserByUsername(ctx, username)
-// 	if err != nil {
-// 		return nil, fmt.Errorf("user not found: %w", err)
-// 	}
+func (s *OAuthService) Login(ctx context.Context, username, password, deviceInfo string) (*api.TokenResponse, error) {
+	// Search for the user
+	user, err := s.userRepo.GetUserByUsername(ctx, username)
+	if err != nil {
+		return nil, fmt.Errorf("user not found: %w", err)
+	}
 
-// 	// Check password
-// 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
-// 		return nil, ErrInvalidCredentials
-// 	}
+	// Check password
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
+		return nil, ErrInvalidCredentials
+	}
 
-// 	// Generate token and session
-// 	accessToken := uuid.NewString()
-// 	refreshToken := uuid.NewString()
-// 	expiresAt := time.Now().Add(time.Hour)
+	// Generate token and session
+	accessToken := uuid.NewString()
+	refreshToken := uuid.NewString()
+	expiresAt := time.Now().Add(time.Hour)
 
-// 	session := &UserSession{
-// 		ID:           uuid.NewString(),
-// 		UserID:       user.ID,
-// 		AccessToken:  accessToken,
-// 		RefreshToken: refreshToken,
-// 		ExpiresAt:    expiresAt,
-// 		CreatedAt:    time.Now(),
-// 		LastUsedAt:   time.Now(),
-// 		DeviceInfo:   deviceInfo,
-// 		IsRevoked:    false,
-// 	}
+	session := &UserSession{
+		ID:           uuid.NewString(),
+		UserID:       user.ID,
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		ExpiresAt:    expiresAt,
+		CreatedAt:    time.Now(),
+		LastUsedAt:   time.Now(),
+		DeviceInfo:   deviceInfo,
+		IsRevoked:    false,
+	}
 
-// 	// Save the generated session
-// 	if err := s.userRepo.CreateSession(ctx, user.ID, session); err != nil {
-// 		return nil, fmt.Errorf("failed to create session: %w", err)
-// 	}
+	// Save the generated session
+	if err := s.userRepo.CreateSession(ctx, user.ID, session); err != nil {
+		return nil, fmt.Errorf("failed to create session: %w", err)
+	}
 
-// 	// Store token in the database
-// 	token := &Token{
-// 		ID:         uuid.NewString(),
-// 		TokenType:  "access_token",
-// 		TokenValue: accessToken,
-// 		ClientID:   "",
-// 		UserID:     user.ID,
-// 		ExpiresAt:  expiresAt,
-// 		CreatedAt:  time.Now(),
-// 		LastUsedAt: time.Now(),
-// 	}
-// 	if err := s.oauthRepo.StoreToken(ctx, token); err != nil {
-// 		return nil, fmt.Errorf("failed to store token: %w", err)
-// 	}
+	// Store token in the database
+	token := &Token{
+		ID:         uuid.NewString(),
+		TokenType:  "access_token",
+		TokenValue: accessToken,
+		ClientID:   "",
+		UserID:     user.ID,
+		ExpiresAt:  expiresAt,
+		CreatedAt:  time.Now(),
+		LastUsedAt: time.Now(),
+	}
+	if err := s.oauthRepo.StoreToken(ctx, token); err != nil {
+		return nil, fmt.Errorf("failed to store token: %w", err)
+	}
 
-// 	return &TokenResponse{
-// 		AccessToken:  accessToken,
-// 		TokenType:    "Bearer",
-// 		ExpiresIn:    3600,
-// 		RefreshToken: refreshToken,
-// 	}, nil
-// }
+	return &api.TokenResponse{
+		AccessToken:  accessToken,
+		TokenType:    "Bearer",
+		ExpiresIn:    3600,
+		RefreshToken: refreshToken,
+	}, nil
+}
 
 // GetUserSessions retrieves all active sessions for a user.
 func (s *OAuthService) GetUserSessions(ctx context.Context, userID string) ([]UserSession, error) {
@@ -514,7 +516,7 @@ func (s *OAuthService) InitiateDeviceAuthorization(ctx context.Context, clientID
 		DeviceCode:   deviceCodeVal,
 		UserCode:     userCodeVal,
 		ClientID:     clientID,
-		Scope:        scope, // TODO: Validate scope against client's allowed scopes and default scopes
+		Scope:        scope,                   // TODO: Validate scope against client's allowed scopes and default scopes
 		Status:       DeviceCodeStatusPending, // ssso.DeviceCodeStatusPending
 		ExpiresAt:    expiresAt,
 		Interval:     defaultPollInterval,
@@ -736,4 +738,103 @@ func (s *OAuthService) RevokeToken(ctx context.Context, tokenToRevoke, tokenType
 	_ = s.tokenService.RevokeToken(ctx, tokenToRevoke) //nolint:errcheck
 
 	return nil
+}
+
+// GenerateAuthCode generates a new authorization code for OAuth2 authorization code flow.
+// It creates a secure random code and stores it with the provided client details.
+func (s *OAuthService) GenerateAuthCode(ctx context.Context, clientID, redirectURI, scope string) (string, error) {
+	// Generate secure random bytes for auth code
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("failed to generate random bytes: %w", err)
+	}
+	code := base64.StdEncoding.EncodeToString(b)
+
+	// Create auth code record
+	authCode := &AuthCode{
+		Code:        code,
+		ClientID:    clientID,
+		RedirectURI: redirectURI,
+		Scope:       scope,
+		ExpiresAt:   time.Now().Add(10 * time.Minute),
+		CreatedAt:   time.Now(),
+	}
+
+	if err := s.oauthRepo.SaveAuthCode(ctx, authCode); err != nil {
+		return "", fmt.Errorf("failed to save auth code: %w", err)
+	}
+
+	return code, nil
+}
+
+// GenerateTokens exchanges an authorization code for access and refresh tokens.
+// It validates the code and client ID before generating new tokens.
+func (s *OAuthService) GenerateTokens(ctx context.Context, code, clientID string) (*api.TokenResponse, error) {
+	// Get and validate the stored auth code
+	authCode, err := s.oauthRepo.GetAuthCode(ctx, code)
+	if err != nil {
+		return nil, fmt.Errorf("invalid auth code: %w", err)
+	}
+
+	if authCode.ClientID != clientID {
+		return nil, fmt.Errorf("client ID mismatch")
+	}
+
+	if authCode.Used {
+		return nil, fmt.Errorf("auth code already used")
+	}
+
+	if time.Now().After(authCode.ExpiresAt) {
+		return nil, fmt.Errorf("auth code expired")
+	}
+
+	// Generate new tokens
+	accessToken := uuid.NewString()
+	refreshToken := uuid.NewString()
+	expiresAt := time.Now().Add(time.Hour)
+
+	// Create token record
+	token := &Token{
+		ID:         uuid.NewString(),
+		TokenType:  "access_token",
+		TokenValue: accessToken,
+		ClientID:   clientID,
+		Scope:      authCode.Scope,
+		ExpiresAt:  expiresAt,
+		CreatedAt:  time.Now(),
+		LastUsedAt: time.Now(),
+	}
+
+	_ = token
+
+	// if err := s.oauthRepo.StoreToken(ctx, token); err != nil {
+	// 	return nil, fmt.Errorf("failed to store token: %w", err)
+	// }
+
+	// Mark auth code as used
+	if err := s.oauthRepo.MarkAuthCodeAsUsed(ctx, code); err != nil {
+		return nil, fmt.Errorf("failed to mark auth code as used: %w", err)
+	}
+
+	return &api.TokenResponse{
+		AccessToken:  accessToken,
+		TokenType:    "Bearer",
+		ExpiresIn:    3600,
+		RefreshToken: refreshToken,
+	}, nil
+}
+
+// GetUserInfo retrieves user information for a valid access token.
+func (s *OAuthService) GetUserInfo(ctx context.Context, token string) (map[string]interface{}, error) {
+	userID, err := s.tokenService.ValidateAccessToken(ctx, token)
+	if err != nil {
+		return nil, fmt.Errorf("invalid access token: %w", err)
+	}
+
+	_ = userID
+
+	log.Error().Msg("GetUserInfo not implemented")
+
+	// return s.userRepo.GetUserInfo(ctx, userID)
+	return nil, nil
 }

@@ -9,10 +9,10 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
-	"github.com/pilab-dev/shadow-sso/client" // Using the canonical client.Client model
-	ssov1 "github.com/pilab-dev/shadow-sso/gen/sso/v1"
-	"github.com/pilab-dev/shadow-sso/gen/sso/v1/ssov1connect"
-	"github.com/pilab-dev/shadow-sso/ssso" // For ssso.OAuthRepository interface
+	ssso "github.com/pilab-dev/shadow-sso"
+	"github.com/pilab-dev/shadow-sso/client"
+	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
+	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -65,23 +65,23 @@ func toClientProto(c *client.Client, includeSecret bool) *ssov1.ClientProto {
 		return nil
 	}
 	proto := &ssov1.ClientProto{
-		ClientId:                 c.ID,
-		ClientType:               toClientTypeProto(c.Type),
-		ClientName:               c.Name,
-		Description:              c.Description,
-		RedirectUris:             c.RedirectURIs,
-		PostLogoutRedirectUris:   c.PostLogoutURIs,
-		AllowedScopes:            c.AllowedScopes,
-		AllowedGrantTypes:        c.AllowedGrantTypes,
-		TokenEndpointAuthMethod:  c.TokenEndpointAuth,
-		JwksUri:                  c.JWKSUri,
-		Contacts:                 c.Contacts,
-		LogoUri:                  c.LogoURI,
-		PolicyUri:                c.PolicyURI,
-		TermsUri:                 c.TermsURI,
-		RequireConsent:           c.RequireConsent,
-		RequirePkce:              c.RequirePKCE,
-		IsActive:                 c.IsActive,
+		ClientId:                c.ID,
+		ClientType:              toClientTypeProto(c.Type),
+		ClientName:              c.Name,
+		Description:             c.Description,
+		RedirectUris:            c.RedirectURIs,
+		PostLogoutRedirectUris:  c.PostLogoutURIs,
+		AllowedScopes:           c.AllowedScopes,
+		AllowedGrantTypes:       c.AllowedGrantTypes,
+		TokenEndpointAuthMethod: c.TokenEndpointAuth,
+		JwksUri:                 c.JWKSUri,
+		Contacts:                c.Contacts,
+		LogoUri:                 c.LogoURI,
+		PolicyUri:               c.PolicyURI,
+		TermsUri:                c.TermsURI,
+		RequireConsent:          c.RequireConsent,
+		RequirePkce:             c.RequirePKCE,
+		IsActive:                c.IsActive,
 	}
 	if c.JWKS != nil && len(c.JWKS.Keys) > 0 {
 		proto.Jwks = &ssov1.JWKSProto{Keys: make([]*ssov1.JSONWebKeyProto, len(c.JWKS.Keys))}
@@ -111,25 +111,25 @@ func (s *ClientManagementServer) RegisterClient(ctx context.Context, req *connec
 	}
 
 	newClient := &client.Client{ // Using the canonical client.Client
-		ID:                     uuid.NewString(),
-		Type:                   domainClientType,
-		Name:                   req.Msg.ClientName,
-		Description:            req.Msg.Description,
-		RedirectURIs:           req.Msg.RedirectUris,
-		PostLogoutURIs:        req.Msg.PostLogoutRedirectUris,
-		AllowedScopes:          req.Msg.AllowedScopes,
-		AllowedGrantTypes:      req.Msg.AllowedGrantTypes,
-		TokenEndpointAuth:      req.Msg.TokenEndpointAuthMethod,
-		JWKSUri:                req.Msg.JwksUri,
+		ID:                uuid.NewString(),
+		Type:              domainClientType,
+		Name:              req.Msg.ClientName,
+		Description:       req.Msg.Description,
+		RedirectURIs:      req.Msg.RedirectUris,
+		PostLogoutURIs:    req.Msg.PostLogoutRedirectUris,
+		AllowedScopes:     req.Msg.AllowedScopes,
+		AllowedGrantTypes: req.Msg.AllowedGrantTypes,
+		TokenEndpointAuth: req.Msg.TokenEndpointAuthMethod,
+		JWKSUri:           req.Msg.JwksUri,
 		// TODO: Map req.Msg.JwksContent to newClient.JWKS if provided in proto
-		Contacts:               req.Msg.Contacts,
-		LogoURI:                req.Msg.LogoUri,
-		PolicyURI:              req.Msg.PolicyUri,
-		TermsURI:               req.Msg.TermsUri,
-		RequireConsent:         req.Msg.RequireConsent,
-		IsActive:               true,
-		CreatedAt:              time.Now().UTC(),
-		UpdatedAt:              time.Now().UTC(),
+		Contacts:       req.Msg.Contacts,
+		LogoURI:        req.Msg.LogoUri,
+		PolicyURI:      req.Msg.PolicyUri,
+		TermsURI:       req.Msg.TermsUri,
+		RequireConsent: req.Msg.RequireConsent,
+		IsActive:       true,
+		CreatedAt:      time.Now().UTC(),
+		UpdatedAt:      time.Now().UTC(),
 	}
 
 	var plaintextSecretForResponse string
@@ -162,7 +162,6 @@ func (s *ClientManagementServer) RegisterClient(ctx context.Context, req *connec
 	if newClient.Type == client.Public { // PKCE should be enforced for public clients
 		newClient.RequirePKCE = true
 	}
-
 
 	if err := s.oauthRepo.CreateClient(ctx, newClient); err != nil {
 		log.Error().Err(err).Msg("Failed to create client in repository")
@@ -243,7 +242,6 @@ func (s *ClientManagementServer) UpdateClient(ctx context.Context, req *connect.
 	// ClientType, AllowedGrantTypes, TokenEndpointAuthMethod, RequirePKCE are generally not updated post-creation or require careful handling.
 	// ClientSecret is not updated here; requires a separate "reset secret" flow.
 	dbClient.UpdatedAt = time.Now().UTC()
-
 
 	if err := s.oauthRepo.UpdateClient(ctx, dbClient); err != nil {
 		log.Error().Err(err).Str("clientID", dbClient.ID).Msg("Failed to update client in repository")
