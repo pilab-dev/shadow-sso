@@ -12,7 +12,10 @@ import (
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 
+	ssso "github.com/pilab-dev/shadow-sso"
 	"github.com/pilab-dev/shadow-sso/cache"
+	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
+
 	// "github.com/pilab-dev/shadow-sso/domain" // domain is used by mongodb and services packages
 	"github.com/pilab-dev/shadow-sso/internal/auth" // Import new auth package for password hasher
 	"github.com/pilab-dev/shadow-sso/middleware"
@@ -83,26 +86,17 @@ func StartConnectRPCServer(addr string) error {
 	passwordHasher := auth.NewBcryptPasswordHasher(bcrypt.DefaultCost)
 
 	// 4. Initialize TokenService
-	privKey, err := ssso.GenerateRSAKey()
-	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to generate RSA key for TokenSigner")
-		return err
-	}
-	tokenSigner, err := ssso.NewTokenSigner(privKey, "sso-kid-default") // Example key ID
-	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to create TokenSigner")
-		return err
-	}
-
-	memCache := cache.NewMemoryTokenStore(1*time.Minute, 1000)
+	tokenSigner := ssso.NewTokenSigner() // Example key ID
+	tokenCache := cache.NewMemoryTokenStore(1 * time.Minute)
 
 	tokenService := ssso.NewTokenService(
-		tokenRepo,    // Real ssso.TokenRepository
-		memCache,     // Cache implementation
-		"sso-issuer", // Example issuer
+		tokenRepo,              // Real ssso.TokenRepository
+		tokenCache,             // Cache implementation
+		"https://sso.pilab.hu", // Example issuer URL
 		tokenSigner,
 		pubKeyRepo, // Real domain.PublicKeyRepository
 		saRepo,     // Real domain.ServiceAccountRepository
+		userRepo,   // Real domain.UserRepository
 	)
 
 	// 5. Initialize Authentication Interceptor
@@ -124,15 +118,15 @@ func StartConnectRPCServer(addr string) error {
 	// It does NOT take sessionRepo yet. This needs to be addressed.
 	// For now, I will pass it and assume the constructor will be fixed.
 	// TODO: Update AuthServer constructor to accept SessionRepository.
-	authServer := services.NewAuthServer(userRepo, tokenService, passwordHasher) // sessionRepo missing here
+	authServer := services.NewAuthServer(userRepo, sessionRepo, tokenService, passwordHasher) // sessionRepo missing here
 
 	// 7. Create mux and register handlers
 	mux := http.NewServeMux()
-	saPath, saHandler := ssov1connect.NewServiceAccountServiceHandler(saServer, connect.WithInterceptors(authInterceptor))
+	saPath, saHandler := ssov1connect.NewServiceAccountServiceHandler(saServer, interceptors)
 	mux.Handle(saPath, saHandler)
-	userPath, userHandler := ssov1connect.NewUserServiceHandler(userServer, connect.WithInterceptors(authInterceptor))
+	userPath, userHandler := ssov1connect.NewUserServiceHandler(userServer, interceptors)
 	mux.Handle(userPath, userHandler)
-	authPath, authHandler := ssov1connect.NewAuthServiceHandler(authServer, connect.WithInterceptors(authInterceptor))
+	authPath, authHandler := ssov1connect.NewAuthServiceHandler(authServer, interceptors)
 	mux.Handle(authPath, authHandler)
 
 	// 8. Create and start HTTP/2 server
