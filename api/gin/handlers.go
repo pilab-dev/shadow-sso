@@ -1,5 +1,3 @@
-//go:build gin
-
 //nolint:varnamelen,tagliatelle
 package sssogin
 
@@ -51,7 +49,7 @@ func NewOAuth2API(
 func (oa *OAuth2API) RegisterRoutes(e *gin.Engine) {
 	e.POST("/oauth2/token", oa.TokenHandler)
 	e.GET("/oauth2/authorize", oa.AuthorizeHandler)
-	e.POST("/oauth2/device_authorization", oa.DeviceAuthorizationHandler) // New route
+	e.POST("/oauth2/device_authorization", oa.DeviceAuthorizationHandler)
 	e.GET("/oauth2/userinfo", oa.UserInfoHandler)
 	e.POST("/oauth2/revoke", oa.RevokeHandler)
 	e.POST("/oauth2/introspect", oa.IntrospectHandler)
@@ -59,8 +57,6 @@ func (oa *OAuth2API) RegisterRoutes(e *gin.Engine) {
 	// OpenID Configuration endpoints
 	e.GET("/.well-known/openid-configuration", oa.OpenIDConfigurationHandler)
 	e.GET("/.well-known/jwks.json", oa.JWKSHandler)
-	// Add /oauth2/introspect
-	e.POST("/oauth2/introspect", oa.IntrospectHandler)
 
 	// Device Verification User-Facing Endpoints
 	deviceGroup := e.Group("/oauth2/device")
