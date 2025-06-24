@@ -248,9 +248,26 @@ func (r *OAuthRepository) GetAccessToken(ctx context.Context, tokenValue string)
 }
 
 func (r *OAuthRepository) RevokeToken(ctx context.Context, tokenValue string) error {
-	_, err := r.tokens.UpdateOne(ctx, bson.M{"token_value": tokenValue}, bson.M{"$set": bson.M{"is_revoked": true}})
+	// This typically revokes access tokens.
+	// For more specificity, one might filter by token_type as well.
+	_, err := r.tokens.UpdateOne(ctx, bson.M{"token_value": tokenValue, "token_type": "access_token"}, bson.M{"$set": bson.M{"is_revoked": true}})
+	// Consider also deleting from cache if a direct cache reference is available here or handled by service layer.
 	return err
 }
+
+func (r *OAuthRepository) RevokeRefreshToken(ctx context.Context, tokenValue string) error {
+	// Specifically revokes refresh tokens.
+	result, err := r.tokens.UpdateOne(ctx, bson.M{"token_value": tokenValue, "token_type": "refresh_token"}, bson.M{"$set": bson.M{"is_revoked": true}})
+	if err != nil {
+		return err
+	}
+	if result.MatchedCount == 0 {
+		return errors.New("refresh token not found or not of type refresh_token")
+	}
+	// Consider also deleting from cache if refresh tokens are cached, though less common.
+	return err
+}
+
 
 func (r *OAuthRepository) GetRefreshToken(ctx context.Context, tokenValue string) (*ssso.Token, error) {
 	var token ssso.Token
