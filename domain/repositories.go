@@ -72,3 +72,15 @@ type IdPRepository interface {
 	UpdateIdP(ctx context.Context, idp *IdentityProvider) error
 	DeleteIdP(ctx context.Context, id string) error
 }
+
+// UserFederatedIdentityRepository defines methods for managing user federated identity links.
+type UserFederatedIdentityRepository interface {
+	Create(ctx context.Context, identity *UserFederatedIdentity) error
+	GetByProviderUserID(ctx context.Context, providerName, providerUserID string) (*UserFederatedIdentity, error)
+	GetByUserIDAndProvider(ctx context.Context, userID, providerName string) (*UserFederatedIdentity, error)
+	ListByUserID(ctx context.Context, userID string) ([]*UserFederatedIdentity, error)
+	Delete(ctx context.Context, id string) error
+	DeleteByUserIDAndProvider(ctx context.Context, userID, providerName string) error
+	// FindByEmail (Optional): May be useful during account linking/merging user discovery.
+	// FindByProviderEmail(ctx context.Context, providerName, email string) (*UserFederatedIdentity, error)
+}

@@ -1,0 +1,147 @@
+syntax = "proto3";
+
+package sso.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+import "proto/sso/v1/services.proto"; // For User message if needed, or define a simpler one
+
+option go_package = "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1;ssov1";
+
+// FederationService manages federated identity operations.
+service FederationService {
+  // Initiates the federated login flow for a given provider.
+  // Returns a URL to redirect the user to for authentication with the external provider.
+  // This RPC would typically be called by a backend HTTP handler that then performs the redirect.
+  rpc InitiateFederatedLogin(InitiateFederatedLoginRequest) returns (InitiateFederatedLoginResponse);
+
+  // Handles the callback from an external identity provider after user authentication.
+  // This involves exchanging the authorization code for tokens, fetching user info,
+  // and then either logging in an existing linked user, linking to an existing local user,
+  // or guiding a new user through account creation/linking.
+  // Returns authentication tokens (similar to LoginResponse) if successful.
+  // This RPC would typically be called by a backend HTTP handler that receives the actual redirect.
+  rpc HandleFederatedCallback(HandleFederatedCallbackRequest) returns (HandleFederatedCallbackResponse);
+
+  // Lists all federated identities linked to the currently authenticated user.
+  // Requires user authentication.
+  rpc ListUserFederatedIdentities(ListUserFederatedIdentitiesRequest) returns (ListUserFederatedIdentitiesResponse);
+
+  // Removes a federated identity link for the currently authenticated user.
+  // Requires user authentication.
+  rpc RemoveUserFederatedIdentity(RemoveUserFederatedIdentityRequest) returns (google.protobuf.Empty);
+
+  // Asks the user if they want to merge the federated account with an existing local account
+  // if a local account with the same email (from provider) already exists.
+  // This is typically called after HandleFederatedCallback detects such a scenario.
+  rpc PromptMergeFederatedAccount(PromptMergeFederatedAccountRequest) returns (PromptMergeFederatedAccountResponse);
+
+  // Confirms the merge of a federated account with an existing local account,
+  // typically after email verification.
+  rpc ConfirmMergeFederatedAccount(ConfirmMergeFederatedAccountRequest) returns (HandleFederatedCallbackResponse); // Returns LoginResponse on success
+}
+
+// --- InitiateFederatedLogin Messages ---
+message InitiateFederatedLoginRequest {
+  string provider_name = 1; // e.g., "google", "facebook"
+  // string redirect_uri_override = 2; // Optional: If a specific redirect URI for this initiation is needed, otherwise server default is used.
+  // map<string, string> additional_params = 3; // Optional: any additional parameters to pass to the provider's auth URL
+}
+
+message InitiateFederatedLoginResponse {
+  string authorization_url = 1; // The URL to redirect the user to.
+  string state = 2;             // The generated state parameter that should be stored (e.g., in a cookie) by the client/caller
+                                // and verified during callback.
+}
+
+// --- HandleFederatedCallback Messages ---
+message HandleFederatedCallbackRequest {
+  string provider_name = 1; // e.g., "google", "facebook"
+  string state = 2;         // State received from the provider in the callback query.
+  string code = 3;          // Authorization code received from the provider.
+  // string stored_state = 4;  // State that was stored by the client (e.g., from cookie) to be verified against the received state.
+                            // This verification might happen in the HTTP handler before calling this RPC.
+                            // Or, this RPC can do it if stored_state is passed.
+  // string error = 5;         // Error code from provider, if any (e.g., "access_denied")
+  // string error_description = 6; // Error description from provider
+
+  // For Apple's form_post response
+  // string id_token = 7; // Apple might send id_token directly in form post
+  // string user = 8;     // Apple specific: JSON string containing user name if provided
+}
+
+// HandleFederatedCallbackResponse mirrors LoginResponse for successful authentication,
+// but adds context for account linking/merging scenarios.
+message HandleFederatedCallbackResponse {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    LOGIN_SUCCESSFUL = 1;         // User logged in successfully.
+    ACCOUNT_LINKED_LOGIN = 2;     // New external account linked to existing local user, then logged in.
+    NEW_USER_REGISTRATION_REQUIRED = 3; // New user from external provider, no local account. Client should guide to registration or auto-register.
+    MERGE_REQUIRED_EMAIL_EXISTS = 4; // External account's email matches an existing local (non-federated) account. User action needed.
+  }
+  Status status = 1;
+  string message = 2; // User-friendly message describing the outcome or next steps.
+
+  // Fields similar to LoginResponse, populated on LOGIN_SUCCESSFUL or ACCOUNT_LINKED_LOGIN
+  string access_token = 3;
+  string token_type = 4;   // Usually "Bearer"
+  int32 expires_in = 5;    // Seconds
+  string refresh_token = 6;
+  sso.v1.User user_info = 7; // User info of the local account
+  string id_token = 8;       // ID token from the original SSO system, if applicable
+
+  // Information for MERGE_REQUIRED_EMAIL_EXISTS or NEW_USER_REGISTRATION_REQUIRED
+  string provider_user_id = 9; // External provider's user ID
+  string provider_email = 10;   // Email from the external provider
+  string provider_name = 11;    // Name of the provider (e.g., "google")
+  // Temporary token to secure subsequent calls like ConfirmMerge or completing registration
+  string continuation_token = 12;
+}
+
+
+// --- ListUserFederatedIdentities Messages ---
+message FederatedIdentityInfo {
+  string id = 1;                      // Internal ID of the link record
+  string provider_id = 2;             // ID of the IdentityProvider config (e.g. "google_config_id")
+  string provider_name = 3;           // User-friendly provider name (e.g., "Google")
+  string provider_user_id = 4;        // User's ID at the external provider
+  string provider_email = 5;          // Email associated with this identity at the provider
+  string provider_username = 6;       // Username/display name from provider
+  google.protobuf.Timestamp created_at = 7;
+}
+
+message ListUserFederatedIdentitiesRequest {
+  // User ID is implicitly taken from the authenticated user context.
+}
+
+message ListUserFederatedIdentitiesResponse {
+  repeated FederatedIdentityInfo identities = 1;
+}
+
+// --- RemoveUserFederatedIdentity Messages ---
+message RemoveUserFederatedIdentityRequest {
+  // User ID is implicitly taken from the authenticated user context.
+  string provider_user_id_to_remove = 1; // The ProviderUserID of the link to remove (e.g. the Google sub)
+  string provider_name = 2;              // The name of the provider for this identity (e.g. "google")
+                                         // Alternatively, the internal 'id' of the link record could be used if known to client.
+}
+
+// --- PromptMergeFederatedAccount Messages ---
+message PromptMergeFederatedAccountRequest {
+  string continuation_token = 1; // Token received from HandleFederatedCallbackResponse when MERGE_REQUIRED_EMAIL_EXISTS
+}
+
+message PromptMergeFederatedAccountResponse {
+  string message = 1; // e.g., "An account with email X already exists. Do you want to link your Y account to it?"
+  string existing_local_user_email = 2;
+  string provider_name = 3;
+  // No action taken yet, just providing info. Client uses this to ask user.
+}
+
+// --- ConfirmMergeFederatedAccount Messages ---
+message ConfirmMergeFederatedAccountRequest {
+  string continuation_token = 1; // Token received from HandleFederatedCallbackResponse
+  // bool user_consent = 2; // Implicitly true by calling this endpoint.
+  // string verification_code = 3; // If email verification of local account is required before merging.
+}
