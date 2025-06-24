@@ -10,7 +10,7 @@ require (
 	github.com/jellydator/ttlcache/v3 v3.4.0
 	github.com/mdp/qrterminal v1.0.1
 	github.com/pquerna/otp v1.5.0
-	github.com/redis/go-redis/v9 v9.10.0
+	github.com/redis/go-redis/v9 v9.11.0
 	github.com/rs/zerolog v1.34.0
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/viper v1.20.1
