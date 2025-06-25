@@ -8,7 +8,6 @@ import (
 	"time"    // Needed for GenerateTokenPair TTL and session expiry
 
 	"connectrpc.com/connect"
-	ssso "github.com/pilab-dev/shadow-sso"
 	"github.com/pilab-dev/shadow-sso/domain"
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
@@ -25,7 +24,7 @@ type AuthServer struct {
 	ssov1connect.UnimplementedAuthServiceHandler // Embed for forward compatibility
 	userRepo                                     domain.UserRepository
 	sessionRepo                                  domain.SessionRepository
-	tokenService                                 *ssso.TokenService
+	tokenService                                 *TokenService
 	passwordHasher                               PasswordHasher
 }
 
@@ -33,7 +32,7 @@ type AuthServer struct {
 func NewAuthServer(
 	userRepo domain.UserRepository,
 	sessionRepo domain.SessionRepository,
-	tokenService *ssso.TokenService,
+	tokenService *TokenService,
 	passwordHasher PasswordHasher,
 ) *AuthServer {
 	return &AuthServer{
@@ -77,7 +76,7 @@ func (s *AuthServer) Login(ctx context.Context, req *connect.Request[ssov1.Login
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("account pending activation"))
 	}
 
-	if err := s.passwordHasher.Verify(user.PasswordHash, req.Msg.Password); err != nil {
+	if !s.passwordHasher.Verify(user.PasswordHash, req.Msg.Password) {
 		log.Warn().Str("userID", user.ID).Msg("Login: Incorrect password")
 		// TODO: Increment failed login attempts for user in userRepo.UpdateUser
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid email or password"))

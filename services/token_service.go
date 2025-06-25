@@ -1,4 +1,4 @@
-package ssso
+package services
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 	"github.com/pilab-dev/shadow-sso/api"
 	"github.com/pilab-dev/shadow-sso/cache"
 	"github.com/pilab-dev/shadow-sso/domain"
+	"github.com/pilab-dev/shadow-sso/dto" // Added DTO import
 	"github.com/rs/zerolog/log"
 )
 
@@ -500,12 +501,21 @@ func (s *TokenService) RevokeToken(ctx context.Context, token string) error {
 
 // GetRefreshTokenInfo retrieves metadata about a refresh token. Returns the token info if found,
 // or an error if not found or database error.
-func (s *TokenService) GetRefreshTokenInfo(ctx context.Context, tokenValue string) (*TokenInfo, error) {
-	return s.repo.GetRefreshTokenInfo(ctx, tokenValue)
+func (s *TokenService) GetRefreshTokenInfo(ctx context.Context, tokenValue string) (*dto.TokenInfoResponse, error) {
+	tokenInfo, err := s.repo.GetRefreshTokenInfo(ctx, tokenValue)
+	if err != nil {
+		return nil, err
+	}
+
+	return dto.FromDomainTokenInfo(tokenInfo), nil
 }
 
 // GetAccessTokenInfo retrieves metadata about an access token. Returns the token info if found,
 // or an error if not found or database error.
-func (s *TokenService) GetAccessTokenInfo(ctx context.Context, tokenValue string) (*TokenInfo, error) {
-	return s.repo.GetAccessTokenInfo(ctx, tokenValue)
+func (s *TokenService) GetAccessTokenInfo(ctx context.Context, tokenValue string) (*dto.TokenInfoResponse, error) {
+	tokenInfo, err := s.repo.GetAccessTokenInfo(ctx, tokenValue)
+	if err != nil {
+		return nil, err
+	}
+	return dto.FromDomainTokenInfo(tokenInfo), nil
 }

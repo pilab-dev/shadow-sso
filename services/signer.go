@@ -1,4 +1,4 @@
-package ssso
+package services
 
 import (
 	"errors"

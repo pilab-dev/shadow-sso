@@ -90,6 +90,7 @@ message RegisterClientRequest {
   string terms_uri = 15;
   bool require_consent = 16; // Server might override
   // require_pkce is often determined by client_type
+  bool require_pkce = 17;
 }
 
 message RegisterClientResponse {

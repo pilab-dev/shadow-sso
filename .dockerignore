@@ -1,0 +1,46 @@
+# Git specific
+.git
+.gitignore
+
+# IDE / Editor specific
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Documentation (often not needed in image)
+*.md
+README
+LICENSE
+SECURITY.md
+CONTRIBUTING.md
+CODE_OF_CONDUCT.md
+docs/
+
+# Docker files themselves
+Dockerfile
+.dockerignore
+docker-compose.yml
+docker-compose.yaml
+
+# Go specific (build cache, modules already handled by multi-stage build)
+vendor/
+*.out
+*.test
+
+# Local configuration / environment files
+.env
+config.local.yaml
+config.dev.yaml
+
+# Temporary files / OS specific
+.DS_Store
+Thumbs.db
+
+# Mocks (if not needed in the final image analysis/testing stages within Docker)
+# mocks/
+
+# Add any other project-specific files or directories that are not needed in the build context
+# For example, if you have a frontend directory that's built separately:
+# frontend/node_modules/
+# frontend/dist/ (if copied separately)

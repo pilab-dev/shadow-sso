@@ -143,7 +143,7 @@ func (s *TwoFactorServer) Disable2FA(ctx context.Context, req *connect.Request[s
 	}
 
 	// Verify password or current 2FA code
-	passwordVerified := s.passwordHasher.Verify(user.PasswordHash, req.Msg.PasswordOr_2FaCode) == nil
+	passwordVerified := s.passwordHasher.Verify(user.PasswordHash, req.Msg.PasswordOr_2FaCode)
 
 	totpVerified := false
 	if !passwordVerified && user.TwoFactorMethod == "TOTP" && user.TwoFactorSecret != "" {
@@ -202,7 +202,7 @@ func (s *TwoFactorServer) GenerateRecoveryCodes(ctx context.Context, req *connec
 	}
 
 	if req.Msg.PasswordOr_2FaCode != "" {
-		passwordVerified := s.passwordHasher.Verify(user.PasswordHash, req.Msg.PasswordOr_2FaCode) == nil
+		passwordVerified := s.passwordHasher.Verify(user.PasswordHash, req.Msg.PasswordOr_2FaCode)
 		totpVerified := false
 		if !passwordVerified && user.TwoFactorMethod == "TOTP" && user.TwoFactorSecret != "" {
 			validTOTP, _ := totp.ValidateTOTPCode(user.TwoFactorSecret, req.Msg.PasswordOr_2FaCode)

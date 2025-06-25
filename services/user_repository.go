@@ -1,4 +1,4 @@
-package ssso
+package services
 
 import (
 	"context"
@@ -69,10 +69,6 @@ type UserStore interface {
 	// providerID is the name of the external provider, such as "google" or "github".
 	// Returns the user or an error if not found.
 	FindUserByExternalProviderID(ctx context.Context, providerID string, externalID string) (*User, error)
-
-	// UserSessionRepository defines the interface for user session-related data operations
-	// ! TODO: Temporary we are embedding, but should be a separate interface
-	UserSessionStore
 }
 
 // UserSessionStore defines the interface for user session-related data operations.

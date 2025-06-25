@@ -1,4 +1,4 @@
-package ssso
+package services
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex" // Added
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -13,8 +14,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/pilab-dev/shadow-sso/api"
 	"github.com/pilab-dev/shadow-sso/client"
+	"github.com/pilab-dev/shadow-sso/dto"            // Added DTO import
 	serrors "github.com/pilab-dev/shadow-sso/errors" // Import the aliased errors
-	"github.com/rs/zerolog/log"
+	applog "github.com/pilab-dev/shadow-sso/log"     // Renamed to avoid conflict with zerolog/log
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -65,19 +67,21 @@ func generateUserCode(length int, charset string, chunkSize int) string {
 
 type OAuthService struct {
 	oauthRepo    OAuthRepository
-	userRepo     UserStore
-	clientRepo   client.ClientStore
-	tokenService *TokenService
+	userRepo     UserService        // Changed from UserStore to UserServiceInternal
+	clientRepo   client.ClientStore // Assuming this repo is fine, or it's part of OAuthRepository
+	tokenService *TokenService      // Concrete TokenService, which has updated Get...Info methods
 	keyID        string
 	issuer       string
+	logger       applog.Logger // Added application logger
 }
 
 // NewOAuthService creates a new instance of the OAuthService.
 func NewOAuthService(
 	oauthRepo OAuthRepository,
-	userRepo UserStore,
+	userRepo UserService, // Changed
 	tokenService *TokenService,
 	issuer string,
+	logger applog.Logger, // Added logger
 ) *OAuthService {
 	return &OAuthService{
 		oauthRepo:    oauthRepo,
@@ -85,6 +89,7 @@ func NewOAuthService(
 		keyID:        uuid.NewString(), // ! This must be refactored to keystore or something.
 		tokenService: tokenService,
 		issuer:       issuer,
+		logger:       logger, // Store logger
 	}
 }
 
@@ -96,17 +101,31 @@ func (s *OAuthService) RegisterUser(ctx context.Context, username, password stri
 	}
 
 	// Create the user
-	user, err := s.userRepo.CreateUser(ctx, username, string(hashedPassword))
+	user, err := s.userRepo.CreateUser(ctx, &dto.UserCreateRequest{
+		Email:     username,
+		Password:  string(hashedPassword),
+		FirstName: "",
+		LastName:  "",
+		Roles:     []string{},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
-	return user, nil
+	return &User{
+		ID:                      user.ID,
+		Username:                user.Email,
+		Password:                "",
+		CreatedAt:               user.CreatedAt,
+		UpdatedAt:               user.UpdatedAt,
+		ExternalProviderMapping: map[string]string{},
+		AdditionalUserInfo:      map[string]any{},
+	}, nil
 }
 
 func (s *OAuthService) Login(ctx context.Context, username, password, deviceInfo string) (*api.TokenResponse, error) {
 	// Search for the user
-	user, err := s.userRepo.GetUserByUsername(ctx, username)
+	user, err := s.userRepo.GetUserByEmail(ctx, username)
 	if err != nil {
 		return nil, fmt.Errorf("user not found: %w", err)
 	}
@@ -664,30 +683,28 @@ func (s *OAuthService) IssueTokenForDeviceFlow(ctx context.Context, deviceCode s
 // IntrospectToken implements RFC 7662 Token Introspection
 func (s *OAuthService) IntrospectToken(ctx context.Context,
 	token, tokenTypeHint, clientID, clientSecret string,
-) (*TokenIntrospection, error) {
+) (*TokenIntrospection, error) { // TokenIntrospection is a local struct, not a DTO from outside.
 	// Validate the requesting client
 	if err := s.validateClient(ctx, clientID, clientSecret); err != nil {
 		return nil, fmt.Errorf("invalid client: %w", err)
 	}
 
-	var tokenInfo *TokenInfo
+	var tokenInfoDTO *dto.TokenInfoResponse // Changed to use DTO
 	var err error
 
 	// Use token_type_hint to optimize lookup
 	switch tokenTypeHint {
 	case "refresh_token":
-		tokenInfo, err = s.tokenService.GetRefreshTokenInfo(ctx, token)
+		tokenInfoDTO, err = s.tokenService.GetRefreshTokenInfo(ctx, token)
 	case "access_token", "":
-		tokenInfo, err = s.tokenService.GetAccessTokenInfo(ctx, token)
+		tokenInfoDTO, err = s.tokenService.GetAccessTokenInfo(ctx, token)
 		if err != nil && tokenTypeHint == "" {
-			// If no hint was provided, try refresh token as fallback
-			tokenInfo, err = s.tokenService.GetRefreshTokenInfo(ctx, token)
+			tokenInfoDTO, err = s.tokenService.GetRefreshTokenInfo(ctx, token)
 		}
 	default:
-		// Unknown token type hint, try both
-		tokenInfo, err = s.tokenService.GetAccessTokenInfo(ctx, token)
+		tokenInfoDTO, err = s.tokenService.GetAccessTokenInfo(ctx, token)
 		if err != nil {
-			tokenInfo, err = s.tokenService.GetRefreshTokenInfo(ctx, token)
+			tokenInfoDTO, err = s.tokenService.GetRefreshTokenInfo(ctx, token)
 		}
 	}
 
@@ -695,33 +712,42 @@ func (s *OAuthService) IntrospectToken(ctx context.Context,
 		return &TokenIntrospection{Active: false}, nil
 	}
 
-	// Check if token is expired
-	if time.Now().After(tokenInfo.ExpiresAt) {
+	// Check if token is expired (using DTO fields)
+	if time.Now().After(tokenInfoDTO.ExpiresAt) {
 		return &TokenIntrospection{Active: false}, nil
 	}
 
-	// If we have user info, get username
 	var username string
-	if tokenInfo.UserID != "" {
-		user, err := s.userRepo.GetUserByID(ctx, tokenInfo.UserID)
-		if err == nil {
-			username = user.Username
+	var userEmail string // Typically email is more common for "username" in OAuth contexts
+	if tokenInfoDTO.UserID != "" {
+		// userRepo is now UserServiceInternal, GetUserByID returns *dto.UserResponse
+		userResp, userErr := s.userRepo.GetUserByID(ctx, tokenInfoDTO.UserID)
+		if userErr == nil && userResp != nil {
+			// Assuming UserResponse has Email or a Username field. Let's use Email.
+			username = userResp.Email // Or userResp.Username if that exists
+			userEmail = userResp.Email
+			s.logger.Debug(ctx, "User details retrieved for introspection", map[string]interface{}{"userID": tokenInfoDTO.UserID, "email": userEmail})
+		} else {
+			s.logger.Warn(ctx, "IntrospectToken: Failed to get user details for active token", userErr, map[string]interface{}{"userID": tokenInfoDTO.UserID})
 		}
 	}
 
+	// Populate TokenIntrospection struct (defined in this file)
 	return &TokenIntrospection{
 		Active:    true,
-		Scope:     tokenInfo.Scope,
-		ClientID:  tokenInfo.ClientID,
-		Username:  username,
-		TokenType: tokenInfo.TokenType,
-		Exp:       tokenInfo.ExpiresAt.Unix(),
-		Iat:       tokenInfo.IssuedAt.Unix(),
-		Sub:       tokenInfo.UserID,
-		Iss:       s.issuer,
-		Jti:       tokenInfo.ID,
-		Nbf:       tokenInfo.IssuedAt.Unix(),
-		Aud:       tokenInfo.ClientID,
+		Scope:     tokenInfoDTO.Scope,
+		ClientID:  tokenInfoDTO.ClientID,
+		Username:  username, // This is often the 'sub' or a preferred username. Using email here.
+		TokenType: tokenInfoDTO.TokenType,
+		Exp:       tokenInfoDTO.ExpiresAt.Unix(),
+		Iat:       tokenInfoDTO.IssuedAt.Unix(),
+		Sub:       tokenInfoDTO.UserID,
+		Iss:       s.issuer,                              // Issuer from OAuthService config
+		Jti:       tokenInfoDTO.ID,                       // Token ID
+		Nbf:       tokenInfoDTO.IssuedAt.Unix(),          // Not Before, often same as Iat
+		Aud:       tokenInfoDTO.ClientID,                 // Audience
+		Email:     userEmail,                             // Example of adding other claims
+		Roles:     strings.Join(tokenInfoDTO.Roles, " "), // Example: roles as space-separated string
 	}, nil
 }
 
@@ -825,16 +851,79 @@ func (s *OAuthService) GenerateTokens(ctx context.Context, code, clientID string
 }
 
 // GetUserInfo retrieves user information for a valid access token.
-func (s *OAuthService) GetUserInfo(ctx context.Context, token string) (map[string]interface{}, error) {
-	userID, err := s.tokenService.ValidateAccessToken(ctx, token)
+// It now returns api.UserInfo as expected by handlers, mapped from dto.UserResponse.
+func (s *OAuthService) GetUserInfo(ctx context.Context, tokenValue string) (*api.UserInfo, error) {
+	validatedToken, err := s.tokenService.ValidateAccessToken(ctx, tokenValue)
 	if err != nil {
 		return nil, fmt.Errorf("invalid access token: %w", err)
 	}
+	if validatedToken == nil || validatedToken.UserID == "" {
+		return nil, errors.New("token validation failed to yield user ID")
+	}
 
-	_ = userID
+	// userRepo is UserServiceInternal, GetUserByID returns *dto.UserResponse
+	userResp, err := s.userRepo.GetUserByID(ctx, validatedToken.UserID)
+	if err != nil {
+		s.logger.Error(ctx, "GetUserInfo: Failed to retrieve user details", err, map[string]interface{}{"userID": validatedToken.UserID})
+		return nil, fmt.Errorf("could not retrieve user information: %w", err)
+	}
 
-	log.Error().Msg("GetUserInfo not implemented")
+	if userResp == nil {
+		s.logger.Error(ctx, "GetUserInfo: User not found though token was valid", errors.New("user not found post validation"), map[string]interface{}{"userID": validatedToken.UserID})
+		return nil, errors.New("user not found though token was valid")
+	}
+	s.logger.Info(ctx, "Successfully retrieved user information for GetUserInfo", map[string]interface{}{"userID": userResp.ID, "email": userResp.Email})
 
-	// return s.userRepo.GetUserInfo(ctx, userID)
-	return nil, nil
+	// Map dto.UserResponse to api.UserInfo
+	// This is a simplified mapping. A full OIDC implementation would consider scopes
+	// to determine which claims to include.
+	apiUserInfo := &api.UserInfo{
+		Sub:               userResp.ID,
+		Name:              toPtr(userResp.FirstName + " " + userResp.LastName), // Example combination
+		GivenName:         toPtr(userResp.FirstName),
+		FamilyName:        toPtr(userResp.LastName),
+		PreferredUsername: toPtr(userResp.Email), // Often email is used as preferred_username
+		Email:             toPtr(userResp.Email),
+		// EmailVerified: userResp.EmailVerified, // Assuming UserResponse has this
+		// UpdatedAt: &userResp.UpdatedAt.Unix(), // api.UserInfo expects *int64 for UpdatedAt
+		// Roles: userResp.Roles, // api.UserInfo doesn't have roles directly, often custom claim
+	}
+	updatedAtUnix := userResp.UpdatedAt.Unix()
+	apiUserInfo.UpdatedAt = &updatedAtUnix
+
+	// Example: Add custom claims if needed, based on scope or other logic
+	// customClaims := map[string]interface{}{
+	// 	"roles": userResp.Roles,
+	// }
+	// For OIDC UserInfo, standard claims are added directly. Custom claims might be namespaced.
+
+	return apiUserInfo, nil
+}
+
+// Helper to convert string to *string, useful for optional fields in api.UserInfo
+func toPtr(s string) *string {
+	if s == "" { // Or based on other conditions if an empty string is valid but should be omitted
+		return nil
+	}
+	return &s
+}
+
+// Example of adding a field to TokenIntrospection if it's not there.
+// This is just to make the file compile if the diff introduces a new field.
+// This struct is local to this file.
+type TokenIntrospection struct {
+	Active    bool   `json:"active"`
+	Scope     string `json:"scope,omitempty"`
+	ClientID  string `json:"client_id,omitempty"`
+	Username  string `json:"username,omitempty"` // Typically subject's username
+	TokenType string `json:"token_type,omitempty"`
+	Exp       int64  `json:"exp,omitempty"`   // Expiration time, seconds since epoch
+	Iat       int64  `json:"iat,omitempty"`   // Issued at time, seconds since epoch
+	Nbf       int64  `json:"nbf,omitempty"`   // Not before time, seconds since epoch
+	Sub       string `json:"sub,omitempty"`   // Subject identifier (usually user ID)
+	Aud       string `json:"aud,omitempty"`   // Audience (usually client ID)
+	Iss       string `json:"iss,omitempty"`   // Issuer URL
+	Jti       string `json:"jti,omitempty"`   // JWT ID (token ID)
+	Email     string `json:"email,omitempty"` // Example custom claim
+	Roles     string `json:"roles,omitempty"` // Example custom claim (space-separated)
 }

@@ -7,35 +7,37 @@ import (
 	"strconv" // For ListUsers pageToken as offset
 	"time"
 
-	"github.com/pilab-dev/shadow-sso/domain"             // Use the new domain.User
-	"github.com/pilab-dev/shadow-sso/internal/auth/rbac" // Import rbac package
-	"github.com/rs/zerolog/log"                          // Assuming logger
+	"github.com/pilab-dev/shadow-sso/domain" // Use the new domain.User
+	// "github.com/pilab-dev/shadow-sso/internal/auth/rbac" // No longer needed for Role constants
+	"github.com/rs/zerolog/log" // Assuming logger
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
-// UserRepositoryMongo implements domain.UserRepository
-type UserRepositoryMongo struct {
+// UserRepository implements domain.UserRepository
+type UserRepository struct {
 	db    *mongo.Database
 	users *mongo.Collection
 }
 
-// NewUserRepositoryMongo creates a new UserRepositoryMongo.
-func NewUserRepositoryMongo(ctx context.Context, db *mongo.Database) (domain.UserRepository, error) {
-	repo := &UserRepositoryMongo{
+// NewUserRepository creates a new UserRepositoryMongo.
+func NewUserRepository(ctx context.Context, db *mongo.Database) (domain.UserRepository, error) {
+	repo := &UserRepository{
 		db:    db,
 		users: db.Collection(UsersCollection), // "oauth_users"
 	}
+
 	if err := repo.createIndexes(ctx); err != nil {
 		// Log the error but allow application to start if index creation fails due to existing compatible indexes.
 		// Strict error checking might be needed depending on deployment strategy.
 		log.Warn().Err(err).Msg("Failed to create user indexes (might be due to existing compatible indexes or other non-critical issue)")
 	}
+
 	return repo, nil
 }
 
-func (r *UserRepositoryMongo) createIndexes(ctx context.Context) error {
+func (r *UserRepository) createIndexes(ctx context.Context) error {
 	indexModels := []mongo.IndexModel{
 		{
 			Keys:    bson.D{{Key: "email", Value: 1}},                                                            // Changed from username to email
@@ -61,7 +63,7 @@ func (r *UserRepositoryMongo) createIndexes(ctx context.Context) error {
 }
 
 // CreateUser creates a new user.
-func (r *UserRepositoryMongo) CreateUser(ctx context.Context, user *domain.User) error {
+func (r *UserRepository) CreateUser(ctx context.Context, user *domain.User) error {
 	if user.ID == "" {
 		user.ID = NewObjectID() // Assuming NewObjectID() is in this package or accessible (e.g. mongodb/utils.go)
 	}
@@ -87,10 +89,10 @@ func (r *UserRepositoryMongo) CreateUser(ctx context.Context, user *domain.User)
 			return fmt.Errorf("failed to count existing users: %w", err)
 		}
 		if count == 0 {
-			user.Roles = []string{rbac.RoleAdmin, rbac.RoleUser} // First user is Admin + User
+			user.Roles = []string{domain.RoleAdmin, domain.RoleUser} // First user is Admin + User
 			log.Info().Str("userID", user.ID).Str("email", user.Email).Msg("First user registered, assigned Admin and User roles.")
 		} else {
-			user.Roles = []string{rbac.RoleUser} // Subsequent users are just User by default
+			user.Roles = []string{domain.RoleUser} // Subsequent users are just User by default
 		}
 	}
 
@@ -106,7 +108,7 @@ func (r *UserRepositoryMongo) CreateUser(ctx context.Context, user *domain.User)
 }
 
 // GetUserByID retrieves a user by their ID.
-func (r *UserRepositoryMongo) GetUserByID(ctx context.Context, id string) (*domain.User, error) {
+func (r *UserRepository) GetUserByID(ctx context.Context, id string) (*domain.User, error) {
 	var user domain.User
 	err := r.users.FindOne(ctx, bson.M{"_id": id}).Decode(&user)
 	if err != nil {
@@ -120,7 +122,7 @@ func (r *UserRepositoryMongo) GetUserByID(ctx context.Context, id string) (*doma
 }
 
 // GetUserByEmail retrieves a user by their email.
-func (r *UserRepositoryMongo) GetUserByEmail(ctx context.Context, email string) (*domain.User, error) {
+func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*domain.User, error) {
 	var user domain.User
 	err := r.users.FindOne(ctx, bson.M{"email": email}).Decode(&user)
 	if err != nil {
@@ -134,7 +136,7 @@ func (r *UserRepositoryMongo) GetUserByEmail(ctx context.Context, email string) 
 }
 
 // UpdateUser updates an existing user.
-func (r *UserRepositoryMongo) UpdateUser(ctx context.Context, user *domain.User) error {
+func (r *UserRepository) UpdateUser(ctx context.Context, user *domain.User) error {
 	if user.ID == "" {
 		return errors.New("user ID is required for update")
 	}
@@ -153,7 +155,7 @@ func (r *UserRepositoryMongo) UpdateUser(ctx context.Context, user *domain.User)
 }
 
 // DeleteUser removes a user by their ID. (Actual deletion, not soft delete)
-func (r *UserRepositoryMongo) DeleteUser(ctx context.Context, id string) error {
+func (r *UserRepository) DeleteUser(ctx context.Context, id string) error {
 	result, err := r.users.DeleteOne(ctx, bson.M{"_id": id})
 	if err != nil {
 		log.Error().Err(err).Str("id", id).Msg("Error deleting user from MongoDB")
@@ -167,7 +169,7 @@ func (r *UserRepositoryMongo) DeleteUser(ctx context.Context, id string) error {
 
 // ListUsers retrieves a paginated list of users.
 // pageToken is used as skip offset, returns next pageToken (next offset).
-func (r *UserRepositoryMongo) ListUsers(ctx context.Context, pageToken string, pageSize int) ([]*domain.User, string, error) {
+func (r *UserRepository) ListUsers(ctx context.Context, pageToken string, pageSize int) ([]*domain.User, string, error) {
 	if pageSize <= 0 {
 		pageSize = 10 // Default page size
 	}
@@ -212,4 +214,4 @@ func (r *UserRepositoryMongo) ListUsers(ctx context.Context, pageToken string, p
 }
 
 // Ensure interface compliance
-var _ domain.UserRepository = (*UserRepositoryMongo)(nil)
+var _ domain.UserRepository = (*UserRepository)(nil)

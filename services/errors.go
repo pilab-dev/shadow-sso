@@ -1,7 +1,8 @@
-package ssso
+package services
 
 import (
 	"errors"
+
 	serrors "github.com/pilab-dev/shadow-sso/errors"
 )
 

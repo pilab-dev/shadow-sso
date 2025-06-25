@@ -107,6 +107,8 @@ message User {
   google.protobuf.Timestamp updated_at = 7;
   google.protobuf.Timestamp last_login_at = 8;
   repeated string roles = 9; // Comma-separated roles or a repeated field if needed
+  bool is_two_factor_enabled = 10;
+	string two_factor_method = 11;
 }
 
 message RegisterUserRequest {

@@ -20,23 +20,12 @@ type TokenEntry struct {
 	Roles      []string  `redis:"roles,omitempty"` // New field
 }
 
-// TokenStore defines the interface for token caching implementations
+//go:generate mockgen -source=$GOFILE -destination=../../mocks/mock_$GOPACKAGE/mock_$GOFILE -package=mock_$GOPACKAGE
 type TokenStore interface {
-	// Set stores a token with its claims and expiry time
 	Set(ctx context.Context, token *TokenEntry) error
-
-	// Get retrieves a token entry from the cache
 	Get(ctx context.Context, token string) (*TokenEntry, error)
-
-	// Delete removes a token from the cache
 	Delete(ctx context.Context, token string) error
-
-	// DeleteExpired removes all expired tokens from the cache
 	DeleteExpired(ctx context.Context) error
-
-	// Clear removes all tokens from the cache
 	Clear(ctx context.Context) error
-
-	// Count returns the number of tokens in the cache
 	Count(ctx context.Context) int
 }

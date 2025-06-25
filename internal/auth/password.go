@@ -2,6 +2,7 @@ package auth
 
 import (
 	"fmt"
+
 	"github.com/pilab-dev/shadow-sso/services" // For services.PasswordHasher interface
 	"golang.org/x/crypto/bcrypt"
 )
@@ -31,8 +32,12 @@ func (h *BcryptPasswordHasher) Hash(password string) (string, error) {
 
 // Verify compares a bcrypt hashed password with its possible plaintext equivalent.
 // Returns nil on success, or an error (e.g., bcrypt.ErrMismatchedHashAndPassword) on failure.
-func (h *BcryptPasswordHasher) Verify(hashedPassword, password string) error {
-	return bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password))
+func (h *BcryptPasswordHasher) Verify(hashedPassword, password string) bool {
+	if err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password)); err != nil {
+		return false
+	}
+
+	return true
 }
 
 // Ensure it implements the interface

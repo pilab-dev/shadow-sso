@@ -71,7 +71,7 @@ func StartConnectRPCServer(addr string) error {
 		log.Fatal().Err(err).Msg("Failed to init ServiceAccountRepositoryMongo")
 		return err
 	}
-	userRepo, err := mongodb.NewUserRepositoryMongo(ctx, db)
+	userRepo, err := mongodb.NewUserRepository(ctx, db)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to init UserRepositoryMongo")
 		return err
