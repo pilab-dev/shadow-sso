@@ -1,0 +1,172 @@
+# Default values for ssso-backend chart.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/pilab-dev/ssso-backend
+  pullPolicy: IfNotPresent
+  # tag: "v1" # Overridden by Chart.yaml appVersion by default, but can be specified here
+  # Or use a dynamic tag like below if you have a CI/CD pipeline that updates it
+  tag: "" # An empty tag will use the appVersion from Chart.yaml
+
+imagePullSecrets: []
+# - name: my-ghcr-secret # If your GHCR package is private and requires auth
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+podAnnotations: {}
+podSecurityContext:
+  fsGroup: 1001 # Corresponds to appuser's group ID in Dockerfile
+  runAsUser: 1001 # Corresponds to appuser's ID in Dockerfile
+  runAsNonRoot: true
+
+securityContext:
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: true # Requires careful checking if app writes to FS outside of volumes
+  # runAsNonRoot: true # Already set at pod level
+  # runAsUser: 1001 # Already set at pod level
+
+service:
+  type: ClusterIP
+  port: 8080 # Port the service will listen on
+  targetPort: 8080 # Port the application container listens on (from Dockerfile EXPOSE)
+
+ingress:
+  enabled: false
+  className: "" # "nginx" or "traefik" for example
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true" # For cert-manager
+    # cert-manager.io/cluster-issuer: letsencrypt-prod # Example cert-manager issuer
+  hosts:
+    - host: sso.example.com
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls: []
+  #  - secretName: sso-tls-secret # Name of the k8s secret containing TLS cert and key
+  #    hosts:
+  #      - sso.example.com
+  #  - secretName: chart-example-tls
+  #    hosts:
+  #      - chart-example.local
+
+# Configuration for the SSSO application
+# These will be passed as environment variables or mounted as a config file
+# Refer to the SSSO_CONFIG_ variables in the README.md
+config:
+  # SSSO_HTTP_ADDR: "0.0.0.0:8080" # This is usually handled by the container port
+  SSSO_LOG_LEVEL: "info"
+  SSSO_ISSUER_URL: "https://sso.example.com" # IMPORTANT: Change this to your actual issuer URL
+  SSSO_SIGNING_KEY_PATH: "/etc/sso/keys/private.pem" # Path inside the container for the signing key
+  SSSO_KEY_ROTATION_INTERVAL: "24h"
+  SSSO_NEXTJS_LOGIN_URL: "https://login.example.com" # If using external login UI
+  # SSSO_MONGO_URI: "mongodb://user:pass@host:port/mydb" # Set if not using the bundled MongoDB
+
+# Secret containing the RSA private key for signing tokens
+# This secret should have a key named 'private.pem'
+signingKeySecretName: "sso-signing-key" # Name of the Kubernetes secret
+
+# Create a secret for the signing key if it doesn't exist.
+# For production, you should manage this secret outside the chart (e.g., with Sealed Secrets or Vault).
+createSigningKeySecret: false
+signingKeyPrivatePem: |
+  -----BEGIN RSA PRIVATE KEY-----
+  # PASTE YOUR RSA PRIVATE KEY HERE IF createSigningKeySecret IS true
+  # THIS IS NOT RECOMMENDED FOR PRODUCTION.
+  # Generate one with: openssl genrsa -out private.pem 2048
+  -----END RSA PRIVATE KEY-----
+
+resources:
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  limits:
+    cpu: 200m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+# Persistent Volume Claim for storage if needed by the application
+# The SSSO application itself might not need direct PVC, but this is a placeholder
+persistence:
+  enabled: false
+  # storageClassName: "standard" # Or your preferred storage class
+  accessModes:
+    - ReadWriteOnce
+  size: 1Gi
+  # existingClaim: "" # Use an existing PVC
+
+# MongoDB configuration
+# Set mongodb.enabled to true to deploy a MongoDB instance alongside the application.
+# For production, it's highly recommended to use an external, managed MongoDB instance.
+mongodb:
+  enabled: false
+  # If using the Bitnami MongoDB subchart, refer to its values.yaml for configuration options
+  # e.g., https://github.com/bitnami/charts/blob/main/bitnami/mongodb/values.yaml
+  # Below are some common overrides if you were using a simple custom MongoDB deployment (not the subchart)
+  # architecture: "replicaset" # "standalone" or "replicaset"
+  # auth:
+  #   enabled: true
+  #   rootUser: "admin"
+  #   rootPassword: "changeme" # CHANGE THIS
+  #   database: "shadow_sso_db" # Will be SSSO_MONGO_DB_NAME
+  #   username: "ssso_user"
+  #   password: "changeme_ssso" # CHANGE THIS
+  # image:
+  #   repository: mongo
+  #   tag: "6.0" # Or your desired version
+  #   pullPolicy: IfNotPresent
+  # persistence:
+  #   enabled: true
+  #   storageClassName: "standard"
+  #   size: 8Gi
+
+  # For SSSO application to connect to this MongoDB instance if enabled:
+  # These will override the global config.SSSO_MONGO_URI and config.SSSO_MONGO_DB_NAME
+  # if mongodb.enabled is true.
+  connection:
+    uriOverride: "" # e.g. "mongodb://user:pass@mongodb-host:27017/db_name?authSource=admin"
+                    # If empty and mongodb.enabled is true, it will be constructed.
+    databaseName: "shadow_sso_db"
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Extra environment variables to be passed to the application container
+extraEnv: []
+#  - name: MY_CUSTOM_ENV_VAR
+#    value: "my_value"
+
+# Extra environment variables from secrets or configmaps
+extraEnvFrom: []
+#  - secretRef:
+#      name: my-secret
+#  - configMapRef:
+#      name: my-configmap

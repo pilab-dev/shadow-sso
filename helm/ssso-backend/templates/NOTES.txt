@@ -1,0 +1,44 @@
+1. Get the application URL by running these commands:
+{{- if .Values.ingress.enabled }}
+  {{- $host := (first .Values.ingress.hosts).host }}
+  {{- $protocol := "http" }}
+  {{- if .Values.ingress.tls }}
+    {{- $tlsSecret := (first .Values.ingress.tls).secretName }}
+    {{- if $tlsSecret }}
+      {{- $protocol = "https" }}
+    {{- end }}
+  {{- end }}
+  export APP_URL="{{ $protocol }}://{{ $host }}{{ (first (first .Values.ingress.hosts).paths).path }}"
+  echo "Application URL: $APP_URL"
+{{- else if contains "LoadBalancer" .Values.service.type }}
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "ssso-backend.fullname" . }} --template "{{- range .status.loadBalancer.ingress -}}{{- .ip -}}{{- end }}")
+  export APP_URL="http://$SERVICE_IP:{{ .Values.service.port }}"
+  echo "Application URL: $APP_URL"
+{{- else if contains "NodePort" .Values.service.type }}
+  export NODE_PORT=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "ssso-backend.fullname" . }} --template "{{- range .spec.ports -}}{{- if eq .name "http" -}}{{- .nodePort -}}{{- end -}}{{- end }}")
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath='{ $.items[0].status.addresses[?(@.type=="ExternalIP")].address }')
+  export APP_URL="http://$NODE_IP:$NODE_PORT"
+  echo "Application URL (using first node's ExternalIP): $APP_URL"
+  echo "Note: If ExternalIP is not available or you are in a private cluster, use an internal IP or localhost for NodePort."
+{{- else }}
+  echo "Application can be accessed via port-forwarding:"
+  echo "  kubectl port-forward svc/{{ include "ssso-backend.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.targetPort }} --namespace {{ .Release.Namespace }}"
+  echo "Then open http://localhost:{{ .Values.service.port }} in your browser."
+{{- end }}
+
+2. Ensure you have a Kubernetes Secret named `{{ .Values.signingKeySecretName }}` with a key `private.pem` containing your RSA private key.
+   You can create one manually:
+   `kubectl create secret generic {{ .Values.signingKeySecretName }} --from-file=private.pem=/path/to/your/private.pem --namespace {{ .Release.Namespace }}`
+   Alternatively, for testing (NOT FOR PRODUCTION), you can set `createSigningKeySecret: true` and paste your key into `signingKeyPrivatePem` in `values.yaml`.
+
+3. Configure MongoDB:
+   The application requires a MongoDB instance.
+   - If you have an external MongoDB, set `mongodb.enabled: false` and provide the connection URI via `config.SSSO_MONGO_URI` and database name via `config.SSSO_MONGO_DB_NAME` in `values.yaml`.
+   - If you want to deploy MongoDB as part of this chart (e.g., for testing or development), set `mongodb.enabled: true`.
+     This chart does not include a full MongoDB subchart by default in this version. You would need to add it as a dependency in `Chart.yaml` (e.g., the Bitnami MongoDB chart) and configure it under the `mongodb:` section in `values.yaml`.
+     If `mongodb.enabled` is true, the chart will attempt to construct a MongoDB URI assuming a service named `{{ printf "%s-mongodb" (include "ssso-backend.fullname" .) }}`.
+
+4. Issuer URL:
+   Make sure the `config.SSSO_ISSUER_URL` in `values.yaml` (currently "{{ .Values.config.SSSO_ISSUER_URL }}") correctly reflects the URL through which the SSSO service will be accessible to its clients. This is critical for OIDC discovery and token validation. If using Ingress, this should match your Ingress host.
+
+This chart deploys the SSSO Backend. For more information on SSSO, visit: https://github.com/pilab-dev/shadow-sso
