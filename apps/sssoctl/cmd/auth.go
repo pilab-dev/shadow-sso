@@ -10,8 +10,8 @@ import (
 	"syscall" // For reading password securely
 
 	"connectrpc.com/connect"
-	"github.com/pilab-dev/shadow-sso/apps/ssoctl/cmd/client" // Updated path
-	"github.com/pilab-dev/shadow-sso/apps/ssoctl/cmd/config" // Updated path
+	"github.com/pilab-dev/shadow-sso/apps/sssoctl/cmd/client" // Updated path
+	"github.com/pilab-dev/shadow-sso/apps/sssoctl/cmd/config" // Updated path
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/spf13/cobra"
 	"golang.org/x/term" // For reading password
