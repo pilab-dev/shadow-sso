@@ -1,3 +1,5 @@
 tools
 # /gen # Allow generated protobuf files to be tracked
 /ssoctl
+/sssoctl
+/ssso

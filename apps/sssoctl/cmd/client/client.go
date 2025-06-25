@@ -7,7 +7,7 @@ import (
 	"net/http"
 
 	"connectrpc.com/connect"
-	"github.com/pilab-dev/shadow-sso/apps/ssoctl/cmd/config"
+	"github.com/pilab-dev/shadow-sso/apps/sssoctl/cmd/config"
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
 )
 

@@ -9,8 +9,8 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/mdp/qrterminal"
-	"github.com/pilab-dev/shadow-sso/apps/ssoctl/cmd/client"
-	"github.com/pilab-dev/shadow-sso/apps/ssoctl/cmd/config"
+	"github.com/pilab-dev/shadow-sso/apps/sssoctl/cmd/client"
+	"github.com/pilab-dev/shadow-sso/apps/sssoctl/cmd/config"
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/spf13/cobra"
 	"golang.org/x/term" // For password reading

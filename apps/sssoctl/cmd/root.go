@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/pilab-dev/shadow-sso/apps/ssoctl/cmd/config" // Updated path
+	"github.com/pilab-dev/shadow-sso/apps/sssoctl/cmd/config" // Updated path
 	"github.com/spf13/cobra"
 	// Viper will be implicitly used via the config package
 )
