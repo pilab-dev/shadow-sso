@@ -1,4 +1,4 @@
-package mongodb
+package mongodb_test
 
 import (
 	"context"
@@ -7,17 +7,19 @@ import (
 	"testing"
 	"time"
 
-	// "github.com/pilab-dev/shadow-sso/ssso" // For ssso.Token, ssso.TokenInfo, ssso.TokenRepository
-	ssso "github.com/pilab-dev/shadow-sso"
+	"github.com/pilab-dev/shadow-sso/domain" // Added domain import
+	// ssso "github.com/pilab-dev/shadow-sso" // Removed ssso alias for root
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	// "go.mongodb.org/mongo-driver/v2/bson"
+
+	"github.com/pilab-dev/shadow-sso/mongodb"
 )
 
 // Helper function to setup DB for OAuthRepository (TokenRepository part) tests
-func setupOAuthTokenRepoTest(t *testing.T) (ssso.TokenRepository, func(), error) {
+func setupOAuthTokenRepoTest(t *testing.T) (domain.TokenRepository, func(), error) { // Changed to domain.TokenRepository
 	mongoURI := os.Getenv("MONGO_TEST_URI") // Using MONGO_TEST_URI
 	if mongoURI == "" {
 		mongoURI = "mongodb://localhost:27017"
@@ -40,13 +42,13 @@ func setupOAuthTokenRepoTest(t *testing.T) (ssso.TokenRepository, func(), error)
 
 	// NewOAuthRepository returns a broader ssso.OAuthRepository,
 	// but it also implements ssso.TokenRepository.
-	oauthRepoExt, err := NewOAuthRepository(ctx, db)
+	oauthRepoExt, err := mongodb.NewOAuthRepository(ctx, db)
 	if err != nil {
 		client.Disconnect(ctx)
 		return nil, func() {}, fmt.Errorf("NewOAuthRepository failed: %w", err)
 	}
 
-	var tokenRepo ssso.TokenRepository = oauthRepoExt // Ensure compatibility
+	var tokenRepo domain.TokenRepository = oauthRepoExt // Ensure compatibility, changed to domain.TokenRepository
 
 	cleanupFunc := func() {
 		mainCtx := context.Background()
@@ -77,7 +79,7 @@ func TestOAuthRepository_TokenMethods_Integration(t *testing.T) {
 	accessTokenType := "access_token"
 	refreshTokenType := "refresh_token"
 
-	token1 := &ssso.Token{
+	token1 := &domain.Token{ // Changed to domain.Token
 		ID:         "token-id-1", // Manually set ID for predictability, repo uses this as _id
 		TokenType:  accessTokenType,
 		TokenValue: "access_token_value_1_unique",
@@ -90,7 +92,7 @@ func TestOAuthRepository_TokenMethods_Integration(t *testing.T) {
 		Issuer:     "sso-issuer",
 	}
 
-	refreshToken1 := &ssso.Token{
+	refreshToken1 := &domain.Token{ // Changed to domain.Token
 		ID:         "refresh-token-id-1",
 		TokenType:  refreshTokenType,
 		TokenValue: "refresh_token_value_1_unique",
@@ -127,7 +129,7 @@ func TestOAuthRepository_TokenMethods_Integration(t *testing.T) {
 		// The repo GetAccessToken method filters by token_type, is_revoked, and expiry.
 
 		// Expired token
-		expiredToken := &ssso.Token{
+		expiredToken := &domain.Token{ // Changed to domain.Token
 			ID: "expired-access", TokenType: accessTokenType, TokenValue: "expired_access_value_unique",
 			UserID: "user-exp", ExpiresAt: now.Add(-1 * time.Minute), CreatedAt: now.Add(-2 * time.Minute),
 		}
@@ -137,7 +139,7 @@ func TestOAuthRepository_TokenMethods_Integration(t *testing.T) {
 		assert.Error(t, err, "GetAccessToken for expired token should fail")
 
 		// Revoked token
-		revokedToken := &ssso.Token{
+		revokedToken := &domain.Token{ // Changed to domain.Token
 			ID: "revoked-access", TokenType: accessTokenType, TokenValue: "revoked_access_value_unique",
 			UserID: "user-rev", ExpiresAt: now.Add(1 * time.Hour), IsRevoked: true, CreatedAt: now,
 		}
@@ -172,7 +174,7 @@ func TestOAuthRepository_TokenMethods_Integration(t *testing.T) {
 		errStoreRefresh := repo.StoreToken(ctx, refreshToken1)
 		require.NoError(t, errStoreRefresh)
 
-		activeAccessToken := &ssso.Token{
+		activeAccessToken := &domain.Token{ // Changed to domain.Token
 			ID: "active-info-access", TokenType: accessTokenType, TokenValue: "active_info_access_value_unique",
 			UserID: "user-info", ClientID: "client-info", Scope: "info",
 			ExpiresAt: now.Add(1 * time.Hour), CreatedAt: now, IsRevoked: false, Issuer: "sso-issuer",

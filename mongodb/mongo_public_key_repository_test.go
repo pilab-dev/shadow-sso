@@ -1,4 +1,4 @@
-package mongodb
+package mongodb_test
 
 import (
 	"context"
@@ -13,6 +13,8 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	// "go.mongodb.org/mongo-driver/v2/bson" // For cleanup if needed, but drop DB is better
+
+	"github.com/pilab-dev/shadow-sso/mongodb"
 )
 
 // Helper function to setup DB for PublicKeyRepository tests
@@ -39,7 +41,7 @@ func setupPublicKeyRepoTest(t *testing.T) (domain.PublicKeyRepository, func(), e
 	}
 	db := client.Database(dbName)
 
-	pubKeyRepo, err := NewPublicKeyRepositoryMongo(db) // Creates collection and indexes
+	pubKeyRepo, err := mongodb.NewPublicKeyRepositoryMongo(db) // Creates collection and indexes
 	if err != nil {
 		client.Disconnect(ctx)
 		return nil, func() {}, fmt.Errorf("NewPublicKeyRepositoryMongo failed: %w", err)

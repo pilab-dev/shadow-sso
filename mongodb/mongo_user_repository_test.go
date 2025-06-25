@@ -1,4 +1,4 @@
-package mongodb
+package mongodb_test
 
 import (
 	"context"
@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/require" // For cleanup
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
+
+	"github.com/pilab-dev/shadow-sso/mongodb"
 )
 
 // Helper function to setup DB for tests
@@ -47,7 +49,7 @@ func setupUserRepoTest(t *testing.T) (domain.UserRepository, func(), error) {
 	db := client.Database(dbName)
 
 	// Create repository instance
-	userRepo, err := NewUserRepositoryMongo(ctx, db) // NewUserRepositoryMongo already handles index creation.
+	userRepo, err := mongodb.NewUserRepositoryMongo(ctx, db) // NewUserRepositoryMongo already handles index creation.
 	if err != nil {
 		client.Disconnect(ctx)
 		return nil, func() {}, fmt.Errorf("NewUserRepositoryMongo failed: %w", err)

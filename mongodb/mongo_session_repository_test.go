@@ -1,4 +1,4 @@
-package mongodb
+package mongodb_test
 
 import (
 	"context"
@@ -13,6 +13,8 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	// "go.mongodb.org/mongo-driver/v2/bson" // For direct BSON if needed
+
+	"github.com/pilab-dev/shadow-sso/mongodb"
 )
 
 // Helper function to setup DB for SessionRepository tests
@@ -37,7 +39,7 @@ func setupSessionRepoTest(t *testing.T) (domain.SessionRepository, func(), error
 	}
 	db := client.Database(dbName)
 
-	sessionRepo, err := NewSessionRepositoryMongo(ctx, db) // Creates collection and indexes
+	sessionRepo, err := mongodb.NewSessionRepositoryMongo(ctx, db) // Creates collection and indexes
 	if err != nil {
 		client.Disconnect(ctx)
 		return nil, func() {}, fmt.Errorf("NewSessionRepositoryMongo failed: %w", err)

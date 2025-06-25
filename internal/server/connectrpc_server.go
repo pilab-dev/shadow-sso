@@ -4,7 +4,7 @@ import (
 	"context"
 	// "errors" // No longer needed if all mocks using it are removed
 	"net/http"
-	"os" // For environment variables
+	// "os" // No longer needed for environment variables here
 	"time"
 
 	"connectrpc.com/connect"     // For connect.WithInterceptors
@@ -12,33 +12,36 @@ import (
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 
-	ssso "github.com/pilab-dev/shadow-sso"
+	// ssso "github.com/pilab-dev/shadow-sso" // Likely no longer needed if types are moved
 	"github.com/pilab-dev/shadow-sso/cache"
+	"github.com/pilab-dev/shadow-sso/domain" // Ensure domain is imported
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
-
-	// "github.com/pilab-dev/shadow-sso/domain" // domain is used by mongodb and services packages
-	"github.com/pilab-dev/shadow-sso/internal/auth" // Import new auth package for password hasher
+	"github.com/pilab-dev/shadow-sso/internal/auth"
 	"github.com/pilab-dev/shadow-sso/middleware"
-	"github.com/pilab-dev/shadow-sso/mongodb" // Import new mongodb package
+	"github.com/pilab-dev/shadow-sso/mongodb"
 	"github.com/pilab-dev/shadow-sso/services"
 	"github.com/rs/zerolog/log"
 )
 
+type ServerConfig struct {
+	HTTPAddr    string
+	MongoURI    string
+	MongoDBName string
+	IssuerURL   string
+	// Add other fields from apps/ssso/config.go as needed, e.g.:
+	// SigningKeyPath      string
+	// KeyRotationInterval time.Duration
+	// NextJSLoginURL string
+}
+
 // StartConnectRPCServer initializes and starts the ConnectRPC server.
-func StartConnectRPCServer(addr string) error {
-	log.Info().Msgf("Starting ConnectRPC server on %s", addr)
+func StartConnectRPCServer(cfg ServerConfig) error {
+	log.Info().Msgf("Starting ConnectRPC server on %s", cfg.HTTPAddr)
 	ctx := context.Background() // Use a background context for setup
 
 	// 1. Initialize MongoDB
-	mongoURI := os.Getenv("MONGO_URI")
-	if mongoURI == "" {
-		mongoURI = "mongodb://localhost:27017" // Default
-	}
-	dbName := os.Getenv("MONGO_DB_NAME")
-	if dbName == "" {
-		dbName = "shadow_sso_dev_db" // Default
-	}
-	if err := mongodb.InitMongoDB(ctx, mongoURI, dbName); err != nil {
+	// mongoURI and mongoDBName are now passed as arguments
+	if err := mongodb.InitMongoDB(ctx, cfg.MongoURI, cfg.MongoDBName); err != nil {
 		log.Fatal().Err(err).Msg("Failed to initialize MongoDB")
 		return err
 	}
@@ -53,12 +56,11 @@ func StartConnectRPCServer(addr string) error {
 		log.Fatal().Err(err).Msg("Failed to init OAuthRepository")
 		return err
 	}
-	// Type assertion to ensure oauthRepo can be used as ssso.TokenRepository.
-	// This relies on *mongodb.OAuthRepository implementing ssso.TokenRepository.
-	tokenRepo, ok := oauthRepo.(ssso.TokenRepository)
+	// Type assertion to ensure oauthRepo can be used as domain.TokenRepository.
+	// This relies on *mongodb.OAuthRepository implementing domain.TokenRepository.
+	tokenRepo, ok := oauthRepo.(domain.TokenRepository)
 	if !ok {
-		log.Fatal().Msg("mongodb.OAuthRepository does not implement ssso.TokenRepository")
-		// return errors.New("mongodb.OAuthRepository does not implement ssso.TokenRepository") // Or handle fatal
+		log.Fatal().Msg("mongodb.OAuthRepository does not implement domain.TokenRepository")
 	}
 
 	pubKeyRepo, err := mongodb.NewPublicKeyRepositoryMongo(db)
@@ -86,22 +88,26 @@ func StartConnectRPCServer(addr string) error {
 	passwordHasher := auth.NewBcryptPasswordHasher(bcrypt.DefaultCost)
 
 	// 4. Initialize TokenService
-	tokenSigner := ssso.NewTokenSigner() // Example key ID
+	// TODO: Update TokenSigner to use cfg.SigningKeyPath
+	// TODO: Update JWKSService to use cfg.KeyRotationInterval and cfg.SigningKeyPath
+	tokenSigner := services.NewTokenSigner()
+	tokenSigner.AddKeySigner("temporary-secret-for-hs256-change-me") // Placeholder until RSA from file is implemented
+
 	tokenCache := cache.NewMemoryTokenStore(1 * time.Minute)
 
-	tokenService := ssso.NewTokenService(
-		tokenRepo,              // Real ssso.TokenRepository
-		tokenCache,             // Cache implementation
-		"https://sso.pilab.hu", // Example issuer URL
+	tokenService := services.NewTokenService(
+		tokenRepo,
+		tokenCache,
+		cfg.IssuerURL, // Use issuerURL from config
 		tokenSigner,
-		pubKeyRepo, // Real domain.PublicKeyRepository
-		saRepo,     // Real domain.ServiceAccountRepository
-		userRepo,   // Real domain.UserRepository
+		pubKeyRepo,
+		saRepo,
+		userRepo,
 	)
 
 	// 5. Initialize Authentication Interceptor
-	authInterceptor := middleware.NewAuthInterceptor(tokenService) // Existing
-	authzInterceptor := middleware.NewAuthorizationInterceptor()   // New
+	authInterceptor := middleware.NewAuthInterceptor(tokenService)
+	authzInterceptor := middleware.NewAuthorizationInterceptor()
 
 	// Apply interceptors: authN then authZ
 	interceptors := connect.WithInterceptors(authInterceptor, authzInterceptor)
@@ -110,15 +116,7 @@ func StartConnectRPCServer(addr string) error {
 	defaultKeyGen := &services.DefaultSAKeyGenerator{}
 	saServer := services.NewServiceAccountServer(defaultKeyGen, saRepo, pubKeyRepo)
 	userServer := services.NewUserServer(userRepo, passwordHasher)
-	// Pass sessionRepo to NewAuthServer. The constructor needs to be updated if it doesn't accept it.
-	// For now, assuming NewAuthServer was updated to accept sessionRepo as its second argument.
-	// If not, this will be a compile error to fix in services/auth_service.go.
-	// Based on previous steps, AuthServer's constructor is:
-	// NewAuthServer(userRepo domain.UserRepository, tokenService *ssso.TokenService, passwordHasher PasswordHasher)
-	// It does NOT take sessionRepo yet. This needs to be addressed.
-	// For now, I will pass it and assume the constructor will be fixed.
-	// TODO: Update AuthServer constructor to accept SessionRepository.
-	authServer := services.NewAuthServer(userRepo, sessionRepo, tokenService, passwordHasher) // sessionRepo missing here
+	authServer := services.NewAuthServer(userRepo, sessionRepo, tokenService, passwordHasher)
 
 	// 7. Create mux and register handlers
 	mux := http.NewServeMux()
@@ -131,13 +129,13 @@ func StartConnectRPCServer(addr string) error {
 
 	// 8. Create and start HTTP/2 server
 	srv := &http.Server{
-		Addr:              addr,
+		Addr:              cfg.HTTPAddr, // Use httpAddr from config
 		Handler:           h2c.NewHandler(mux, &http2.Server{}),
 		ReadHeaderTimeout: 3 * time.Second,
 		ReadTimeout:       5 * time.Minute,
 		WriteTimeout:      5 * time.Minute,
 		MaxHeaderBytes:    8 * 1024, // 8KiB
 	}
-	log.Info().Msgf("ConnectRPC server listening on %s", addr)
+	log.Info().Msgf("ConnectRPC server listening on %s", cfg.HTTPAddr)
 	return srv.ListenAndServe()
 }

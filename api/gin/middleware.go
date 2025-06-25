@@ -9,7 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
-	ssso "github.com/pilab-dev/shadow-sso"
+	"github.com/pilab-dev/shadow-sso/services"
 	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/otel"
 )
@@ -68,7 +68,7 @@ func extractJWTFromHeader(bearerToken string) (string, error) {
 	return "", errors.New("invalid bearer token")
 }
 
-func UserAuthMiddleware(tokenService *ssso.TokenService) gin.HandlerFunc {
+func UserAuthMiddleware(tokenService *services.TokenService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tp := otel.GetTracerProvider()
 		ctx, span := tp.Tracer("").Start(c.Request.Context(), "JWTAuthMiddleware")

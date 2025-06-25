@@ -8,8 +8,19 @@ import (
 
 var ErrMissingRequiredParameter = errors.New("missing required parameter")
 
+// General OAuth / Authentication Errors
 var (
-	// ... existing errors ... // This comment will be kept as is, as the new errors are added below it.
+	ErrInvalidClientCredentials = errors.New("invalid client credentials")
+	ErrInvalidCredentials       = errors.New("invalid credentials")
+	ErrClientNotFound           = errors.New("client not found")
+	ErrInvalidRefreshToken      = errors.New("invalid refresh token")
+	ErrTokenExpiredOrRevoked    = errors.New("token expired or revoked")
+	ErrInvalidConfig            = errors.New("invalid server configuration") // Added for consistency
+	ErrInvalidScopeRequest      = errors.New("invalid scope requested")      // Added for consistency
+)
+
+var (
+	// Device Flow Errors
 	ErrDeviceCodeNotFound      = errors.New("device code not found")
 	ErrUserCodeNotFound        = errors.New("user code not found or expired")
 	ErrCannotApproveDeviceAuth = errors.New("cannot approve device authorization; code may be invalid, expired, or already used")

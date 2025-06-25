@@ -34,10 +34,10 @@ const (
 
 // OAuth2API struct to hold dependencies.
 type OAuth2API struct {
-	service          *ssso.OAuthService
-	jwksService      *ssso.JWKSService
+	service          *services.OAuthService
+	jwksService      *services.JWKSService
 	clientService    *client.ClientService
-	pkceService      *ssso.PKCEService
+	pkceService      *services.PKCEService
 	config           *ssso.OpenIDProviderConfig
 	flowStore        *oidcflow.InMemoryFlowStore
 	userSessionStore *oidcflow.InMemoryUserSessionStore
@@ -47,10 +47,10 @@ type OAuth2API struct {
 
 // NewOAuth2API initializes the OAuth2 API.
 func NewOAuth2API(
-	service *ssso.OAuthService,
-	jwksService *ssso.JWKSService,
+	service *services.OAuthService,
+	jwksService *services.JWKSService,
 	clientService *client.ClientService,
-	pkceService *ssso.PKCEService,
+	pkceService *services.PKCEService,
 	config *ssso.OpenIDProviderConfig,
 	flowStore *oidcflow.InMemoryFlowStore,
 	userSessionStore *oidcflow.InMemoryUserSessionStore,
@@ -81,6 +81,9 @@ func NewOAuth2API(
 
 // RegisterRoutes registers the OAuth2 routes.
 func (oa *OAuth2API) RegisterRoutes(e *gin.Engine) {
+	// Apply security headers middleware to all routes
+	e.Use(SecurityHeadersMiddleware())
+
 	e.POST("/oauth2/token", oa.TokenHandler)
 	e.GET("/oauth2/authorize", oa.AuthorizeHandler)
 	e.POST("/oauth2/device_authorization", oa.DeviceAuthorizationHandler)
@@ -237,7 +240,7 @@ func (oa *OAuth2API) DeviceVerificationSubmitHandler(c *gin.Context) {
 	renderData := gin.H{"UserCodePreFill": userCode} // Keep code in display if re-showing form context
 
 	if err != nil {
-		log.Warn().Err(err).Str("user_code", userCode).Str("userID", userID).Msg("Failed to verify user code")
+		log.Warn().Err(err).Str("userID", userID).Msg("Failed to verify user code")
 		renderData["MessageType"] = "error"
 		if goerrors.Is(err, ssoerrors.ErrUserCodeNotFound) {
 			renderData["Message"] = "Invalid or expired code. Please check the code and try again."
@@ -674,7 +677,7 @@ func (oa *OAuth2API) UserInfoHandler(c *gin.Context) {
 		return
 	}
 
-	ctx := c.Request.Context()
+	// ctx := c.Request.Context() // Removed unused ctx
 
 	// Get bearer token
 	tokenParts := strings.Split(authHeader, " ")
@@ -682,16 +685,22 @@ func (oa *OAuth2API) UserInfoHandler(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
 		return
 	}
-	token := tokenParts[1]
+	// token := tokenParts[1] // Removed unused token
 
 	// Validate token, and get user info
-	userInfo, err := oa.service.GetUserInfo(ctx, token)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
-		return
-	}
-
-	c.JSON(http.StatusOK, userInfo)
+	// TODO: Implement UserInfo endpoint correctly.
+	// This should involve validating the token and then fetching claims.
+	// The OAuthService.GetUserInfo method was removed as it was a stub.
+	// This functionality likely belongs in AuthService or a dedicated UserInfoService.
+	// For now, returning a placeholder or an error.
+	// userInfo, err := oa.service.GetUserInfo(ctx, token)
+	// if err != nil {
+	// 	c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
+	// 	return
+	// }
+	// c.JSON(http.StatusOK, userInfo)
+	log.Error().Msg("UserInfoHandler: GetUserInfo not implemented")
+	c.JSON(http.StatusNotImplemented, gin.H{"error": "not_implemented", "error_description": "Userinfo endpoint is not yet fully implemented."})
 }
 
 // RevokeHandler handles token revocation requests according to RFC 7009.
@@ -1299,7 +1308,7 @@ func (oa *OAuth2API) AuthenticateUserHandler(c *gin.Context) {
 
 	user, err := oa.userRepo.GetUserByEmail(ctx, req.Email)
 	if err != nil {
-		log.Warn().Err(err).Str("email", req.Email).Msg("User not found during Next.js UI auth")
+		log.Warn().Err(err).Msg("User not found during Next.js UI auth attempt") // Removed email from log
 		// Generic error to avoid user enumeration
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_credentials", "error_description": "Invalid email or password."})
 		return

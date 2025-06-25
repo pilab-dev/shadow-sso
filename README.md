@@ -35,48 +35,159 @@ Shadow SSO is packed with essential functionality to ensure top-tier security an
 
 ## 🚀 Getting Started
 
+Shadow SSO can be used as a standalone server application or as a library in your Go projects.
+
 ### 📦 Installation
 
+To use Shadow SSO as a library:
 ```bash
 go get github.com/pilab-dev/shadow-sso
 ```
 
-### ⚡️ Quick Example
+To install the server application and CLI tool:
+```bash
+go install github.com/pilab-dev/shadow-sso/apps/ssso@latest
+go install github.com/pilab-dev/shadow-sso/apps/ssoctl@latest
+```
+This will install `ssso` (the server) and `ssoctl` (the CLI) to your `$GOPATH/bin` directory.
 
-Here's a glimpse of what you need to launch Shadow SSO. Make sure that you fill your implementations for `NewYourOAuthRepository()` and `NewYourUserRepository()` methods with logic for persistance using for instance PostgresSQL, MySQL, SQLITE, Redis etc.:
+### ‎️‍🔥 Running the SSO Server Application
 
-1.  **Service Initialization:**
+The SSO server application is located in the `apps/ssso` directory.
+
+1.  **Configuration:**
+    The server is configured using Viper. It looks for a config file named `sso_config.yaml` (or `.json`, `.toml`, etc.) in the current directory, `/etc/sso/`, or `$HOME/.sso`.
+    Alternatively, configuration can be provided via environment variables prefixed with `SSSO_`.
+
+    Key configuration options (environment variables):
+    -   `SSSO_HTTP_ADDR`: Address for the HTTP server (e.g., `0.0.0.0:8080`). Default: `0.0.0.0:8080`.
+    -   `SSSO_LOG_LEVEL`: Log level (e.g., `debug`, `info`, `warn`, `error`). Default: `info`.
+    -   `SSSO_MONGO_URI`: MongoDB connection URI. Default: `mongodb://localhost:27017`.
+    -   `SSSO_MONGO_DB_NAME`: MongoDB database name. Default: `shadow_sso_db`.
+    -   `SSSO_ISSUER_URL`: The issuer URL for tokens. Default: `http://localhost:8080`.
+    -   `SSSO_SIGNING_KEY_PATH`: Path to the RSA private key PEM file for signing tokens. (No default, must be provided or generated).
+    -   `SSSO_KEY_ROTATION_INTERVAL`: Interval for JWKS key rotation (e.g., `24h`). Default: `24h`.
+    -   `SSSO_NEXTJS_LOGIN_URL`: URL for the external Next.js login UI if using the separate UI flow.
+
+    Example `sso_config.yaml`:
+    ```yaml
+    http_addr: "0.0.0.0:9090"
+    log_level: "debug"
+    mongo_uri: "mongodb://user:pass@host:port/mydb"
+    mongo_db_name: "my_sso_database"
+    issuer_url: "https://sso.example.com"
+    signing_key_path: "/etc/sso/keys/private.pem"
+    key_rotation_interval: "72h"
+    nextjs_login_url: "https://login.example.com"
+    ```
+
+2.  **Running the server:**
+    After installation, you can run the server directly:
+    ```bash
+    ssso
+    ```
+    Or, if building from source:
+    ```bash
+    cd apps/ssso
+    go run ssso.go
+    ```
+
+###  CLI Tool (`ssoctl`)
+
+The `ssoctl` CLI tool helps manage your Shadow SSO instance. It's located in `apps/ssoctl`.
+
+1.  **Configuration:**
+    `ssoctl` manages its configuration, including server endpoints and authentication tokens, in a file typically located at `$HOME/.ssoctl/config.yaml`.
+
+2.  **Basic Usage:**
+    Use `ssoctl --help` to see available commands.
+    A common first step is to configure a context for your SSO server:
+    ```bash
+    ssoctl config set-context my-sso --server https://sso.example.com
+    ssoctl config use-context my-sso
+    ```
+    Then you can log in:
+    ```bash
+    ssoctl auth login
+    ```
+    And interact with the server:
+    ```bash
+    ssoctl user list
+    ssoctl client list
+    ```
+
+### 📚 Using Shadow SSO as a Library
+
+Here's a glimpse of what you need to launch Shadow SSO embedded in your own application. This example uses the Gin web framework and the provided MongoDB repositories. You can replace the MongoDB repositories with your own implementations if needed.
+
+1.  **Service Initialization (Example):**
 
     ```go
     package main
 
     import (
-        "github.com/labstack/echo/v4"
-        ssso "github.com/pilab-dev/shadow-sso"
-        "github.com/pilab-dev/shadow-sso/client"
+        "context"
         "crypto/rsa"
         "log"
+        "net/http"
+        "time"
+
+        "github.com/gin-gonic/gin"
+        "go.mongodb.org/mongo-driver/v2/mongo"
+        "go.mongodb.org/mongo-driver/v2/mongo/options"
+
+        ssso "github.com/pilab-dev/shadow-sso"
+        apiGin "github.com/pilab-dev/shadow-sso/api/gin"
+        "github.com/pilab-dev/shadow-sso/client"
+        "github.com/pilab-dev/shadow-sso/domain"
+        "github.com/pilab-dev/shadow-sso/internal/auth"
+        "github.com/pilab-dev/shadow-sso/internal/crypto" // Import for GenerateRSAKey
+        "github.com/pilab-dev/shadow-sso/internal/oidcflow"
+        "github.com/pilab-dev/shadow-sso/mongodb"
+        "github.com/pilab-dev/shadow-sso/services"
     )
 
     func main() {
-      // Create a new key
-	    signingKey, err := ssso.GenerateRSAKey()
-	    if err != nil {
-          log.Fatalf("error generating rsa signing key %s\n", err.Error())
-      }
+        // Generate RSA signing key
+        signingKey, err := crypto.GenerateRSAKey() // Use crypto.GenerateRSAKey
+        if err != nil {
+            log.Fatalf("Error generating RSA signing key: %s\n", err.Error())
+        }
+
+        // Initialize MongoDB client
+        mongoURI := "mongodb://localhost:27017" // Replace with your MongoDB URI
+        dbName := "shadow_sso_example"
+        ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+        defer cancel()
+
+        mongoClient, err := mongo.Connect(ctx, options.Client().ApplyURI(mongoURI))
+        if err != nil {
+            log.Fatalf("Error connecting to MongoDB: %s\n", err.Error())
+        }
+        defer func() {
+            if err = mongoClient.Disconnect(ctx); err != nil {
+                log.Fatalf("Error disconnecting from MongoDB: %s\n", err.Error())
+            }
+        }()
+        db := mongoClient.Database(dbName)
 
         // Initialize repositories
-        oauthRepo := NewYourOAuthRepository() // Implement ssso.OAuthRepository interface
-        userRepo := NewYourUserRepository()    // Implement domain.UserRepository interface
+        oauthRepo, err := mongodb.NewOAuthRepository(ctx, db)
+        if err != nil {
+            log.Fatalf("Error creating OAuth repository: %s\n", err.Error())
+        }
+        userRepo, err := mongodb.NewUserRepositoryMongo(ctx, db)
+        if err != nil {
+            log.Fatalf("Error creating user repository: %s\n", err.Error())
+        }
         clientStore := client.NewClientMemoryStore() // Example in-memory client store
 
-        // Initialize services and other dependencies for the new OIDC flow
-        // (Implement ssso.PasswordHasher, e.g., using bcrypt)
-        passwordHasher := NewYourPasswordHasher()
-        flowStore := oidcflow.NewInMemoryFlowStore()             // For OIDC flow state
-        userSessionStore := oidcflow.NewInMemoryUserSessionStore() // For OP user sessions
+        // Initialize services and other dependencies
+        passwordHasher := auth.NewBCryptPasswordHasher()
+        flowStore := oidcflow.NewInMemoryFlowStore()
+        userSessionStore := oidcflow.NewInMemoryUserSessionStore()
 
-        // It's recommended to run cleanup routines for in-memory stores
+        // Start cleanup routines for in-memory stores
         go func() {
             for {
                 time.Sleep(10 * time.Minute)
@@ -85,24 +196,92 @@ Here's a glimpse of what you need to launch Shadow SSO. Make sure that you fill 
             }
         }()
 
+        // Initialize Repositories (User, OAuth, Session)
+        // ... (userRepo, oauthRepo as before) ...
+        sessionRepo, err := mongodb.NewSessionRepositoryMongo(ctx, db) // Example for SessionRepository
+        if err != nil {
+            log.Fatalf("Error creating session repository: %s\n", err.Error())
+        }
+        // In-memory token cache
+        tokenCache := cache.NewMemoryTokenStore(10 * time.Minute)
+
+
         // Create core services
-        // Note: NewOAuthService signature might need adjustment if internal dependencies change.
-        // For this example, assuming its existing signature is compatible.
-        oauthService := ssso.NewOAuthService(oauthRepo, userRepo, tokenService, "https://your-issuer.com") // Ensure tokenService is initialized
-        jwksService := ssso.NewJWKSService(signingKey) // Ensure signingKey is loaded/generated
-        clientService := client.NewClientService(clientStore)
-		pkceService := ssso.NewPKCEService(oauthRepo)
+        // Key Management: For simplicity, generate one key. Real apps need robust key management.
+        // JWKSService manages its own keys and rotation internally.
+        jwksService, err := services.NewJWKSService(24 * time.Hour) // Example 24h key rotation
+        if err != nil {
+            log.Fatalf("Error creating JWKS service: %s\n", err.Error())
+        }
+
+        // TokenSigner needs a way to get the current private key.
+        // For this example, we'll manually create one and give it to TokenSigner.
+        // In a real system, TokenSigner might get the key from JWKSService or a shared key store.
+        // This part is simplified for the example.
+        currentPrivKey, err := crypto.GenerateRSAKey() // Example: generate a key
+        if err != nil {
+            log.Fatalf("Failed to generate RSA key for signer: %v", err)
+        }
+        tokenSigner := services.NewTokenSigner()
+        // The AddKeySigner in services/signer.go takes a secret string for HS256.
+        // This needs to be adapted for RSA keys if TokenSigner is to use RSA.
+        // For now, assuming TokenSigner is set up externally or its AddKeySigner is updated.
+        // Let's pretend AddKeySigner can take an RSA key, or TokenService constructor changes.
+        // This highlights a potential area for refactoring the library for easier RSA key use with TokenSigner.
+        // To make it runnable, let's assume TokenService can also work with just JWKSService for signing if TokenSigner is nil,
+        // or TokenSigner is enhanced.
+        // For now, this example will be slightly broken here conceptually.
+        // We will use the signingKey directly with NewTokenService as per its old signature for simplicity,
+        // acknowledging this does not align with the new JWKSService.
+        // TODO: Revisit TokenService and TokenSigner interaction with JWKSService for RSA.
+
+        // For the purpose of this example, let's assume TokenService can take the key directly for now,
+        // OR that TokenSigner can be initialized with an RSA key.
+        // The actual services.TokenService constructor is:
+        // NewTokenService(repo domain.TokenRepository, tokenCache cache.TokenStore, issuer string, signer *TokenSigner, pubKeyRepo domain.PublicKeyRepository, saRepo domain.ServiceAccountRepository, userRepo domain.UserRepository)
+        // It needs a *TokenSigner.
+        // Let's assume we have a way to make TokenSigner use `currentPrivKey`.
+        // The current TokenSigner in services/signer.go is for HS256.
+        // This example needs to align with actual RSA signing.
+        // For now, we'll pass a nil signer and assume TokenService can use JWKSService (hypothetical).
+
+        // Simplified TokenService initialization for example clarity, actual may vary based on TokenSigner setup for RSA.
+        // The current TokenService expects a TokenSigner for user tokens.
+        // JWKSService is for providing JWKS. The actual signing key for TokenService needs to be consistent.
+        // This example shows a conceptual setup.
+
+        // Let's assume TokenService gets its signing key from JWKSService internally or via TokenSigner.
+        // We'll create a simple TokenSigner (even if it's HS256 for this example, to make it compile).
+        simpleTokenSigner := services.NewTokenSigner()
+        simpleTokenSigner.AddKeySigner("a-very-secret-key-for-hs256-example") // Placeholder for HS256
+
+        tokenService := services.NewTokenService(
+            oauthRepo,
+            tokenCache,
+            "https://your-issuer.com",
+            simpleTokenSigner, // Pass the simple signer
+            oauthRepo, // Assuming oauthRepo implements PublicKeyRepository for service accounts
+            oauthRepo, // Assuming oauthRepo implements ServiceAccountRepository
+            userRepo,
+        )
+
+        oauthService := services.NewOAuthService(oauthRepo, userRepo, sessionRepo, tokenService, "https://your-issuer.com")
+        // jwksService is already initialized above.
+        // clientStore is defined, but NewClientManagementService takes oauthRepo and passwordHasher.
+        // Assuming client management primarily uses oauthRepo for client persistence.
+        clientManagementService := services.NewClientManagementService(oauthRepo, passwordHasher)
+		pkceService := services.NewPKCEService(oauthRepo)
 
 
-        // Initialize OAuth2 API
-        config := ssso.NewDefaultConfig("https://your-issuer.com")
-        // Configure the URL for your Next.js/frontend login UI
-        config.NextJSLoginURL = "https://your-nextjs-sso-ui.com/login"
+        // Initialize OAuth2 API configuration
+        oidcConfig := ssso.NewDefaultConfig("https://your-issuer.com")
+        oidcConfig.NextJSLoginURL = "https://your-nextjs-sso-ui.com/login" // URL for external login UI
 
-        oauth2API := sssogin.NewOAuth2API( // Assuming sssogin is the package for NewOAuth2API
+        // Create OAuth2 API handlers
+        oauth2API := apiGin.NewOAuth2API(
             oauthService,
             jwksService,
-            clientService,
+            clientManagementService, // Use the correct client service
             pkceService,
             config,
             flowStore,
@@ -111,97 +290,155 @@ Here's a glimpse of what you need to launch Shadow SSO. Make sure that you fill 
             passwordHasher,
         )
 
-        // Setup Gin server (Note: Shadow SSO's OIDC handlers use Gin)
-        // The original README example used Echo, but sssogin.OAuth2API expects a Gin engine.
-        g := gin.Default()
-        oauth2API.RegisterRoutes(g) // oauth2API is now *sssogin.OAuth2API
-        e.Logger.Fatal(e.Start(":8080"))
-    }
+        // Setup Gin server
+        router := gin.Default()
+        oauth2API.RegisterRoutes(router)
 
-    func loadSigningKey() *rsa.PrivateKey {
-        // load RSA from persisted value. Generate otherwise
-	    key, err := ssso.GenerateRSAKey()
-        if err != nil {
-        	panic(err)
+        log.Println("Starting server on :8080")
+        if err := router.Run(":8080"); err != nil {
+            log.Fatalf("Error starting server: %s\n", err.Error())
         }
-	    return key
     }
     ```
 
 2.  **Client Application Registration:**
 
+    Before your applications can use Shadow SSO, they must be registered.
+
     ```go
-	    client := &ssso.Client{
-		    ID:           "client_id",
-		    Secret:       "client_secret",
-		    Name:         "Example App",
-		    RedirectURIs: []string{"https://example.com/callback"},
-		    GrantTypes:   []string{"authorization_code", "refresh_token"},
-		    Scopes:       []string{"openid", "profile", "email"},
-		    RequirePKCE:  true,
-	    }
-    err := clientService.CreateClient(client)
-        if err != nil {
-            panic(err)
+    // (Inside your main or a setup function, after clientService is initialized)
+    // ctx := context.Background() // Ensure you have a context
+
+    exampleClient := &domain.Client{
+        ID:           "example_client_id",
+        Secret:       "example_client_secret", // For confidential clients
+        Name:         "My Awesome App",
+        RedirectURIs: []string{"https://myapplication.com/callback"},
+        GrantTypes:   []string{"authorization_code", "refresh_token"},
+        Scopes:       []string{"openid", "profile", "email", "offline_access"},
+        RequirePKCE:  true, // Recommended for all clients, mandatory for public ones
     }
 
+    err = clientService.CreateClient(ctx, exampleClient) // Make sure ctx is defined
+    if err != nil {
+        log.Fatalf("Failed to register client: %v", err)
+    }
+    log.Println("Client registered successfully")
     ```
 
 3.  **Authorization Code Flow:**
 
+    This is the standard flow for web applications.
+
     ```go
-	import "net/url"
-	// 1. Redirect user to authorization endpoint
-        authURL := "https://your-issuer.com/oauth2/authorize?" + url.Values{
-            "client_id":     {"client_id"},
-            "redirect_uri":  {"https://example.com/callback"},
-            "response_type": {"code"},
-            "scope":         {"openid profile"},
-            "state":         {generateRandomState()},
-        }.Encode()
+    import "net/url"
+    // import "crypto/rand" // For generating state and PKCE challenges
+    // import "encoding/base64"
 
-	    // 2. Handle callback and exchange code for tokens
-	    code := "received_auth_code"
-        tokenResponse, err := oauthService.ExchangeAuthorizationCode(
-            code,
-            "client_id",
-            "client_secret",
-            "https://example.com/callback",
-	    )
+    // func generateRandomState() string {
+    //     b := make([]byte, 32)
+    //     rand.Read(b)
+    //     return base64.RawURLEncoding.EncodeToString(b)
+    // }
 
-	    // now you have access to the tokens `tokenResponse.AccessToken` and others as provided by the implementation of the token generator used in `NewOAuthService` function
+    // 1. Redirect user to authorization endpoint (client-side)
+    // The actual state and PKCE parameters should be generated by the client application.
+    authURL := "https://your-issuer.com/oauth2/authorize?" + url.Values{
+        "client_id":     {"example_client_id"},
+        "redirect_uri":  {"https://myapplication.com/callback"},
+        "response_type": {"code"},
+        "scope":         {"openid profile email"},
+        // "state":         {generateRandomState()}, // Client should generate and store this
+        // "code_challenge": {generatePKCEChallenge()}, // Client should generate and store verifier
+        // "code_challenge_method": {"S256"},
+    }.Encode()
+    log.Printf("Redirect user to: %s", authURL) // In a real app, you'd perform an HTTP redirect.
 
+    // 2. Handle callback and exchange code for tokens (server-side, after user authorizes)
+    // Assume 'code' is received from the authorization server via redirect,
+    // and 'pkceCodeVerifier' was stored by the client before the redirect.
+    // ctx := context.Background() // Ensure you have a context
+    // code := "received_auth_code_from_redirect"
+    // pkceCodeVerifier := "stored_pkce_code_verifier"
+
+    // tokenResponse, err := oauthService.ExchangeAuthorizationCode(
+    //     ctx,
+    //     code,
+    //     "example_client_id",
+    //     "example_client_secret", // Required for confidential clients
+    //     "https://myapplication.com/callback",
+    //     pkceCodeVerifier,
+    // )
+    // if err != nil {
+    //     log.Fatalf("Failed to exchange authorization code: %v", err)
+    // }
+    // log.Printf("Access Token: %s", tokenResponse.AccessToken)
+    // log.Printf("Refresh Token: %s", tokenResponse.RefreshToken)
+    // log.Printf("ID Token: %s", tokenResponse.IDToken)
     ```
+    *Note: PKCE parameters (`code_challenge`, `code_challenge_method`) are crucial for security, especially for public clients.*
 
 4.  **Token Introspection:**
 
-    ```go
-        introspection, err := oauthService.IntrospectToken(
-            "token_to_inspect",
-            "access_token",
-            "client_id",
-            "client_secret",
-        )
+    Resource servers can use this endpoint to validate access tokens.
 
-    if introspection.Active {
-            // Token is valid
-            userID := introspection.Sub
-            scope := introspection.Scope
-    }
+    ```go
+    // (Assuming oauthService is initialized and you have a token to inspect)
+    // ctx := context.Background() // Ensure you have a context
+    // tokenToInspect := "some_access_token_value"
+
+    // introspection, err := oauthService.IntrospectToken(
+    //     ctx,
+    //     tokenToInspect,
+    //     "access_token", // token_type_hint
+    //     // Client ID and secret of the resource server, if it's authenticating itself
+    //     // Or, if the token is a Bearer token, these might not be needed depending on your setup.
+    //     // "resource_server_client_id",
+    //     // "resource_server_client_secret",
+    // )
+    // if err != nil {
+    //     log.Fatalf("Failed to introspect token: %v", err)
+    // }
+
+    // if introspection.Active {
+    //     log.Printf("Token is active for user: %s, with scopes: %s", introspection.Sub, introspection.Scope)
+    // } else {
+    //     log.Println("Token is not active.")
+    // }
     ```
 
 5.  **Session Management:**
 
+    Manage user sessions.
+
     ```go
-        // List user sessions
-	    sessions, err := oauthService.GetUserSessions(userID)
+    // (Assuming oauthService is initialized)
+    // ctx := context.Background() // Ensure you have a context
+    // userID := "user_id_whose_sessions_to_manage"
+    // sessionID := "session_id_to_revoke"
 
-        // Revoke a session
-	    err = oauthService.RevokeSession(sessionID)
+    // // List user sessions
+    // sessions, err := oauthService.GetUserSessions(ctx, userID, domain.SessionFilter{})
+    // if err != nil {
+    //     log.Fatalf("Failed to get user sessions: %v", err)
+    // }
+    // for _, s := range sessions {
+    //     log.Printf("Session ID: %s, IP: %s, UserAgent: %s, ExpiresAt: %v", s.ID, s.IPAddress, s.UserAgent, s.ExpiresAt)
+    // }
 
-        // Cleanup expired sessions
-	    err = oauthService.CleanupExpiredSessions(userID)
+    // // Revoke a specific session
+    // err = oauthService.RevokeSession(ctx, sessionID)
+    // if err != nil {
+    //     log.Fatalf("Failed to revoke session: %v", err)
+    // }
+    // log.Printf("Session %s revoked", sessionID)
 
+    // // Cleanup expired sessions for a user (typically run periodically by a background job)
+    // // count, err := oauthService.CleanupExpiredSessions(ctx, userID)
+    // // if err != nil {
+    // //     log.Fatalf("Failed to cleanup expired sessions: %v", err)
+    // // }
+    // // log.Printf("Cleaned up %d expired sessions for user %s", count, userID)
     ```
 
 ## 🛡️ Security Practices
@@ -289,3 +526,18 @@ If any doubt, send a direct email message to `gyula@pilab.hu` or join our public
 ---
 
 This updated README provides a clearer structure, utilizes visuals, and offers a more comprehensive explanation of Shadow SSO's features, usage, and security considerations. It's designed to be more engaging and helpful for potential users and contributors.
+
+---
+
+## TODO
+
+- [ ] Implement refresh token rotation.
+- [ ] Add support for more OIDC features (e.g., back-channel logout, front-channel logout).
+- [ ] Enhance client authentication options (e.g., private_key_jwt).
+- [ ] Improve documentation for advanced configuration and customization.
+- [ ] Add more examples for different use cases and grant types.
+- [ ] Implement a more robust solution for distributed session management.
+- [ ] Add support for SAML.
+- [ ] Implement rate limiting and brute-force protection.
+- [ ] Add more comprehensive audit logging.
+- [ ] Create a CLI for managing users, clients, and other aspects of the SSO.

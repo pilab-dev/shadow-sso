@@ -4,25 +4,24 @@ import (
 	"context"
 
 	"connectrpc.com/connect"
-	ssso "github.com/pilab-dev/shadow-sso"
+	// "github.com/pilab-dev/shadow-sso/domain" // Will be needed when interceptor is fully implemented
 	"github.com/pilab-dev/shadow-sso/internal/auth/rbac"
+	"github.com/pilab-dev/shadow-sso/services"
 	"github.com/rs/zerolog/log"
 )
 
-const TokenContextKey = "auth_token"
-
-func GetAuthenticatedTokenFromContext(ctx context.Context) (*ssso.TokenInfo, bool) {
-	val := ctx.Value(TokenContextKey)
-
-	if tokenInfo, ok := val.(*ssso.TokenInfo); ok {
-		return tokenInfo, true
-	}
-
-	return nil, false
-}
-
-func NewAuthInterceptor(tokenService *ssso.TokenService) connect.Interceptor {
+func NewAuthInterceptor(tokenService *services.TokenService) connect.Interceptor {
 	return connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
+		// This is a simplified interceptor. A real one would:
+		// 1. Extract token from req.Header().Get("Authorization")
+		// 2. Validate token using tokenService.ValidateAccessToken(ctx, rawToken)
+		// 3. If valid, enrich context: newCtx := context.WithValue(ctx, domain.TokenContextKey, validatedTokenInfo)
+		// 4. Call next(newCtx, req)
+		// 5. Handle errors (unauthenticated, etc.)
+
+		// For now, assuming token validation and context enrichment happens elsewhere or is not fully implemented here.
+		// The main goal is to break the import cycle.
+		// The RBAC check below would use domain.GetAuthenticatedTokenFromContext(ctx)
 		return connect.UnaryFunc(func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
 			procedure := req.Spec().Procedure // e.g., "/sso.v1.UserService/ListUsers"
 

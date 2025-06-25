@@ -13,5 +13,6 @@ type Session struct {
 	IPAddress    string    `bson:"ip_address,omitempty"`
 	ExpiresAt    time.Time `bson:"expires_at"`
 	CreatedAt    time.Time `bson:"created_at"`
+	LastUsedAt   time.Time `bson:"last_used_at,omitempty"` // Added LastUsedAt
 	IsRevoked    bool      `bson:"is_revoked,omitempty"` // To mark session as logged out
 }
