@@ -5,16 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"strings" // For Verify2FA token check
-	"time"    // Needed for GenerateTokenPair TTL and session expiry
+	"time" // Needed for GenerateTokenPair TTL and session expiry
 
 	"connectrpc.com/connect"
-	ssso "github.com/pilab-dev/shadow-sso"
 	"github.com/pilab-dev/shadow-sso/domain"
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
 	"github.com/pilab-dev/shadow-sso/internal/auth/rbac"
 	"github.com/pilab-dev/shadow-sso/internal/auth/totp" // For TOTP validation
-	"github.com/pilab-dev/shadow-sso/middleware"         // For GetAuthenticatedTokenFromContext
+	// "github.com/pilab-dev/shadow-sso/middleware" // No longer needed here
 	"github.com/rs/zerolog/log"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb" // For mapping time to proto
@@ -25,20 +24,20 @@ type AuthServer struct {
 	ssov1connect.UnimplementedAuthServiceHandler // Embed for forward compatibility
 	userRepo                                     domain.UserRepository
 	sessionRepo                                  domain.SessionRepository
-	tokenService                                 *ssso.TokenService
+	tokenService                                 *TokenService
 	passwordHasher                               PasswordHasher
 }
 
 // NewAuthServer creates a new AuthServer.
 func NewAuthServer(
 	userRepo domain.UserRepository,
-	sessionRepo domain.SessionRepository,
-	tokenService *ssso.TokenService,
+	sessionRepo domain.SessionRepository, // Added sessionRepo to signature
+	tokenService *TokenService,
 	passwordHasher PasswordHasher,
 ) *AuthServer {
 	return &AuthServer{
 		userRepo:       userRepo,
-		sessionRepo:    sessionRepo,
+		sessionRepo:    sessionRepo, // Store sessionRepo
 		tokenService:   tokenService,
 		passwordHasher: passwordHasher,
 	}
@@ -227,7 +226,7 @@ func (s *AuthServer) Verify2FA(ctx context.Context, req *connect.Request[ssov1.V
 
 // Logout method (existing, ensure it's compatible with any context changes if needed)
 func (s *AuthServer) Logout(ctx context.Context, req *connect.Request[ssov1.LogoutRequest]) (*connect.Response[emptypb.Empty], error) {
-	authedToken, ok := middleware.GetAuthenticatedTokenFromContext(ctx)
+	authedToken, ok := domain.GetAuthenticatedTokenFromContext(ctx)
 	if !ok || authedToken == nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated for logout"))
 	}
@@ -270,7 +269,7 @@ func (s *AuthServer) Logout(ctx context.Context, req *connect.Request[ssov1.Logo
 
 // ListUserSessions method (existing)
 func (s *AuthServer) ListUserSessions(ctx context.Context, req *connect.Request[ssov1.ListUserSessionsRequest]) (*connect.Response[ssov1.ListUserSessionsResponse], error) {
-	authedToken, ok := middleware.GetAuthenticatedTokenFromContext(ctx)
+	authedToken, ok := domain.GetAuthenticatedTokenFromContext(ctx)
 	if !ok || authedToken == nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated"))
 	}
@@ -312,7 +311,7 @@ func (s *AuthServer) ListUserSessions(ctx context.Context, req *connect.Request[
 
 // ClearUserSessions method (existing)
 func (s *AuthServer) ClearUserSessions(ctx context.Context, req *connect.Request[ssov1.ClearUserSessionsRequest]) (*connect.Response[emptypb.Empty], error) {
-	authedToken, ok := middleware.GetAuthenticatedTokenFromContext(ctx)
+	authedToken, ok := domain.GetAuthenticatedTokenFromContext(ctx)
 	if !ok || authedToken == nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated"))
 	}

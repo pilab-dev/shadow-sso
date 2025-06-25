@@ -1,4 +1,4 @@
-package mongodb
+package mongodb_test
 
 import (
 	"context"
@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
+
+	"github.com/pilab-dev/shadow-sso/mongodb"
 )
 
 // Helper function to setup DB for IdPRepository tests
@@ -39,7 +41,7 @@ func setupIdPRepoTest(t *testing.T) (domain.IdPRepository, func(), error) {
 	}
 	db := client.Database(dbName)
 
-	idpRepo, err := NewIdPRepositoryMongo(ctx, db) // Creates collection and indexes
+	idpRepo, err := mongodb.NewIdPRepositoryMongo(ctx, db) // Creates collection and indexes
 	if err != nil {
 		client.Disconnect(ctx)
 		return nil, func() {}, fmt.Errorf("NewIdPRepositoryMongo failed: %w", err)

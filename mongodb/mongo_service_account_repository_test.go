@@ -1,4 +1,4 @@
-package mongodb
+package mongodb_test
 
 import (
 	"context"
@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
+
+	"github.com/pilab-dev/shadow-sso/mongodb"
 )
 
 // Helper function to setup DB for ServiceAccountRepository tests
@@ -36,7 +38,7 @@ func setupServiceAccountRepoTest(t *testing.T) (domain.ServiceAccountRepository,
 	}
 	db := client.Database(dbName)
 
-	saRepo, err := NewServiceAccountRepositoryMongo(db) // Creates collection and indexes
+	saRepo, err := mongodb.NewServiceAccountRepositoryMongo(db) // Creates collection and indexes
 	if err != nil {
 		client.Disconnect(ctx)
 		return nil, func() {}, fmt.Errorf("NewServiceAccountRepositoryMongo failed: %w", err)
