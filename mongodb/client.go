@@ -97,6 +97,18 @@ func GetClient() *mongo.Client {
 	return clientInstance
 }
 
+// Ping sends a ping to the MongoDB server using the global client.
+// This is useful for health checks.
+func Ping(ctx context.Context) error {
+	if clientInstance == nil {
+		return errors.New("MongoDB client is not initialized. Call InitMongoDB first.")
+	}
+	// Use a short timeout for pings
+	pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	return clientInstance.Ping(pingCtx, readpref.Primary())
+}
+
 // CloseMongoDB disconnects the MongoDB client.
 // It should be called on application shutdown.
 func CloseMongoDB(ctx context.Context) {
