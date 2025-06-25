@@ -18,7 +18,7 @@ import (
 // Helper function to setup DB for tests
 // Returns a UserRepositoryMongo, a cleanup function, and an error
 func setupUserRepoTest(t *testing.T) (domain.UserRepository, func(), error) {
-	mongoURI := os.Getenv("TEST_MONGO_URI")
+	mongoURI := os.Getenv("MONGO_TEST_URI") // Using MONGO_TEST_URI
 	if mongoURI == "" {
 		mongoURI = "mongodb://localhost:27017" // Default for local testing
 	}
@@ -67,8 +67,8 @@ func setupUserRepoTest(t *testing.T) (domain.UserRepository, func(), error) {
 
 func TestUserRepositoryMongo_Integration(t *testing.T) {
 	// Skip if no MongoDB is available (e.g. in CI without service)
-	if os.Getenv("TEST_MONGO_URI") == "" && os.Getenv("CI") != "" {
-		t.Skip("Skipping MongoDB integration tests: TEST_MONGO_URI not set and CI environment detected.")
+	if os.Getenv("MONGO_TEST_URI") == "" { // Standardized skip condition
+		t.Skip("Skipping MongoDB integration test: MONGO_TEST_URI not set")
 	}
 
 	userRepo, cleanup, err := setupUserRepoTest(t)

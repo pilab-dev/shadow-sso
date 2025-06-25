@@ -255,20 +255,6 @@ func (r *OAuthRepository) RevokeToken(ctx context.Context, tokenValue string) er
 	return err
 }
 
-func (r *OAuthRepository) RevokeRefreshToken(ctx context.Context, tokenValue string) error {
-	// Specifically revokes refresh tokens.
-	result, err := r.tokens.UpdateOne(ctx, bson.M{"token_value": tokenValue, "token_type": "refresh_token"}, bson.M{"$set": bson.M{"is_revoked": true}})
-	if err != nil {
-		return err
-	}
-	if result.MatchedCount == 0 {
-		return errors.New("refresh token not found or not of type refresh_token")
-	}
-	// Consider also deleting from cache if refresh tokens are cached, though less common.
-	return err
-}
-
-
 func (r *OAuthRepository) GetRefreshToken(ctx context.Context, tokenValue string) (*ssso.Token, error) {
 	var token ssso.Token
 	err := r.tokens.FindOne(ctx, bson.M{
@@ -297,49 +283,189 @@ func (r *OAuthRepository) GetAccessTokenInfo(ctx context.Context, tokenValue str
 	return &ssso.TokenInfo{ /* map from token */ ID: token.ID, TokenType: token.TokenType, ClientID: token.ClientID, UserID: token.UserID, Scope: token.Scope, IssuedAt: token.CreatedAt, ExpiresAt: token.ExpiresAt, IsRevoked: token.IsRevoked}, nil
 }
 
+func (r *OAuthRepository) RevokeRefreshToken(ctx context.Context, tokenValue string) error {
+	filter := bson.M{"token_value": tokenValue, "token_type": "refresh_token"}
+	update := bson.M{"$set": bson.M{"is_revoked": true}}
+	result, err := r.tokens.UpdateOne(ctx, filter, update)
+	if err != nil {
+		log.Error().Err(err).Str("refreshToken", tokenValue).Msg("Error revoking refresh token")
+		return fmt.Errorf("failed to revoke refresh token: %w", err)
+	}
+	if result.MatchedCount == 0 {
+		// This might not be an error if the token never existed or was already cleaned up.
+		// For robustness, we can log it but not return an error that would break a flow.
+		log.Warn().Str("refreshToken", tokenValue).Msg("Refresh token not found to revoke, or already revoked and cleaned.")
+	} else {
+		log.Debug().Str("refreshToken", tokenValue).Msg("Refresh token marked as revoked.")
+	}
+	return nil
+}
+
 // ... (Other TokenRepository methods like RevokeAllUserTokens, DeleteExpiredTokens, etc. as previously defined) ...
 func (r *OAuthRepository) RevokeAllUserTokens(ctx context.Context, userID string) error { /* ... */
-	return nil
+	// Example: Update many tokens where user_id matches
+	_, err := r.tokens.UpdateMany(ctx, bson.M{"user_id": userID}, bson.M{"$set": bson.M{"is_revoked": true}})
+	return err
 }
 
 func (r *OAuthRepository) RevokeAllClientTokens(ctx context.Context, clientID string) error { /* ... */
-	return nil
+	_, err := r.tokens.UpdateMany(ctx, bson.M{"client_id": clientID}, bson.M{"$set": bson.M{"is_revoked": true}})
+	return err
 }
-func (r *OAuthRepository) DeleteExpiredTokens(ctx context.Context) error { /* ... */ return nil }
-func (r *OAuthRepository) ValidateAccessToken(ctx context.Context, token string) (string, error) { /* ... */
-	return "", nil
+
+func (r *OAuthRepository) DeleteExpiredTokens(ctx context.Context) error { /* ... */
+	_, err := r.tokens.DeleteMany(ctx, bson.M{"expires_at": bson.M{"$lte": time.Now().UTC()}})
+	return err
+}
+
+func (r *OAuthRepository) ValidateAccessToken(ctx context.Context, tokenValue string) (string, error) { /* ... */
+	token, err := r.GetAccessToken(ctx, tokenValue)
+	if err != nil {
+		return "", err
+	}
+	return token.UserID, nil
 }
 
 func (r *OAuthRepository) GetTokenInfo(ctx context.Context, tokenValue string) (*ssso.Token, error) { /* ... */
-	return nil, nil
+	// This method might be intended to fetch any token type by its value for introspection.
+	// For simplicity, let's try access token then refresh token if not found.
+	var token ssso.Token
+	err := r.tokens.FindOne(ctx, bson.M{"token_value": tokenValue, "is_revoked": false, "expires_at": bson.M{"$gt": time.Now().UTC()}}).Decode(&token)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, errors.New("token not found or invalid")
+	}
+	return &token, err
 }
 
-// --- Auth Code Methods (using *ssso.AuthCode, as before) ---
-// (Copy existing implementations)
-func (r *OAuthRepository) SaveAuthCode(ctx context.Context, code *ssso.AuthCode) error { /* ... */
+// --- Auth Code Methods (using *ssso.AuthCode) ---
+func (r *OAuthRepository) SaveAuthCode(ctx context.Context, authCode *ssso.AuthCode) error {
+	if authCode.Code == "" {
+		return errors.New("auth code value cannot be empty")
+	}
+	authCode.CreatedAt = time.Now().UTC() // Ensure CreatedAt is set
+	// ExpiresAt should be set by the service layer before calling SaveAuthCode
+
+	// The AuthCode struct in oauth_repository.go already includes UserID, CodeChallenge, CodeChallengeMethod
+	// So, just inserting it will save these fields.
+	_, err := r.authCodes.InsertOne(ctx, authCode)
+	if err != nil {
+		if mongo.IsDuplicateKeyError(err) { // Check specific error for duplicate key
+			return fmt.Errorf("authorization code %s already exists: %w", authCode.Code, err)
+		}
+		log.Error().Err(err).Str("code", authCode.Code).Msg("Error saving authorization code")
+		return fmt.Errorf("failed to save authorization code: %w", err)
+	}
+	log.Debug().Str("code", authCode.Code).Str("userID", authCode.UserID).Msg("Authorization code saved")
 	return nil
 }
 
-func (r *OAuthRepository) GetAuthCode(ctx context.Context, code string) (*ssso.AuthCode, error) { /* ... */
-	return nil, nil
+func (r *OAuthRepository) GetAuthCode(ctx context.Context, codeValue string) (*ssso.AuthCode, error) {
+	var authCode ssso.AuthCode
+	err := r.authCodes.FindOne(ctx, bson.M{"code": codeValue}).Decode(&authCode)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, fmt.Errorf("authorization code %s not found", codeValue)
+		}
+		log.Error().Err(err).Str("code", codeValue).Msg("Error retrieving authorization code")
+		return nil, fmt.Errorf("failed to retrieve authorization code: %w", err)
+	}
+	// The retrieved authCode object will have UserID, CodeChallenge, CodeChallengeMethod populated if they were saved.
+	return &authCode, nil
 }
 
-func (r *OAuthRepository) MarkAuthCodeAsUsed(ctx context.Context, code string) error { /* ... */
+func (r *OAuthRepository) MarkAuthCodeAsUsed(ctx context.Context, codeValue string) error {
+	filter := bson.M{"code": codeValue}
+	update := bson.M{"$set": bson.M{"used": true}}
+	result, err := r.authCodes.UpdateOne(ctx, filter, update)
+	if err != nil {
+		log.Error().Err(err).Str("code", codeValue).Msg("Error marking authorization code as used")
+		return fmt.Errorf("failed to mark authorization code as used: %w", err)
+	}
+	if result.MatchedCount == 0 {
+		return fmt.Errorf("authorization code %s not found to mark as used", codeValue)
+	}
+	log.Debug().Str("code", codeValue).Msg("Authorization code marked as used")
 	return nil
 }
-func (r *OAuthRepository) DeleteExpiredAuthCodes(ctx context.Context) error { /* ... */ return nil }
 
-// --- PKCE Methods (as before) ---
-// (Copy existing implementations)
-func (r *OAuthRepository) SaveCodeChallenge(ctx context.Context, code, challenge string) error { /* ... */
-	return nil
+func (r *OAuthRepository) DeleteExpiredAuthCodes(ctx context.Context) error { /* ... */
+	_, err := r.authCodes.DeleteMany(ctx, bson.M{"expires_at": bson.M{"$lte": time.Now().UTC()}})
+	return err
 }
 
-func (r *OAuthRepository) GetCodeChallenge(ctx context.Context, code string) (string, error) { /* ... */
-	return "", nil
+// --- PKCE Methods ---
+// SaveCodeChallenge: This was previously saving challenge against 'code' which was the auth code.
+// If the PKCE challenge needs to be associated with the flow before the auth code is generated,
+// this might need adjustment (e.g., save against flowId).
+// However, the current flow stores PKCE params in LoginFlowState, and then GenerateAuthCode
+// receives them to store with the AuthCode. So, SaveCodeChallenge here should store
+// the challenge directly as part of the AuthCode document, which is handled by SaveAuthCode.
+// GetCodeChallenge will then retrieve it from the AuthCode document.
+// Therefore, the separate PKCE collection might be redundant if PKCE challenges are stored directly
+// within the AuthCode documents.
+// For this iteration, let's assume CodeChallenge and Method are part of AuthCode.
+// The PkceRepository interface methods (SaveCodeChallenge, GetCodeChallenge, DeleteCodeChallenge)
+// might need to be re-evaluated or their implementations changed.
+// If they operate on a separate `challenges` collection as currently hinted by OAuthRepository struct,
+// then PKCEService needs to call SaveCodeChallenge with the *authorization code* after it's generated.
+//
+// Current plan: AuthCode struct contains PKCE fields. SaveAuthCode persists them.
+// pkceService.ValidateCodeVerifier calls oauthRepo.GetCodeChallenge(ctx, code).
+// This GetCodeChallenge should thus fetch the AuthCode and return its CodeChallenge field.
+func (r *OAuthRepository) SaveCodeChallenge(ctx context.Context, code string, challenge string) error {
+	// This method might become obsolete if challenge is saved directly with AuthCode via SaveAuthCode.
+	// If still used, it implies a separate store or update operation.
+	// For now, assuming it's handled by SaveAuthCode storing the AuthCode.CodeChallenge.
+	// If this method is called by pkceService independently, it needs to store to r.challenges.
+	// Let's assume the `challenges` collection is used for now by PKCEService.
+	_, err := r.challenges.InsertOne(ctx, bson.M{"code": code, "challenge": challenge, "created_at": time.Now()})
+	if mongo.IsDuplicateKeyError(err) {
+		// If it's a duplicate, maybe update it? Or it implies an issue.
+		log.Warn().Str("code", code).Msg("SaveCodeChallenge: challenge for this code already exists.")
+		return nil // Or return an error
+	}
+	return err
 }
 
-func (r *OAuthRepository) DeleteCodeChallenge(ctx context.Context, code string) error { /* ... */
+func (r *OAuthRepository) GetCodeChallenge(ctx context.Context, code string) (string, error) {
+	// Fetch the AuthCode document which contains the CodeChallenge.
+	authCode, err := r.GetAuthCode(ctx, code)
+	if err != nil {
+		// Log the error from GetAuthCode as it's more specific
+		log.Warn().Err(err).Str("auth_code_value", code).Msg("GetCodeChallenge: Failed to retrieve AuthCode to get challenge")
+		return "", fmt.Errorf("failed to get auth code '%s' for pkce challenge: %w", code, err)
+	}
+
+	if authCode.CodeChallenge == "" {
+		log.Warn().Str("auth_code_value", code).Msg("GetCodeChallenge: CodeChallenge field is empty in retrieved AuthCode")
+		return "", errors.New("pkce code_challenge not set for the given authorization code")
+	}
+	// Note: This method now returns only the challenge. The PKCEService's ValidateCodeVerifier
+	// will need to handle the method (S256/plain) based on this challenge.
+	// The ssso.ValidatePKCEChallenge helper function implicitly handles 'plain' if the challenge matches the verifier directly,
+	// and S256 otherwise. This might be sufficient if CodeChallengeMethod stored in AuthCode is not explicitly passed to it.
+	// For a more robust solution, GetCodeChallenge could return both challenge and method,
+	// or PKCEService.ValidateCodeVerifier could fetch the full AuthCode.
+	// For now, returning only the challenge string as per the existing interface.
+	return authCode.CodeChallenge, nil
+}
+
+func (r *OAuthRepository) DeleteCodeChallenge(ctx context.Context, code string) error {
+	// This method is likely obsolete if the challenge is stored within the AuthCode document
+	// and the AuthCode is marked as used or deleted after successful token exchange.
+	// If the `challenges` collection is still being populated by `SaveCodeChallenge` for some reason,
+	// then this deletion logic would apply to that collection.
+	// Given the current changes, this method acting on `r.challenges` is likely correct if `SaveCodeChallenge` still uses it.
+	// However, the primary path for PKCE challenge for auth code flow is now via AuthCode struct.
+	log.Debug().Str("code", code).Msg("DeleteCodeChallenge called. If PKCE challenge is part of AuthCode, this might be redundant.")
+	result, err := r.challenges.DeleteOne(ctx, bson.M{"code": code})
+	if err != nil {
+		return err
+	}
+	if result.DeletedCount == 0 {
+		log.Warn().Str("code", code).Msg("No document found in 'challenges' collection to delete for code.")
+		// Not necessarily an error if it was never stored separately or already deleted.
+	}
 	return nil
 }
 
