@@ -95,16 +95,16 @@ jobs:
           # Load image into docker daemon so subsequent steps can use it if needed
           # load: true # Use if you need to run the image in a subsequent step in this workflow
 
-      - name: Upload Docker image as artifact (optional)
-        # This is useful for debugging or if other jobs need the image without a registry
-        # Note: This can be slow and consume significant storage
-        if: always() # Or set to failure() or success()
-        run: |
-          docker save local/ssso-backend:latest -o ssso-backend.tar
-          gzip ssso-backend.tar
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: docker-image-ssso-backend
-          path: ssso-backend.tar.gz
-          if-no-files-found: error
+      # - name: Upload Docker image as artifact (optional)
+      #   # This is useful for debugging or if other jobs need the image without a registry
+      #   # Note: This can be slow and consume significant storage
+      #   if: always() # Or set to failure() or success()
+      #   run: |
+      #     docker save local/ssso-backend:latest -o ssso-backend.tar
+      #     gzip ssso-backend.tar
+      # - uses: actions/upload-artifact@v4
+      #   if: always()
+      #   with:
+      #     name: docker-image-ssso-backend
+      #     path: ssso-backend.tar.gz
+      #     if-no-files-found: error
