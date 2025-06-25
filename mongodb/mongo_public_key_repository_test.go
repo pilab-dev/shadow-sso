@@ -17,7 +17,7 @@ import (
 
 // Helper function to setup DB for PublicKeyRepository tests
 func setupPublicKeyRepoTest(t *testing.T) (domain.PublicKeyRepository, func(), error) {
-	mongoURI := os.Getenv("TEST_MONGO_URI")
+	mongoURI := os.Getenv("MONGO_TEST_URI") // Using MONGO_TEST_URI
 	if mongoURI == "" {
 		mongoURI = "mongodb://localhost:27017"
 	}
@@ -58,8 +58,8 @@ func setupPublicKeyRepoTest(t *testing.T) (domain.PublicKeyRepository, func(), e
 }
 
 func TestPublicKeyRepositoryMongo_Integration(t *testing.T) {
-	if os.Getenv("TEST_MONGO_URI") == "" && os.Getenv("CI") != "" {
-		t.Skip("Skipping MongoDB integration tests: TEST_MONGO_URI not set and CI environment detected.")
+	if os.Getenv("MONGO_TEST_URI") == "" { // Standardized skip condition
+		t.Skip("Skipping MongoDB integration test: MONGO_TEST_URI not set")
 	}
 
 	repo, cleanup, err := setupPublicKeyRepoTest(t)

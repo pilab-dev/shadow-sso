@@ -66,30 +66,55 @@ Here's a glimpse of what you need to launch Shadow SSO. Make sure that you fill 
       }
 
         // Initialize repositories
-        oauthRepo := NewYourOAuthRepository() // Implement OAuthRepository interface
-        userRepo := NewYourUserRepository()    // Implement UserRepository interface
-        clientStore := client.NewClientMemoryStore()
+        oauthRepo := NewYourOAuthRepository() // Implement ssso.OAuthRepository interface
+        userRepo := NewYourUserRepository()    // Implement domain.UserRepository interface
+        clientStore := client.NewClientMemoryStore() // Example in-memory client store
 
+        // Initialize services and other dependencies for the new OIDC flow
+        // (Implement ssso.PasswordHasher, e.g., using bcrypt)
+        passwordHasher := NewYourPasswordHasher()
+        flowStore := oidcflow.NewInMemoryFlowStore()             // For OIDC flow state
+        userSessionStore := oidcflow.NewInMemoryUserSessionStore() // For OP user sessions
 
-        // Create services
-        oauthService := ssso.NewOAuthService(oauthRepo, userRepo, signingKey, "https://your-issuer.com")
-        jwksService := ssso.NewJWKSService(signingKey)
+        // It's recommended to run cleanup routines for in-memory stores
+        go func() {
+            for {
+                time.Sleep(10 * time.Minute)
+                flowStore.CleanupExpiredFlows()
+                userSessionStore.CleanupExpiredSessions()
+            }
+        }()
+
+        // Create core services
+        // Note: NewOAuthService signature might need adjustment if internal dependencies change.
+        // For this example, assuming its existing signature is compatible.
+        oauthService := ssso.NewOAuthService(oauthRepo, userRepo, tokenService, "https://your-issuer.com") // Ensure tokenService is initialized
+        jwksService := ssso.NewJWKSService(signingKey) // Ensure signingKey is loaded/generated
         clientService := client.NewClientService(clientStore)
-		    pkceService := ssso.NewPKCEService(oauthRepo)
+		pkceService := ssso.NewPKCEService(oauthRepo)
+
 
         // Initialize OAuth2 API
         config := ssso.NewDefaultConfig("https://your-issuer.com")
-        oauth2API := ssso.NewOAuth2API(
+        // Configure the URL for your Next.js/frontend login UI
+        config.NextJSLoginURL = "https://your-nextjs-sso-ui.com/login"
+
+        oauth2API := sssogin.NewOAuth2API( // Assuming sssogin is the package for NewOAuth2API
             oauthService,
             jwksService,
             clientService,
             pkceService,
             config,
+            flowStore,
+            userSessionStore,
+            userRepo,
+            passwordHasher,
         )
 
-        // Setup Echo server
-        e := echo.New()
-        oauth2API.RegisterRoutes(e)
+        // Setup Gin server (Note: Shadow SSO's OIDC handlers use Gin)
+        // The original README example used Echo, but sssogin.OAuth2API expects a Gin engine.
+        g := gin.Default()
+        oauth2API.RegisterRoutes(g) // oauth2API is now *sssogin.OAuth2API
         e.Logger.Fatal(e.Start(":8080"))
     }
 
@@ -202,17 +227,34 @@ Customize Shadow SSO with fine-grained control. You are responsible of what conf
         TokenEndpoint:         "https://your-issuer.com/oauth2/token",
         UserInfoEndpoint:      "https://your-issuer.com/oauth2/userinfo",
         JwksURI:              "https://your-issuer.com/.well-known/jwks.json",
+        NextJSLoginURL:       "https://your-nextjs-sso-ui.com/login", // URL for external login UI
         // ... additional configuration
     }
 
-	    oauth2API := ssso.NewOAuth2API(
+	    oauth2API := sssogin.NewOAuth2API( // Assuming sssogin is the package for NewOAuth2API
 		    oauthService,
 		    jwksService,
 		    clientService,
 		    pkceService,
 		    config,
+            flowStore,          // New: OIDC flow state store
+            userSessionStore,   // New: OP user session store
+            userRepo,           // New: User repository (also used by OAuthService)
+            passwordHasher,     // New: Password hasher
     	)
 ```
+
+## 🌊 OIDC Authentication Flow with Separate UI
+
+Shadow SSO now supports an OIDC authentication flow where the user authentication can be delegated to a separate frontend UI (e.g., a Next.js application).
+
+1.  The user is redirected from the `/oauth2/authorize` endpoint to your configured `NextJSLoginURL` with a `flowId`.
+2.  The frontend UI uses this `flowId` to fetch OIDC request details from `/api/oidc/flow/:flowId`.
+3.  The user authenticates on the frontend UI.
+4.  The frontend UI `POST`s the credentials and `flowId` to `/api/oidc/authenticate`.
+5.  The Shadow SSO backend validates credentials, establishes an OP session (via cookie), generates an authorization code, and redirects the user back to the Relying Party.
+
+For detailed instructions on frontend integration, see `README_FRONTEND.md`.
 
 ## 🧩 Essential Interface Implementation
 

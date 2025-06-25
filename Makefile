@@ -20,7 +20,7 @@ help:
 
 proto: ## Generate Go code from Protocol Buffer definitions
 	@echo "Generating Go code from Protocol Buffers..."
-	$(BUF) generate proto
+	$(BUF) generate
 	@echo "Proto generation complete."
 
 # This target might need to be adjusted if other generated files exist outside 'gen/' from proto
