@@ -741,29 +741,46 @@ func (s *OAuthService) RevokeToken(ctx context.Context, tokenToRevoke, tokenType
 }
 
 // GenerateAuthCode generates a new authorization code for OAuth2 authorization code flow.
-// It creates a secure random code and stores it with the provided client details.
-func (s *OAuthService) GenerateAuthCode(ctx context.Context, clientID, redirectURI, scope string) (string, error) {
+// It creates a secure random code and stores it with the provided client details,
+// including UserID and PKCE parameters.
+func (s *OAuthService) GenerateAuthCode(
+	ctx context.Context,
+	clientID string,
+	userID string, // New parameter
+	redirectURI string,
+	scope string,
+	codeChallenge string, // New parameter
+	codeChallengeMethod string, // New parameter
+) (string, error) {
 	// Generate secure random bytes for auth code
-	b := make([]byte, 32)
+	b := make([]byte, 32) // 32 bytes = 256 bits
 	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("failed to generate random bytes: %w", err)
+		log.Error().Err(err).Msg("Failed to generate random bytes for auth code")
+		return "", fmt.Errorf("failed to generate random bytes for auth code: %w", err)
 	}
-	code := base64.StdEncoding.EncodeToString(b)
+	// URL-safe base64 encoding without padding
+	code := base64.RawURLEncoding.EncodeToString(b)
 
 	// Create auth code record
 	authCode := &AuthCode{
-		Code:        code,
-		ClientID:    clientID,
-		RedirectURI: redirectURI,
-		Scope:       scope,
-		ExpiresAt:   time.Now().Add(10 * time.Minute),
-		CreatedAt:   time.Now(),
+		Code:                code,
+		ClientID:            clientID,
+		UserID:              userID, // Store the authenticated user's ID
+		RedirectURI:         redirectURI,
+		Scope:               scope,
+		ExpiresAt:           time.Now().Add(10 * time.Minute), // Standard 10 minute expiry for auth codes
+		CreatedAt:           time.Now(),
+		Used:                false,
+		CodeChallenge:       codeChallenge,       // Store PKCE challenge
+		CodeChallengeMethod: codeChallengeMethod, // Store PKCE method
 	}
 
 	if err := s.oauthRepo.SaveAuthCode(ctx, authCode); err != nil {
+		log.Error().Err(err).Str("clientID", clientID).Str("userID", userID).Msg("Failed to save authorization code")
 		return "", fmt.Errorf("failed to save auth code: %w", err)
 	}
 
+	log.Info().Str("clientID", clientID).Str("userID", userID).Str("code", code).Msg("Authorization code generated and saved")
 	return code, nil
 }
 

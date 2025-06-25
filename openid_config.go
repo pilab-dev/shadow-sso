@@ -40,6 +40,9 @@ type OpenIDProviderConfig struct {
 
 	// Claims Configuration
 	ClaimsConfig ClaimsConfig `json:"claims_config"`
+
+	// External UI Configuration
+	NextJSLoginURL string `json:"nextjs_login_url,omitempty"` // URL for the Next.js login page
 }
 
 // EndpointConfig controls which endpoints are enabled
