@@ -10,12 +10,11 @@ import (
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
 	"github.com/jellydator/ttlcache/v3"
-	ssso "github.com/pilab-dev/shadow-sso"
 	"github.com/pilab-dev/shadow-sso/domain"
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
 	"github.com/pilab-dev/shadow-sso/internal/federation"
-	"github.com/pilab-dev/shadow-sso/middleware" // For GetAuthenticatedTokenFromContext
+	// "github.com/pilab-dev/shadow-sso/middleware" // No longer needed here
 	"github.com/rs/zerolog/log"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -42,7 +41,7 @@ type FederationServer struct {
 	userRepo       domain.UserRepository
 	fedIDRepo      domain.UserFederatedIdentityRepository
 	idpRepo        domain.IdPRepository // To resolve provider_id to provider_name for responses
-	tokenService   *ssso.TokenService   // To issue local tokens
+	tokenService   *TokenService        // To issue local tokens
 	sessionRepo    domain.SessionRepository
 	passwordHasher PasswordHasher // For creating users if local password setup is part of flow
 
@@ -55,7 +54,7 @@ func NewFederationServer(
 	userRepo domain.UserRepository,
 	fedIDRepo domain.UserFederatedIdentityRepository,
 	idpRepo domain.IdPRepository,
-	tokenService *ssso.TokenService,
+	tokenService *TokenService,
 	sessionRepo domain.SessionRepository,
 	passwordHasher PasswordHasher,
 ) *FederationServer {
@@ -171,7 +170,7 @@ func (s *FederationServer) HandleFederatedCallback(ctx context.Context, req *con
 
 	// 2. Is a user currently logged in? (Account linking scenario for an already authenticated user)
 	//    This requires the gRPC call to be authenticated.
-	authToken, userIsLoggedIn := middleware.GetAuthenticatedTokenFromContext(ctx)
+	authToken, userIsLoggedIn := domain.GetAuthenticatedTokenFromContext(ctx)
 	if userIsLoggedIn && authToken != nil {
 		// User is logged in, trying to link a new provider.
 		// Check if this local user already has a link for this provider.
@@ -372,7 +371,7 @@ func (s *FederationServer) completeLoginAndRespond(ctx context.Context, user *do
 
 // ListUserFederatedIdentities lists linked federated identities for the authenticated user.
 func (s *FederationServer) ListUserFederatedIdentities(ctx context.Context, req *connect.Request[ssov1.ListUserFederatedIdentitiesRequest]) (*connect.Response[ssov1.ListUserFederatedIdentitiesResponse], error) {
-	authToken, ok := middleware.GetAuthenticatedTokenFromContext(ctx)
+	authToken, ok := domain.GetAuthenticatedTokenFromContext(ctx)
 	if !ok || authToken == nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated"))
 	}
@@ -409,7 +408,7 @@ func (s *FederationServer) ListUserFederatedIdentities(ctx context.Context, req 
 
 // RemoveUserFederatedIdentity unlinks an external identity for the authenticated user.
 func (s *FederationServer) RemoveUserFederatedIdentity(ctx context.Context, req *connect.Request[ssov1.RemoveUserFederatedIdentityRequest]) (*connect.Response[emptypb.Empty], error) {
-	authToken, ok := middleware.GetAuthenticatedTokenFromContext(ctx)
+	authToken, ok := domain.GetAuthenticatedTokenFromContext(ctx)
 	if !ok || authToken == nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated"))
 	}

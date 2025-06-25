@@ -2,9 +2,10 @@ package domain
 
 import (
 	"context"
-)
+	"time" // For SessionFilter
 
-import "time" // For SessionFilter
+	"github.com/pilab-dev/shadow-sso/client" // Added client import
+)
 
 // PublicKeyInfo, ServiceAccount, User, Session are defined in their respective domain files.
 
@@ -57,11 +58,67 @@ type SessionRepository interface {
 	DeleteSessionsByUserID(ctx context.Context, userID string, exceptSessionID ...string) (int64, error) // Returns count of deleted
 }
 
-// TokenRepository is an interface that ssso.TokenService depends on for user OAuth tokens.
-// Its methods are: StoreToken, GetAccessToken, RevokeToken, GetRefreshTokenInfo, GetAccessTokenInfo.
-// This interface should also be formally defined here or in the ssso package if not already.
-// For now, we assume it's defined in ssso package or implicitly by its usage.
-// If ssso.TokenRepository is a concrete type, it might need refactoring to an interface.
+// TokenRepository defines methods for managing OAuth tokens.
+type TokenRepository interface {
+	StoreToken(ctx context.Context, token *Token) error
+	GetAccessToken(ctx context.Context, tokenValue string) (*Token, error)
+	GetRefreshToken(ctx context.Context, tokenValue string) (*Token, error)
+	GetRefreshTokenInfo(ctx context.Context, tokenValue string) (*TokenInfo, error)
+	GetAccessTokenInfo(ctx context.Context, tokenValue string) (*TokenInfo, error)
+	RevokeToken(ctx context.Context, tokenValue string) error // Typically for access tokens
+	RevokeRefreshToken(ctx context.Context, tokenValue string) error
+	// RevokeAllUserTokens(ctx context.Context, userID string) error // These might be better handled by iterating in service layer
+	// RevokeAllClientTokens(ctx context.Context, clientID string) error // or having specific bulk operations if performance critical
+	DeleteExpiredTokens(ctx context.Context) error
+	GetTokenInfo(ctx context.Context, tokenValue string) (*Token, error) // General token info for introspection
+}
+
+// AuthorizationCodeRepository defines the interface for OAuth 2.0 authorization code operations.
+type AuthorizationCodeRepository interface {
+	SaveAuthCode(ctx context.Context, code *AuthCode) error
+	GetAuthCode(ctx context.Context, code string) (*AuthCode, error)
+	MarkAuthCodeAsUsed(ctx context.Context, code string) error
+	DeleteExpiredAuthCodes(ctx context.Context) error
+}
+
+// PkceRepository defines the interface for OAuth 2.0 PKCE operations.
+type PkceRepository interface {
+	SaveCodeChallenge(ctx context.Context, code, challenge string) error
+	GetCodeChallenge(ctx context.Context, code string) (string, error)
+	DeleteCodeChallenge(ctx context.Context, code string) error
+}
+
+// DeviceAuthorizationRepository defines methods for managing device authorization flow data.
+type DeviceAuthorizationRepository interface {
+	SaveDeviceAuth(ctx context.Context, auth *DeviceCode) error
+	GetDeviceAuthByDeviceCode(ctx context.Context, deviceCode string) (*DeviceCode, error)
+	GetDeviceAuthByUserCode(ctx context.Context, userCode string) (*DeviceCode, error)
+	ApproveDeviceAuth(ctx context.Context, userCode string, userID string) (*DeviceCode, error)
+	UpdateDeviceAuthStatus(ctx context.Context, deviceCode string, status DeviceCodeStatus) error
+	UpdateDeviceAuthLastPolledAt(ctx context.Context, deviceCode string) error
+	DeleteExpiredDeviceAuths(ctx context.Context) error
+}
+
+// ClientRepository defines methods for client application data persistence.
+type ClientRepository interface {
+	CreateClient(ctx context.Context, c *client.Client) error
+	GetClient(ctx context.Context, clientID string) (*client.Client, error)
+	UpdateClient(ctx context.Context, c *client.Client) error
+	DeleteClient(ctx context.Context, clientID string) error
+	ListClients(ctx context.Context, pageSize int32, pageToken string) ([]*client.Client, string, error)
+	ValidateClient(ctx context.Context, clientID, clientSecret string) error // Might be better in service layer
+}
+
+// OAuthRepository is a composite interface for all OAuth related data operations.
+type OAuthRepository interface {
+	TokenRepository
+	AuthorizationCodeRepository
+	PkceRepository
+	DeviceAuthorizationRepository
+	ClientRepository
+	// io.Closer // If the implementation needs a Close method (e.g., DB connection)
+}
+
 
 // IdPRepository defines methods for Identity Provider configuration persistence.
 type IdPRepository interface {

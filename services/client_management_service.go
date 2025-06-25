@@ -9,8 +9,8 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
-	ssso "github.com/pilab-dev/shadow-sso"
 	"github.com/pilab-dev/shadow-sso/client"
+	"github.com/pilab-dev/shadow-sso/domain" // Added domain import
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
 	"github.com/rs/zerolog/log"
@@ -21,12 +21,12 @@ import (
 // ClientManagementServer implements the ssov1connect.ClientManagementServiceHandler interface.
 type ClientManagementServer struct {
 	ssov1connect.UnimplementedClientManagementServiceHandler
-	oauthRepo    ssso.OAuthRepository
+	oauthRepo    domain.OAuthRepository // Changed to domain.OAuthRepository
 	secretHasher PasswordHasher
 }
 
 // NewClientManagementServer creates a new ClientManagementServer.
-func NewClientManagementServer(oauthRepo ssso.OAuthRepository, hasher PasswordHasher) *ClientManagementServer {
+func NewClientManagementServer(oauthRepo domain.OAuthRepository, hasher PasswordHasher) *ClientManagementServer { // Changed to domain.OAuthRepository
 	return &ClientManagementServer{
 		oauthRepo:    oauthRepo,
 		secretHasher: hasher,

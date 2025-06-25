@@ -6,9 +6,8 @@ import (
 	"testing"
 
 	"github.com/pilab-dev/shadow-sso/domain"
-	mock_domain "github.com/pilab-dev/shadow-sso/domain/mock"
 	"github.com/pilab-dev/shadow-sso/internal/federation"
-	mock_federation "github.com/pilab-dev/shadow-sso/internal/federation/mock"
+	"github.com/pilab-dev/shadow-sso/mocks" // Updated mock import path
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -19,10 +18,10 @@ func TestFederationService_GetAuthorizationURL(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockIdPRepo := mock_domain.NewMockIdPRepository(ctrl)
+	mockIdPRepo := mocks.NewMockIdPRepository(ctrl)
 	fedService := federation.NewService(mockIdPRepo, "http://localhost/callback")
 
-	mockProvider := mock_federation.NewMockOAuth2Provider(ctrl)
+	mockProvider := mocks.NewMockOAuth2Provider(ctrl)
 	mockProvider.EXPECT().Name().Return("mockprov").AnyTimes()
 	mockProvider.EXPECT().GetAuthCodeURL("test_state", "http://localhost/callback/mockprov", gomock.Any()).Return("http://mockprovider.com/auth?state=test_state", nil)
 
@@ -37,7 +36,7 @@ func TestFederationService_GetAuthorizationURL_ProviderNotFound(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockIdPRepo := mock_domain.NewMockIdPRepository(ctrl)
+	mockIdPRepo := mocks.NewMockIdPRepository(ctrl)
 	fedService := federation.NewService(mockIdPRepo, "http://localhost/callback")
 
 	mockIdPRepo.EXPECT().GetIdPByName(gomock.Any(), "unknownprov").Return(nil, errors.New("not found"))
@@ -51,10 +50,10 @@ func TestFederationService_HandleCallback_Success(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockIdPRepo := mock_domain.NewMockIdPRepository(ctrl)
+	mockIdPRepo := mocks.NewMockIdPRepository(ctrl)
 	fedService := federation.NewService(mockIdPRepo, "http://localhost/callback")
 
-	mockProvider := mock_federation.NewMockOAuth2Provider(ctrl)
+	mockProvider := mocks.NewMockOAuth2Provider(ctrl)
 	expectedToken := &oauth2.Token{AccessToken: "valid_access_token"}
 	expectedUserInfo := &federation.ExternalUserInfo{ProviderUserID: "ext123", Email: "user@provider.com"}
 
@@ -74,7 +73,7 @@ func TestFederationService_HandleCallback_InvalidState(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockIdPRepo := mock_domain.NewMockIdPRepository(ctrl) // Not strictly needed as GetProvider won't be called if state fails early
+	mockIdPRepo := mocks.NewMockIdPRepository(ctrl) // Not strictly needed as GetProvider won't be called if state fails early
 	fedService := federation.NewService(mockIdPRepo, "http://localhost/callback")
 
 	// No need to mock provider as it should fail before provider interaction
@@ -88,10 +87,10 @@ func TestFederationService_HandleCallback_ExchangeCodeError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockIdPRepo := mock_domain.NewMockIdPRepository(ctrl)
+	mockIdPRepo := mocks.NewMockIdPRepository(ctrl)
 	fedService := federation.NewService(mockIdPRepo, "http://localhost/callback")
 
-	mockProvider := mock_federation.NewMockOAuth2Provider(ctrl)
+	mockProvider := mocks.NewMockOAuth2Provider(ctrl)
 	mockProvider.EXPECT().Name().Return("mockprov").AnyTimes()
 	mockProvider.EXPECT().ExchangeCode(gomock.Any(), "http://localhost/callback/mockprov", "auth_code", gomock.Any()).Return(nil, errors.New("exchange failed"))
 
@@ -107,10 +106,10 @@ func TestFederationService_HandleCallback_FetchUserInfoError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockIdPRepo := mock_domain.NewMockIdPRepository(ctrl)
+	mockIdPRepo := mocks.NewMockIdPRepository(ctrl)
 	fedService := federation.NewService(mockIdPRepo, "http://localhost/callback")
 
-	mockProvider := mock_federation.NewMockOAuth2Provider(ctrl)
+	mockProvider := mocks.NewMockOAuth2Provider(ctrl)
 	expectedToken := &oauth2.Token{AccessToken: "valid_access_token"}
 
 	mockProvider.EXPECT().Name().Return("mockprov").AnyTimes()
@@ -129,10 +128,10 @@ func TestFederationService_GetProvider_Registered(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockIdPRepo := mock_domain.NewMockIdPRepository(ctrl) // Not called if provider is in registry
+	mockIdPRepo := mocks.NewMockIdPRepository(ctrl) // Not called if provider is in registry
 	service := federation.NewService(mockIdPRepo, "http://localhost/callback")
 
-	mockProv := mock_federation.NewMockOAuth2Provider(ctrl)
+	mockProv := mocks.NewMockOAuth2Provider(ctrl)
 	mockProv.EXPECT().Name().Return("registered_provider").AnyTimes()
 	service.RegisterProvider(mockProv)
 
@@ -145,7 +144,7 @@ func TestFederationService_GetProvider_FromRepo_Google(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockIdPRepo := mock_domain.NewMockIdPRepository(ctrl)
+	mockIdPRepo := mocks.NewMockIdPRepository(ctrl)
 	service := federation.NewService(mockIdPRepo, "http://localhost/callback")
 
 	googleConfig := &domain.IdentityProvider{
@@ -170,7 +169,7 @@ func TestFederationService_GetProvider_FromRepo_GitHub(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockIdPRepo := mock_domain.NewMockIdPRepository(ctrl)
+	mockIdPRepo := mocks.NewMockIdPRepository(ctrl)
 	service := federation.NewService(mockIdPRepo, "http://localhost/callback")
 
 	githubConfig := &domain.IdentityProvider{
@@ -190,7 +189,7 @@ func TestFederationService_GetProvider_FromRepo_Facebook(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockIdPRepo := mock_domain.NewMockIdPRepository(ctrl)
+	mockIdPRepo := mocks.NewMockIdPRepository(ctrl)
 	service := federation.NewService(mockIdPRepo, "http://localhost/callback")
 
 	fbConfig := &domain.IdentityProvider{
@@ -210,7 +209,7 @@ func TestFederationService_GetProvider_FromRepo_Apple(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockIdPRepo := mock_domain.NewMockIdPRepository(ctrl)
+	mockIdPRepo := mocks.NewMockIdPRepository(ctrl)
 	service := federation.NewService(mockIdPRepo, "http://localhost/callback")
 
 	appleConfig := &domain.IdentityProvider{
@@ -230,7 +229,7 @@ func TestFederationService_GetProvider_NotEnabled(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockIdPRepo := mock_domain.NewMockIdPRepository(ctrl)
+	mockIdPRepo := mocks.NewMockIdPRepository(ctrl)
 	service := federation.NewService(mockIdPRepo, "http://localhost/callback")
 
 	disabledConfig := &domain.IdentityProvider{Name: "disabledprov", IsEnabled: false}
@@ -245,7 +244,7 @@ func TestFederationService_GetProvider_UnsupportedType(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockIdPRepo := mock_domain.NewMockIdPRepository(ctrl)
+	mockIdPRepo := mocks.NewMockIdPRepository(ctrl)
 	service := federation.NewService(mockIdPRepo, "http://localhost/callback")
 
 	samlConfig := &domain.IdentityProvider{Name: "samlprov", Type: domain.IdPTypeSAML, IsEnabled: true}

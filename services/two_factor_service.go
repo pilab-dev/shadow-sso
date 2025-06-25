@@ -10,7 +10,7 @@ import (
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
 	"github.com/pilab-dev/shadow-sso/internal/auth/totp" // The new TOTP utility
-	"github.com/pilab-dev/shadow-sso/middleware"         // For GetAuthenticatedTokenFromContext
+	// "github.com/pilab-dev/shadow-sso/middleware" // No longer needed here
 	"github.com/rs/zerolog/log"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
@@ -40,7 +40,7 @@ func NewTwoFactorServer(
 
 // InitiateTOTPSetup generates a new TOTP secret and QR code URI for the authenticated user.
 func (s *TwoFactorServer) InitiateTOTPSetup(ctx context.Context, req *connect.Request[ssov1.InitiateTOTPSetupRequest]) (*connect.Response[ssov1.InitiateTOTPSetupResponse], error) {
-	authedToken, ok := middleware.GetAuthenticatedTokenFromContext(ctx)
+	authedToken, ok := domain.GetAuthenticatedTokenFromContext(ctx)
 	if !ok || authedToken == nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated"))
 	}
@@ -78,7 +78,7 @@ func (s *TwoFactorServer) InitiateTOTPSetup(ctx context.Context, req *connect.Re
 
 // VerifyAndEnableTOTP verifies a TOTP code and enables 2FA for the user.
 func (s *TwoFactorServer) VerifyAndEnableTOTP(ctx context.Context, req *connect.Request[ssov1.VerifyAndEnableTOTPRequest]) (*connect.Response[ssov1.VerifyAndEnableTOTPResponse], error) {
-	authedToken, ok := middleware.GetAuthenticatedTokenFromContext(ctx)
+	authedToken, ok := domain.GetAuthenticatedTokenFromContext(ctx)
 	if !ok || authedToken == nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated"))
 	}
@@ -126,7 +126,7 @@ func (s *TwoFactorServer) VerifyAndEnableTOTP(ctx context.Context, req *connect.
 
 // Disable2FA disables 2FA for the authenticated user.
 func (s *TwoFactorServer) Disable2FA(ctx context.Context, req *connect.Request[ssov1.Disable2FARequest]) (*connect.Response[emptypb.Empty], error) {
-	authedToken, ok := middleware.GetAuthenticatedTokenFromContext(ctx)
+	authedToken, ok := domain.GetAuthenticatedTokenFromContext(ctx)
 	if !ok || authedToken == nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated"))
 	}
@@ -188,7 +188,7 @@ func (s *TwoFactorServer) Disable2FA(ctx context.Context, req *connect.Request[s
 
 // GenerateRecoveryCodes generates new recovery codes for a 2FA-enabled user.
 func (s *TwoFactorServer) GenerateRecoveryCodes(ctx context.Context, req *connect.Request[ssov1.GenerateRecoveryCodesRequest]) (*connect.Response[ssov1.GenerateRecoveryCodesResponse], error) {
-	authedToken, ok := middleware.GetAuthenticatedTokenFromContext(ctx)
+	authedToken, ok := domain.GetAuthenticatedTokenFromContext(ctx)
 	if !ok || authedToken == nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated"))
 	}
