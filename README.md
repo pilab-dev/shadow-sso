@@ -7,7 +7,12 @@
    <a href="https://github.com/pilab-dev/shadow-sso"><img src="https://img.shields.io/github/stars/pilab-dev/shadow-sso?style=social" alt="GitHub stars"></a>
    <a href="https://pkg.go.dev/github.com/pilab-dev/shadow-sso"><img src="https://pkg.go.dev/badge/github.com/pilab-dev/shadow-sso" alt="Go Reference"></a>
    <a href="https://github.com/pilab-dev/shadow-sso/blob/main/LICENSE"><img src="https://img.shields.io/github/license/pilab-dev/shadow-sso" alt="License"></a>
+   <img src="https://github.com/pilab-dev/shadow-sso/workflows/Build, Test and Coverage
+/badge.svg">
+<img src="https://img.shields.io/badge/Coverage-100.0%25-brightgreen"/>
  </p>
+
+
 
 Shadow SSO provides a complete suite of tools to implement secure authentication and authorization in your Go applications. We've crafted it with clarity and modularity, making it easier to protect your APIs and data. This package is compliant with industry standards, ensuring smooth integration with any client that also adheres to OAuth 2.0 and OIDC principles.
 

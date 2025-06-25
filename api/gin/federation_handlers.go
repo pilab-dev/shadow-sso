@@ -124,8 +124,10 @@ func (fapi *FederationAPI) CallbackHandler(c *gin.Context) {
 		if err := c.Request.ParseForm(); err != nil {
 			log.Warn().Err(err).Str("provider", providerName).Msg("Failed to parse form POST for Apple callback")
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_apple_callback", "message": "Could not parse Apple callback data."})
+
 			return
 		}
+
 		code = c.Request.PostFormValue("code")
 		queryState = c.Request.PostFormValue("state")
 		idToken = c.Request.PostFormValue("id_token")   // Apple might send ID token here
@@ -133,32 +135,63 @@ func (fapi *FederationAPI) CallbackHandler(c *gin.Context) {
 	} else { // GET for most other providers
 		code = c.Query("code")
 		queryState = c.Query("state")
+
 		// Handle OAuth errors passed in query params
 		oauthError := c.Query("error")
 		if oauthError != "" {
 			oauthErrorDesc := c.Query("error_description")
-			log.Warn().Str("provider", providerName).Str("error", oauthError).Str("desc", oauthErrorDesc).Msg("OAuth error in callback from provider")
+
+			log.Warn().Str("provider", providerName).
+				Str("error", oauthError).
+				Str("desc", oauthErrorDesc).
+				Msg("OAuth error in callback from provider")
+
 			// TODO: Redirect to a UI page that displays this error nicely
 			c.JSON(http.StatusBadRequest, gin.H{"error": "provider_error", "message": fmt.Sprintf("Error from %s: %s (%s)", providerName, oauthError, oauthErrorDesc)})
+
 			return
 		}
 	}
 
 	if queryState == "" {
-		log.Warn().Str("provider", providerName).Msg("State parameter missing in callback query")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_state_param", "message": "State parameter missing in callback."})
+		log.Warn().
+			Str("provider", providerName).
+			Msg("State parameter missing in callback query")
+
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "missing_state_param",
+			"message": "State parameter missing in callback.",
+		})
+
 		return
 	}
+
 	if code == "" && !(providerName == "apple" && idToken != "") { // Apple might not send code if it sends id_token directly for some flows (not typical for 'code' flow)
-		log.Warn().Str("provider", providerName).Msg("Authorization code missing in callback query")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_code", "message": "Authorization code missing in callback."})
+		log.Warn().
+			Str("provider", providerName).
+			Msg("Authorization code missing in callback query")
+
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "missing_code",
+			"message": "Authorization code missing in callback.",
+		})
+
 		return
 	}
 
 	// Verify state (CSRF protection)
 	if queryState != stateCookie {
-		log.Warn().Str("provider", providerName).Str("queryState", queryState).Str("cookieState", stateCookie).Msg("State mismatch in callback")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "state_mismatch", "message": "Invalid session state. Please try logging in again."})
+		log.Warn().
+			Str("provider", providerName).
+			Str("queryState", queryState).
+			Str("cookieState", stateCookie).
+			Msg("State mismatch in callback")
+
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "state_mismatch",
+			"message": "Invalid session state. Please try logging in again.",
+		})
+
 		return
 	}
 
@@ -174,10 +207,18 @@ func (fapi *FederationAPI) CallbackHandler(c *gin.Context) {
 
 	resp, err := fapi.federationClient.HandleFederatedCallback(c.Request.Context(), connect.NewRequest(grpcReq))
 	if err != nil {
-		log.Error().Err(err).Str("provider", providerName).Msg("gRPC HandleFederatedCallback failed")
+		log.Error().
+			Err(err).
+			Str("provider", providerName).
+			Msg("gRPC HandleFederatedCallback failed")
+
 		// TODO: More granular error handling based on connect.Code and resp.Msg.Status
 		// For now, a generic error. The UI should handle different statuses from response message.
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "callback_processing_failed", "message": "Failed to process login with provider."})
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "callback_processing_failed",
+			"message": "Failed to process login with provider.",
+		})
+
 		return
 	}
 
@@ -190,7 +231,11 @@ func (fapi *FederationAPI) CallbackHandler(c *gin.Context) {
 		// For now, assume access_token is primary for session or use a dedicated session cookie.
 		// This example just returns tokens in body; client SPA would store them.
 		// In a server-rendered app, you'd set secure session cookies.
-		log.Info().Str("provider", providerName).Str("userID", resp.Msg.UserInfo.Id).Msg("Federated login/link successful")
+		log.Info().
+			Str("provider", providerName).
+			Str("userID", resp.Msg.UserInfo.Id).
+			Msg("Federated login/link successful")
+
 		c.JSON(http.StatusOK, gin.H{
 			"status":        resp.Msg.Status.String(),
 			"message":       resp.Msg.Message,

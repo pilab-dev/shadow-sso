@@ -147,13 +147,13 @@ func (r *TokenStore) Clear(ctx context.Context) error {
 		var err error
 		keys, cursor, err = r.client.Scan(ctx, cursor, pattern, 100).Result()
 		if err != nil {
-			return fmt.Errorf("Error scanning for keys to clear: %w", err)
+			return fmt.Errorf("error scanning for keys to clear: %w", err)
 		}
 
 		if len(keys) > 0 {
 			_, err = r.client.Del(ctx, keys...).Result()
 			if err != nil {
-				return fmt.Errorf("Error deleting keys: %w", err)
+				return fmt.Errorf("error deleting keys: %w", err)
 			}
 		}
 
