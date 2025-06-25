@@ -19,11 +19,6 @@ var (
 	dbOnce         sync.Once
 )
 
-const (
-	defaultMongoDBURI   = "mongodb://localhost:27017"
-	defaultDatabaseName = "shadow_sso_db" // Or use a more specific name
-)
-
 // InitMongoDB initializes the MongoDB client and database instances.
 // It should be called once at application startup.
 // URI and dbName can be overridden by environment variables or config.

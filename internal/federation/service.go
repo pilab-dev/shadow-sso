@@ -12,12 +12,12 @@ import (
 )
 
 const (
-	// stateCookieName is the name of the cookie used to store the OAuth2 state.
-	// This might be handled by the calling HTTP layer (e.g. Gin handler) rather than this service.
-	// stateCookieName = "sso_oauth_state"
-	stateParam = "state"
-	errorParam = "error"
-	codeParam  = "code"
+// stateCookieName is the name of the cookie used to store the OAuth2 state.
+// This might be handled by the calling HTTP layer (e.g. Gin handler) rather than this service.
+// stateCookieName = "sso_oauth_state"
+// stateParam = "state"
+// errorParam = "error"
+// codeParam  = "code"
 )
 
 // Service handles the core logic for OAuth2 federation.
