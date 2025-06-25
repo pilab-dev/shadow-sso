@@ -8,8 +8,8 @@ import (
 	"os"
 
 	"connectrpc.com/connect"
-	"github.com/pilab-dev/shadow-sso/apps/ssoctl/cmd/client"
-	"github.com/pilab-dev/shadow-sso/apps/ssoctl/cmd/config"
+	"github.com/pilab-dev/shadow-sso/apps/sssoctl/cmd/client"
+	"github.com/pilab-dev/shadow-sso/apps/sssoctl/cmd/config"
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3" // For list output

@@ -9,8 +9,8 @@ import (
 	// "os" // Not directly used, fmt.Fprintf(os.Stderr,...) is okay
 
 	"connectrpc.com/connect"
-	"github.com/pilab-dev/shadow-sso/apps/ssoctl/cmd/client" // Path to your client package
-	"github.com/pilab-dev/shadow-sso/apps/ssoctl/cmd/config"
+	"github.com/pilab-dev/shadow-sso/apps/sssoctl/cmd/client" // Path to your client package
+	"github.com/pilab-dev/shadow-sso/apps/sssoctl/cmd/config"
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3" // For pretty printing session list

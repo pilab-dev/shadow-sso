@@ -43,5 +43,6 @@ test: ## Run unit tests
 # Example build target for the CLI. Adjust path to main.go if needed.
 build: proto tidy ## Build the ssoctl CLI application
 	@echo "Building ssoctl CLI..."
-	$(GO) build -o ssoctl ./cmd/ssoctl/main.go
-	@echo "ssoctl build complete. Executable: ./ssoctl"
+	$(GO) build -o sssoctl ./apps/sssoctl/sssoctl.go
+	$(GO) build -o ssso ./apps/ssso/ssso.go
+	@echo "ssoctl build complete. Executable: ./sssoctl and ./ssso"
