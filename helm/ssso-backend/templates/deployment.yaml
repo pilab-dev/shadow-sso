@@ -1,0 +1,109 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ssso-backend.fullname" . }}
+  labels:
+    {{- include "ssso-backend.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "ssso-backend.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "ssso-backend.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "ssso-backend.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: SSSO_HTTP_ADDR
+              value: "0.0.0.0:{{ .Values.service.targetPort }}"
+            - name: SSSO_LOG_LEVEL
+              value: {{ .Values.config.SSSO_LOG_LEVEL | quote }}
+            - name: SSSO_ISSUER_URL
+              value: {{ .Values.config.SSSO_ISSUER_URL | quote }}
+            - name: SSSO_SIGNING_KEY_PATH
+              value: {{ .Values.config.SSSO_SIGNING_KEY_PATH | quote }}
+            - name: SSSO_KEY_ROTATION_INTERVAL
+              value: {{ .Values.config.SSSO_KEY_ROTATION_INTERVAL | quote }}
+            - name: SSSO_NEXTJS_LOGIN_URL
+              value: {{ .Values.config.SSSO_NEXTJS_LOGIN_URL | quote }}
+            - name: SSSO_MONGO_URI
+              value: {{ include "ssso-backend.mongodb.uri" . | quote }}
+            - name: SSSO_MONGO_DB_NAME
+              value: {{ include "ssso-backend.mongodb.databaseName" . | quote }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- if .Values.extraEnvFrom }}
+          envFrom:
+            {{- toYaml .Values.extraEnvFrom | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz # Assuming a /healthz endpoint exists or will be added
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz # Assuming a /readyz endpoint exists or will be added
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: signing-key
+              mountPath: "/etc/sso/keys"
+              readOnly: true
+            {{- if .Values.persistence.enabled }}
+            - name: data
+              mountPath: /app/data # Example path, adjust if app needs persistent storage
+            {{- end }}
+      volumes:
+        - name: signing-key
+          secret:
+            secretName: {{ .Values.signingKeySecretName }}
+            items:
+              - key: private.pem # Key within the secret that holds the PEM file
+                path: private.pem # Filename to mount inside the container
+        {{- if .Values.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "ssso-backend.fullname" . }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

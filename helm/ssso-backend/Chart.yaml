@@ -1,0 +1,26 @@
+apiVersion: v2
+name: ssso-backend
+description: A Helm chart for deploying the SSSO Backend application
+type: application
+version: 0.1.0 # Chart version
+appVersion: "v1" # Corresponds to the app version this chart is initially targeting
+
+# Optional: Add keywords for discoverability
+keywords:
+  - sso
+  - oauth2
+  - oidc
+  - backend
+  - pilab
+
+# Optional: Specify dependencies if any (e.g., for MongoDB if deploying it as a subchart)
+# dependencies:
+#   - name: mongodb
+#     version: "13.x.x" # Example version, adjust as needed
+#     repository: "https://charts.bitnami.com/bitnami"
+#     condition: mongodb.enabled # Only deploy if mongodb.enabled is true in values.yaml
+
+# Optional: Maintainer information
+maintainers:
+  - name: Jules AI Agent
+    email: ai@example.com
