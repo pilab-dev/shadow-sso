@@ -1,0 +1,127 @@
+{{- if .Values.mongodb.enabled }}
+# ---
+# Placeholder for MongoDB Deployment and Service
+# ---
+# If you enable `mongodb.enabled`, you are expected to:
+# 1. Add a MongoDB chart as a dependency in `Chart.yaml`.
+#    Example:
+#    dependencies:
+#      - name: mongodb
+#        version: "13.x.x" # Use a specific, tested version
+#        repository: "https://charts.bitnami.com/bitnami"
+#        condition: mongodb.enabled
+#
+# 2. Configure the MongoDB subchart through the `mongodb:` section in `values.yaml`.
+#    Refer to the Bitnami MongoDB chart's `values.yaml` for available options.
+#    For example:
+#    mongodb:
+#      enabled: true
+#      auth:
+#        rootPassword: "your-super-secret-password"
+#        database: "shadow_sso_db"
+#        username: "ssso_user"
+#        password: "ssso_user_password"
+#      # ... other MongoDB configurations
+#
+# This placeholder file serves as a reminder.
+# The actual MongoDB resources will be created by the subchart when properly configured.
+#
+# The main application deployment (`deployment.yaml`) is configured to use
+# a MongoDB URI constructed based on the expected service name from such a subchart
+# (e.g., `{{ printf "%s-mongodb" (include "ssso-backend.fullname" .) }}`)
+# or a URI override you provide in `values.yaml` under `mongodb.connection.uriOverride`.
+#
+# If you are NOT using a subchart and want to define a simple MongoDB deployment
+# directly here (e.g., for basic testing, NOT recommended for production),
+# you would uncomment and fill out a Deployment and Service manifest below.
+# However, using a community-maintained chart like Bitnami's is strongly advised.
+# ---
+
+# Example of a VERY basic MongoDB StatefulSet and Service (NOT FOR PRODUCTION USE without significant enhancements)
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: {{ printf "%s-mongodb" (include "ssso-backend.fullname" .) }}
+#   labels:
+#     {{- include "ssso-backend.labels" . | nindent 4 }}
+#     app.kubernetes.io/component: mongodb
+# spec:
+#   type: ClusterIP
+#   ports:
+#     - port: 27017
+#       targetPort: 27017
+#       protocol: TCP
+#       name: mongo
+#   selector:
+#     {{- include "ssso-backend.selectorLabels" . | nindent 4 }}
+#     app.kubernetes.io/component: mongodb
+# ---
+# apiVersion: apps/v1
+# kind: StatefulSet
+# metadata:
+#   name: {{ printf "%s-mongodb" (include "ssso-backend.fullname" .) }}
+#   labels:
+#     {{- include "ssso-backend.labels" . | nindent 4 }}
+#     app.kubernetes.io/component: mongodb
+# spec:
+#   serviceName: {{ printf "%s-mongodb" (include "ssso-backend.fullname" .) }}
+#   replicas: 1 # For a simple setup. For HA, use more replicas and configure MongoDB replication.
+#   selector:
+#     matchLabels:
+#       {{- include "ssso-backend.selectorLabels" . | nindent 6 }}
+#       app.kubernetes.io/component: mongodb
+#   template:
+#     metadata:
+#       labels:
+#         {{- include "ssso-backend.selectorLabels" . | nindent 8 }}
+#         app.kubernetes.io/component: mongodb
+#     spec:
+#       securityContext:
+#         fsGroup: 1001 # MongoDB runs as mongodb user (uid 999 in official image, group 999)
+#                      # Adjust if using a different image or custom user.
+#       containers:
+#         - name: mongodb
+#           image: "{{ .Values.mongodb.image.repository }}:{{ .Values.mongodb.image.tag }}"
+#           imagePullPolicy: {{ .Values.mongodb.image.pullPolicy }}
+#           ports:
+#             - name: mongo
+#               containerPort: 27017
+#               protocol: TCP
+#           # environment: # Configure MongoDB environment variables for auth, etc.
+#             # - name: MONGO_INITDB_ROOT_USERNAME
+#             #   valueFrom:
+#             #     secretKeyRef:
+#             #       name: {{ printf "%s-mongodb-auth" (include "ssso-backend.fullname" .) }}
+#             #       key: mongodb-root-username # if using a custom secret
+#             # - name: MONGO_INITDB_ROOT_PASSWORD
+#             #   valueFrom:
+#             #     secretKeyRef:
+#             #       name: {{ printf "%s-mongodb-auth" (include "ssso-backend.fullname" .) }}
+#             #       key: mongodb-root-password
+#           volumeMounts:
+#             - name: mongo-data
+#               mountPath: /data/db
+#   {{- if .Values.mongodb.persistence.enabled }}
+#   volumeClaimTemplates:
+#     - metadata:
+#         name: mongo-data
+#       spec:
+#         accessModes: [ "ReadWriteOnce" ]
+#         {{- if .Values.mongodb.persistence.storageClassName }}
+#         storageClassName: {{ .Values.mongodb.persistence.storageClassName }}
+#         {{- end }}
+#         resources:
+#           requests:
+#             storage: {{ .Values.mongodb.persistence.size }}
+#   {{- else }}
+#           # If persistence is not enabled, use emptyDir (data lost on pod restart)
+#           volumes:
+#             - name: mongo-data
+#               emptyDir: {}
+#   {{- end }}
+#
+# ---
+# Ensure you create the necessary secrets for MongoDB authentication if you enable it.
+# The `templates/secrets.yaml` has a commented-out example for this.
+# ---
+{{- end }}

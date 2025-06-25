@@ -127,6 +127,24 @@ func StartConnectRPCServer(cfg ServerConfig) error {
 	authPath, authHandler := ssov1connect.NewAuthServiceHandler(authServer, interceptors)
 	mux.Handle(authPath, authHandler)
 
+	// Add health check endpoints
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		// Basic readiness check: try to ping MongoDB
+		// A more comprehensive check might involve other dependencies or internal states.
+		if err := mongodb.Ping(ctx); err != nil {
+			log.Error().Err(err).Msg("Readiness check failed: MongoDB ping failed")
+			http.Error(w, "Service not ready: database connectivity issue", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+
 	// 8. Create and start HTTP/2 server
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr, // Use httpAddr from config
