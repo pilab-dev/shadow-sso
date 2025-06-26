@@ -38,6 +38,7 @@ Shadow SSO is packed with essential functionality to ensure top-tier security an
 -   **🔒 Secure Token Handling:**  Ensures sensitive credentials and tokens are stored with encryption where needed, handled with precision, and safeguarded.
 -  **👥 Client Application Management:** Control registration of clients in order to use and delegate your authentication server.
 -   **🕹️ User Session Management:**  Fine grained access and revocation control over each individual session.
+-   **🛡️ LDAP / Active Directory Integration:** Supports using external LDAP/AD servers as a user authentication source with per-client attribute mapping. See [LDAP Setup Guide](docs/ldap_setup.md).
 
 ## 🚀 Getting Started
 

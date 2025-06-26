@@ -27,6 +27,7 @@ enum IdPTypeProto {
   IDP_TYPE_UNSPECIFIED = 0;
   IDP_TYPE_OIDC = 1;
   IDP_TYPE_SAML = 2; // Future support
+  IDP_TYPE_LDAP = 3;
 }
 
 // Message for attribute mapping, mirroring domain.AttributeMapping
@@ -56,6 +57,22 @@ message IdentityProviderProto {
 
   google.protobuf.Timestamp created_at = 12;
   google.protobuf.Timestamp updated_at = 13;
+
+  string ldap_server_url = 14;
+	string ldap_bind_dn = 15;
+	string ldap_bind_password = 16;
+	string ldap_aser_base_dn = 17;
+	string ldap_aser_filter = 18;
+	string ldap_attr_username = 19;
+	string ldap_attr_email = 20;
+	string ldap_attr_firstname = 21;
+	string ldap_attr_lastname = 22;
+	string ldap_attr_groups = 23;
+	bool ldap_starttls = 24;
+	bool ldap_skip_tls_verify = 25;
+
+  string ldap_user_base_dn = 26;
+	string ldap_user_filter = 27;
 }
 
 // --- AddIdP ---
@@ -73,6 +90,20 @@ message AddIdPRequest {
   // SAML config (placeholders)
 
   repeated AttributeMappingProto attribute_mappings = 8;
+
+  string ldap_server_url = 9;
+  string ldap_bind_dn = 10;
+  string ldap_bind_password = 11;
+  string ldap_base_dn = 12;
+  string ldap_user_filter = 13;
+  string ldap_user_base_dn = 14;
+  string ldap_attr_username = 15;
+  string ldap_attr_email = 16;
+  string ldap_attr_firstname = 17;
+  string ldap_attr_lastname = 18;
+  string ldap_attr_groups = 19;
+  bool ldap_starttls = 20;
+  bool ldap_skip_tls_verify = 21;
 }
 
 message AddIdPResponse {
@@ -117,6 +148,20 @@ message UpdateIdPRequest {
   repeated string oidc_scopes = 7;
 
   repeated AttributeMappingProto attribute_mappings = 8;
+
+  optional string ldap_server_url = 9;
+  optional string ldap_bind_dn = 10;
+  optional string ldap_bind_password = 11;
+  optional string ldap_base_dn = 12;
+  optional string ldap_user_filter = 13;
+  optional string ldap_user_base_dn = 14;
+  optional string ldap_attr_username = 15;
+  optional string ldap_attr_email = 16;
+  optional string ldap_attr_firstname = 17;
+  optional string ldap_attr_lastname = 18;
+  optional string ldap_attr_groups = 19;
+  optional bool ldap_starttls = 20;
+  optional bool ldap_skip_tls_verify = 21;
 }
 
 message UpdateIdPResponse {

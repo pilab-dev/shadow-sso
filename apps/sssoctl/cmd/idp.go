@@ -58,16 +58,35 @@ var idpAddCmd = &cobra.Command{
 		oidcClientSecret, _ := cmd.Flags().GetString("oidc-client-secret")
 		oidcIssuerURL, _ := cmd.Flags().GetString("oidc-issuer-url")
 		oidcScopes, _ := cmd.Flags().GetStringSlice("oidc-scopes")
+
+		// LDAP flags
+		ldapServerURL, _ := cmd.Flags().GetString("ldap-server-url")
+		ldapBindDN, _ := cmd.Flags().GetString("ldap-bind-dn")
+		ldapBindPassword, _ := cmd.Flags().GetString("ldap-bind-password")
+		ldapUserBaseDN, _ := cmd.Flags().GetString("ldap-user-base-dn")
+		ldapUserFilter, _ := cmd.Flags().GetString("ldap-user-filter")
+		ldapAttrUsername, _ := cmd.Flags().GetString("ldap-attr-username")
+		ldapAttrEmail, _ := cmd.Flags().GetString("ldap-attr-email")
+		ldapAttrFirstName, _ := cmd.Flags().GetString("ldap-attr-firstname")
+		ldapAttrLastName, _ := cmd.Flags().GetString("ldap-attr-lastname")
+		ldapAttrGroups, _ := cmd.Flags().GetString("ldap-attr-groups")
+		ldapStartTLS, _ := cmd.Flags().GetBool("ldap-starttls")
+		ldapSkipTLSVerify, _ := cmd.Flags().GetBool("ldap-skip-tls-verify")
+
 		mappingsStr, _ := cmd.Flags().GetStringSlice("map-attribute")
 
 		if name == "" {
 			return errors.New("--name is required")
 		}
 		if typeStr == "" {
-			return errors.New("--type (OIDC/SAML) is required")
+			return errors.New("--type (OIDC/SAML/LDAP) is required")
 		}
 
 		var idpTypeProto ssov1.IdPTypeProto
+		// Placeholder for ssov1.IdPTypeProto_IDP_TYPE_LDAP - this needs to be added to protobuf definitions
+		// For now, we'll handle type string and assume the server can interpret it or proto will be updated.
+		// const IdPTypeProto_IDP_TYPE_LDAP ssov1.IdPTypeProto = 2 // Example, actual value from proto
+
 		if strings.EqualFold(typeStr, "OIDC") {
 			idpTypeProto = ssov1.IdPTypeProto_IDP_TYPE_OIDC
 			if oidcIssuerURL == "" || oidcClientID == "" {
@@ -75,9 +94,16 @@ var idpAddCmd = &cobra.Command{
 			}
 		} else if strings.EqualFold(typeStr, "SAML") {
 			idpTypeProto = ssov1.IdPTypeProto_IDP_TYPE_SAML
+			// SAML specific checks would go here
 			return errors.New("SAML IdP type is not fully supported yet") // Placeholder
+		} else if strings.EqualFold(typeStr, "LDAP") {
+			// idpTypeProto = IdPTypeProto_IDP_TYPE_LDAP // Use actual proto enum when available
+			idpTypeProto = ssov1.IdPTypeProto(2) // Assuming 2 is LDAP, needs proto update
+			if ldapServerURL == "" || ldapUserBaseDN == "" || ldapUserFilter == "" {
+				return errors.New("--ldap-server-url, --ldap-user-base-dn, and --ldap-user-filter are required for LDAP type")
+			}
 		} else {
-			return errors.New("invalid --type: must be 'OIDC' or 'SAML'")
+			return errors.New("invalid --type: must be 'OIDC', 'SAML', or 'LDAP'")
 		}
 
 		attributeMappings, err := parseAttributeMappings(mappingsStr)
@@ -110,6 +136,27 @@ var idpAddCmd = &cobra.Command{
 		}
 		if cmd.Flags().Changed("oidc-issuer-url") {
 			req.OidcIssuerUrl = &oidcIssuerURL
+		}
+
+		// Populate LDAP fields if type is LDAP
+		// These req.Ldap... fields depend on protobuf updates.
+		if idpTypeProto == ssov1.IdPTypeProto(2) { // Assuming 2 is LDAP
+			req.LdapServerUrl = ldapServerURL
+			req.LdapUserBaseDn = ldapUserBaseDN
+			req.LdapUserFilter = ldapUserFilter
+			req.LdapAttrUsername = ldapAttrUsername
+			req.LdapAttrEmail = ldapAttrEmail
+			req.LdapAttrFirstname = ldapAttrFirstName
+			req.LdapAttrLastname = ldapAttrLastName
+			req.LdapAttrGroups = ldapAttrGroups
+			req.LdapStarttls = ldapStartTLS
+			req.LdapSkipTlsVerify = ldapSkipTLSVerify
+			if cmd.Flags().Changed("ldap-bind-dn") { // Optional
+				req.LdapBindDn = ldapBindDN
+			}
+			if cmd.Flags().Changed("ldap-bind-password") { // Optional
+				req.LdapBindPassword = ldapBindPassword
+			}
 		}
 
 		resp, err := apiClient.AddIdP(context.Background(), connect.NewRequest(req))
@@ -237,6 +284,68 @@ var idpUpdateCmd = &cobra.Command{
 			changed = true
 		}
 
+		// LDAP specific fields for update
+		if cmd.Flags().Changed("ldap-server-url") {
+			val, _ := cmd.Flags().GetString("ldap-server-url")
+			updateReq.LdapServerUrl = &val
+			changed = true
+		}
+		if cmd.Flags().Changed("ldap-bind-dn") {
+			val, _ := cmd.Flags().GetString("ldap-bind-dn")
+			updateReq.LdapBindDn = &val // Pointer to allow setting to empty
+			changed = true
+		}
+		if cmd.Flags().Changed("ldap-bind-password") {
+			val, _ := cmd.Flags().GetString("ldap-bind-password")
+			updateReq.LdapBindPassword = &val // Pointer to allow setting to empty
+			changed = true
+		}
+		if cmd.Flags().Changed("ldap-user-base-dn") {
+			val, _ := cmd.Flags().GetString("ldap-user-base-dn")
+			updateReq.LdapUserBaseDn = &val
+			changed = true
+		}
+		if cmd.Flags().Changed("ldap-user-filter") {
+			val, _ := cmd.Flags().GetString("ldap-user-filter")
+			updateReq.LdapUserFilter = &val
+			changed = true
+		}
+		if cmd.Flags().Changed("ldap-attr-username") {
+			val, _ := cmd.Flags().GetString("ldap-attr-username")
+			updateReq.LdapAttrUsername = &val
+			changed = true
+		}
+		if cmd.Flags().Changed("ldap-attr-email") {
+			val, _ := cmd.Flags().GetString("ldap-attr-email")
+			updateReq.LdapAttrEmail = &val
+			changed = true
+		}
+		if cmd.Flags().Changed("ldap-attr-firstname") {
+			val, _ := cmd.Flags().GetString("ldap-attr-firstname")
+			updateReq.LdapAttrFirstname = &val
+			changed = true
+		}
+		if cmd.Flags().Changed("ldap-attr-lastname") {
+			val, _ := cmd.Flags().GetString("ldap-attr-lastname")
+			updateReq.LdapAttrLastname = &val
+			changed = true
+		}
+		if cmd.Flags().Changed("ldap-attr-groups") {
+			val, _ := cmd.Flags().GetString("ldap-attr-groups")
+			updateReq.LdapAttrGroups = &val
+			changed = true
+		}
+		if cmd.Flags().Changed("ldap-starttls") {
+			val, _ := cmd.Flags().GetBool("ldap-starttls")
+			updateReq.LdapStarttls = &val
+			changed = true
+		}
+		if cmd.Flags().Changed("ldap-skip-tls-verify") {
+			val, _ := cmd.Flags().GetBool("ldap-skip-tls-verify")
+			updateReq.LdapSkipTlsVerify = &val
+			changed = true
+		}
+
 		if !changed {
 			return errors.New("at least one field to update must be provided via flags")
 		}
@@ -304,6 +413,21 @@ func init() {
 	idpAddCmd.Flags().String("oidc-client-secret", "", "OIDC Client Secret")
 	idpAddCmd.Flags().String("oidc-issuer-url", "", "OIDC Issuer URL")
 	idpAddCmd.Flags().StringSlice("oidc-scopes", []string{"openid", "profile", "email"}, "OIDC scopes (comma-separated or multiple flags)")
+
+	// LDAP specific flags for idpAddCmd
+	idpAddCmd.Flags().String("ldap-server-url", "", "LDAP Server URL (e.g., ldap://ldap.example.com:389)")
+	idpAddCmd.Flags().String("ldap-bind-dn", "", "LDAP Bind DN (for searching users, optional)")
+	idpAddCmd.Flags().String("ldap-bind-password", "", "LDAP Bind Password (sensitive, for search user)")
+	idpAddCmd.Flags().String("ldap-user-base-dn", "", "Base DN for user search (e.g., ou=users,dc=example,dc=com)")
+	idpAddCmd.Flags().String("ldap-user-filter", "", "LDAP User Search Filter (e.g., (uid=%s) or (sAMAccountName=%s))")
+	idpAddCmd.Flags().String("ldap-attr-username", "uid", "LDAP attribute for username (e.g., uid, sAMAccountName)")
+	idpAddCmd.Flags().String("ldap-attr-email", "mail", "LDAP attribute for user email")
+	idpAddCmd.Flags().String("ldap-attr-firstname", "givenName", "LDAP attribute for user first name")
+	idpAddCmd.Flags().String("ldap-attr-lastname", "sn", "LDAP attribute for user last name")
+	idpAddCmd.Flags().String("ldap-attr-groups", "memberOf", "LDAP attribute for user group membership")
+	idpAddCmd.Flags().Bool("ldap-starttls", false, "Use StartTLS for LDAP connection")
+	idpAddCmd.Flags().Bool("ldap-skip-tls-verify", false, "Skip TLS certificate verification for LDAP (unsafe, for testing only)")
+
 	idpAddCmd.Flags().StringSlice("map-attribute", []string{}, "Attribute mapping 'ExternalKey=LocalUserKey' (e.g., 'sub=UserID', 'email=Email') (can be repeated)")
 
 	// Flags for idpListCmd
@@ -324,4 +448,18 @@ func init() {
 	idpUpdateCmd.Flags().String("oidc-issuer-url", "", "New OIDC Issuer URL")
 	idpUpdateCmd.Flags().StringSlice("oidc-scopes", []string{}, "New set of OIDC scopes")
 	idpUpdateCmd.Flags().StringSlice("map-attribute", []string{}, "New set of attribute mappings 'ExternalKey=LocalUserKey'")
+
+	// LDAP specific flags for idpUpdateCmd
+	idpUpdateCmd.Flags().String("ldap-server-url", "", "New LDAP Server URL")
+	idpUpdateCmd.Flags().String("ldap-bind-dn", "", "New LDAP Bind DN (set to empty string to remove)")
+	idpUpdateCmd.Flags().String("ldap-bind-password", "", "New LDAP Bind Password (sensitive, use with caution)")
+	idpUpdateCmd.Flags().String("ldap-user-base-dn", "", "New Base DN for user search")
+	idpUpdateCmd.Flags().String("ldap-user-filter", "", "New LDAP User Search Filter")
+	idpUpdateCmd.Flags().String("ldap-attr-username", "", "New LDAP attribute for username")
+	idpUpdateCmd.Flags().String("ldap-attr-email", "", "New LDAP attribute for user email")
+	idpUpdateCmd.Flags().String("ldap-attr-firstname", "", "New LDAP attribute for user first name")
+	idpUpdateCmd.Flags().String("ldap-attr-lastname", "", "New LDAP attribute for user last name")
+	idpUpdateCmd.Flags().String("ldap-attr-groups", "", "New LDAP attribute for user group membership")
+	idpUpdateCmd.Flags().Bool("ldap-starttls", false, "Enable/Disable StartTLS for LDAP. Use with caution if changing existing.")
+	idpUpdateCmd.Flags().Bool("ldap-skip-tls-verify", false, "Enable/Disable skipping TLS cert verification for LDAP. Use with caution.")
 }
