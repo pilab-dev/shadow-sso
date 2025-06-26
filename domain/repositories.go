@@ -104,26 +104,31 @@ type DeviceAuthorizationRepository interface {
 	DeleteExpiredDeviceAuths(ctx context.Context) error
 }
 
+// ClientType defines the type of client application. Confidential or Public
+type ClientType string
+
+const (
+	// Confidential clients can securely store secrets
+	Confidential ClientType = "confidential"
+	// Public clients cannot securely store secrets (mobile apps, SPAs)
+	Public ClientType = "public"
+)
+
+// ClientFilter defines filtering options for listing clients
+type ClientFilter struct {
+	Type     ClientType
+	IsActive bool
+	Search   string
+}
+
 // ClientRepository defines methods for client application data persistence.
 type ClientRepository interface {
 	CreateClient(ctx context.Context, c *client.Client) error
 	GetClient(ctx context.Context, clientID string) (*client.Client, error)
 	UpdateClient(ctx context.Context, c *client.Client) error
 	DeleteClient(ctx context.Context, clientID string) error
-	ListClients(ctx context.Context, pageSize int32, pageToken string) ([]*client.Client, string, error)
+	ListClients(ctx context.Context, filter *ClientFilter) ([]*client.Client, string, error)
 	ValidateClient(ctx context.Context, clientID, clientSecret string) error // Might be better in service layer
-}
-
-// OAuthRepository is a composite interface for all OAuth related data operations.
-//
-//go:generate go run go.uber.org/mock/mockgen -source=$GOFILE -destination=mocks/mock_$GOFILE -package=mock_$GOPACKAGE OAuthRepository
-type OAuthRepository interface {
-	TokenRepository
-	AuthorizationCodeRepository
-	PkceRepository
-	DeviceAuthorizationRepository
-	ClientRepository
-	// io.Closer // If the implementation needs a Close method (e.g., DB connection)
 }
 
 // IdPRepository defines methods for Identity Provider configuration persistence.

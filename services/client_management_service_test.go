@@ -42,9 +42,9 @@ func TestClientManagementServer_RegisterClient_WithLDAPMappings(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockOAuthRepo := mock_domain.NewMockOAuthRepository(ctrl)
+	clientRepo := mock_domain.NewMockClientRepository(ctrl)
 	mockHasher := &MockPasswordHasher{}
-	service := NewClientManagementServer(mockOAuthRepo, mockHasher)
+	service := NewClientManagementServer(clientRepo, mockHasher)
 
 	reqMsg := &ssov1.RegisterClientRequest{
 		ClientName: "Test LDAP Client",
@@ -63,7 +63,7 @@ func TestClientManagementServer_RegisterClient_WithLDAPMappings(t *testing.T) {
 		ClientLdapCustomClaimsMapping: map[string]string{"custom_dept": "departmentNumber"},
 	}
 
-	mockOAuthRepo.EXPECT().CreateClient(gomock.Any(), gomock.Any()).
+	clientRepo.EXPECT().CreateClient(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, c *client.Client) error {
 			assert.Equal(t, "Test LDAP Client", c.Name)
 			assert.Equal(t, client.Confidential, c.Type)
@@ -96,9 +96,9 @@ func TestClientManagementServer_UpdateClient_WithLDAPMappings(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockOAuthRepo := mock_domain.NewMockOAuthRepository(ctrl)
+	clientRepo := mock_domain.NewMockClientRepository(ctrl)
 	mockHasher := &MockPasswordHasher{} // Not directly used in update for these fields, but part of service
-	service := NewClientManagementServer(mockOAuthRepo, mockHasher)
+	service := NewClientManagementServer(clientRepo, mockHasher)
 
 	clientID := "client-123"
 	existingClient := &client.Client{
@@ -130,8 +130,8 @@ func TestClientManagementServer_UpdateClient_WithLDAPMappings(t *testing.T) {
 	// Current service logic for UpdateClient: if req.Msg.X != "", dbClient.X = req.Msg.X
 	// This means sending empty string will update to empty.
 
-	mockOAuthRepo.EXPECT().GetClient(gomock.Any(), clientID).Return(existingClient, nil)
-	mockOAuthRepo.EXPECT().UpdateClient(gomock.Any(), gomock.Any()).
+	clientRepo.EXPECT().GetClient(gomock.Any(), clientID).Return(existingClient, nil)
+	clientRepo.EXPECT().UpdateClient(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, c *client.Client) error {
 			assert.Equal(t, clientID, c.ID)
 			assert.Equal(t, "New Name", c.Name)
@@ -161,8 +161,8 @@ func TestClientManagementServer_GetClient_ReturnsLDAPMappings(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockOAuthRepo := mock_domain.NewMockOAuthRepository(ctrl)
-	service := NewClientManagementServer(mockOAuthRepo, &MockPasswordHasher{})
+	mockClientRepo := mock_domain.NewMockClientRepository(ctrl)
+	service := NewClientManagementServer(mockClientRepo, &MockPasswordHasher{})
 
 	clientID := "client-with-ldap-mappings"
 	dbClient := &client.Client{
@@ -178,7 +178,7 @@ func TestClientManagementServer_GetClient_ReturnsLDAPMappings(t *testing.T) {
 		UpdatedAt:                     time.Now(),
 	}
 
-	mockOAuthRepo.EXPECT().GetClient(gomock.Any(), clientID).Return(dbClient, nil)
+	mockClientRepo.EXPECT().GetClient(gomock.Any(), clientID).Return(dbClient, nil)
 
 	req := connect.NewRequest(&ssov1.GetClientRequest{ClientId: clientID})
 	resp, err := service.GetClient(context.Background(), req)

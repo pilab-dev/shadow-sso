@@ -21,14 +21,14 @@ import (
 // ClientManagementServer implements the ssov1connect.ClientManagementServiceHandler interface.
 type ClientManagementServer struct {
 	ssov1connect.UnimplementedClientManagementServiceHandler
-	oauthRepo    domain.OAuthRepository // Changed to domain.OAuthRepository
+	clientRepo   domain.ClientRepository // Changed to domain.OAuthRepository
 	secretHasher PasswordHasher
 }
 
 // NewClientManagementServer creates a new ClientManagementServer.
-func NewClientManagementServer(oauthRepo domain.OAuthRepository, hasher PasswordHasher) *ClientManagementServer { // Changed to domain.OAuthRepository
+func NewClientManagementServer(clientRepo domain.ClientRepository, hasher PasswordHasher) *ClientManagementServer { // Changed to domain.OAuthRepository
 	return &ClientManagementServer{
-		oauthRepo:    oauthRepo,
+		clientRepo:   clientRepo,
 		secretHasher: hasher,
 	}
 }
@@ -178,7 +178,7 @@ func (s *ClientManagementServer) RegisterClient(ctx context.Context, req *connec
 		newClient.RequirePKCE = true
 	}
 
-	if err := s.oauthRepo.CreateClient(ctx, newClient); err != nil {
+	if err := s.clientRepo.CreateClient(ctx, newClient); err != nil {
 		log.Error().Err(err).Msg("Failed to create client in repository")
 		// Check for mongo specific duplicate key error if possible, otherwise generic
 		if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "E11000") {
@@ -197,7 +197,7 @@ func (s *ClientManagementServer) RegisterClient(ctx context.Context, req *connec
 
 // GetClient retrieves an OAuth2 client by its ID.
 func (s *ClientManagementServer) GetClient(ctx context.Context, req *connect.Request[ssov1.GetClientRequest]) (*connect.Response[ssov1.GetClientResponse], error) {
-	dbClient, err := s.oauthRepo.GetClient(ctx, req.Msg.ClientId)
+	dbClient, err := s.clientRepo.GetClient(ctx, req.Msg.ClientId)
 	if err != nil {
 		log.Warn().Err(err).Str("clientID", req.Msg.ClientId).Msg("Failed to get client from repository")
 		if strings.Contains(err.Error(), "not found") { // Basic check
@@ -210,7 +210,11 @@ func (s *ClientManagementServer) GetClient(ctx context.Context, req *connect.Req
 
 // ListClients lists OAuth2 clients.
 func (s *ClientManagementServer) ListClients(ctx context.Context, req *connect.Request[ssov1.ListClientsRequest]) (*connect.Response[ssov1.ListClientsResponse], error) {
-	dbClients, nextPageToken, err := s.oauthRepo.ListClients(ctx, req.Msg.PageSize, req.Msg.PageToken)
+	dbClients, nextPageToken, err := s.clientRepo.ListClients(ctx, &domain.ClientFilter{
+		Type:     domain.Confidential,
+		IsActive: false,
+		Search:   "",
+	})
 	if err != nil {
 		log.Error().Err(err).Msg("ListClients: repository error")
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to list clients: %w", err))
@@ -229,7 +233,7 @@ func (s *ClientManagementServer) ListClients(ctx context.Context, req *connect.R
 
 // UpdateClient updates an existing OAuth2 client.
 func (s *ClientManagementServer) UpdateClient(ctx context.Context, req *connect.Request[ssov1.UpdateClientRequest]) (*connect.Response[ssov1.UpdateClientResponse], error) {
-	dbClient, err := s.oauthRepo.GetClient(ctx, req.Msg.ClientId)
+	dbClient, err := s.clientRepo.GetClient(ctx, req.Msg.ClientId)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("client not found for update"))
@@ -289,7 +293,7 @@ func (s *ClientManagementServer) UpdateClient(ctx context.Context, req *connect.
 	// ClientSecret is not updated here; requires a separate "reset secret" flow.
 	dbClient.UpdatedAt = time.Now().UTC()
 
-	if err := s.oauthRepo.UpdateClient(ctx, dbClient); err != nil {
+	if err := s.clientRepo.UpdateClient(ctx, dbClient); err != nil {
 		log.Error().Err(err).Str("clientID", dbClient.ID).Msg("Failed to update client in repository")
 		// Check for mongo specific duplicate key error if Name was made unique and conflicts
 		if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "E11000") {
@@ -302,7 +306,7 @@ func (s *ClientManagementServer) UpdateClient(ctx context.Context, req *connect.
 
 // DeleteClient deletes an OAuth2 client.
 func (s *ClientManagementServer) DeleteClient(ctx context.Context, req *connect.Request[ssov1.DeleteClientRequest]) (*connect.Response[emptypb.Empty], error) {
-	if err := s.oauthRepo.DeleteClient(ctx, req.Msg.ClientId); err != nil {
+	if err := s.clientRepo.DeleteClient(ctx, req.Msg.ClientId); err != nil {
 		log.Warn().Err(err).Str("clientID", req.Msg.ClientId).Msg("Failed to delete client from repository")
 		if strings.Contains(err.Error(), "not found") {
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("client not found for deletion"))

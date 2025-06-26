@@ -98,8 +98,63 @@ The SSO server application is located in the `apps/ssso` directory.
     Or, if building from source:
     ```bash
     cd apps/ssso
-    go run ssso.go
+    go run . # Assuming main.go or ssso.go is in apps/ssso
     ```
+
+### 🐳 Running with Docker (Standard SSSO)
+
+A `Dockerfile` is provided at the root of the project for the standard SSSO server.
+
+1.  **Build the Docker image:**
+    ```bash
+    docker build -t pilab/ssso:latest .
+    ```
+
+2.  **Run the Docker container:**
+    ```bash
+    docker run -d \
+      -p 8080:8080 \
+      -e SSSO_MONGO_URI="mongodb://your_mongo_host:27017/shadow_sso_db" \
+      -e SSSO_ISSUER_URL="http://localhost:8080" \
+      -e SSSO_SIGNING_KEY_PATH="/path/to/your/signing_key.pem" \
+      # Add other necessary SSSO_... environment variables
+      # Potentially mount volumes for keys or persistent data if not using external Mongo
+      --name ssso-server \
+      pilab/ssso:latest
+    ```
+
+## ✨ Distributed Token Store (DTS) and SSSO-Alt Variant
+
+To offer an alternative storage backend for improved performance and reduced dependency on MongoDB for ephemeral token data, Shadow SSO now includes:
+
+*   **`ssso-dts` Service**: A gRPC service using BBoltDB for persistent, high-performance storage of session data, OIDC flows, and tokens. See `apps/ssso-dts/README.md` for details on this service.
+*   **`ssso-alt` Service Variant**: An alternative version of the SSSO server (`apps/ssso-alt/`) that can be configured to use the `ssso-dts` service for storing specific OAuth/OIDC artifacts (like authorization codes, PKCE states, OIDC flow states, and refresh token details). Other data like user profiles, client configurations, and service account details still use MongoDB.
+
+### 🚀 Running `ssso-alt` with `ssso-dts` using Docker Compose
+
+The easiest way to run the `ssso-alt` variant along with its `ssso-dts` dependency and a MongoDB instance is using the provided `docker-compose.yml` file at the root of the project.
+
+1.  **Prerequisites:**
+    *   Docker and Docker Compose installed.
+
+2.  **Build and Run:**
+    Navigate to the root of the Shadow SSO project and run:
+    ```bash
+    docker-compose up --build
+    ```
+    This will:
+    *   Build the Docker images for `ssso-dts` and `ssso-alt`.
+    *   Start three services: `mongo`, `ssso-dts`, and `ssso-alt`.
+    *   `ssso-dts` will listen on port `50051`.
+    *   `ssso-alt` will listen on port `8081` (to avoid conflict with a standard `ssso` instance on `8080`).
+
+3.  **Configuration for `ssso-alt`:**
+    The `docker-compose.yml` file sets the necessary environment variables for `ssso-alt` to connect to `ssso-dts` and `mongo`. Key environment variables for `ssso-alt` include:
+    *   `SSSO_ALT_STORAGE_BACKEND`: Set to `dts` to enable the Distributed Token Store. (Default is `mongodb` if not set, but compose file sets it to `dts`).
+    *   `SSSO_DTS_CLIENT_ADDRESS`: Address of the `ssso-dts` gRPC service (e.g., `ssso-dts:50051` within the Docker network).
+    *   Standard SSSO environment variables like `SSSO_MONGO_URI`, `SSSO_ISSUER_URL`, etc., are still required as `ssso-alt` uses MongoDB for non-DTS data.
+
+    Refer to `apps/ssso-alt/config/config.go` and the `docker-compose.yml` for all configurable options.
 
 ###  CLI Tool (`ssoctl`)
 

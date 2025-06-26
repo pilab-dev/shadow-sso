@@ -48,7 +48,7 @@ syntax = "proto3";
 
 package dts.v1;
 
-option go_package = "github.com/pilab-dev/ssso/gen/proto/dts/v1;dtsv1";
+option go_package = "github.com/pilab-dev/shadow-sso/gen/proto/dts/v1;dtsv1";
 
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/duration.proto";

@@ -38,9 +38,9 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ghcr.io/pilab-dev/ssso-backend:v1 # Tag for v1 branch
-          # You might want to add more tags, e.g., ghcr.io/pilab-dev/ssso-backend:latest if v1 is also your latest stable
-          # or ghcr.io/pilab-dev/ssso-backend:${{ github.sha }} for a commit-specific tag
+          tags: ghcr.io/pilab-dev/shadow-sso-backend:v1 # Tag for v1 branch
+          # You might want to add more tags, e.g., ghcr.io/pilab-dev/shadow-sso-backend:latest if v1 is also your latest stable
+          # or ghcr.io/pilab-dev/shadow-sso-backend:${{ github.sha }} for a commit-specific tag
           # For simplicity, starting with just 'v1'
           cache-from: type=gha
           cache-to: type=gha,mode=max

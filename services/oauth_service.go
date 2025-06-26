@@ -60,29 +60,35 @@ func generateUserCode(length int, charset string, chunkSize int) string {
 }
 
 type OAuthService struct {
-	oauthRepo    domain.OAuthRepository
-	userRepo     domain.UserRepository
-	clientRepo   client.ClientStore
-	sessionRepo  domain.SessionRepository
-	tokenService *TokenService
-	keyID        string
-	issuer       string
+	tokenRepo      domain.TokenRepository
+	authCodeRepo   domain.AuthorizationCodeRepository
+	deviceAuthRepo domain.DeviceAuthorizationRepository
+	clientRepo     domain.ClientRepository // Changed from client.ClientStore for consistency
+	userRepo       domain.UserRepository
+	sessionRepo    domain.SessionRepository
+	tokenService   *TokenService
+	issuer         string
 }
 
 func NewOAuthService(
-	oauthRepo domain.OAuthRepository,
+	tokenRepo domain.TokenRepository,
+	authCodeRepo domain.AuthorizationCodeRepository,
+	deviceAuthRepo domain.DeviceAuthorizationRepository,
+	clientRepo domain.ClientRepository,
 	userRepo domain.UserRepository,
 	sessionRepo domain.SessionRepository,
 	tokenService *TokenService,
 	issuer string,
 ) *OAuthService {
 	return &OAuthService{
-		oauthRepo:    oauthRepo,
-		userRepo:     userRepo,
-		sessionRepo:  sessionRepo,
-		keyID:        uuid.NewString(),
-		tokenService: tokenService,
-		issuer:       issuer,
+		tokenRepo:      tokenRepo,
+		authCodeRepo:   authCodeRepo,
+		deviceAuthRepo: deviceAuthRepo,
+		clientRepo:     clientRepo,
+		userRepo:       userRepo,
+		sessionRepo:    sessionRepo,
+		tokenService:   tokenService,
+		issuer:         issuer,
 	}
 }
 
@@ -144,7 +150,7 @@ func (s *OAuthService) GetUserSessions(ctx context.Context, userID string) ([]*d
 }
 
 func (s *OAuthService) RefreshToken(ctx context.Context, refreshTokenValue string, clientID string) (*api.TokenResponse, error) {
-	tokenInfo, err := s.oauthRepo.GetRefreshTokenInfo(ctx, refreshTokenValue)
+	tokenInfo, err := s.tokenRepo.GetRefreshTokenInfo(ctx, refreshTokenValue)
 	if err != nil {
 		return nil, serrors.NewInvalidGrant("invalid refresh token")
 	}
@@ -217,7 +223,7 @@ func (s *OAuthService) DirectGrant(ctx context.Context,
 		ID: uuid.NewString(), TokenType: "access_token", TokenValue: accessTokenVal,
 		ClientID: clientID, UserID: user.ID, Scope: scope, ExpiresAt: time.Now().Add(time.Hour), CreatedAt: time.Now(),
 	}
-	if err := s.oauthRepo.StoreToken(ctx, dbToken); err != nil {
+	if err := s.tokenRepo.StoreToken(ctx, dbToken); err != nil {
 		log.Error().Err(err).Msg("Failed to store access token in DirectGrant")
 		// continue without fatal error for token storage for now.
 	}
@@ -311,7 +317,7 @@ func (s *OAuthService) ExchangeAuthorizationCode(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	authCodeDomain, err := s.oauthRepo.GetAuthCode(ctx, code)
+	authCodeDomain, err := s.authCodeRepo.GetAuthCode(ctx, code)
 	if err != nil {
 		return nil, serrors.NewInvalidGrant("invalid authorization code")
 	}
@@ -321,7 +327,7 @@ func (s *OAuthService) ExchangeAuthorizationCode(ctx context.Context,
 	if authCodeDomain.ClientID != clientID || authCodeDomain.RedirectURI != redirectURI {
 		return nil, serrors.NewInvalidGrant("invalid client or redirect URI for auth code")
 	}
-	if err := s.oauthRepo.MarkAuthCodeAsUsed(ctx, code); err != nil {
+	if err := s.authCodeRepo.MarkAuthCodeAsUsed(ctx, code); err != nil {
 		return nil, fmt.Errorf("failed to mark auth code as used: %w", err)
 	}
 	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, authCodeDomain.UserID, authCodeDomain.Scope, time.Hour)
@@ -414,7 +420,7 @@ func (s *OAuthService) GenerateAuthCode(
 		CodeChallenge:       codeChallenge,
 		CodeChallengeMethod: codeChallengeMethod,
 	}
-	if err := s.oauthRepo.SaveAuthCode(ctx, authCode); err != nil {
+	if err := s.authCodeRepo.SaveAuthCode(ctx, authCode); err != nil {
 		log.Error().Err(err).Str("clientID", clientID).Str("userID", userID).Msg("Failed to save authorization code")
 		return "", fmt.Errorf("failed to save auth code: %w", err)
 	}
@@ -447,7 +453,7 @@ func (s *OAuthService) InitiateDeviceAuthorization(ctx context.Context, clientID
 		CreatedAt:    time.Now().UTC(),
 		LastPolledAt: time.Time{},
 	}
-	if err := s.oauthRepo.SaveDeviceAuth(ctx, deviceAuth); err != nil {
+	if err := s.deviceAuthRepo.SaveDeviceAuth(ctx, deviceAuth); err != nil {
 		return nil, fmt.Errorf("failed to save device authorization request: %w", err)
 	}
 	verificationURI := fmt.Sprintf("%s/device", verificationBaseURI)
@@ -463,21 +469,21 @@ func (s *OAuthService) InitiateDeviceAuthorization(ctx context.Context, clientID
 }
 
 func (s *OAuthService) VerifyUserCode(ctx context.Context, userCode string, userID string) (*domain.DeviceCode, error) {
-	deviceAuth, err := s.oauthRepo.GetDeviceAuthByUserCode(ctx, userCode)
+	deviceAuth, err := s.deviceAuthRepo.GetDeviceAuthByUserCode(ctx, userCode)
 	if err != nil {
-		if err == serrors.ErrUserCodeNotFound {
+		if err == serrors.ErrUserCodeNotFound { // Assuming ErrUserCodeNotFound is defined in serrors
 			return nil, serrors.ErrUserCodeNotFound
 		}
 		return nil, fmt.Errorf("failed to retrieve device authorization by user code: %w", err)
 	}
 	if deviceAuth.Status != domain.DeviceCodeStatusPending {
-		return nil, serrors.ErrCannotApproveDeviceAuth
+		return nil, serrors.ErrCannotApproveDeviceAuth // Assuming ErrCannotApproveDeviceAuth is defined
 	}
 	if time.Now().UTC().After(deviceAuth.ExpiresAt) {
-		_ = s.oauthRepo.UpdateDeviceAuthStatus(ctx, deviceAuth.DeviceCode, domain.DeviceCodeStatusExpired)
-		return nil, serrors.ErrUserCodeNotFound
+		_ = s.deviceAuthRepo.UpdateDeviceAuthStatus(ctx, deviceAuth.DeviceCode, domain.DeviceCodeStatusExpired)
+		return nil, serrors.ErrUserCodeNotFound // Or ErrDeviceFlowTokenExpired
 	}
-	updatedDeviceAuth, err := s.oauthRepo.ApproveDeviceAuth(ctx, userCode, userID)
+	updatedDeviceAuth, err := s.deviceAuthRepo.ApproveDeviceAuth(ctx, userCode, userID)
 	if err != nil {
 		if err == serrors.ErrCannotApproveDeviceAuth {
 			return nil, serrors.ErrCannotApproveDeviceAuth
@@ -488,8 +494,9 @@ func (s *OAuthService) VerifyUserCode(ctx context.Context, userCode string, user
 }
 
 func (s *OAuthService) IssueTokenForDeviceFlow(ctx context.Context, deviceCode string, clientID string) (*api.TokenResponse, error) {
-	deviceAuth, err := s.oauthRepo.GetDeviceAuthByDeviceCode(ctx, deviceCode)
+	deviceAuth, err := s.deviceAuthRepo.GetDeviceAuthByDeviceCode(ctx, deviceCode)
 	if err != nil {
+		// Assuming ErrDeviceCodeNotFound is defined in serrors
 		if err == serrors.ErrDeviceCodeNotFound || (err != nil && strings.Contains(err.Error(), "not found")) {
 			return nil, serrors.ErrDeviceFlowTokenExpired
 		}
@@ -500,7 +507,7 @@ func (s *OAuthService) IssueTokenForDeviceFlow(ctx context.Context, deviceCode s
 	}
 	switch deviceAuth.Status {
 	case domain.DeviceCodeStatusPending:
-		if pollErr := s.oauthRepo.UpdateDeviceAuthLastPolledAt(ctx, deviceAuth.DeviceCode); pollErr != nil {
+		if pollErr := s.deviceAuthRepo.UpdateDeviceAuthLastPolledAt(ctx, deviceAuth.DeviceCode); pollErr != nil {
 			fmt.Printf("Warning: failed to update last polled at for device code %s: %v\n", deviceAuth.DeviceCode, pollErr)
 		}
 		return nil, serrors.ErrAuthorizationPending
@@ -509,7 +516,7 @@ func (s *OAuthService) IssueTokenForDeviceFlow(ctx context.Context, deviceCode s
 		if tokenErr != nil {
 			return nil, fmt.Errorf("failed to generate token pair for device flow: %w", tokenErr)
 		}
-		if redeemErr := s.oauthRepo.UpdateDeviceAuthStatus(ctx, deviceAuth.DeviceCode, domain.DeviceCodeStatusRedeemed); redeemErr != nil {
+		if redeemErr := s.deviceAuthRepo.UpdateDeviceAuthStatus(ctx, deviceAuth.DeviceCode, domain.DeviceCodeStatusRedeemed); redeemErr != nil {
 			fmt.Printf("Critical Warning: failed to mark device code %s as redeemed after token issuance: %v\n", deviceAuth.DeviceCode, redeemErr)
 		}
 		return tokenResponse, nil

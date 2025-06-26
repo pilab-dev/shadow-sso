@@ -8,12 +8,10 @@ import (
 	"time"
 
 	"github.com/pilab-dev/shadow-sso/domain" // Added domain import
-	// ssso "github.com/pilab-dev/shadow-sso" // Removed ssso alias for root
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
-	// "go.mongodb.org/mongo-driver/v2/bson"
 
 	"github.com/pilab-dev/shadow-sso/mongodb"
 )
@@ -40,15 +38,7 @@ func setupOAuthTokenRepoTest(t *testing.T) (domain.TokenRepository, func(), erro
 	}
 	db := client.Database(dbName)
 
-	// NewOAuthRepository returns a broader ssso.OAuthRepository,
-	// but it also implements ssso.TokenRepository.
-	oauthRepoExt, err := mongodb.NewOAuthRepository(ctx, db)
-	if err != nil {
-		client.Disconnect(ctx)
-		return nil, func() {}, fmt.Errorf("NewOAuthRepository failed: %w", err)
-	}
-
-	var tokenRepo domain.TokenRepository = oauthRepoExt // Ensure compatibility, changed to domain.TokenRepository
+	tokenRepo := mongodb.NewTokenRepository(db)
 
 	cleanupFunc := func() {
 		mainCtx := context.Background()

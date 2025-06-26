@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  mongo:
+    image: mongo:5.0
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - ssso_network
+
+  ssso-dts:
+    build:
+      context: .
+      dockerfile: apps/ssso-dts/Dockerfile
+    ports:
+      - "50051:50051" # Expose DTS gRPC port
+    volumes:
+      - dts_data:/data # Persistent volume for BBoltDB file
+    networks:
+      - ssso_network
+    environment:
+      - DTS_GRPC_SERVER_ADDRESS=0.0.0.0:50051
+      - DTS_BBOLTDB_PATH=/data/dts.db
+      # Add other DTS_... env vars if needed, e.g., for logging
+    restart: unless-stopped
+
+  ssso-alt:
+    build:
+      context: .
+      dockerfile: apps/ssso-alt/Dockerfile
+    ports:
+      - "8081:8080" # Map internal 8080 to host 8081 to avoid conflict if main SSSO runs on 8080
+    networks:
+      - ssso_network
+    depends_on:
+      - mongo
+      - ssso-dts
+    environment:
+      # SSSO-Alt specific config
+      - SSSO_ALT_STORAGE_BACKEND=dts # Explicitly use DTS
+      - SSSO_DTS_CLIENT_ADDRESS=ssso-dts:50051 # Service name from docker-compose
+
+      # Base SSSO config needed by ssso-alt (from apps/ssso/config/config.go defaults or customize)
+      - SSSO_HTTP_ADDR=0.0.0.0:8080 # Internal port for ssso-alt
+      - SSSO_MONGO_URI=mongodb://mongo:27017/ssso_alt_db # Connect to mongo service
+      - SSSO_MONGO_DB_NAME=ssso_alt_db
+      - SSSO_ISSUER_URL=http://localhost:8081 # Public URL for ssso-alt
+      - SSSO_LOG_LEVEL=debug
+      - SSSO_TOKEN_SIGNING_KEY_PATH=/keys/signing_key.pem # Example, needs volume mount for keys
+      - SSSO_NEXTJS_LOGIN_URL=http://localhost:3000/login # Example frontend URL
+      # - SSSO_KEY_ROTATION_INTERVAL_HOURS=24 # Example
+      # - SSSO_ACCESS_TOKEN_EXPIRY_MINUTES=15 # Example
+      # - SSSO_REFRESH_TOKEN_EXPIRY_DAYS=30 # Example
+      # - SSSO_ID_TOKEN_EXPIRY_MINUTES=60 # Example
+      # - SSSO_AUTH_CODE_EXPIRY_MINUTES=10 # Example
+
+      # DTS Client specific config (can also be set in ssso-alt Dockerfile ENV)
+      - SSSO_DTS_CONNECT_TIMEOUT_SECONDS=10
+      - SSSO_DTS_DEFAULT_PKCE_TTL_MINUTES=10
+    # Example: Mount a volume for signing keys if SSSO_TOKEN_SIGNING_KEY_PATH is used
+    # volumes:
+    #   - ./path_to_your_keys:/keys
+    restart: unless-stopped
+
+volumes:
+  mongo_data:
+  dts_data:
+
+networks:
+  ssso_network:
+    driver: bridge

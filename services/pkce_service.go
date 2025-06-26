@@ -13,21 +13,26 @@ import (
 
 // PKCEService handles PKCE validation
 type PKCEService struct {
-	oauthRepo domain.OAuthRepository // Changed to domain.OAuthRepository
+	pkceRepo domain.PkceRepository
 }
 
 // NewPKCEService creates a new PKCE service instance
-func NewPKCEService(oauthRepo domain.OAuthRepository) *PKCEService { // Changed to domain.OAuthRepository
+func NewPKCEService(pkceRepo domain.PkceRepository) *PKCEService {
 	return &PKCEService{
-		oauthRepo: oauthRepo,
+		pkceRepo: pkceRepo,
 	}
 }
 
 // ValidateCodeVerifier validates the PKCE code verifier against the stored challenge
 func (s *PKCEService) ValidateCodeVerifier(ctx context.Context, code, verifier string) error {
-	challenge, err := s.oauthRepo.GetCodeChallenge(ctx, code)
+	challenge, err := s.pkceRepo.GetCodeChallenge(ctx, code)
 	if err != nil {
 		return fmt.Errorf("failed to get code challenge: %w", err)
+	}
+	// GetCodeChallenge might return "", nil for not found in some implementations.
+	// We should treat an empty challenge as a failure.
+	if challenge == "" {
+		return fmt.Errorf("code challenge not found or empty for code: %s", code)
 	}
 
 	if !ValidatePKCEChallenge(challenge, verifier) {
@@ -35,7 +40,7 @@ func (s *PKCEService) ValidateCodeVerifier(ctx context.Context, code, verifier s
 	}
 
 	// Clean up the challenge after successful validation
-	if err := s.oauthRepo.DeleteCodeChallenge(ctx, code); err != nil {
+	if err := s.pkceRepo.DeleteCodeChallenge(ctx, code); err != nil {
 		log.Error().Err(err).Msg("failed to delete code challenge")
 	}
 
@@ -57,5 +62,5 @@ func ValidatePKCEChallenge(challenge, verifier string) bool {
 }
 
 func (s *PKCEService) SavePKCEChallenge(ctx context.Context, code, challenge string) error {
-	return s.oauthRepo.SaveCodeChallenge(ctx, code, challenge)
+	return s.pkceRepo.SaveCodeChallenge(ctx, code, challenge)
 }
