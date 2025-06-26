@@ -15,6 +15,7 @@ import (
 	"github.com/pilab-dev/shadow-sso/cache"
 	"github.com/pilab-dev/shadow-sso/domain"
 	serrors "github.com/pilab-dev/shadow-sso/errors" // Added for serrors
+	"github.com/pilab-dev/shadow-sso/internal/metrics"
 	"github.com/rs/zerolog/log"
 )
 
@@ -163,7 +164,7 @@ func (s *TokenService) CreateToken(ctx context.Context, opts CreateTokenOptions,
 			log.Warn().Err(err).Msg("failed to cache token")
 		}
 	}
-
+	metrics.TokensCreatedTotal.Inc()
 	return token, nil
 }
 
@@ -324,10 +325,12 @@ func (s *TokenService) GenerateTokenPair(ctx context.Context,
 	if err := s.repo.StoreToken(ctx, accessToken); err != nil {
 		return nil, fmt.Errorf("failed to store access token: %w", err)
 	}
+	metrics.TokensCreatedTotal.Inc() // Access token
 
 	if err := s.repo.StoreToken(ctx, refreshToken); err != nil {
 		return nil, fmt.Errorf("failed to store refresh token: %w", err)
 	}
+	metrics.TokensCreatedTotal.Inc() // Refresh token
 
 	// Cache access token for faster validation
 	if err := s.cache.Set(ctx, toCacheEntry(accessToken)); err != nil { // Use toCacheEntry

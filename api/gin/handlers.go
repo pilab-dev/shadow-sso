@@ -18,6 +18,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/pilab-dev/shadow-sso/domain"
 	ssoerrors "github.com/pilab-dev/shadow-sso/errors" // Custom errors
+	"github.com/pilab-dev/shadow-sso/internal/metrics" // For custom metrics
 	"github.com/pilab-dev/shadow-sso/internal/oidcflow"
 	"github.com/pilab-dev/shadow-sso/services"
 	"github.com/rs/zerolog/log"
@@ -1095,7 +1096,11 @@ func (oa *OAuth2API) handleRefreshTokenGrant(c *gin.Context, cli *client.Client)
 
 	ctx := c.Request.Context()
 
-	return oa.service.RefreshToken(ctx, refreshToken, cli.ID)
+	tokenResponse, err := oa.service.RefreshToken(ctx, refreshToken, cli.ID)
+	if err == nil && tokenResponse != nil {
+		metrics.TokensRefreshedTotal.Inc()
+	}
+	return tokenResponse, err
 }
 
 // handleDeviceCodeGrant is called by TokenHandler for device_code grant type

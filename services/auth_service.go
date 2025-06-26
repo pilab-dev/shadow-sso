@@ -11,8 +11,10 @@ import (
 	"github.com/pilab-dev/shadow-sso/domain"
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
+	"github.com/pilab-dev/shadow-sso/internal/audit"
 	"github.com/pilab-dev/shadow-sso/internal/auth/rbac"
 	"github.com/pilab-dev/shadow-sso/internal/auth/totp" // For TOTP validation
+	"github.com/pilab-dev/shadow-sso/internal/metrics"
 	// "github.com/pilab-dev/shadow-sso/middleware" // No longer needed here
 	"github.com/rs/zerolog/log"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -61,23 +63,34 @@ func mapDomainStatusToProto(ds domain.UserStatus) ssov1.UserStatus {
 // Otherwise, it completes the login and returns tokens.
 func (s *AuthServer) Login(ctx context.Context, req *connect.Request[ssov1.LoginRequest]) (*connect.Response[ssov1.LoginResponse], error) {
 	log.Debug().Str("email", req.Msg.Email).Msg("Login attempt")
+	var userID string // For audit logging, even if user object is not fetched
 
 	user, err := s.userRepo.GetUserByEmail(ctx, req.Msg.Email)
 	if err != nil {
 		log.Warn().Err(err).Str("email", req.Msg.Email).Msg("Login: User not found")
+		audit.Log("AuthService", "Login", req.Msg.Email, "", "User not found or DB error", false, err)
+		metrics.LoginFailureTotal.Inc()
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid email or password"))
 	}
+	userID = user.ID // User found, set userID for audit
+
 	if user.Status == domain.UserStatusLocked {
-		log.Warn().Str("userID", user.ID).Msg("Login: Account locked")
+		log.Warn().Str("userID", userID).Msg("Login: Account locked")
+		audit.Log("AuthService", "Login", userID, userID, "Account locked", false, errors.New("account locked"))
+		metrics.LoginFailureTotal.Inc()
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("account is locked"))
 	}
 	if user.Status == domain.UserStatusPending {
-		log.Warn().Str("userID", user.ID).Msg("Login: Account pending activation")
+		log.Warn().Str("userID", userID).Msg("Login: Account pending activation")
+		audit.Log("AuthService", "Login", userID, userID, "Account pending activation", false, errors.New("account pending activation"))
+		metrics.LoginFailureTotal.Inc()
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("account pending activation"))
 	}
 
 	if err := s.passwordHasher.Verify(user.PasswordHash, req.Msg.Password); err != nil {
-		log.Warn().Str("userID", user.ID).Msg("Login: Incorrect password")
+		log.Warn().Str("userID", userID).Msg("Login: Incorrect password")
+		audit.Log("AuthService", "Login", userID, userID, "Incorrect password", false, err)
+		metrics.LoginFailureTotal.Inc()
 		// TODO: Increment failed login attempts for user in userRepo.UpdateUser
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid email or password"))
 	}
@@ -113,6 +126,9 @@ func (s *AuthServer) completeLogin(ctx context.Context, user *domain.User) (*con
 	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, user.ID, scope, tokenTTL)
 	if err != nil {
 		log.Error().Err(err).Str("userID", user.ID).Msg("completeLogin: Failed to generate token pair")
+		audit.Log("AuthService", "LoginComplete", user.ID, user.ID, "Failed to generate token pair", false, err)
+		// Note: LoginFailureTotal was already incremented if password check failed.
+		// If token generation is the failure point after successful password, it's an internal error, not a typical "login failure".
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("could not generate tokens: %w", err))
 	}
 
@@ -139,6 +155,9 @@ func (s *AuthServer) completeLogin(ctx context.Context, user *domain.User) (*con
 		// Non-fatal
 	}
 
+	metrics.LoginSuccessTotal.Inc()
+	metrics.ActiveSessionsGauge.Inc() // Increment active sessions
+
 	userInfoProto := &ssov1.User{
 		Id:        user.ID,
 		Email:     user.Email,
@@ -157,6 +176,7 @@ func (s *AuthServer) completeLogin(ctx context.Context, user *domain.User) (*con
 		userInfoProto.LastLoginAt = timestamppb.New(*user.LastLoginAt)
 	}
 
+	audit.Log("AuthService", "LoginComplete", user.ID, user.ID, "Login successful, tokens and session created", true, nil)
 	return connect.NewResponse(&ssov1.LoginResponse{
 		AccessToken:           tokenPair.AccessToken,
 		TokenType:             tokenPair.TokenType,
@@ -180,17 +200,20 @@ func (s *AuthServer) Verify2FA(ctx context.Context, req *connect.Request[ssov1.V
 	if !strings.HasPrefix(req.Msg.TwoFactorSessionToken, expectedTFASessionTokenPrefix) ||
 		req.Msg.TwoFactorSessionToken != expectedTFASessionTokenPrefix+req.Msg.UserId {
 		log.Warn().Str("userID", req.Msg.UserId).Str("receivedToken", req.Msg.TwoFactorSessionToken).Msg("Verify2FA: Invalid or missing two_factor_session_token")
+		audit.Log("AuthService", "Verify2FA", req.Msg.UserId, req.Msg.UserId, "Invalid or missing 2FA session token", false, errors.New("invalid or expired 2FA session"))
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid or expired 2FA session"))
 	}
 
 	user, err := s.userRepo.GetUserByID(ctx, req.Msg.UserId)
 	if err != nil {
 		log.Warn().Err(err).Str("userID", req.Msg.UserId).Msg("Verify2FA: User not found")
+		audit.Log("AuthService", "Verify2FA", req.Msg.UserId, req.Msg.UserId, "User not found for 2FA verification", false, err)
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("user not found: %w", err))
 	}
 
 	if !user.IsTwoFactorEnabled || user.TwoFactorMethod != "TOTP" || user.TwoFactorSecret == "" {
 		log.Warn().Str("userID", user.ID).Msg("Verify2FA: 2FA not enabled or setup correctly for user")
+		audit.Log("AuthService", "Verify2FA", user.ID, user.ID, "2FA not enabled or setup correctly", false, errors.New("2FA not configured or setup incomplete"))
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("2FA not configured for this user, or setup incomplete"))
 	}
 
@@ -198,11 +221,13 @@ func (s *AuthServer) Verify2FA(ctx context.Context, req *connect.Request[ssov1.V
 	validTOTP, errValidate := totp.ValidateTOTPCode(user.TwoFactorSecret, req.Msg.TotpCode)
 	if errValidate != nil {
 		log.Error().Err(errValidate).Str("userID", user.ID).Msg("Verify2FA: Error during TOTP code validation function call")
+		audit.Log("AuthService", "Verify2FA", user.ID, user.ID, "Error during TOTP validation function", false, errValidate)
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("error during TOTP validation: %w", errValidate))
 	}
 
 	if validTOTP {
 		log.Info().Str("userID", user.ID).Msg("Verify2FA: TOTP code valid.")
+		// completeLogin will log success/failure of token generation
 		return s.completeLogin(ctx, user)
 	}
 
@@ -214,13 +239,17 @@ func (s *AuthServer) Verify2FA(ctx context.Context, req *connect.Request[ssov1.V
 		user.TwoFactorRecoveryCodes = append(user.TwoFactorRecoveryCodes[:usedRecoveryIndex], user.TwoFactorRecoveryCodes[usedRecoveryIndex+1:]...)
 		if errUpdate := s.userRepo.UpdateUser(ctx, user); errUpdate != nil {
 			log.Error().Err(errUpdate).Str("userID", user.ID).Msg("Verify2FA: Failed to update user after using recovery code")
+			audit.Log("AuthService", "Verify2FA", user.ID, user.ID, "Failed to update user after using recovery code", false, errUpdate)
 			// Decide if this failure should prevent login. For now, it proceeds with login but logs the error.
 		}
+		// completeLogin will log success/failure of token generation
 		return s.completeLogin(ctx, user)
 	}
 
 	log.Warn().Str("userID", user.ID).Msg("Verify2FA: Invalid TOTP or recovery code provided.")
+	audit.Log("AuthService", "Verify2FA", user.ID, user.ID, "Invalid TOTP or recovery code", false, errors.New("invalid 2FA code"))
 	// TODO: Implement failed 2FA attempt tracking and potential user lockout/alert.
+	metrics.LoginFailureTotal.Inc() // Count 2FA failure as a login failure type
 	return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid 2FA code"))
 }
 
@@ -228,42 +257,54 @@ func (s *AuthServer) Verify2FA(ctx context.Context, req *connect.Request[ssov1.V
 func (s *AuthServer) Logout(ctx context.Context, req *connect.Request[ssov1.LogoutRequest]) (*connect.Response[emptypb.Empty], error) {
 	authedToken, ok := domain.GetAuthenticatedTokenFromContext(ctx)
 	if !ok || authedToken == nil {
+		audit.Log("AuthService", "Logout", "anonymous", "", "User not authenticated for logout", false, errors.New("user not authenticated"))
+		// Not incrementing LoginFailureTotal here as it's not a login attempt
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated for logout"))
 	}
+	actingUserID := authedToken.UserID
+	tokenJTI := authedToken.ID
 
 	// Assuming token.ID from context is the JTI, which is stored as TokenID in domain.Session
-	session, err := s.sessionRepo.GetSessionByTokenID(ctx, authedToken.ID)
+	session, err := s.sessionRepo.GetSessionByTokenID(ctx, tokenJTI)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") { // Check for domain/repo specific "not found"
-			log.Warn().Str("jti", authedToken.ID).Msg("Logout: No active session found for token JTI, perhaps already logged out or session expired.")
+			log.Warn().Str("jti", tokenJTI).Str("userID", actingUserID).Msg("Logout: No active session found for token JTI, perhaps already logged out or session expired.")
 			// If no session, maybe token is already effectively invalid. Can still try to revoke from denylist.
 		} else {
-			log.Error().Err(err).Str("jti", authedToken.ID).Msg("Logout: Error retrieving session by JTI")
+			log.Error().Err(err).Str("jti", tokenJTI).Str("userID", actingUserID).Msg("Logout: Error retrieving session by JTI")
 			// Fall through to try token revocation anyway
 		}
+		// Audit log for session retrieval failure, but continue to attempt token revocation
+		audit.Log("AuthService", "Logout", actingUserID, tokenJTI, "Failed to retrieve session by JTI or session not found", false, err)
 	}
 
 	if session != nil {
 		session.IsRevoked = true
 		session.ExpiresAt = time.Now() // Expire immediately
 		if errUpdate := s.sessionRepo.UpdateSession(ctx, session); errUpdate != nil {
-			log.Error().Err(errUpdate).Str("sessionID", session.ID).Msg("Logout: Failed to update session to revoked")
+			log.Error().Err(errUpdate).Str("sessionID", session.ID).Str("userID", actingUserID).Msg("Logout: Failed to update session to revoked")
+			audit.Log("AuthService", "Logout", actingUserID, session.ID, "Failed to mark session as revoked", false, errUpdate)
 			// Non-fatal for logout, proceed to revoke token itself
 		} else {
-			log.Info().Str("sessionID", session.ID).Str("userID", session.UserID).Msg("Logout: Session marked as revoked")
+			log.Info().Str("sessionID", session.ID).Str("userID", actingUserID).Msg("Logout: Session marked as revoked")
+			audit.Log("AuthService", "Logout", actingUserID, session.ID, "Session marked as revoked successfully", true, nil)
 		}
 	}
 
 	// Also attempt to revoke the token via TokenService (e.g., if it maintains a denylist)
-	// TokenService.RevokeToken might expect the raw token value or JTI.
-	// Current ssso.TokenRepository.RevokeToken expects tokenValue.
-	// If authedToken.TokenValue is available, use it. Otherwise, JTI (authedToken.ID).
-	// Let's assume the TokenService's RevokeToken is designed to handle JTI for this scenario.
-	if errRevoke := s.tokenService.RevokeToken(ctx, authedToken.ID); errRevoke != nil {
-		log.Error().Err(errRevoke).Str("jti", authedToken.ID).Msg("Logout: Failed to revoke token via TokenService (e.g., denylist)")
+	if errRevoke := s.tokenService.RevokeToken(ctx, tokenJTI); errRevoke != nil {
+		log.Error().Err(errRevoke).Str("jti", tokenJTI).Str("userID", actingUserID).Msg("Logout: Failed to revoke token via TokenService (e.g., denylist)")
+		audit.Log("AuthService", "Logout", actingUserID, tokenJTI, "Failed to revoke token via TokenService", false, errRevoke)
 		// This might not be fatal if session is already marked.
+		// If session revoking also failed, this could be the primary failure point.
+		if session == nil || (session != nil && err != nil) { // If session marking failed or session wasn't found
+			return nil, connect.NewError(connect.CodeInternal, errors.New("failed to complete logout process"))
+		}
+	} else {
+		audit.Log("AuthService", "Logout", actingUserID, tokenJTI, "Token revoked via TokenService successfully", true, nil)
 	}
 
+	metrics.ActiveSessionsGauge.Dec() // Decrement active sessions
 	return connect.NewResponse(&emptypb.Empty{}), nil
 }
 
