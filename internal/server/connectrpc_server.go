@@ -12,6 +12,7 @@ import (
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 
+	"connectrpc.com/otelconnect" // Import for OpenTelemetry Connect interceptor
 	// ssso "github.com/pilab-dev/shadow-sso" // Likely no longer needed if types are moved
 	"github.com/pilab-dev/shadow-sso/cache"
 	"github.com/pilab-dev/shadow-sso/domain" // Ensure domain is imported
@@ -20,14 +21,17 @@ import (
 	"github.com/pilab-dev/shadow-sso/middleware"
 	"github.com/pilab-dev/shadow-sso/mongodb"
 	"github.com/pilab-dev/shadow-sso/services"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog/log"
 )
 
 type ServerConfig struct {
-	HTTPAddr    string
-	MongoURI    string
-	MongoDBName string
-	IssuerURL   string
+	HTTPAddr           string
+	MongoURI           string
+	MongoDBName        string
+	IssuerURL          string
+	PrometheusRegistry prometheus.Registerer
 	// Add other fields from apps/ssso/config.go as needed, e.g.:
 	// SigningKeyPath      string
 	// KeyRotationInterval time.Duration
@@ -108,9 +112,15 @@ func StartConnectRPCServer(cfg ServerConfig) error {
 	// 5. Initialize Authentication Interceptor
 	authInterceptor := middleware.NewAuthInterceptor(tokenService)
 	authzInterceptor := middleware.NewAuthorizationInterceptor()
+	otelConnectInterceptor, err := otelconnect.NewInterceptor()
+	if err != nil {
+		// Log and potentially panic, or handle more gracefully depending on desired behavior
+		log.Fatal().Err(err).Msg("Failed to create OpenTelemetry Connect interceptor")
+		return err // Propagate error up
+	}
 
-	// Apply interceptors: authN then authZ
-	interceptors := connect.WithInterceptors(authInterceptor, authzInterceptor)
+	// Apply interceptors: otel -> authN -> authZ
+	interceptors := connect.WithInterceptors(otelConnectInterceptor, authInterceptor, authzInterceptor)
 
 	// 6. Initialize Service Implementations
 	defaultKeyGen := &services.DefaultSAKeyGenerator{}
@@ -144,6 +154,15 @@ func StartConnectRPCServer(cfg ServerConfig) error {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
+	// Add Prometheus metrics handler
+	if cfg.PrometheusRegistry != nil {
+		promHandler := promhttp.HandlerFor(
+			cfg.PrometheusRegistry.(prometheus.Gatherer),
+			promhttp.HandlerOpts{EnableOpenMetrics: true},
+		)
+		mux.Handle("/metrics", promHandler)
+		log.Info().Msg("Prometheus metrics endpoint enabled at /metrics")
+	}
 
 	// 8. Create and start HTTP/2 server
 	srv := &http.Server{
