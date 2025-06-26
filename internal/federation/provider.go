@@ -17,7 +17,7 @@ type ExternalUserInfo struct {
 	LastName       string
 	Username       string // Or preferred username
 	PictureURL     string
-	RawData        map[string]interface{} // Raw user data from the provider
+	RawData        map[string]any // Raw user data from the provider
 }
 
 // OAuth2Provider defines the interface for an external OAuth2 identity provider.

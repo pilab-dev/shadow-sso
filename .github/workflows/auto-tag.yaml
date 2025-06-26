@@ -3,8 +3,10 @@ name: Tag the development version
 on:
   push:
     branches:
-      - v*
       - develop
+      - master
+      - hotfix*
+      - release*
 
 jobs:
   version_and_tag:

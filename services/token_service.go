@@ -410,7 +410,7 @@ func (s *TokenService) ValidateAccessToken(ctx context.Context, tokenValue strin
 				tokenScope = scope
 			}
 			jtiClaim, _ := (*claims)["jti"].(string) // JTI is optional for some SA JWTs, use if present for ID
-			return &domain.Token{ // Changed to domain.Token
+			return &domain.Token{                    // Changed to domain.Token
 				ID:         jtiClaim,
 				TokenType:  "service_account_jwt",
 				TokenValue: tokenValue,
@@ -442,7 +442,7 @@ func (s *TokenService) ValidateAccessToken(ctx context.Context, tokenValue strin
 				userToken.Issuer = s.issuer // Default issuer for user tokens
 				return userToken, nil
 			}
-			_ = s.cache.Delete(ctx, tokenValue)  // Delete expired/revoked from cache
+			_ = s.cache.Delete(ctx, tokenValue)          // Delete expired/revoked from cache
 			return nil, serrors.ErrTokenExpiredOrRevoked // Use serrors
 		}
 		// Check repository (for user tokens)

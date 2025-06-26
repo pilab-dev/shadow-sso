@@ -45,6 +45,12 @@ type Client struct {
 	UpdatedAt         time.Time  `bson:"updated_at" json:"updated_at,omitempty"`
 	LastUsed          time.Time  `bson:"last_used,omitempty" json:"last_used,omitempty"`
 	IsActive          bool       `bson:"is_active" json:"is_active,omitempty"`
+
+	ClientLDAPAttributeEmail      string            `bson:"client_ldap_attribute_email,omitempty" json:"client_ldap_attribute_email,omitempty"`
+	ClientLDAPAttributeFirstName  string            `bson:"client_ldap_attribute_first_name,omitempty" json:"client_ldap_attribute_first_name,omitempty"`
+	ClientLDAPAttributeLastName   string            `bson:"client_ldap_attribute_last_name,omitempty" json:"client_ldap_attribute_last_name,omitempty"`
+	ClientLDAPAttributeGroups     string            `bson:"client_ldap_attribute_groups,omitempty" json:"client_ldap_attribute_groups,omitempty"`
+	ClientLDAPCustomClaimsMapping map[string]string `bson:"client_ldap_custom_claims_mapping,omitempty" json:"client_ldap_custom_claims_mapping,omitempty"`
 }
 
 // JWKS represents a JSON Web Key Set for client authentication

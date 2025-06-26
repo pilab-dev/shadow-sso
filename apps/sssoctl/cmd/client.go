@@ -64,6 +64,12 @@ var clientRegisterCmd = &cobra.Command{
 		requireConsent, _ := cmd.Flags().GetBool("require-consent")
 		// requirePKCE is usually determined by server based on client type
 
+		ldapAttrEmail, _ := cmd.Flags().GetString("ldap-attr-email")
+		ldapAttrFirstName, _ := cmd.Flags().GetString("ldap-attr-firstname")
+		ldapAttrLastName, _ := cmd.Flags().GetString("ldap-attr-lastname")
+		ldapAttrGroups, _ := cmd.Flags().GetString("ldap-attr-groups")
+		ldapCustomClaims, _ := cmd.Flags().GetStringToString("ldap-custom-claims")
+
 		if name == "" {
 			return errors.New("--name is required")
 		}
@@ -113,6 +119,12 @@ var clientRegisterCmd = &cobra.Command{
 			PolicyUri:               policyURI,
 			TermsUri:                termsURI,
 			RequireConsent:          requireConsent,
+			// LDAP Mapping fields - these depend on protobuf updates for ssov1.RegisterClientRequest
+			ClientLdapAttributeEmail:      ldapAttrEmail,
+			ClientLdapAttributeFirstName:  ldapAttrFirstName,
+			ClientLdapAttributeLastName:   ldapAttrLastName,
+			ClientLdapAttributeGroups:     ldapAttrGroups,
+			ClientLdapCustomClaimsMapping: ldapCustomClaims,
 		}
 		resp, err := apiClient.RegisterClient(context.Background(), connect.NewRequest(req))
 		if err != nil {
@@ -288,6 +300,35 @@ var clientUpdateCmd = &cobra.Command{
 			updateReq.IsActive = isActive
 			changed = true
 		}
+
+		// LDAP Attribute Mapping Flags for clientUpdateCmd
+		// For string fields, if the flag is present, we update. To clear a field, user should pass an empty string.
+		// For the map, providing the flag means replacing the map.
+		if cmd.Flags().Changed("ldap-attr-email") {
+			val, _ := cmd.Flags().GetString("ldap-attr-email")
+			updateReq.ClientLdapAttributeEmail = val // Assuming proto field is string, not *string
+			changed = true
+		}
+		if cmd.Flags().Changed("ldap-attr-firstname") {
+			val, _ := cmd.Flags().GetString("ldap-attr-firstname")
+			updateReq.ClientLdapAttributeFirstName = val
+			changed = true
+		}
+		if cmd.Flags().Changed("ldap-attr-lastname") {
+			val, _ := cmd.Flags().GetString("ldap-attr-lastname")
+			updateReq.ClientLdapAttributeLastName = val
+			changed = true
+		}
+		if cmd.Flags().Changed("ldap-attr-groups") {
+			val, _ := cmd.Flags().GetString("ldap-attr-groups")
+			updateReq.ClientLdapAttributeGroups = val
+			changed = true
+		}
+		if cmd.Flags().Changed("ldap-custom-claims") {
+			val, _ := cmd.Flags().GetStringToString("ldap-custom-claims")
+			updateReq.ClientLdapCustomClaimsMapping = val // Assumes proto field is map[string]string
+			changed = true
+		}
 		// Client type, grant types, token auth method are generally not updated. Secret has its own flow.
 
 		if !changed {
@@ -376,6 +417,12 @@ func init() {
 	clientRegisterCmd.Flags().String("policy-uri", "", "URL of the client's policy document")
 	clientRegisterCmd.Flags().String("terms-uri", "", "URL of the client's terms of service")
 	clientRegisterCmd.Flags().Bool("require-consent", true, "Whether this client requires user consent for scopes")
+	// LDAP Attribute Mapping Flags for clientRegisterCmd
+	clientRegisterCmd.Flags().String("ldap-attr-email", "", "Client-specific LDAP attribute for email")
+	clientRegisterCmd.Flags().String("ldap-attr-firstname", "", "Client-specific LDAP attribute for first name")
+	clientRegisterCmd.Flags().String("ldap-attr-lastname", "", "Client-specific LDAP attribute for last name")
+	clientRegisterCmd.Flags().String("ldap-attr-groups", "", "Client-specific LDAP attribute for groups/roles")
+	clientRegisterCmd.Flags().StringToString("ldap-custom-claims", nil, "Client-specific custom claims from LDAP attributes (e.g., 'jwt_claim_name=ldap_attribute_name') (can be repeated)")
 
 	// Flags for ListClients
 	clientListCmd.Flags().Int32("page-size", 10, "Number of clients to list per page")
@@ -393,6 +440,12 @@ func init() {
 	clientUpdateCmd.Flags().String("terms-uri", "", "New URL of the client's terms of service")
 	clientUpdateCmd.Flags().Bool("require-consent", false, "Set whether client requires user consent") // Default false for update usually means "don't change if not provided"
 	clientUpdateCmd.Flags().Bool("active", false, "Set client active status (true or false)")
+	// LDAP Attribute Mapping Flags for clientUpdateCmd
+	clientUpdateCmd.Flags().String("ldap-attr-email", "", "New client-specific LDAP attribute for email (set to empty string to clear)")
+	clientUpdateCmd.Flags().String("ldap-attr-firstname", "", "New client-specific LDAP attribute for first name (set to empty string to clear)")
+	clientUpdateCmd.Flags().String("ldap-attr-lastname", "", "New client-specific LDAP attribute for last name (set to empty string to clear)")
+	clientUpdateCmd.Flags().String("ldap-attr-groups", "", "New client-specific LDAP attribute for groups/roles (set to empty string to clear)")
+	clientUpdateCmd.Flags().StringToString("ldap-custom-claims", nil, "New set of client-specific custom claims from LDAP attributes (e.g., 'claim=attr'). Use an empty map or a special value to clear all.")
 
 	// Flag for DeleteClient
 	clientDeleteCmd.Flags().Bool("force", false, "Force deletion without confirmation")
