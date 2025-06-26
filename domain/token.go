@@ -2,6 +2,11 @@ package domain
 
 import "time"
 
+const (
+	TokenTypeAccessToken  = "access_token"
+	TokenTypeRefreshToken = "refresh_token"
+)
+
 // TokenInfo represents metadata about a token.
 type TokenInfo struct {
 	ID        string    `bson:"_id"        json:"id"`         // Unique token identifier

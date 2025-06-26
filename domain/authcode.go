@@ -15,4 +15,12 @@ type AuthCode struct {
 
 	CodeChallenge       string `json:"code_challenge,omitempty"`
 	CodeChallengeMethod string `json:"code_challenge_method,omitempty"`
+
+	AuthCodeData AuthCodeData `json:"auth_code_data,omitempty"`
+}
+
+type AuthCodeData struct {
+	SessionID   string `json:"session_id,omitempty"`
+	Claims      string `json:"claims,omitempty"`
+	AuthTimeIat string `json:"auth_time_iat,omitempty"`
 }

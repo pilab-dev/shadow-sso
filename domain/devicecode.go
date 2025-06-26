@@ -15,15 +15,21 @@ const (
 
 // DeviceCode holds the information for a device authorization grant.
 type DeviceCode struct {
-	ID           string           `bson:"_id" json:"id"`
-	DeviceCode   string           `bson:"device_code" json:"device_code"`
-	UserCode     string           `bson:"user_code" json:"user_code"`
-	ClientID     string           `bson:"client_id" json:"client_id"`
-	Scope        string           `bson:"scope" json:"scope"`
-	Status       DeviceCodeStatus `bson:"status" json:"status"`
-	UserID       string           `bson:"user_id,omitempty" json:"user_id,omitempty"`
-	ExpiresAt    time.Time        `bson:"expires_at" json:"expires_at"`
-	Interval     int              `bson:"interval" json:"interval"`
-	CreatedAt    time.Time        `bson:"created_at" json:"created_at"`
-	LastPolledAt time.Time        `bson:"last_polled_at,omitempty" json:"last_polled_at,omitempty"`
+	ID             string           `bson:"_id" json:"id"`
+	DeviceCode     string           `bson:"device_code" json:"device_code"`
+	UserCode       string           `bson:"user_code" json:"user_code"`
+	ClientID       string           `bson:"client_id" json:"client_id"`
+	Scope          string           `bson:"scope" json:"scope"`
+	Status         DeviceCodeStatus `bson:"status" json:"status"`
+	UserID         string           `bson:"user_id,omitempty" json:"user_id,omitempty"`
+	ExpiresAt      time.Time        `bson:"expires_at" json:"expires_at"`
+	Interval       int              `bson:"interval" json:"interval"`
+	CreatedAt      time.Time        `bson:"created_at" json:"created_at"`
+	LastPolledAt   time.Time        `bson:"last_polled_at,omitempty" json:"last_polled_at,omitempty"`
+	DeviceCodeData DeviceCodeData   `bson:"device_code_data" json:"device_code_data"`
+}
+
+type DeviceCodeData struct {
+	SessionID string `bson:"session_id" json:"session_id"`
+	Claims    string `bson:"claims" json:"claims"`
 }

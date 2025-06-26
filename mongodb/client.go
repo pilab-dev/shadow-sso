@@ -13,6 +13,19 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/go.mongodb.org/mongo-driver/v2/mongo/otelmongo"
 )
 
+const (
+	UsersCollection           = "oauth_users"           // For users
+	ClientsCollection         = "oauth_clients"         // For OAuth clients
+	CodesCollection           = "oauth_auth_codes"      // For authorization codes
+	TokensCollection          = "oauth_tokens"          // For user OAuth tokens
+	ChallengesCollection      = "oauth_pkce_challenges" // For PKCE challenges
+	UserSessionsCollection    = "oauth_user_sessions"   // For user login sessions (if stored in mongo)
+	ServiceAccountsCollection = "service_accounts"      // For service accounts
+	PublicKeysCollection      = "public_keys"           // For service account public keys
+	IdPsCollection            = "identity_providers"    // For identity providers
+	DeviceAuthCollectionName  = "device_authorizations" // For device authorization codes (RFC 8628)
+)
+
 var (
 	clientInstance *mongo.Client
 	clientOnce     sync.Once
@@ -69,9 +82,11 @@ func InitMongoDB(ctx context.Context, uri, dbName string) error {
 		log.Info().Msgf("Using MongoDB database: %s", dbName)
 		dbInstance = clientInstance.Database(dbName)
 	})
+
 	if err != nil {
 		return err // Return error from dbOnce.Do
 	}
+
 	if dbInstance == nil && err == nil {
 		return errors.New("mongodb database instance not initialized after Do, but no error reported")
 	}

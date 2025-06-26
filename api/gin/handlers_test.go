@@ -25,7 +25,10 @@ import (
 	// Assuming mocks are generated in these locations or similar
 )
 
-func setupAuthorizeHandlerTest(t *testing.T) (*gin.Engine, *oidcflow.InMemoryFlowStore, *mock_client.MockClientStore, *sssogin.OAuth2API) {
+func setupAuthorizeHandlerTest(t *testing.T) (
+	*gin.Engine, *oidcflow.InMemoryFlowStore,
+	*mock_client.MockClientStore, *sssogin.OAuth2API,
+) {
 	gin.SetMode(gin.TestMode)
 	log.Logger = zerolog.Nop()
 
@@ -37,9 +40,12 @@ func setupAuthorizeHandlerTest(t *testing.T) (*gin.Engine, *oidcflow.InMemoryFlo
 	cfg := ssso.NewDefaultConfig("http://localhost:8080")
 	cfg.NextJSLoginURL = "http://localhost:3000/login"
 
-	oauthRepo := mock_domain.NewMockOAuthRepository(ctrl)
+	deviceAuthRepo := mock_domain.NewMockDeviceAuthorizationRepository(ctrl)
+	authCodeRepo := mock_domain.NewMockAuthorizationCodeRepository(ctrl)
+	pkceRepo := mock_domain.NewMockPkceRepository(ctrl)
 	userRepo := mock_domain.NewMockUserRepository(ctrl)
 	sessionRepo := mock_domain.NewMockSessionRepository(ctrl)
+	clientRepo := mock_domain.NewMockClientRepository(ctrl)
 
 	pubkeyRepo := mock_domain.NewMockPublicKeyRepository(ctrl)
 	saRepo := mock_domain.NewMockServiceAccountRepository(ctrl)
@@ -48,7 +54,8 @@ func setupAuthorizeHandlerTest(t *testing.T) (*gin.Engine, *oidcflow.InMemoryFlo
 	tokenCache := cache.NewMemoryTokenStore(time.Hour * 24)
 	signer := services.NewTokenSigner()
 
-	tokenService := services.NewTokenService(tokenRepo, tokenCache, "issuer", signer, pubkeyRepo, saRepo, userRepo)
+	tokenService := services.NewTokenService(
+		tokenRepo, tokenCache, "issuer", signer, pubkeyRepo, saRepo, userRepo)
 
 	jwksService, err := services.NewJWKSService(time.Hour * 24 * 365)
 	require.NoError(t, err)
@@ -56,7 +63,7 @@ func setupAuthorizeHandlerTest(t *testing.T) (*gin.Engine, *oidcflow.InMemoryFlo
 	mockClientStore := mock_client.NewMockClientStore(ctrl)
 	mockClientService := client.NewClientService(mockClientStore)
 
-	pkceService := services.NewPKCEService(oauthRepo)
+	pkceService := services.NewPKCEService(pkceRepo)
 
 	flowStore := oidcflow.NewInMemoryFlowStore()
 	userSessionStore := oidcflow.NewInMemoryUserSessionStore()
@@ -65,7 +72,8 @@ func setupAuthorizeHandlerTest(t *testing.T) (*gin.Engine, *oidcflow.InMemoryFlo
 	// In a real setup, all dependencies would be properly mocked or instantiated.
 	api := sssogin.NewOAuth2API(
 		services.NewOAuthService(
-			oauthRepo, userRepo, sessionRepo, tokenService, "http://localhost:8080",
+			tokenRepo, authCodeRepo, deviceAuthRepo,
+			clientRepo, userRepo, sessionRepo, tokenService, "http://localhost:8080",
 		), // services.OAuthService
 		jwksService,       // services.JWKSService (can be nil if not used by this path)
 		mockClientService, // client.ClientService
@@ -121,8 +129,11 @@ func TestAuthorizeHandler_RedirectsToNextJS_AndSetsFlowIdCookie(t *testing.T) {
 	// 	}).Times(1)
 
 	w := httptest.NewRecorder()
-	reqURL := fmt.Sprintf("/oauth2/authorize?client_id=%s&redirect_uri=%s&response_type=code&scope=%s&state=%s&code_challenge=%s&code_challenge_method=%s",
-		clientID, url.QueryEscape(redirectURI), url.QueryEscape(scope), state, codeChallenge, codeChallengeMethod,
+	reqURL := fmt.Sprintf("/oauth2/authorize?client_id=%s&redirect_uri=%s"+
+		"&response_type=code&scope=%s&state=%s&code_challenge=%s"+
+		"&code_challenge_method=%s",
+		clientID, url.QueryEscape(redirectURI), url.QueryEscape(scope),
+		state, codeChallenge, codeChallengeMethod,
 	)
 	req, _ := http.NewRequest("GET", reqURL, nil)
 	req.Header.Set("X-Forwarded-Proto", "http") // Simulate http request

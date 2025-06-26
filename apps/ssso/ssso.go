@@ -3,18 +3,20 @@ package main
 import (
 	"context"
 	"fmt"
+
 	// "os" // No longer needed for direct env var reading here
 
+	"github.com/pilab-dev/shadow-sso/apps/ssso/config"
+	"github.com/pilab-dev/shadow-sso/apps/ssso/server"
 	"github.com/pilab-dev/shadow-sso/internal/metrics" // Import for custom metrics
-	"github.com/pilab-dev/shadow-sso/internal/server" // Adjusted import path
 	"github.com/pilab-dev/shadow-sso/internal/telemetry"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/rs/zerolog/log"
 	"github.com/rs/zerolog" // For setting log level
+	"github.com/rs/zerolog/log"
 )
 
 func main() {
-	cfg, err := LoadConfig()
+	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to load configuration")
 	}
@@ -53,16 +55,10 @@ func main() {
 	}
 	defer telemetry.Shutdown(context.Background(), nil, meterProvider) // Shutdown meter on exit
 
-
+	// Pass the full application config to the server setup
 	serverCfg := server.ServerConfig{
-		HTTPAddr:          cfg.HTTPAddr,
-		MongoURI:          cfg.MongoURI,
-		MongoDBName:       cfg.MongoDBName,
-		IssuerURL:         cfg.IssuerURL,
+		AppConfig:          cfg, // cfg is the loaded application config
 		PrometheusRegistry: promRegistry,
-		// SigningKeyPath: cfg.SigningKeyPath, // Pass these when server is ready to use them
-		// KeyRotationInterval: cfg.KeyRotationInterval,
-		// NextJSLoginURL: cfg.NextJSLoginURL,
 	}
 
 	if err := server.StartConnectRPCServer(serverCfg); err != nil {
