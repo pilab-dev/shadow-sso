@@ -1,0 +1,265 @@
+syntax = "proto3";
+
+package dts.v1;
+
+option go_package = "github.com/pilab-dev/ssso/gen/proto/dts/v1;dtsv1";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+
+// Service Definition
+service TokenStoreService {
+  // Generic Key-Value operations
+  rpc Set(SetRequest) returns (google.protobuf.Empty);
+  rpc Get(GetRequest) returns (GetResponse);
+  rpc Delete(DeleteRequest) returns (google.protobuf.Empty);
+
+  // Specialized operations for SSSO objects
+
+  // --- Authorization Codes ---
+  rpc StoreAuthCode(StoreAuthCodeRequest) returns (google.protobuf.Empty);
+  rpc GetAuthCode(GetAuthCodeRequest) returns (AuthCode);
+  rpc DeleteAuthCode(DeleteAuthCodeRequest) returns (google.protobuf.Empty);
+
+  // --- Refresh Tokens ---
+  rpc StoreRefreshToken(StoreRefreshTokenRequest) returns (google.protobuf.Empty);
+  rpc GetRefreshToken(GetRefreshTokenRequest) returns (RefreshToken);
+  rpc DeleteRefreshToken(DeleteRefreshTokenRequest) returns (google.protobuf.Empty);
+
+  // --- Access Tokens Metadata ---
+  rpc StoreAccessTokenMetadata(StoreAccessTokenMetadataRequest) returns (google.protobuf.Empty);
+  rpc GetAccessTokenMetadata(GetAccessTokenMetadataRequest) returns (AccessTokenMetadata);
+  rpc DeleteAccessTokenMetadata(DeleteAccessTokenMetadataRequest) returns (google.protobuf.Empty);
+
+  // --- OIDC Flows ---
+  rpc StoreOIDCFlw(StoreOIDCFlwRequest) returns (google.protobuf.Empty);
+  rpc GetOIDCFlw(GetOIDCFlwRequest) returns (OIDCFlw);
+  rpc DeleteOIDCFlw(DeleteOIDCFlwRequest) returns (google.protobuf.Empty);
+  rpc UpdateOIDCFlw(UpdateOIDCFlwRequest) returns (google.protobuf.Empty);
+
+  // --- OIDC User Sessions ---
+  rpc StoreUserSession(StoreUserSessionRequest) returns (google.protobuf.Empty);
+  rpc GetUserSession(GetUserSessionRequest) returns (UserSession);
+  rpc DeleteUserSession(DeleteUserSessionRequest) returns (google.protobuf.Empty);
+
+  // --- Device Authorization Grants & Codes ---
+  rpc StoreDeviceAuth(StoreDeviceAuthRequest) returns (google.protobuf.Empty);
+  rpc GetDeviceAuthByDeviceCode(GetDeviceAuthByDeviceCodeRequest) returns (DeviceAuth);
+  rpc GetDeviceAuthByUserCode(GetDeviceAuthByUserCodeRequest) returns (DeviceAuth);
+  rpc UpdateDeviceAuth(UpdateDeviceAuthRequest) returns (google.protobuf.Empty);
+  rpc DeleteDeviceAuth(DeleteDeviceAuthRequest) returns (google.protobuf.Empty);
+
+  // --- PKCE States ---
+  rpc StorePKCEState(StorePKCEStateRequest) returns (google.protobuf.Empty);
+  rpc GetPKCEState(GetPKCEStateRequest) returns (PKCEState);
+  rpc DeletePKCEState(DeletePKCEStateRequest) returns (google.protobuf.Empty);
+}
+
+// --- Generic Messages ---
+message SetRequest {
+  string bucket = 1;
+  string key = 2;
+  bytes value = 3;
+  google.protobuf.Duration ttl = 4; // Optional: Time to live for this key
+}
+
+message GetRequest {
+  string bucket = 1;
+  string key = 2;
+}
+
+message GetResponse {
+  bytes value = 1;
+  bool found = 2;
+  google.protobuf.Timestamp expires_at = 3; // If TTL was set
+}
+
+message DeleteRequest {
+  string bucket = 1;
+  string key = 2;
+}
+
+// --- SSSO Object Definitions ---
+
+message AuthCode {
+  string code = 1;
+  string client_id = 2;
+  string user_id = 3;
+  string redirect_uri = 4;
+  string scope = 5;
+  string code_challenge = 6;
+  string code_challenge_method = 7;
+  google.protobuf.Timestamp expires_at = 8;
+  string session_id = 9;
+  string claims = 10; // JSON string for claims
+  string auth_time_iat = 11; // Added from domain.AuthCodeData
+}
+
+message StoreAuthCodeRequest {
+  AuthCode auth_code = 1;
+}
+
+message GetAuthCodeRequest {
+  string code = 1;
+}
+
+message DeleteAuthCodeRequest {
+  string code = 1;
+}
+
+message RefreshToken {
+  string token = 1;
+  string client_id = 2;
+  string user_id = 3;
+  string scope = 4;
+  google.protobuf.Timestamp expires_at = 5;
+  string session_id = 6; // Added from domain.RefreshTokenData
+  string claims = 7; // JSON string for claims // Added from domain.RefreshTokenData
+}
+
+message StoreRefreshTokenRequest {
+  RefreshToken refresh_token = 1;
+}
+
+message GetRefreshTokenRequest {
+  string token = 1;
+}
+
+message DeleteRefreshTokenRequest {
+  string token = 1;
+}
+
+message AccessTokenMetadata {
+  string token_hash = 1;
+  string client_id = 2;
+  string user_id = 3;
+  string scope = 4;
+  google.protobuf.Timestamp expires_at = 5;
+  bool active = 6;
+  string session_id = 7; // Added from domain.TokenIntrospection
+  string token_type = 8; // Added from domain.TokenIntrospection (e.g. "Bearer")
+  string claims = 9; // JSON string for claims // Added from domain.TokenIntrospection
+}
+
+message StoreAccessTokenMetadataRequest {
+  AccessTokenMetadata access_token_metadata = 1;
+}
+
+message GetAccessTokenMetadataRequest {
+  string token_hash = 1;
+}
+
+message DeleteAccessTokenMetadataRequest {
+  string token_hash = 1;
+}
+
+message OIDCFlw {
+  string flow_id = 1;
+  string client_id = 2;
+  string redirect_uri = 3;
+  string scope = 4;
+  string state = 5;
+  string nonce = 6;
+  string code_challenge = 7;
+  string code_challenge_method = 8;
+  google.protobuf.Timestamp expires_at = 9;
+  string user_id = 10;
+  google.protobuf.Timestamp user_authenticated_at = 11;
+  map<string, string> original_oidc_params = 12;
+  string acr_level = 13; // Added from oidcflow.LoginFlow
+  string amr_methods = 14; // Added from oidcflow.LoginFlow (could be a repeated string if needed)
+  string session_id = 15; // Added from oidcflow.LoginFlow
+}
+
+message StoreOIDCFlwRequest {
+  OIDCFlw oidc_flow = 1;
+}
+
+message GetOIDCFlwRequest {
+  string flow_id = 1;
+}
+
+message DeleteOIDCFlwRequest {
+  string flow_id = 1;
+}
+
+message UpdateOIDCFlwRequest {
+  OIDCFlw oidc_flow = 1;
+}
+
+message UserSession {
+  string session_id = 1;
+  string user_id = 2;
+  google.protobuf.Timestamp authenticated_at = 3;
+  google.protobuf.Timestamp expires_at = 4;
+  string user_agent = 5;
+  string ip_address = 6;
+  string acr_level = 7; // Added from oidcflow.UserSession
+  string amr_methods = 8; // Added from oidcflow.UserSession (could be a repeated string)
+}
+
+message StoreUserSessionRequest {
+  UserSession user_session = 1;
+}
+
+message GetUserSessionRequest {
+  string session_id = 1;
+}
+
+message DeleteUserSessionRequest {
+  string session_id = 1;
+}
+
+message DeviceAuth {
+  string device_code = 1;
+  string user_code = 2;
+  string client_id = 3;
+  string scope = 4;
+  google.protobuf.Timestamp expires_at = 5;
+  google.protobuf.Timestamp last_polled_at = 6;
+  google.protobuf.Duration poll_interval = 7;
+  string status = 8; // e.g., "pending", "approved", "denied", "expired"
+  string user_id = 9; // if approved
+  string session_id = 10; // Added from domain.DeviceCodeData
+  string claims = 11; // JSON string for claims // Added from domain.DeviceCodeData
+}
+
+message StoreDeviceAuthRequest {
+  DeviceAuth device_auth = 1;
+}
+
+message GetDeviceAuthByDeviceCodeRequest {
+  string device_code = 1;
+}
+
+message GetDeviceAuthByUserCodeRequest {
+  string user_code = 1;
+}
+
+message UpdateDeviceAuthRequest {
+  DeviceAuth device_auth = 1;
+}
+
+message DeleteDeviceAuthRequest {
+  string device_code = 1; // Can be identified by device_code
+}
+
+message PKCEState {
+  string code_hash = 1; // Hash of the authorization code this PKCE state is tied to
+  string code_challenge = 2;
+  string code_challenge_method = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}
+
+message StorePKCEStateRequest {
+  PKCEState pkce_state = 1;
+}
+
+message GetPKCEStateRequest {
+  string code_hash = 1;
+}
+
+message DeletePKCEStateRequest {
+  string code_hash = 1;
+}
