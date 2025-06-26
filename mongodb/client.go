@@ -10,6 +10,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"go.mongodb.org/mongo-driver/v2/mongo/readpref"
+	"go.opentelemetry.io/contrib/instrumentation/go.mongodb.org/mongo-driver/v2/mongo/otelmongo"
 )
 
 var (
@@ -26,9 +27,14 @@ func InitMongoDB(ctx context.Context, uri, dbName string) error {
 	var err error
 	clientOnce.Do(func() {
 		log.Info().Msgf("Initializing MongoDB client with URI: %s", uri)
+		// Instrument the MongoDB client - currently incompatible with mongo-driver/v2
+		// clientOptions := options.Client().ApplyURI(uri).SetMonitor(otelmongo.NewMonitor())
 		clientOptions := options.Client().ApplyURI(uri)
 		clientOptions.SetConnectTimeout(10 * time.Second)
 		// Add other client options as needed (e.g., auth, replica set)
+		clientOptions.SetMonitor(
+			otelmongo.NewMonitor(),
+		)
 
 		client, clientErr := mongo.Connect(clientOptions)
 		if clientErr != nil {
