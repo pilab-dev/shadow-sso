@@ -1,3 +1,4 @@
+//go:generate go run go.uber.org/mock/mockgen -source=$GOFILE -destination=mocks/mock_$GOFILE -package=mock_$GOPACKAGE
 package services
 
 import (
@@ -255,9 +256,9 @@ func (s *OAuthService) ClientCredentials(ctx context.Context,
 		return nil, err
 	}
 	return &api.TokenResponse{
-		AccessToken:  token.TokenValue,
-		TokenType:    "Bearer",
-		ExpiresIn:    int(time.Hour.Seconds()), // Changed to int
+		AccessToken: token.TokenValue,
+		TokenType:   "Bearer",
+		ExpiresIn:   int(time.Hour.Seconds()), // Changed to int
 	}, nil
 }
 

@@ -82,6 +82,13 @@ func toClientProto(c *client.Client, includeSecret bool) *ssov1.ClientProto {
 		RequireConsent:          c.RequireConsent,
 		RequirePkce:             c.RequirePKCE,
 		IsActive:                c.IsActive,
+
+		// LDAP Attribute Mapping Fields (assuming they exist on ssov1.ClientProto)
+		ClientLdapAttributeEmail:      c.ClientLDAPAttributeEmail,
+		ClientLdapAttributeFirstName:  c.ClientLDAPAttributeFirstName,
+		ClientLdapAttributeLastName:   c.ClientLDAPAttributeLastName,
+		ClientLdapAttributeGroups:     c.ClientLDAPAttributeGroups,
+		ClientLdapCustomClaimsMapping: c.ClientLDAPCustomClaimsMapping,
 	}
 	if c.JWKS != nil && len(c.JWKS.Keys) > 0 {
 		proto.Jwks = &ssov1.JWKSProto{Keys: make([]*ssov1.JSONWebKeyProto, len(c.JWKS.Keys))}
@@ -130,6 +137,14 @@ func (s *ClientManagementServer) RegisterClient(ctx context.Context, req *connec
 		IsActive:       true,
 		CreatedAt:      time.Now().UTC(),
 		UpdatedAt:      time.Now().UTC(),
+
+		// Populate LDAP mapping fields from request (assuming fields exist on req.Msg or req.Msg.Client)
+		// Actual field names on req.Msg depend on protobuf definition.
+		ClientLDAPAttributeEmail:      req.Msg.GetClientLdapAttributeEmail(),
+		ClientLDAPAttributeFirstName:  req.Msg.GetClientLdapAttributeFirstName(),
+		ClientLDAPAttributeLastName:   req.Msg.GetClientLdapAttributeLastName(),
+		ClientLDAPAttributeGroups:     req.Msg.GetClientLdapAttributeGroups(),
+		ClientLDAPCustomClaimsMapping: req.Msg.GetClientLdapCustomClaimsMapping(),
 	}
 
 	var plaintextSecretForResponse string
@@ -239,6 +254,37 @@ func (s *ClientManagementServer) UpdateClient(ctx context.Context, req *connect.
 	dbClient.TermsURI = req.Msg.TermsUri
 	dbClient.RequireConsent = req.Msg.RequireConsent
 	dbClient.IsActive = req.Msg.IsActive
+
+	// Update LDAP attribute mapping fields
+	// Assumes proto fields are optional (e.g. using wrapperspb or `optional` keyword)
+	// or that providing an empty string means "clear this mapping field".
+	// The GetXxx() methods on req.Msg would correspond to fields on ssov1.UpdateClientRequest.
+	// If the proto uses primitive types directly, we'd need to check if the flag was set on the CLI
+	// and transmit that information, or use FieldMasks.
+	// For simplicity, assuming if a field is in the proto for UpdateClientRequest, its value is used.
+	// If proto fields for these are pointers (*string, *map[string]string), check for nil.
+	// If they are value types, they will always be present; to "unset", they'd be set to empty string/nil map.
+
+	// Example assuming direct value types in proto (or wrappers that default to empty if not set)
+	// These Getters might need to be adapted if the fields are nested within an client_config object in the proto.
+	if req.Msg.ClientLdapAttributeEmail != "" || (req.Msg.ClientLdapAttributeEmail == "") { // Simplified: assumes direct field or use fieldmask
+		dbClient.ClientLDAPAttributeEmail = req.Msg.GetClientLdapAttributeEmail()
+	}
+	if req.Msg.ClientLdapAttributeFirstName != "" || (req.Msg.ClientLdapAttributeFirstName == "") {
+		dbClient.ClientLDAPAttributeFirstName = req.Msg.GetClientLdapAttributeFirstName()
+	}
+	if req.Msg.ClientLdapAttributeLastName != "" || (req.Msg.ClientLdapAttributeLastName == "") {
+		dbClient.ClientLDAPAttributeLastName = req.Msg.GetClientLdapAttributeLastName()
+	}
+	if req.Msg.ClientLdapAttributeGroups != "" || (req.Msg.ClientLdapAttributeGroups == "") {
+		dbClient.ClientLDAPAttributeGroups = req.Msg.GetClientLdapAttributeGroups()
+	}
+	// For map, if the field is present in proto, it means replace.
+	// If ClientLdapCustomClaimsMapping is a field in UpdateClientRequest.
+	if req.Msg.ClientLdapCustomClaimsMapping != nil { // Check if the map field itself is provided for update
+		dbClient.ClientLDAPCustomClaimsMapping = req.Msg.GetClientLdapCustomClaimsMapping()
+	}
+
 	// ClientType, AllowedGrantTypes, TokenEndpointAuthMethod, RequirePKCE are generally not updated post-creation or require careful handling.
 	// ClientSecret is not updated here; requires a separate "reset secret" flow.
 	dbClient.UpdatedAt = time.Now().UTC()

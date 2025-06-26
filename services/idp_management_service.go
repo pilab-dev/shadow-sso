@@ -52,12 +52,32 @@ func toIdPProto(idp *domain.IdentityProvider, includeSecret bool) *ssov1.Identit
 		proto.Type = ssov1.IdPTypeProto_IDP_TYPE_OIDC
 	case domain.IdPTypeSAML:
 		proto.Type = ssov1.IdPTypeProto_IDP_TYPE_SAML
+	case domain.IdPTypeLDAP: // Added LDAP
+		proto.Type = ssov1.IdPTypeProto_IDP_TYPE_LDAP // Assumes this enum value exists in proto
 	default:
 		proto.Type = ssov1.IdPTypeProto_IDP_TYPE_UNSPECIFIED
 	}
 
+	// LDAP specific fields for proto
+	// These depend on ssov1.IdentityProviderProto being updated with these fields.
+	proto.LdapServerUrl = idp.LDAP.ServerURL
+	proto.LdapBindDn = idp.LDAP.BindDN
+	// proto.LdapBindPassword is intentionally omitted (secret)
+	proto.LdapUserBaseDn = idp.LDAP.UserBaseDN
+	proto.LdapUserFilter = idp.LDAP.UserFilter
+	proto.LdapAttrUsername = idp.LDAP.AttributeUsername
+	proto.LdapAttrEmail = idp.LDAP.AttributeEmail
+	proto.LdapAttrFirstname = idp.LDAP.AttributeFirstName
+	proto.LdapAttrLastname = idp.LDAP.AttributeLastName
+	proto.LdapAttrGroups = idp.LDAP.AttributeGroups
+	proto.LdapStarttls = idp.LDAP.StartTLS
+	proto.LdapSkipTlsVerify = idp.LDAP.SkipTLSVerify
+
 	if includeSecret { // Only used if caller explicitly needs to show a newly set plain secret
 		proto.OidcClientSecret = idp.OIDCClientSecret
+		// We generally don't return LDAP bind password even with includeSecret,
+		// but if ever needed for a specific flow (unlikely for client response):
+		// proto.LdapBindPassword = idp.LDAPBindPassword
 	} else {
 		// Ensure secret is never sent in GET/LIST responses, even if it's accidentally in the domain model passed.
 		// The domain model itself has json:"-" for OIDCClientSecret, so it wouldn't be marshalled to JSON,
@@ -87,8 +107,16 @@ func toIdPProto(idp *domain.IdentityProvider, includeSecret bool) *ssov1.Identit
 func fromIdPTypeProto(pt ssov1.IdPTypeProto) domain.IdPType {
 	valStr, ok := ssov1.IdPTypeProto_name[int32(pt)]
 	if ok && strings.HasPrefix(valStr, "IDP_TYPE_") {
-		// Extracts "OIDC" from "IDP_TYPE_OIDC"
-		return domain.IdPType(strings.TrimPrefix(valStr, "IDP_TYPE_"))
+		typeName := strings.TrimPrefix(valStr, "IDP_TYPE_")
+		// Ensure consistent casing with domain.IdPType constants
+		switch strings.ToUpper(typeName) {
+		case "OIDC":
+			return domain.IdPTypeOIDC
+		case "SAML":
+			return domain.IdPTypeSAML
+		case "LDAP":
+			return domain.IdPTypeLDAP // Assumes domain.IdPTypeLDAP is "ldap"
+		}
 	}
 	return domain.IdPType("") // Invalid or unspecified
 }
@@ -113,7 +141,38 @@ func (s *IdPManagementServer) AddIdP(ctx context.Context, req *connect.Request[s
 		OIDCIssuerURL:    req.Msg.GetOidcIssuerUrl(),
 		OIDCScopes:       req.Msg.OidcScopes,
 
+		// LDAP Fields from proto (names depend on actual proto definition)
+		LDAP: domain.LDAPConfig{
+			ServerURL:          req.Msg.GetLdapServerUrl(),
+			BindDN:             req.Msg.GetLdapBindDn(),
+			BindPassword:       req.Msg.GetLdapBindPassword(), // Store as provided; encryption needed
+			UserBaseDN:         req.Msg.GetLdapUserBaseDn(),
+			UserFilter:         req.Msg.GetLdapUserFilter(),
+			AttributeUsername:  req.Msg.GetLdapAttrUsername(),
+			AttributeEmail:     req.Msg.GetLdapAttrEmail(),
+			AttributeFirstName: req.Msg.GetLdapAttrFirstname(),
+			AttributeLastName:  req.Msg.GetLdapAttrLastname(),
+			AttributeGroups:    req.Msg.GetLdapAttrGroups(),
+			StartTLS:           req.Msg.GetLdapStarttls(),
+			SkipTLSVerify:      req.Msg.GetLdapSkipTlsVerify(),
+		},
+
 		AttributeMappings: make([]domain.AttributeMapping, len(req.Msg.AttributeMappings)),
+	}
+
+	// Validation specific to IdP type
+	if domainIdP.Type == domain.IdPTypeOIDC {
+		if domainIdP.OIDCClientID == "" || domainIdP.OIDCIssuerURL == "" {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("OIDC ClientID and IssuerURL are required for OIDC IdP"))
+		}
+	} else if domainIdP.Type == domain.IdPTypeLDAP {
+		if domainIdP.LDAP.ServerURL == "" || domainIdP.LDAP.UserBaseDN == "" || domainIdP.LDAP.UserFilter == "" {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("LDAP ServerURL, UserBaseDN, and UserFilter are required for LDAP IdP"))
+		}
+		// LDAPAttributeUsername, Email, etc., might also be considered essential.
+		if domainIdP.LDAP.AttributeUsername == "" {
+			log.Warn().Str("idpName", domainIdP.Name).Msg("LDAP IdP configured without LDAPAttributeUsername, 'preferred_username' claim might be unpredictable.")
+		}
 	}
 
 	for i, amp := range req.Msg.AttributeMappings {
@@ -213,6 +272,55 @@ func (s *IdPManagementServer) UpdateIdP(ctx context.Context, req *connect.Reques
 		}
 	}
 	// Type is generally not updatable once created.
+
+	// Update LDAP fields if present in the request
+	// These GetLdap... methods and checks for presence (e.g., using HasXxx or pointers in proto)
+	// depend on how the ssov1.UpdateIdPRequest and ssov1.IdentityProviderProto are defined.
+	// Assuming direct field access for now, which means if a field is in the proto, it's considered for update.
+	// For optional fields in proto, one would check if the field is set.
+	if req.Msg.LdapServerUrl != nil { // Example: if proto uses *string for optional fields
+		idp.LDAP.ServerURL = req.Msg.GetLdapServerUrl()
+	}
+	if req.Msg.LdapBindDn != nil {
+		idp.LDAP.BindDN = req.Msg.GetLdapBindDn()
+	}
+	if req.Msg.LdapBindPassword != nil { // Handle secret update
+		idp.LDAP.BindPassword = req.Msg.GetLdapBindPassword() // TODO: Encrypt if needed
+	}
+	if req.Msg.LdapUserBaseDn != nil {
+		idp.LDAP.UserBaseDN = req.Msg.GetLdapUserBaseDn()
+	}
+	if req.Msg.LdapUserFilter != nil {
+		idp.LDAP.UserFilter = req.Msg.GetLdapUserFilter()
+	}
+	if req.Msg.LdapAttrUsername != nil {
+		idp.LDAP.AttributeUsername = req.Msg.GetLdapAttrUsername()
+	}
+	if req.Msg.LdapAttrEmail != nil {
+		idp.LDAP.AttributeEmail = req.Msg.GetLdapAttrEmail()
+	}
+	if req.Msg.LdapAttrFirstname != nil {
+		idp.LDAP.AttributeFirstName = req.Msg.GetLdapAttrFirstname()
+	}
+	if req.Msg.LdapAttrLastname != nil {
+		idp.LDAP.AttributeLastName = req.Msg.GetLdapAttrLastname()
+	}
+	if req.Msg.LdapAttrGroups != nil {
+		idp.LDAP.AttributeGroups = req.Msg.GetLdapAttrGroups()
+	}
+	if req.Msg.LdapStarttls != nil {
+		idp.LDAP.StartTLS = req.Msg.GetLdapStarttls()
+	}
+	if req.Msg.LdapSkipTlsVerify != nil {
+		idp.LDAP.SkipTLSVerify = req.Msg.GetLdapSkipTlsVerify()
+	}
+
+	// Validation after attempting to merge updates
+	if idp.Type == domain.IdPTypeLDAP {
+		if idp.LDAP.ServerURL == "" || idp.LDAP.UserBaseDN == "" || idp.LDAP.UserFilter == "" {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("LDAP ServerURL, UserBaseDN, and UserFilter are required for LDAP IdP"))
+		}
+	}
 
 	// idp.UpdatedAt will be set by the repository method UpdateIdP.
 

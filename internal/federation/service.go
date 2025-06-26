@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 
+	// Added for client.Client type
 	"github.com/pilab-dev/shadow-sso/domain"
 	"golang.org/x/oauth2"
 )
@@ -91,7 +92,13 @@ func (s *Service) GetProvider(ctx context.Context, providerName string) (OAuth2P
 			return nil, fmt.Errorf("provider 'apple' is configured with incorrect type '%s', expected OIDC or empty", idpConfig.Type)
 		}
 		return NewAppleProvider(idpConfig)
-	default:
+	// Note: providerName for LDAP might be a specific instance name like "mycompany-ldap"
+	// The type check is what matters here.
+	default: // This default will now handle IdPType check
+		if idpConfig.Type == domain.IdPTypeLDAP {
+			// Pass nil for the client, NewLDAPProvider will use NewRealLDAPClient()
+			return NewLDAPProvider(idpConfig, nil)
+		}
 		// Fallback to BaseProvider for generic OIDC if type matches.
 		// This allows for adding other OIDC providers without specific structs,
 		// assuming their user info endpoint and other details are standard enough
@@ -178,4 +185,42 @@ func (s *Service) GetRedirectURLForProvider(providerName string) string {
 		base = base[:len(base)-1]
 	}
 	return fmt.Sprintf("%s/%s", base, url.PathEscape(providerName))
+}
+
+// AuthenticateDirect handles direct authentication for providers like LDAP.
+// It takes username and password, retrieves the provider configuration,
+// and calls the provider's authentication method.
+// It also fetches the OAuth2 client configuration for later use in attribute mapping.
+func (s *Service) AuthenticateDirect(
+	ctx context.Context,
+	providerName string,
+	username string,
+	password string,
+	// clientRepo is needed to fetch client-specific LDAP mappings.
+	// This dependency might be better placed in the API handler that calls this,
+	// or this service needs access to a ClientRepository.
+	// For now, let's assume the caller (API handler) will fetch client config separately
+	// after getting ExternalUserInfo. So, we only return ExternalUserInfo here.
+	// If client-specific behavior within the provider becomes necessary, this might change.
+) (*ExternalUserInfo, error) {
+	provider, err := s.GetProvider(ctx, providerName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get provider '%s': %w", providerName, err)
+	}
+
+	// Check if the provider is an LDAPProvider and supports direct authentication
+	ldapProvider, ok := provider.(*LDAPProvider)
+	if !ok {
+		return nil, fmt.Errorf("provider '%s' is not an LDAP provider or does not support direct authentication", providerName)
+	}
+
+	// Authenticate and fetch user information using the LDAP provider's specific method
+	externalUser, err := ldapProvider.AuthenticateAndFetchUser(ctx, username, password)
+	if err != nil {
+		// Specific errors like ErrInvalidCredentials or ErrUserNotFound should be propagated
+		// from the ldapProvider.AuthenticateAndFetchUser method.
+		return nil, fmt.Errorf("authentication failed with provider '%s': %w", providerName, err)
+	}
+
+	return externalUser, nil
 }

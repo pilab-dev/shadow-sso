@@ -1,3 +1,4 @@
+//go:generate go run go.uber.org/mock/mockgen -source=$GOFILE -destination=mocks/mock_$GOFILE -package=mock_$GOPACKAGE
 package oidcflow
 
 import "time"
@@ -5,7 +6,7 @@ import "time"
 // LoginFlowState holds the parameters and state for an OIDC authorization flow
 // that requires user authentication via the separate UI.
 type LoginFlowState struct {
-	FlowID              string    // Unique ID for this flow
+	FlowID              string // Unique ID for this flow
 	ClientID            string
 	RedirectURI         string
 	Scope               string
@@ -13,9 +14,9 @@ type LoginFlowState struct {
 	Nonce               string // Optional nonce from client
 	CodeChallenge       string
 	CodeChallengeMethod string
-	UserID              string    // Populated after successful user authentication
-	UserAuthenticatedAt time.Time // Time of user authentication for this flow
-	ExpiresAt           time.Time // When this flow state should be considered invalid
+	UserID              string            // Populated after successful user authentication
+	UserAuthenticatedAt time.Time         // Time of user authentication for this flow
+	ExpiresAt           time.Time         // When this flow state should be considered invalid
 	OriginalOIDCParams  map[string]string // Store other original parameters if needed
 }
 

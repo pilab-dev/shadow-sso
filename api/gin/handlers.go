@@ -6,19 +6,20 @@ import (
 	"fmt"
 	"html/template" // Added for HTML rendering
 	"net/http"
+	"net/url"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	ssso "github.com/pilab-dev/shadow-sso"
 	sssoapi "github.com/pilab-dev/shadow-sso/api"
 	"github.com/pilab-dev/shadow-sso/client"
-	"net/url"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/pilab-dev/shadow-sso/domain"
-	ssoerrors "github.com/pilab-dev/shadow-sso/errors" // Custom errors
-	"github.com/pilab-dev/shadow-sso/internal/metrics" // For custom metrics
+	ssoerrors "github.com/pilab-dev/shadow-sso/errors"    // Custom errors
+	"github.com/pilab-dev/shadow-sso/internal/federation" // Added for federation.Service
+	"github.com/pilab-dev/shadow-sso/internal/metrics"    // For custom metrics
 	"github.com/pilab-dev/shadow-sso/internal/oidcflow"
 	"github.com/pilab-dev/shadow-sso/services"
 	"github.com/rs/zerolog/log"
@@ -35,15 +36,17 @@ const (
 
 // OAuth2API struct to hold dependencies.
 type OAuth2API struct {
-	service          *services.OAuthService
-	jwksService      *services.JWKSService
-	clientService    *client.ClientService
-	pkceService      *services.PKCEService
-	config           *ssso.OpenIDProviderConfig
-	flowStore        *oidcflow.InMemoryFlowStore
-	userSessionStore *oidcflow.InMemoryUserSessionStore
-	userRepo         domain.UserRepository
-	passwordHasher   services.PasswordHasher
+	service           *services.OAuthService
+	jwksService       *services.JWKSService
+	clientService     *client.ClientService
+	pkceService       *services.PKCEService
+	config            *ssso.OpenIDProviderConfig
+	flowStore         *oidcflow.InMemoryFlowStore
+	userSessionStore  *oidcflow.InMemoryUserSessionStore
+	userRepo          domain.UserRepository
+	passwordHasher    services.PasswordHasher
+	federationService *federation.Service    // Added for LDAP and other federation flows
+	tokenService      *services.TokenService // Added for issuing tokens after LDAP auth
 }
 
 // NewOAuth2API initializes the OAuth2 API.
@@ -57,6 +60,8 @@ func NewOAuth2API(
 	userSessionStore *oidcflow.InMemoryUserSessionStore,
 	userRepo domain.UserRepository,
 	passwordHasher services.PasswordHasher,
+	federationService *federation.Service, // Added
+	tokenService *services.TokenService, // Added
 ) *OAuth2API {
 	if config == nil {
 		// This default issuer should ideally be configurable or removed if always provided by caller.
@@ -68,15 +73,17 @@ func NewOAuth2API(
 		log.Warn().Msg("NextJSLoginURL is not configured in OpenIDProviderConfig. Redirects to Next.js UI will not work.")
 	}
 	return &OAuth2API{
-		service:          service,
-		jwksService:      jwksService,
-		clientService:    clientService,
-		pkceService:      pkceService,
-		config:           config,
-		flowStore:        flowStore,
-		userSessionStore: userSessionStore,
-		userRepo:         userRepo,
-		passwordHasher:   passwordHasher,
+		service:           service,
+		jwksService:       jwksService,
+		clientService:     clientService,
+		pkceService:       pkceService,
+		config:            config,
+		flowStore:         flowStore,
+		userSessionStore:  userSessionStore,
+		userRepo:          userRepo,
+		passwordHasher:    passwordHasher,
+		federationService: federationService, // Added
+		tokenService:      tokenService,      // Added
 	}
 }
 
@@ -112,6 +119,12 @@ func (oa *OAuth2API) RegisterRoutes(e *gin.Engine) {
 		oidcAPIGroup.POST("/authenticate", oa.AuthenticateUserHandler)
 		// TODO: Add CSRF protection middleware to /authenticate if possible, or handle in handler.
 	}
+
+	// Register LDAP specific routes
+	authGroup := e.Group("/auth")    // Create a common /auth group
+	oa.RegisterLDAPRoutes(authGroup) // Register LDAP routes under /auth/ldap/...
+	// Register other federation routes if they follow a similar pattern under /auth
+	// oa.RegisterFederationCallbackRoutes(authGroup) // Example for existing federation callbacks
 }
 
 // ... (DeviceAuthorizationHandler, TokenHandler, handleDeviceCodeGrant, etc. - no changes here) ...
@@ -450,14 +463,25 @@ func (oa *OAuth2API) AuthorizeHandler(c *gin.Context) {
 	// csrfToken := uuid.NewString()
 	// http.SetCookie(c.Writer, &http.Cookie{Name: CSRFCookieName, Value: csrfToken, Expires: time.Now().Add(10 * time.Minute), HttpOnly: true, Path: "/" ...})
 
-	nextJSLoginURL, _ := url.Parse(oa.config.NextJSLoginURL)
-	query := nextJSLoginURL.Query()
-	query.Set("flowId", flowID)
-	// Potentially pass client_id or other safe context if Next.js UI needs it directly for display before calling /api/oidc/flow
-	// query.Set("client_id", clientID)
-	nextJSLoginURL.RawQuery = query.Encode()
+	// Set flowID in an HttpOnly cookie instead of query parameter
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     "sso_oidc_flow_id", // Define as a const if used elsewhere
+		Value:    flowID,
+		Path:     "/",                               // Adjust path if your Next.js app's API routes are more specific
+		MaxAge:   int((10 * time.Minute).Seconds()), // Align with flowState.ExpiresAt
+		HttpOnly: true,
+		Secure:   c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https"),
+		SameSite: http.SameSiteLaxMode, // Lax is often a good default
+	})
 
-	log.Info().Str("flowId", flowID).Str("nextjs_url", nextJSLoginURL.String()).Msg("AuthorizeHandler: Redirecting user to Next.js for authentication.")
+	nextJSLoginURL, _ := url.Parse(oa.config.NextJSLoginURL)
+	// No longer adding flowId to query parameters
+	// query := nextJSLoginURL.Query()
+	// Potentially pass client_id or other safe context if Next.js UI needs it directly for display before calling /api/oidc/flow
+	// query.Set("client_id", clientID) // This might still be useful for the UI
+	// nextJSLoginURL.RawQuery = query.Encode()
+
+	log.Info().Str("flowId_cookie_set", flowID).Str("nextjs_url", nextJSLoginURL.String()).Msg("AuthorizeHandler: Redirecting user to Next.js for authentication with flowId in cookie.")
 	c.Redirect(http.StatusFound, nextJSLoginURL.String())
 }
 
@@ -514,7 +538,6 @@ func (oa *OAuth2API) extractOriginalOIDCParams(c *gin.Context) map[string]string
 	}
 	return params
 }
-
 
 // GrantType enumeration for OAuth2 grant types.
 type GrantType string
@@ -1243,10 +1266,10 @@ func (oa *OAuth2API) GetFlowDetailsHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"client_id":        flowState.ClientID,
-		"client_name":      client.Name, // Example: send client name
-		"scope":            flowState.Scope,
-		"original_params":  flowState.OriginalOIDCParams, // Send original params if UI needs them
+		"client_id":       flowState.ClientID,
+		"client_name":     client.Name, // Example: send client name
+		"scope":           flowState.Scope,
+		"original_params": flowState.OriginalOIDCParams, // Send original params if UI needs them
 		// Add any other details the Next.js UI might need to display context to the user.
 	})
 }
@@ -1310,7 +1333,6 @@ func (oa *OAuth2API) AuthenticateUserHandler(c *gin.Context) {
 		return
 	}
 
-
 	user, err := oa.userRepo.GetUserByEmail(ctx, req.Email)
 	if err != nil {
 		log.Warn().Err(err).Msg("User not found during Next.js UI auth attempt") // Removed email from log
@@ -1353,7 +1375,7 @@ func (oa *OAuth2API) AuthenticateUserHandler(c *gin.Context) {
 		Value:    sessionID,
 		Expires:  opSessionExpiry,
 		HttpOnly: true,
-		Path:     "/", // Adjust path if necessary
+		Path:     "/",                  // Adjust path if necessary
 		Secure:   c.Request.TLS != nil, // Set Secure flag if served over HTTPS
 		SameSite: http.SameSiteLaxMode,
 	})

@@ -10,4 +10,6 @@ var (
 	ErrProviderMisconfigured = errors.New("provider is misconfigured")
 	ErrAccountAlreadyLinked  = errors.New("this external account is already linked to another user")
 	ErrLocalUserLinkConflict = errors.New("this local user is already linked to an account from this provider")
+	ErrUserNotFound          = errors.New("user not found")
+	ErrInvalidCredentials    = errors.New("invalid credentials")
 )
