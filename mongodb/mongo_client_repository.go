@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/pilab-dev/shadow-sso/client"
+	"github.com/pilab-dev/shadow-sso/domain"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )
@@ -22,10 +23,10 @@ type ClientRepository struct {
 }
 
 // NewClientRepository creates a new MongoStore instance.
-func NewClientRepository(db *mongo.Database) (*ClientRepository, error) {
+func NewClientRepository(db *mongo.Database) *ClientRepository {
 	return &ClientRepository{
 		coll: db.Collection("oauth_clients"),
-	}, nil
+	}
 }
 
 // CreateClient implements the ClientStore interface.
@@ -83,7 +84,7 @@ func (s *ClientRepository) DeleteClient(ctx context.Context, clientID string) er
 }
 
 // ListClients implements the ClientStore interface.
-func (s *ClientRepository) ListClients(ctx context.Context, filter client.ClientFilter) ([]*client.Client, error) {
+func (s *ClientRepository) ListClients(ctx context.Context, filter *domain.ClientFilter) ([]*client.Client, string, error) {
 	mongoFilter := bson.M{}
 	if filter.Type != "" {
 		mongoFilter["client_type"] = filter.Type
@@ -101,40 +102,41 @@ func (s *ClientRepository) ListClients(ctx context.Context, filter client.Client
 
 	cursor, err := s.coll.Find(ctx, mongoFilter)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer cursor.Close(ctx)
 
 	var clients []*client.Client
 	if err := cursor.All(ctx, &clients); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
-	return clients, nil
+	return clients, "", nil
 }
 
-// ValidateClient implements the ClientStore interface.
-func (s *ClientRepository) ValidateClient(ctx context.Context, clientID, clientSecret string) (*client.Client, error) {
+// ValidateClient implements domain.ClientRepository.
+func (s *ClientRepository) ValidateClient(ctx context.Context, clientID string, clientSecret string) error {
 	filter := bson.M{"client_id": clientID}
 	var cli client.Client
 
 	err := s.coll.FindOne(ctx, filter).Decode(&cli)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return nil, ErrClientNotFound
+			return ErrClientNotFound
 		}
-		return nil, err
+
+		return err
 	}
 
 	// For public clients, the secret is not checked
 	if cli.Type == client.Public {
-		return &cli, nil
+		return nil
 	}
 
 	// For confidential clients, check the secret
 	if cli.Secret == clientSecret {
-		return &cli, nil
+		return nil
 	}
 
-	return nil, ErrInvalidClientCredentials
+	return ErrInvalidClientCredentials
 }

@@ -4,8 +4,11 @@ go 1.23.4
 
 require (
 	connectrpc.com/connect v1.18.1
+	connectrpc.com/grpchealth v1.4.0
+	connectrpc.com/grpcreflect v1.3.0
 	connectrpc.com/otelconnect v0.7.2
 	github.com/gin-gonic/gin v1.10.1
+	github.com/go-ldap/ldap/v3 v3.4.11
 	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/google/uuid v1.6.0
 	github.com/jellydator/ttlcache/v3 v3.4.0
@@ -17,6 +20,7 @@ require (
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/viper v1.20.1
 	github.com/stretchr/testify v1.10.0
+	go.etcd.io/bbolt v1.4.1
 	go.mongodb.org/mongo-driver/v2 v2.2.2
 	go.opentelemetry.io/contrib/instrumentation/go.mongodb.org/mongo-driver/v2/mongo/otelmongo v0.0.0-20250626051350-6460d89aca7d
 	go.opentelemetry.io/otel v1.37.0
@@ -28,6 +32,7 @@ require (
 	golang.org/x/net v0.41.0
 	golang.org/x/oauth2 v0.30.0
 	golang.org/x/term v0.32.0
+	google.golang.org/grpc v1.67.3
 	google.golang.org/protobuf v1.36.6
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -48,7 +53,6 @@ require (
 	github.com/gabriel-vasile/mimetype v1.4.3 // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
 	github.com/go-asn1-ber/asn1-ber v1.5.8-0.20250403174932-29230038a667 // indirect
-	github.com/go-ldap/ldap/v3 v3.4.11 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
@@ -95,5 +99,6 @@ require (
 	golang.org/x/sys v0.33.0 // indirect
 	golang.org/x/text v0.26.0 // indirect
 	golang.org/x/tools v0.33.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20241223144023-3abc09e42ca8 // indirect
 	rsc.io/qr v0.2.0 // indirect
 )

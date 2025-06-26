@@ -5,7 +5,7 @@
 replicaCount: 1
 
 image:
-  repository: ghcr.io/pilab-dev/ssso-backend
+  repository: ghcr.io/pilab-dev/shadow-sso-backend
   pullPolicy: IfNotPresent
   # tag: "v1" # Overridden by Chart.yaml appVersion by default, but can be specified here
   # Or use a dynamic tag like below if you have a CI/CD pipeline that updates it
