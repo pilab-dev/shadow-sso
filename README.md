@@ -1,5 +1,5 @@
 # Shadow SSO (3SO): Your Go-Powered Identity Fortress 🛡️
-![Coverage](https://img.shields.io/badge/Coverage-4.0%25-red)
+![Coverage](https://img.shields.io/badge/Coverage-3.9%25-red)
 
 **A Robust and Flexible OAuth 2.0 and OpenID Connect Implementation for Go**
 
