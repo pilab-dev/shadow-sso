@@ -49,41 +49,45 @@ type OAuth2API struct {
 	tokenService      *services.TokenService // Added for issuing tokens after LDAP auth
 }
 
+type OAuth2APIOptions struct {
+	OAuthService      *services.OAuthService
+	JSKSService       *services.JWKSService
+	ClientService     *client.ClientService
+	PkceService       *services.PKCEService
+	Config            *ssso.OpenIDProviderConfig
+	FlowStore         *oidcflow.InMemoryFlowStore
+	UserSessionStore  *oidcflow.InMemoryUserSessionStore
+	UserRepo          domain.UserRepository
+	PasswordHasher    services.PasswordHasher
+	FederationService *federation.Service // Added
+	TokenService      *services.TokenService
+}
+
 // NewOAuth2API initializes the OAuth2 API.
 func NewOAuth2API(
-	service *services.OAuthService,
-	jwksService *services.JWKSService,
-	clientService *client.ClientService,
-	pkceService *services.PKCEService,
-	config *ssso.OpenIDProviderConfig,
-	flowStore *oidcflow.InMemoryFlowStore,
-	userSessionStore *oidcflow.InMemoryUserSessionStore,
-	userRepo domain.UserRepository,
-	passwordHasher services.PasswordHasher,
-	federationService *federation.Service, // Added
-	tokenService *services.TokenService, // Added
+	opts *OAuth2APIOptions,
 ) *OAuth2API {
-	if config == nil {
+	if opts.Config == nil {
 		// This default issuer should ideally be configurable or removed if always provided by caller.
-		config = ssso.NewDefaultConfig("https://sso.pilab.hu")
+		opts.Config = ssso.NewDefaultConfig("https://sso.pilab.hu")
 	}
-	if config.NextJSLoginURL == "" {
+	if opts.Config.NextJSLoginURL == "" {
 		// A default or a panic might be appropriate if this is critical and not set.
 		// For now, we'll allow it to be empty, but handlers using it will need to check.
 		log.Warn().Msg("NextJSLoginURL is not configured in OpenIDProviderConfig. Redirects to Next.js UI will not work.")
 	}
 	return &OAuth2API{
-		service:           service,
-		jwksService:       jwksService,
-		clientService:     clientService,
-		pkceService:       pkceService,
-		config:            config,
-		flowStore:         flowStore,
-		userSessionStore:  userSessionStore,
-		userRepo:          userRepo,
-		passwordHasher:    passwordHasher,
-		federationService: federationService, // Added
-		tokenService:      tokenService,      // Added
+		service:           opts.OAuthService,
+		jwksService:       opts.JSKSService,
+		clientService:     opts.ClientService,
+		pkceService:       opts.PkceService,
+		config:            opts.Config,
+		flowStore:         opts.FlowStore,
+		userSessionStore:  opts.UserSessionStore,
+		userRepo:          opts.UserRepo,
+		passwordHasher:    opts.PasswordHasher,
+		federationService: opts.FederationService, // Added
+		tokenService:      opts.TokenService,      // Added
 	}
 }
 

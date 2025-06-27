@@ -29,10 +29,10 @@ func NewServiceAccountRepositoryMongo(db *mongo.Database) (*ServiceAccountReposi
 	// Index on client_email for GetServiceAccountByClientEmail (unique)
 	// Index on project_id for potential queries listing SAs per project
 	indexModels := []mongo.IndexModel{
-		{
-			Keys:    bson.D{{Key: "_id", Value: 1}}, // Service Account ID
-			Options: options.Index().SetUnique(true),
-		},
+		// {
+		// 	Keys:    bson.D{{Key: "_id", Value: 1}}, // Service Account ID
+		// 	Options: options.Index().SetUnique(true),
+		// },
 		{
 			Keys:    bson.D{{Key: "client_email", Value: 1}},
 			Options: options.Index().SetUnique(true),
@@ -90,9 +90,9 @@ func (r *ServiceAccountRepositoryMongo) CreateServiceAccount(ctx context.Context
 		sa.ID = NewObjectID() // Generate a new MongoDB ObjectID if ID is not provided
 	}
 	if sa.CreatedAt == 0 {
-	    sa.CreatedAt = time.Now().Unix()
+		sa.CreatedAt = time.Now().Unix()
 	}
-    sa.UpdatedAt = time.Now().Unix() // Set UpdatedAt on creation as well
+	sa.UpdatedAt = time.Now().Unix() // Set UpdatedAt on creation as well
 
 	_, err := r.collection.InsertOne(ctx, sa)
 	if err != nil {
@@ -109,25 +109,24 @@ func (r *ServiceAccountRepositoryMongo) UpdateServiceAccount(ctx context.Context
 	if sa.ID == "" {
 		return errors.New("service account ID cannot be empty for update")
 	}
-    filter := bson.M{"_id": sa.ID}
+	filter := bson.M{"_id": sa.ID}
 
-    // Prepare update document, ensuring not to overwrite fields not meant to be updated with zero values
-    // Using a BSON M or a struct with omitempty tags is common here.
-    // For simplicity, this example updates specific fields or the whole document if passed in.
-    // A more robust update would use bson.M{"$set": bson.M{"field_to_update": value}}
-    updateData := bson.M{
-        "project_id":   sa.ProjectID,
-        "client_email": sa.ClientEmail, // Be cautious if allowing email change, it's an identifier
-        "client_id":    sa.ClientID,
-        "display_name": sa.DisplayName,
-        "disabled":     sa.Disabled,
-        "updated_at":   time.Now().Unix(),
-    }
-    // Preserve CreatedAt if it exists
-    if sa.CreatedAt != 0 {
-        updateData["created_at"] = sa.CreatedAt
-    }
-
+	// Prepare update document, ensuring not to overwrite fields not meant to be updated with zero values
+	// Using a BSON M or a struct with omitempty tags is common here.
+	// For simplicity, this example updates specific fields or the whole document if passed in.
+	// A more robust update would use bson.M{"$set": bson.M{"field_to_update": value}}
+	updateData := bson.M{
+		"project_id":   sa.ProjectID,
+		"client_email": sa.ClientEmail, // Be cautious if allowing email change, it's an identifier
+		"client_id":    sa.ClientID,
+		"display_name": sa.DisplayName,
+		"disabled":     sa.Disabled,
+		"updated_at":   time.Now().Unix(),
+	}
+	// Preserve CreatedAt if it exists
+	if sa.CreatedAt != 0 {
+		updateData["created_at"] = sa.CreatedAt
+	}
 
 	update := bson.M{"$set": updateData}
 

@@ -16,6 +16,7 @@ type Config struct {
 	IssuerURL           string        `mapstructure:"issuer_url"`
 	SigningKeyPath      string        `mapstructure:"signing_key_path"` // Path to RSA private key PEM file
 	KeyRotationInterval time.Duration `mapstructure:"key_rotation_interval"`
+	DefaultRedirectURI  string        `mapstructure:"default_redirect_uri"`
 
 	// OIDC specific configurations that might be part of OpenIDProviderConfig
 	NextJSLoginURL string `mapstructure:"nextjs_login_url"`
@@ -55,6 +56,7 @@ func LoadConfig() (config Config, err error) {
 	viper.SetDefault("mongo_db_name", "shadow_sso_db")
 	viper.SetDefault("issuer_url", "http://localhost:8080") // Default to HTTP for local dev
 	viper.SetDefault("key_rotation_interval", "24h")
+	viper.SetDefault("default_redirect_uri", "http://localhost:3000/login")
 	// signing_key_path has no default, should be provided or generated on first run.
 	// nextjs_login_url has no default, should be configured if UI flow is used.
 

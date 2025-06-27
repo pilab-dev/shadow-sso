@@ -4,8 +4,7 @@ package domain
 import (
 	"context"
 	"time" // For SessionFilter
-
-	"github.com/pilab-dev/shadow-sso/client" // Added client import
+	// Added client import
 )
 
 // PublicKeyInfo, ServiceAccount, User, Session are defined in their respective domain files.
@@ -121,15 +120,15 @@ type ClientFilter struct {
 	Search   string
 }
 
-// ClientRepository defines methods for client application data persistence.
-type ClientRepository interface {
-	CreateClient(ctx context.Context, c *client.Client) error
-	GetClient(ctx context.Context, clientID string) (*client.Client, error)
-	UpdateClient(ctx context.Context, c *client.Client) error
-	DeleteClient(ctx context.Context, clientID string) error
-	ListClients(ctx context.Context, filter *ClientFilter) ([]*client.Client, string, error)
-	ValidateClient(ctx context.Context, clientID, clientSecret string) error // Might be better in service layer
-}
+// // ClientRepository defines methods for client application data persistence.
+// type ClientRepository interface {
+// 	CreateClient(ctx context.Context, c *client.Client) error
+// 	GetClient(ctx context.Context, clientID string) (*client.Client, error)
+// 	UpdateClient(ctx context.Context, c *client.Client) error
+// 	DeleteClient(ctx context.Context, clientID string) error
+// 	ListClients(ctx context.Context, filter *ClientFilter) ([]*client.Client, string, error)
+// 	ValidateClient(ctx context.Context, clientID, clientSecret string) error // Might be better in service layer
+// }
 
 // IdPRepository defines methods for Identity Provider configuration persistence.
 type IdPRepository interface {

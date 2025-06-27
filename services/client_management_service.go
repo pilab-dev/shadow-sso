@@ -9,8 +9,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
-	"github.com/pilab-dev/shadow-sso/client"
-	"github.com/pilab-dev/shadow-sso/domain" // Added domain import
+	"github.com/pilab-dev/shadow-sso/client" // Added domain import
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
 	"github.com/rs/zerolog/log"
@@ -21,12 +20,12 @@ import (
 // ClientManagementServer implements the ssov1connect.ClientManagementServiceHandler interface.
 type ClientManagementServer struct {
 	ssov1connect.UnimplementedClientManagementServiceHandler
-	clientRepo   domain.ClientRepository // Changed to domain.OAuthRepository
+	clientRepo   client.ClientStore // Changed to domain.OAuthRepository
 	secretHasher PasswordHasher
 }
 
 // NewClientManagementServer creates a new ClientManagementServer.
-func NewClientManagementServer(clientRepo domain.ClientRepository, hasher PasswordHasher) *ClientManagementServer { // Changed to domain.OAuthRepository
+func NewClientManagementServer(clientRepo client.ClientStore, hasher PasswordHasher) *ClientManagementServer { // Changed to domain.OAuthRepository
 	return &ClientManagementServer{
 		clientRepo:   clientRepo,
 		secretHasher: hasher,
@@ -210,8 +209,8 @@ func (s *ClientManagementServer) GetClient(ctx context.Context, req *connect.Req
 
 // ListClients lists OAuth2 clients.
 func (s *ClientManagementServer) ListClients(ctx context.Context, req *connect.Request[ssov1.ListClientsRequest]) (*connect.Response[ssov1.ListClientsResponse], error) {
-	dbClients, nextPageToken, err := s.clientRepo.ListClients(ctx, &domain.ClientFilter{
-		Type:     domain.Confidential,
+	dbClients, err := s.clientRepo.ListClients(ctx, client.ClientFilter{
+		Type:     client.Confidential,
 		IsActive: false,
 		Search:   "",
 	})
@@ -227,7 +226,7 @@ func (s *ClientManagementServer) ListClients(ctx context.Context, req *connect.R
 
 	return connect.NewResponse(&ssov1.ListClientsResponse{
 		Clients:       clientProtos,
-		NextPageToken: nextPageToken,
+		NextPageToken: "", // FIXME: implement next page token for pagination
 	}), nil
 }
 

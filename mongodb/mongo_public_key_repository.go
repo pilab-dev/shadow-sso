@@ -25,19 +25,19 @@ func NewPublicKeyRepositoryMongo(db *mongo.Database) (*PublicKeyRepositoryMongo,
 	}
 
 	// Create indexes
-    // Index on key_id for fast lookups by GetPublicKey
+	// Index on key_id for fast lookups by GetPublicKey
 	// Index on service_account_id for listing keys per SA (if that method is added)
 	// Index on status for querying active/revoked keys
 	indexModels := []mongo.IndexModel{
-		{
-			Keys:    bson.D{{Key: "_id", Value: 1}}, // _id is keyID (private_key_id)
-			Options: options.Index().SetUnique(true),
-		},
+		// {
+		// 	Keys:    bson.D{{Key: "_id", Value: 1}}, // _id is keyID (private_key_id)
+		// 	Options: options.Index().SetUnique(true),
+		// },
 		{
 			Keys:    bson.D{{Key: "service_account_id", Value: 1}},
 			Options: options.Index().SetUnique(false), // Not unique as one SA can have multiple keys
 		},
-        {
+		{
 			Keys:    bson.D{{Key: "status", Value: 1}},
 			Options: options.Index().SetUnique(false),
 		},
@@ -75,18 +75,18 @@ func (r *PublicKeyRepositoryMongo) GetPublicKey(ctx context.Context, keyID strin
 // This method would be used by the ServiceAccountService when a new key is generated.
 func (r *PublicKeyRepositoryMongo) CreatePublicKey(ctx context.Context, pubKeyInfo *domain.PublicKeyInfo) error {
 	if pubKeyInfo.ID == "" {
-        // The ID for PublicKeyInfo is the private_key_id from the service account JSON key.
-        // It should be set by the caller (ServiceAccountService logic).
+		// The ID for PublicKeyInfo is the private_key_id from the service account JSON key.
+		// It should be set by the caller (ServiceAccountService logic).
 		return errors.New("public key info ID (keyID) cannot be empty")
 	}
-    if pubKeyInfo.CreatedAt == 0 { // Assuming 0 is uninitialized for int64 timestamp
-        pubKeyInfo.CreatedAt = time.Now().Unix()
-    }
-    if pubKeyInfo.Status == "" {
-        pubKeyInfo.Status = "ACTIVE" // Default to ACTIVE
-    }
+	if pubKeyInfo.CreatedAt == 0 { // Assuming 0 is uninitialized for int64 timestamp
+		pubKeyInfo.CreatedAt = time.Now().Unix()
+	}
+	if pubKeyInfo.Status == "" {
+		pubKeyInfo.Status = "ACTIVE" // Default to ACTIVE
+	}
 
-    // Using pubKeyInfo.ID as MongoDB's _id field.
+	// Using pubKeyInfo.ID as MongoDB's _id field.
 	_, err := r.collection.InsertOne(ctx, pubKeyInfo)
 	if err != nil {
 		log.Error().Err(err).Msg("Error inserting public key into MongoDB")
@@ -116,24 +116,24 @@ func (r *PublicKeyRepositoryMongo) UpdatePublicKeyStatus(ctx context.Context, ke
 // ListPublicKeysForServiceAccount retrieves all public keys (or active ones) for a given service account ID.
 // This is an example of another useful method.
 func (r *PublicKeyRepositoryMongo) ListPublicKeysForServiceAccount(ctx context.Context, serviceAccountID string, onlyActive bool) ([]*domain.PublicKeyInfo, error) {
-    filter := bson.M{"service_account_id": serviceAccountID}
-    if onlyActive {
-        filter["status"] = "ACTIVE"
-    }
+	filter := bson.M{"service_account_id": serviceAccountID}
+	if onlyActive {
+		filter["status"] = "ACTIVE"
+	}
 
-    cursor, err := r.collection.Find(ctx, filter)
-    if err != nil {
-        log.Error().Err(err).Str("serviceAccountID", serviceAccountID).Msg("Error finding public keys for service account")
-        return nil, err
-    }
-    defer cursor.Close(ctx)
+	cursor, err := r.collection.Find(ctx, filter)
+	if err != nil {
+		log.Error().Err(err).Str("serviceAccountID", serviceAccountID).Msg("Error finding public keys for service account")
+		return nil, err
+	}
+	defer cursor.Close(ctx)
 
-    var keys []*domain.PublicKeyInfo
-    if err = cursor.All(ctx, &keys); err != nil {
-        log.Error().Err(err).Msg("Error decoding public keys for service account")
-        return nil, err
-    }
-    return keys, nil
+	var keys []*domain.PublicKeyInfo
+	if err = cursor.All(ctx, &keys); err != nil {
+		log.Error().Err(err).Msg("Error decoding public keys for service account")
+		return nil, err
+	}
+	return keys, nil
 }
 
 // Ensure PublicKeyRepositoryMongo implements domain.PublicKeyRepository
