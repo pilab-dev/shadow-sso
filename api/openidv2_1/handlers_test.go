@@ -594,13 +594,13 @@ func TestTokenHandler_PasswordGrant_Success(t *testing.T) {
 	hashedPassword, _ := auth.NewBcryptPasswordHasher(bcrypt.MinCost).Hash(password)
 	mockUser := &domain.User{ID: userID, Email: username, PasswordHash: hashedPassword, Status: domain.UserStatusActive, Roles: []string{"user"}}
 
-	mockClientStore.EXPECT().ValidateClient(context.Background(), clientID, clientSecret).Return(mockReturnedClient, nil)
-	mockClientStore.EXPECT().GetClient(context.Background(), clientID).Return(mockReturnedClient, nil)
-	mockUserRepo.EXPECT().GetUserByEmail(context.Background(), username).Return(mockUser, nil)
-	// mockSessionRepo.EXPECT().StoreSession(context.Background(), gomock.Any()).Return(nil) // OAuthService.PasswordGrant does not store session itself
-	mockTokenRepo.EXPECT().StoreToken(context.Background(), gomock.Any()).Times(2).Return(nil)
-	mockUserRepo.EXPECT().GetUserByEmail(gomock.Any(), username).Return(mockUser, nil)
-	mockTokenCache.EXPECT().Set(context.Background(), gomock.Any()).Return(nil)
+	mockClientStore.EXPECT().ValidateClient(gomock.Any(), clientID, clientSecret).Return(mockReturnedClient, nil).Times(1)
+	mockClientStore.EXPECT().GetClient(gomock.Any(), clientID).Return(mockReturnedClient, nil).Times(1) // For ValidateGrantType
+	mockUserRepo.EXPECT().GetUserByEmail(gomock.Any(), username).Return(mockUser, nil).Times(1)
+	// TokenService.GenerateTokenPair -> CreateToken calls userRepo.GetUserByID for roles for both access and refresh token
+	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), userID).Return(mockUser, nil).Times(2)
+	mockTokenRepo.EXPECT().StoreToken(gomock.Any(), gomock.Any()).Times(2).Return(nil)    // Access & Refresh
+	mockTokenCache.EXPECT().Set(gomock.Any(), gomock.Any()).Return(nil).Times(1) // Access token only
 
 	data := url.Values{}
 	data.Set("grant_type", "password")
@@ -616,7 +616,7 @@ func TestTokenHandler_PasswordGrant_Success(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	panic(w.Body.String())
+	// Removed panic(w.Body.String())
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected status %d, got %d. Body: %s", http.StatusOK, w.Code, w.Body.String())
@@ -676,13 +676,16 @@ func TestTokenHandler_DeviceCodeGrant_Success(t *testing.T) {
 	mockReturnedClient := &client.Client{ID: clientID, AllowedGrantTypes: []string{"urn:ietf:params:oauth:grant-type:device_code"}}
 	deviceAuth := &domain.DeviceCode{DeviceCode: deviceCodeVal, ClientID: clientID, UserID: userID, Scope: scope, Status: domain.DeviceCodeStatusAuthorized}
 
-	mockClientStore.EXPECT().GetClient(context.Background(), clientID).Times(2).Return(mockReturnedClient, nil)
-	mockDeviceAuthRepo.EXPECT().GetDeviceAuthByDeviceCode(context.Background(), deviceCodeVal).Return(deviceAuth, nil)
-	mockDeviceAuthRepo.EXPECT().UpdateDeviceAuthStatus(context.Background(), deviceCodeVal, domain.DeviceCodeStatusRedeemed).Return(nil)
-	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), gomock.Any()).Return(&domain.User{ID: userID, Email: "device@example.com", Roles: []string{"user"}}, nil)
-	// mockSessionRepo.EXPECT().StoreSession(context.Background(), gomock.Any()).Return(nil) // Not called by device flow's token generation path
-	mockTokenRepo.EXPECT().StoreToken(context.Background(), gomock.Any()).Times(2).Return(nil)
-	mockTokenCache.EXPECT().Set(context.Background(), gomock.Any()).Return(nil)
+	mockClientStore.EXPECT().GetClient(gomock.Any(), clientID).Times(2).Return(mockReturnedClient, nil) // Once in TokenHandler, once in OAuthService.IssueTokenForDeviceFlow->ValidateClient (indirectly)
+	mockDeviceAuthRepo.EXPECT().GetDeviceAuthByDeviceCode(gomock.Any(), deviceCodeVal).Return(deviceAuth, nil)
+	mockDeviceAuthRepo.EXPECT().UpdateDeviceAuthStatus(gomock.Any(), deviceCodeVal, domain.DeviceCodeStatusRedeemed).Return(nil)
+	// GenerateTokenPair calls CreateToken twice, each calling GetUserByID
+	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), userID).Return(&domain.User{ID: userID, Email: "device@example.com", Roles: []string{"user"}}, nil).Times(2)
+
+	// Add back expectations for StoreToken and Set, as CreateToken calls them.
+	mockTokenRepo.EXPECT().StoreToken(gomock.Any(), gomock.Any()).Times(2).Return(nil) // For access and refresh tokens
+	mockTokenCache.EXPECT().Set(gomock.Any(), gomock.Any()).Times(1).Return(nil)    // For access token only
+
 
 	data := url.Values{}
 	data.Set("grant_type", "urn:ietf:params:oauth:grant-type:device_code")

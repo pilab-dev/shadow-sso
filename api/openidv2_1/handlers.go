@@ -334,159 +334,238 @@ func (oa *OAuth2API) DeviceAuthorizationHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// AuthorizeHandler handles OAuth 2.0 authorization requests. It validates the client, redirect URI,
-// response type, scope, and PKCE (Proof Key for Code Exchange) requirements. If all validations pass,
-// it generates an authorization code and redirects the user to the provided redirect URI with the code.
-//
-//nolint:funlen,gocognit
+// AuthorizeHandler handles OAuth 2.0 authorization requests.
+// It now delegates most of its logic to helper methods.
+//nolint:funlen,gocognit // Funlen might still be triggered but gocognit should be lower.
 func (oa *OAuth2API) AuthorizeHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	// Extract OIDC parameters
-	clientID := c.Query("client_id")
-	redirectURI := c.Query("redirect_uri")
-	responseType := c.Query("response_type")
-	scopeQuery := c.Query("scope")
-	state := c.Query("state")
-	nonce := c.Query("nonce") // OIDC
-	codeChallenge := c.Query("code_challenge")
-	codeChallengeMethod := c.Query("code_challenge_method")
-	// prompt := c.Query("prompt") // e.g., none, login, consent, select_account
-
-	// Basic validation of required OAuth2 parameters
-	if clientID == "" || redirectURI == "" || responseType == "" {
-		oa.sendJSONError(c, http.StatusBadRequest, ssoerrors.NewInvalidRequest("client_id, redirect_uri, and response_type are required"))
-		return
-	}
-	if responseType != "code" {
-		oa.sendJSONError(c, http.StatusBadRequest, ssoerrors.NewInvalidRequest("unsupported response_type, only 'code' is supported"))
+	authReqData, err := oa.parseAndValidateAuthorizeParams(c)
+	if err != nil {
+		// parseAndValidateAuthorizeParams is responsible for sending the JSON error
 		return
 	}
 
-	// Validate client and redirect URI (critical for security)
-	_, err := oa.clientService.GetClient(ctx, clientID) // rpClient was declared but not used. Changed to _
+	if err := oa.validateClientDetails(ctx, authReqData.clientID, authReqData.redirectURI, authReqData.scopeQuery); err != nil {
+		// Ensure the error being cast is actually *ssoerrors.OAuth2Error
+		if oauthErr, ok := err.(*ssoerrors.OAuth2Error); ok {
+			oa.sendJSONError(c, http.StatusBadRequest, oauthErr)
+		} else {
+			// Fallback for unexpected error types, though validateClientDetails should return ssoerrors
+			log.Error().Err(err).Msg("AuthorizeHandler: Unexpected error type from validateClientDetails")
+			oa.sendJSONError(c, http.StatusInternalServerError, ssoerrors.NewServerError("internal validation error"))
+		}
+		return
+	}
+
+	if err := oa.validatePKCE(ctx, authReqData.clientID, authReqData.codeChallenge, authReqData.codeChallengeMethod); err != nil {
+		if oauthErr, ok := err.(*ssoerrors.OAuth2Error); ok {
+			oa.sendJSONError(c, http.StatusBadRequest, oauthErr)
+		} else {
+			log.Error().Err(err).Msg("AuthorizeHandler: Unexpected error type from validatePKCE")
+			oa.sendJSONError(c, http.StatusInternalServerError, ssoerrors.NewServerError("internal PKCE validation error"))
+		}
+		return
+	}
+
+	handledBySession, err := oa.tryHandleWithExistingSession(c, authReqData)
+	// err from tryHandleWithExistingSession means an error occurred during processing (e.g. generating auth code)
+	// and the response has likely already been sent by tryHandleWithExistingSession.
+	if err != nil {
+		// Log if necessary, but response is handled by the helper.
+		return
+	}
+	if handledBySession {
+		return
+	}
+
+	// If not handled by an existing session, redirect to external login.
+	// err from initiateExternalLoginFlow means an error occurred and response sent.
+	if err := oa.initiateExternalLoginFlow(c, authReqData); err != nil {
+		// Log if necessary, response handled by helper.
+		return
+	}
+}
+
+// authorizeRequestData holds extracted and initially validated parameters from an authorization request.
+type authorizeRequestData struct {
+	clientID            string
+	redirectURI         string
+	responseType        string
+	scopeQuery          string
+	state               string
+	nonce               string
+	codeChallenge       string
+	codeChallengeMethod string
+	// prompt (if used)
+	// originalParams map[string]string // If needed by sub-functions
+}
+
+// parseAndValidateAuthorizeParams extracts and performs basic validation of OIDC parameters.
+func (oa *OAuth2API) parseAndValidateAuthorizeParams(c *gin.Context) (*authorizeRequestData, error) {
+	data := &authorizeRequestData{
+		clientID:            c.Query("client_id"),
+		redirectURI:         c.Query("redirect_uri"),
+		responseType:        c.Query("response_type"),
+		scopeQuery:          c.Query("scope"),
+		state:               c.Query("state"),
+		nonce:               c.Query("nonce"),
+		codeChallenge:       c.Query("code_challenge"),
+		codeChallengeMethod: c.Query("code_challenge_method"),
+	}
+
+	if data.clientID == "" || data.redirectURI == "" || data.responseType == "" {
+		err := ssoerrors.NewInvalidRequest("client_id, redirect_uri, and response_type are required")
+		oa.sendJSONError(c, http.StatusBadRequest, err)
+		return nil, err
+	}
+	if data.responseType != "code" {
+		err := ssoerrors.NewInvalidRequest("unsupported response_type, only 'code' is supported")
+		oa.sendJSONError(c, http.StatusBadRequest, err)
+		return nil, err
+	}
+	return data, nil
+}
+
+// validateClientDetails checks client existence, redirect URI, and scope.
+// Returns *ssoerrors.OAuth2Error or nil.
+func (oa *OAuth2API) validateClientDetails(ctx context.Context, clientID, redirectURI, scopeQuery string) error {
+	_, err := oa.clientService.GetClient(ctx, clientID)
 	if err != nil {
 		log.Warn().Err(err).Str("client_id", clientID).Msg("AuthorizeHandler: Invalid client_id")
-		oa.sendJSONError(c, http.StatusBadRequest, ssoerrors.NewInvalidClient("invalid client_id"))
-		return
+		return ssoerrors.NewInvalidClient("invalid client_id")
 	}
 	if err := oa.clientService.ValidateRedirectURI(ctx, clientID, redirectURI); err != nil {
 		log.Warn().Err(err).Str("client_id", clientID).Str("redirect_uri", redirectURI).Msg("AuthorizeHandler: Invalid redirect_uri")
-		oa.sendJSONError(c, http.StatusBadRequest, ssoerrors.NewInvalidRequest("invalid redirect_uri"))
-		return
+		return ssoerrors.NewInvalidRequest("invalid redirect_uri")
 	}
-
-	// Validate scope
 	if err := oa.clientService.ValidateScope(ctx, clientID, strings.Split(scopeQuery, " ")); err != nil {
 		log.Warn().Err(err).Str("client_id", clientID).Str("scope", scopeQuery).Msg("AuthorizeHandler: Invalid scope")
-		oa.sendJSONError(c, http.StatusBadRequest, ssoerrors.NewInvalidScope("invalid scope requested"))
-		return
+		return ssoerrors.NewInvalidScope("invalid scope requested")
 	}
+	return nil
+}
 
-	// PKCE Validation (presence of challenge if client requires it)
-	requiresPKCE, _ := oa.clientService.RequiresPKCE(ctx, clientID) // Error already handled by GetClient
+// validatePKCE checks PKCE parameters if the client requires PKCE.
+// Returns *ssoerrors.OAuth2Error or nil.
+func (oa *OAuth2API) validatePKCE(ctx context.Context, clientID, codeChallenge, codeChallengeMethod string) error {
+	requiresPKCE, _ := oa.clientService.RequiresPKCE(ctx, clientID) // Error on GetClient already handled by validateClientDetails
 	if requiresPKCE {
 		if codeChallenge == "" {
 			log.Warn().Str("client_id", clientID).Msg("AuthorizeHandler: PKCE code_challenge required but not provided")
-			oa.sendJSONError(c, http.StatusBadRequest, ssoerrors.NewPKCERequired())
-			return
+			return ssoerrors.NewPKCERequired()
 		}
-		if codeChallengeMethod != "S256" && codeChallengeMethod != "" && codeChallengeMethod != "plain" { // "" defaults to plain if allowed, or S256 if plain disabled
+		// "" for method defaults to plain if allowed, or S256 if plain disabled by server/client config
+		// This logic should ideally be within pkceService or clientService configuration
+		if codeChallengeMethod != "" && codeChallengeMethod != "S256" && codeChallengeMethod != "plain" {
 			log.Warn().Str("client_id", clientID).Str("method", codeChallengeMethod).Msg("AuthorizeHandler: Invalid code_challenge_method")
-			oa.sendJSONError(c, http.StatusBadRequest, ssoerrors.NewInvalidRequest("invalid code_challenge_method, only S256 or plain (if enabled) are supported"))
-			return
+			return ssoerrors.NewInvalidRequest("invalid code_challenge_method, only S256 or plain (if enabled) are supported")
 		}
-		// If method is empty, and plain is disabled, server should default to S256 or reject.
-		// Assuming PKCEService or config handles this logic if method is empty.
-		// For now, we just ensure it's one of the valid ones if provided.
+	}
+	return nil
+}
+
+// tryHandleWithExistingSession checks for an active user session and, if found,
+// generates an auth code and redirects the client. Returns true if handled, and an error if processing failed.
+func (oa *OAuth2API) tryHandleWithExistingSession(c *gin.Context, data *authorizeRequestData) (handled bool, err error) {
+	ctx := c.Request.Context()
+	sessionCookie, cookieErr := c.Cookie(SessionCookieName)
+	if cookieErr != nil || sessionCookie == "" {
+		return false, nil // No cookie, not handled by this path
 	}
 
-	// Check for existing OP user session
-	sessionCookie, err := c.Cookie(SessionCookieName)
-	if err == nil && sessionCookie != "" {
-		userSession, sessionErr := oa.userSessionStore.GetUserSession(sessionCookie)
-		if sessionErr == nil {
-			// User is logged in to OP. Proceed to generate auth code.
-			// TODO: Handle 'prompt=login' - if present, must re-authenticate even if session exists.
-			// TODO: Handle consent - if not previously given for this client/scopes, may need a consent step.
+	userSession, sessionErr := oa.userSessionStore.GetUserSession(sessionCookie)
+	if sessionErr == nil {
+		// User is logged in.
+		// TODO: Handle 'prompt=login' - if present, must re-authenticate even if session exists. (This would return false from here)
+		// TODO: Handle consent - if not previously given for this client/scopes, may need a consent step. (This might redirect to consent or return false)
 
-			log.Info().Str("userID", userSession.UserID).Str("clientID", clientID).Msg("AuthorizeHandler: User already authenticated by OP session. Proceeding to auth code generation.")
-			authCode, errGen := oa.service.GenerateAuthCode(
-				ctx,
-				clientID,
-				userSession.UserID, // Pass UserID from OP session
-				redirectURI,
-				scopeQuery,
-				codeChallenge,
-				codeChallengeMethod,
-			)
-			if errGen != nil {
-				log.Error().Err(errGen).Msg("AuthorizeHandler: Failed to generate authorization code for authenticated user")
-				oa.sendJSONError(c, http.StatusInternalServerError, ssoerrors.NewServerError("failed to generate authorization code"))
-				return
-			}
-			oa.redirectToClient(c, redirectURI, authCode, state)
-			return
+		log.Info().Str("userID", userSession.UserID).Str("clientID", data.clientID).Msg("AuthorizeHandler: User already authenticated. Proceeding to auth code generation.")
+		authCode, errGen := oa.service.GenerateAuthCode(
+			ctx,
+			data.clientID,
+			userSession.UserID,
+			data.redirectURI,
+			data.scopeQuery,
+			data.codeChallenge,
+			data.codeChallengeMethod,
+		)
+		if errGen != nil {
+			log.Error().Err(errGen).Msg("AuthorizeHandler: Failed to generate authorization code for authenticated user")
+			oa.sendJSONError(c, http.StatusInternalServerError, ssoerrors.NewServerError("failed to generate authorization code"))
+			return true, errGen // Error occurred, but considered "handled" in terms of flow decision
 		}
-		// Corrected to use goerrors.Is as per import alias
-		if !goerrors.Is(sessionErr, oidcflow.ErrSessionNotFound) && !goerrors.Is(sessionErr, oidcflow.ErrSessionExpired) {
-			log.Warn().Err(sessionErr).Msg("AuthorizeHandler: Error validating existing OP session cookie")
-		}
-		// If session not found or expired, clear the bad cookie and proceed to login flow
-		oa.clearUserSessionCookie(c)
+		oa.redirectToClient(c, data.redirectURI, authCode, data.state)
+		return true, nil // Handled successfully
 	}
 
-	// No active OP session or 'prompt=login' requires redirect to Next.js UI
+	// If session error is not "not found" or "expired", it's an unexpected error.
+	if !goerrors.Is(sessionErr, oidcflow.ErrSessionNotFound) && !goerrors.Is(sessionErr, oidcflow.ErrSessionExpired) {
+		log.Warn().Err(sessionErr).Msg("AuthorizeHandler: Error validating existing OP session cookie")
+		// Potentially return an error here if this is critical, or clear cookie and proceed.
+	}
+	// Clear bad/expired cookie and proceed to external login.
+	oa.clearUserSessionCookie(c)
+	return false, nil // Not handled, proceed to external login
+}
+
+// initiateExternalLoginFlow sets up the OIDC flow state and redirects the user to the Next.js UI.
+// Returns an error if the process fails and a response has been sent.
+func (oa *OAuth2API) initiateExternalLoginFlow(c *gin.Context, data *authorizeRequestData) error {
 	if oa.config.NextJSLoginURL == "" {
 		log.Error().Msg("AuthorizeHandler: NextJSLoginURL is not configured. Cannot redirect to external UI.")
-		oa.sendJSONError(c, http.StatusInternalServerError, ssoerrors.NewServerError("authentication UI not configured"))
-		return
+		err := ssoerrors.NewServerError("authentication UI not configured")
+		oa.sendJSONError(c, http.StatusInternalServerError, err)
+		return err
 	}
 
 	flowID := uuid.NewString()
 	flowState := oidcflow.LoginFlowState{
 		FlowID:              flowID,
-		ClientID:            clientID,
-		RedirectURI:         redirectURI,
-		Scope:               scopeQuery,
-		State:               state,
-		Nonce:               nonce,
-		CodeChallenge:       codeChallenge,
-		CodeChallengeMethod: codeChallengeMethod,
-		ExpiresAt:           time.Now().Add(10 * time.Minute), // Flow valid for 10 minutes
-		OriginalOIDCParams:  oa.extractOriginalOIDCParams(c),
+		ClientID:            data.clientID,
+		RedirectURI:         data.redirectURI,
+		Scope:               data.scopeQuery,
+		State:               data.state,
+		Nonce:               data.nonce,
+		CodeChallenge:       data.codeChallenge,
+		CodeChallengeMethod: data.codeChallengeMethod,
+		ExpiresAt:           time.Now().Add(10 * time.Minute),
+		OriginalOIDCParams:  oa.extractOriginalOIDCParams(c), // Extracted from original request
 	}
 
 	if err := oa.flowStore.StoreFlow(flowID, flowState); err != nil {
 		log.Error().Err(err).Msg("AuthorizeHandler: Failed to store OIDC flow state")
-		oa.sendJSONError(c, http.StatusInternalServerError, ssoerrors.NewServerError("failed to initiate login flow"))
-		return
+		ssoErr := ssoerrors.NewServerError("failed to initiate login flow")
+		oa.sendJSONError(c, http.StatusInternalServerError, ssoErr)
+		return ssoErr
 	}
 
-	// TODO: Set CSRF cookie here before redirecting to Next.js UI.
-	// csrfToken := uuid.NewString()
-	// http.SetCookie(c.Writer, &http.Cookie{Name: CSRFCookieName, Value: csrfToken, Expires: time.Now().Add(10 * time.Minute), HttpOnly: true, Path: "/" ...})
+	// TODO: Consider CSRF cookie for the redirect to Next.js UI if Next.js calls back with sensitive actions.
 
-	// Set flowID in an HttpOnly cookie instead of query parameter
 	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     "sso_oidc_flow_id", // Define as a const if used elsewhere
+		Name:     "sso_oidc_flow_id",
 		Value:    flowID,
-		Path:     "/",                               // Adjust path if your Next.js app's API routes are more specific
-		MaxAge:   int((10 * time.Minute).Seconds()), // Align with flowState.ExpiresAt
+		Path:     "/",
+		MaxAge:   int((10 * time.Minute).Seconds()),
 		HttpOnly: true,
 		Secure:   c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https"),
-		SameSite: http.SameSiteLaxMode, // Lax is often a good default
+		SameSite: http.SameSiteLaxMode,
 	})
 
-	nextJSLoginURL, _ := url.Parse(oa.config.NextJSLoginURL)
-	// No longer adding flowId to query parameters
-	// query := nextJSLoginURL.Query()
-	// Potentially pass client_id or other safe context if Next.js UI needs it directly for display before calling /api/oidc/flow
-	// query.Set("client_id", clientID) // This might still be useful for the UI
-	// nextJSLoginURL.RawQuery = query.Encode()
+	nextJSLoginURLParsed, parseErr := url.Parse(oa.config.NextJSLoginURL)
+	if parseErr != nil {
+		log.Error().Err(parseErr).Str("url", oa.config.NextJSLoginURL).Msg("AuthorizeHandler: Failed to parse NextJSLoginURL")
+		ssoErr := ssoerrors.NewServerError("invalid authentication UI configuration")
+		oa.sendJSONError(c, http.StatusInternalServerError, ssoErr)
+		return ssoErr
+	}
+	// query := nextJSLoginURLParsed.Query()
+	// query.Set("client_id", data.clientID) // Optionally pass client_id for UI context
+	// nextJSLoginURLParsed.RawQuery = query.Encode()
 
-	log.Info().Str("flowId_cookie_set", flowID).Str("nextjs_url", nextJSLoginURL.String()).Msg("AuthorizeHandler: Redirecting user to Next.js for authentication with flowId in cookie.")
-	c.Redirect(http.StatusFound, nextJSLoginURL.String())
+	log.Info().Str("flowId_cookie_set", flowID).Str("nextjs_url", nextJSLoginURLParsed.String()).Msg("AuthorizeHandler: Redirecting user to Next.js for authentication.")
+	c.Redirect(http.StatusFound, nextJSLoginURLParsed.String())
+	return nil
 }
 
 // sendJSONError is a helper to return JSON errors consistently.
