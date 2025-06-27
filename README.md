@@ -1,17 +1,19 @@
 # Shadow SSO (3SO): Your Go-Powered Identity Fortress 🛡️
-![Coverage](https://img.shields.io/badge/Coverage-3.9%25-red)
 
 **A Robust and Flexible OAuth 2.0 and OpenID Connect Implementation for Go**
 
 <p align="center">
-   <a href="https://github.com/pilab-dev/shadow-sso"><img src="https://img.shields.io/github/stars/pilab-dev/shadow-sso?style=social" alt="GitHub stars"></a>
-   <a href="https://pkg.go.dev/github.com/pilab-dev/shadow-sso"><img src="https://pkg.go.dev/badge/github.com/pilab-dev/shadow-sso" alt="Go Reference"></a>
-   <a href="https://github.com/pilab-dev/shadow-sso/blob/main/LICENSE"><img src="https://img.shields.io/github/license/pilab-dev/shadow-sso" alt="License"></a>
-   <img src="https://github.com/pilab-dev/shadow-sso/workflows/Build, Test and Coverage
-/badge.svg">
-<img src="https://img.shields.io/badge/Coverage-100.0%25-brightgreen"/>
- </p>
-
+   <a href="https://github.com/pilab-dev/shadow-sso">
+      <img src="https://img.shields.io/github/stars/pilab-dev/shadow-sso?style=social" alt="GitHub stars"></a>
+   <a href="https://pkg.go.dev/github.com/pilab-dev/shadow-sso">
+      <img src="https://pkg.go.dev/badge/github.com/pilab-dev/shadow-sso" alt="Go Reference">
+   </a>
+   <a href="https://github.com/pilab-dev/shadow-sso/blob/main/LICENSE">
+      <img src="https://img.shields.io/github/license/pilab-dev/shadow-sso" alt="License">
+   </a>
+   <img src="https://github.com/pilab-dev/shadow-sso/workflows/Build, Test and Coverage/badge.svg" alt="Pipeline Status" title="Pipeline Status">
+   <img src="https://codecov.io/github/pilab-dev/shadow-sso/branch/v1/graph/badge.svg?token=KWTJG0ADS0" alt="Coverage" title="Covrage"/>
+</p>
 
 
 Shadow SSO provides a complete suite of tools to implement secure authentication and authorization in your Go applications. We've crafted it with clarity and modularity, making it easier to protect your APIs and data. This package is compliant with industry standards, ensuring smooth integration with any client that also adheres to OAuth 2.0 and OIDC principles.
@@ -38,6 +40,7 @@ Shadow SSO is packed with essential functionality to ensure top-tier security an
 -   **🔒 Secure Token Handling:**  Ensures sensitive credentials and tokens are stored with encryption where needed, handled with precision, and safeguarded.
 -  **👥 Client Application Management:** Control registration of clients in order to use and delegate your authentication server.
 -   **🕹️ User Session Management:**  Fine grained access and revocation control over each individual session.
+-   **🛡️ LDAP / Active Directory Integration:** Supports using external LDAP/AD servers as a user authentication source with per-client attribute mapping. See [LDAP Setup Guide](docs/ldap_setup.md).
 
 ## 🚀 Getting Started
 

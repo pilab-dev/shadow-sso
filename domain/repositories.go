@@ -1,3 +1,4 @@
+//go:generate go run go.uber.org/mock/mockgen -source=$GOFILE -destination=mocks/mock_$GOFILE -package=mock_$GOPACKAGE
 package domain
 
 import (
@@ -9,7 +10,6 @@ import (
 
 // PublicKeyInfo, ServiceAccount, User, Session are defined in their respective domain files.
 
-// --- Existing Repositories (PublicKeyRepository, ServiceAccountRepository from previous steps) ---
 type PublicKeyRepository interface {
 	GetPublicKey(ctx context.Context, keyID string) (*PublicKeyInfo, error)
 	// Add CreatePublicKey, UpdatePublicKeyStatus etc. if they should be part of the interface
@@ -27,15 +27,14 @@ type ServiceAccountRepository interface {
 	UpdateServiceAccount(ctx context.Context, sa *ServiceAccount) error
 	DeleteServiceAccount(ctx context.Context, id string) error
 }
-// --- End Existing Repositories ---
 
 // UserRepository defines methods for user data persistence.
 type UserRepository interface {
 	CreateUser(ctx context.Context, user *User) error
 	GetUserByID(ctx context.Context, id string) (*User, error)
 	GetUserByEmail(ctx context.Context, email string) (*User, error)
-	UpdateUser(ctx context.Context, user *User) error // Could also be UpdateUser(id, updates map[string]interface{})
-	DeleteUser(ctx context.Context, id string) error    // Optional, consider soft delete by status
+	UpdateUser(ctx context.Context, user *User) error                                       // Could also be UpdateUser(id, updates map[string]interface{})
+	DeleteUser(ctx context.Context, id string) error                                        // Optional, consider soft delete by status
 	ListUsers(ctx context.Context, pageToken string, pageSize int) ([]*User, string, error) // Returns users, next page token, error
 }
 
@@ -48,6 +47,8 @@ type SessionFilter struct {
 	ToDate    time.Time
 	IsRevoked *bool // Pointer to bool to allow filtering by true/false or ignoring if nil
 }
+
+//go:generate go run go.uber.org/mock/mockgen -source=$GOFILE -destination=mocks/mock_$GOFILE -package=mock_$GOPACKAGE SessionRepository
 type SessionRepository interface {
 	StoreSession(ctx context.Context, session *Session) error
 	GetSessionByID(ctx context.Context, id string) (*Session, error) // Typically by session_id or token_id
@@ -74,6 +75,8 @@ type TokenRepository interface {
 }
 
 // AuthorizationCodeRepository defines the interface for OAuth 2.0 authorization code operations.
+//
+//go:generate go run go.uber.org/mock/mockgen -source=$GOFILE -destination=mocks/mock_$GOFILE -package=mock_$GOPACKAGE AuthorizationCodeRepository
 type AuthorizationCodeRepository interface {
 	SaveAuthCode(ctx context.Context, code *AuthCode) error
 	GetAuthCode(ctx context.Context, code string) (*AuthCode, error)
@@ -89,6 +92,8 @@ type PkceRepository interface {
 }
 
 // DeviceAuthorizationRepository defines methods for managing device authorization flow data.
+//
+//go:generate go run go.uber.org/mock/mockgen -source=$GOFILE -destination=mocks/mock_$GOFILE -package=mock_$GOPACKAGE DeviceAuthorizationRepository
 type DeviceAuthorizationRepository interface {
 	SaveDeviceAuth(ctx context.Context, auth *DeviceCode) error
 	GetDeviceAuthByDeviceCode(ctx context.Context, deviceCode string) (*DeviceCode, error)
@@ -110,6 +115,8 @@ type ClientRepository interface {
 }
 
 // OAuthRepository is a composite interface for all OAuth related data operations.
+//
+//go:generate go run go.uber.org/mock/mockgen -source=$GOFILE -destination=mocks/mock_$GOFILE -package=mock_$GOPACKAGE OAuthRepository
 type OAuthRepository interface {
 	TokenRepository
 	AuthorizationCodeRepository
@@ -119,12 +126,11 @@ type OAuthRepository interface {
 	// io.Closer // If the implementation needs a Close method (e.g., DB connection)
 }
 
-
 // IdPRepository defines methods for Identity Provider configuration persistence.
 type IdPRepository interface {
 	AddIdP(ctx context.Context, idp *IdentityProvider) error
 	GetIdPByID(ctx context.Context, id string) (*IdentityProvider, error)
-	GetIdPByName(ctx context.Context, name string) (*IdentityProvider, error) // Name should be unique
+	GetIdPByName(ctx context.Context, name string) (*IdentityProvider, error)    // Name should be unique
 	ListIdPs(ctx context.Context, onlyEnabled bool) ([]*IdentityProvider, error) // Option to list only enabled IdPs
 	UpdateIdP(ctx context.Context, idp *IdentityProvider) error
 	DeleteIdP(ctx context.Context, id string) error
