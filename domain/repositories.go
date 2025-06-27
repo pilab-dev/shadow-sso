@@ -1,4 +1,4 @@
-//go:generate go run go.uber.org/mock/mockgen -source=$GOFILE -destination=mocks/mock_$GOFILE -package=mock_$GOPACKAGE
+//go:generate go run go.uber.org/mock/mockgen@latest -source=$GOFILE -destination=mocks/mock_repositories.go -package=mock_domain PublicKeyRepository,ServiceAccountRepository,UserRepository,SessionRepository,TokenRepository,AuthorizationCodeRepository,PkceRepository,DeviceAuthorizationRepository,ClientRepository,IdPRepository,UserFederatedIdentityRepository
 package domain
 
 import (
@@ -47,7 +47,6 @@ type SessionFilter struct {
 	IsRevoked *bool // Pointer to bool to allow filtering by true/false or ignoring if nil
 }
 
-//go:generate go run go.uber.org/mock/mockgen -source=$GOFILE -destination=mocks/mock_$GOFILE -package=mock_$GOPACKAGE SessionRepository
 type SessionRepository interface {
 	StoreSession(ctx context.Context, session *Session) error
 	GetSessionByID(ctx context.Context, id string) (*Session, error) // Typically by session_id or token_id
@@ -74,8 +73,6 @@ type TokenRepository interface {
 }
 
 // AuthorizationCodeRepository defines the interface for OAuth 2.0 authorization code operations.
-//
-//go:generate go run go.uber.org/mock/mockgen -source=$GOFILE -destination=mocks/mock_$GOFILE -package=mock_$GOPACKAGE AuthorizationCodeRepository
 type AuthorizationCodeRepository interface {
 	SaveAuthCode(ctx context.Context, code *AuthCode) error
 	GetAuthCode(ctx context.Context, code string) (*AuthCode, error)
@@ -91,8 +88,6 @@ type PkceRepository interface {
 }
 
 // DeviceAuthorizationRepository defines methods for managing device authorization flow data.
-//
-//go:generate go run go.uber.org/mock/mockgen -source=$GOFILE -destination=mocks/mock_$GOFILE -package=mock_$GOPACKAGE DeviceAuthorizationRepository
 type DeviceAuthorizationRepository interface {
 	SaveDeviceAuth(ctx context.Context, auth *DeviceCode) error
 	GetDeviceAuthByDeviceCode(ctx context.Context, deviceCode string) (*DeviceCode, error)
@@ -102,33 +97,6 @@ type DeviceAuthorizationRepository interface {
 	UpdateDeviceAuthLastPolledAt(ctx context.Context, deviceCode string) error
 	DeleteExpiredDeviceAuths(ctx context.Context) error
 }
-
-// ClientType defines the type of client application. Confidential or Public
-type ClientType string
-
-const (
-	// Confidential clients can securely store secrets
-	Confidential ClientType = "confidential"
-	// Public clients cannot securely store secrets (mobile apps, SPAs)
-	Public ClientType = "public"
-)
-
-// ClientFilter defines filtering options for listing clients
-type ClientFilter struct {
-	Type     ClientType
-	IsActive bool
-	Search   string
-}
-
-// // ClientRepository defines methods for client application data persistence.
-// type ClientRepository interface {
-// 	CreateClient(ctx context.Context, c *client.Client) error
-// 	GetClient(ctx context.Context, clientID string) (*client.Client, error)
-// 	UpdateClient(ctx context.Context, c *client.Client) error
-// 	DeleteClient(ctx context.Context, clientID string) error
-// 	ListClients(ctx context.Context, filter *ClientFilter) ([]*client.Client, string, error)
-// 	ValidateClient(ctx context.Context, clientID, clientSecret string) error // Might be better in service layer
-// }
 
 // IdPRepository defines methods for Identity Provider configuration persistence.
 type IdPRepository interface {

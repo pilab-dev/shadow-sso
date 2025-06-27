@@ -1,4 +1,4 @@
-//go:generate go run go.uber.org/mock/mockgen -source=$GOFILE -destination=mocks/mock_$GOFILE -package=mock_$GOPACKAGE
+//go:generate go run go.uber.org/mock/mockgen@latest -source=$GOFILE -destination=mocks/mock_$GOFILE -package=mock_$GOPACKAGE
 package oidcflow
 
 import "time"

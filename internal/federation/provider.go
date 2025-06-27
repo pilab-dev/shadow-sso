@@ -23,7 +23,7 @@ type ExternalUserInfo struct {
 // OAuth2Provider defines the interface for an external OAuth2 identity provider.
 // Implementations of this interface will handle provider-specific details.
 //
-//go:generate go run go.uber.org/mock/mockgen -source=$GOFILE -destination=mock/mock_$GOFILE -package=mock_$GOPACKAGE OAuth2Provider
+//go:generate go run go.uber.org/mock/mockgen@latest -source=$GOFILE -destination=mock/mock_$GOFILE -package=mock_$GOPACKAGE OAuth2Provider
 type OAuth2Provider interface {
 	// Name returns the unique identifier for the provider (e.g., "google", "facebook").
 	Name() string

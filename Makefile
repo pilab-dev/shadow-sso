@@ -2,7 +2,7 @@
 
 # Path to the buf executable. Assumes buf is in the system PATH.
 BUF := buf
-
+GOTEST := $(shell go list ./... | grep -v /gen/ | grep -v /cmd/ | grep -v /helm/)
 # Go command
 GO := go
 
@@ -55,7 +55,8 @@ tidy: ## Tidy go module files
 
 test: ## Run unit tests
 	@echo "Running unit tests..."
-	$(GO) test ./... -v
+	echo -e $(GOTEST)
+	@go test $(GOTEST)
 	@echo "Tests complete."
 
 # Example build target for the CLI. Adjust path to main.go if needed.

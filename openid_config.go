@@ -87,6 +87,7 @@ type SecurityConfig struct {
 	RequireRequestURIRegistration bool     `json:"require_request_uri_registration"`
 	DefaultMaxAge                 int      `json:"default_max_age"`
 	RequireAuthTime               bool     `json:"require_auth_time"`
+	PasswordHashingCost           int      `json:"password_hashing_cost"`
 }
 
 // TokenConfig contains token-related settings
