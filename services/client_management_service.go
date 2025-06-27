@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/google/uuid"
-	"github.com/pilab-dev/shadow-sso/client" // Added domain import
+	"github.com/google/uuid" // Added domain import
+	"github.com/pilab-dev/shadow-sso/domain"
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
 	"github.com/rs/zerolog/log"
@@ -20,12 +20,12 @@ import (
 // ClientManagementServer implements the ssov1connect.ClientManagementServiceHandler interface.
 type ClientManagementServer struct {
 	ssov1connect.UnimplementedClientManagementServiceHandler
-	clientRepo   client.ClientStore // Changed to domain.OAuthRepository
+	clientRepo   domain.ClientRepository // Changed to domain.OAuthRepository
 	secretHasher PasswordHasher
 }
 
 // NewClientManagementServer creates a new ClientManagementServer.
-func NewClientManagementServer(clientRepo client.ClientStore, hasher PasswordHasher) *ClientManagementServer { // Changed to domain.OAuthRepository
+func NewClientManagementServer(clientRepo domain.ClientRepository, hasher PasswordHasher) *ClientManagementServer { // Changed to domain.OAuthRepository
 	return &ClientManagementServer{
 		clientRepo:   clientRepo,
 		secretHasher: hasher,
@@ -33,12 +33,12 @@ func NewClientManagementServer(clientRepo client.ClientStore, hasher PasswordHas
 }
 
 // Helper to map ssov1.ClientTypeProto to client.ClientType (string)
-func fromClientTypeProto(protoType ssov1.ClientTypeProto) client.ClientType {
+func fromClientTypeProto(protoType ssov1.ClientTypeProto) domain.ClientType {
 	switch protoType {
 	case ssov1.ClientTypeProto_CLIENT_TYPE_CONFIDENTIAL:
-		return client.Confidential
+		return domain.ClientTypeConfidential
 	case ssov1.ClientTypeProto_CLIENT_TYPE_PUBLIC:
-		return client.Public
+		return domain.ClientTypePublic
 	default:
 		// Return an empty ClientType, let validation handle it if it's an issue.
 		// Or, return an error if unspecified is not allowed.
@@ -47,11 +47,11 @@ func fromClientTypeProto(protoType ssov1.ClientTypeProto) client.ClientType {
 }
 
 // Helper to map client.ClientType (string) to ssov1.ClientTypeProto
-func toClientTypeProto(domainType client.ClientType) ssov1.ClientTypeProto {
+func toClientTypeProto(domainType domain.ClientType) ssov1.ClientTypeProto {
 	switch domainType {
-	case client.Confidential:
+	case domain.ClientTypeConfidential:
 		return ssov1.ClientTypeProto_CLIENT_TYPE_CONFIDENTIAL
-	case client.Public:
+	case domain.ClientTypePublic:
 		return ssov1.ClientTypeProto_CLIENT_TYPE_PUBLIC
 	default:
 		return ssov1.ClientTypeProto_CLIENT_TYPE_UNSPECIFIED
@@ -59,7 +59,7 @@ func toClientTypeProto(domainType client.ClientType) ssov1.ClientTypeProto {
 }
 
 // Helper to convert *client.Client to ssov1.ClientProto
-func toClientProto(c *client.Client, includeSecret bool) *ssov1.ClientProto {
+func toClientProto(c *domain.Client, includeSecret bool) *ssov1.ClientProto {
 	if c == nil {
 		return nil
 	}
@@ -116,7 +116,7 @@ func (s *ClientManagementServer) RegisterClient(ctx context.Context, req *connec
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid client type specified"))
 	}
 
-	newClient := &client.Client{ // Using the canonical client.Client
+	newClient := &domain.Client{ // Using the canonical client.Client
 		ID:                uuid.NewString(),
 		Type:              domainClientType,
 		Name:              req.Msg.ClientName,
@@ -147,7 +147,7 @@ func (s *ClientManagementServer) RegisterClient(ctx context.Context, req *connec
 	}
 
 	var plaintextSecretForResponse string
-	if newClient.Type == client.Confidential {
+	if newClient.Type == domain.ClientTypeConfidential {
 		plaintextSecretForResponse = uuid.New().String()
 		hashedSecret, err := s.secretHasher.Hash(plaintextSecretForResponse)
 		if err != nil {
@@ -164,16 +164,16 @@ func (s *ClientManagementServer) RegisterClient(ctx context.Context, req *connec
 	}
 
 	if len(newClient.AllowedGrantTypes) == 0 {
-		if newClient.Type == client.Confidential {
+		if newClient.Type == domain.ClientTypeConfidential {
 			newClient.AllowedGrantTypes = []string{"authorization_code", "client_credentials", "refresh_token"}
 		} else {
 			newClient.AllowedGrantTypes = []string{"authorization_code", "refresh_token"}
 		}
 	}
-	if newClient.TokenEndpointAuth == "" && newClient.Type == client.Confidential {
+	if newClient.TokenEndpointAuth == "" && newClient.Type == domain.ClientTypeConfidential {
 		newClient.TokenEndpointAuth = "client_secret_basic"
 	}
-	if newClient.Type == client.Public { // PKCE should be enforced for public clients
+	if newClient.Type == domain.ClientTypePublic { // PKCE should be enforced for public clients
 		newClient.RequirePKCE = true
 	}
 
@@ -187,7 +187,7 @@ func (s *ClientManagementServer) RegisterClient(ctx context.Context, req *connec
 	}
 
 	responseClientProto := toClientProto(newClient, false)
-	if newClient.Type == client.Confidential {
+	if newClient.Type == domain.ClientTypeConfidential {
 		responseClientProto.ClientSecret = plaintextSecretForResponse
 	}
 
@@ -209,8 +209,8 @@ func (s *ClientManagementServer) GetClient(ctx context.Context, req *connect.Req
 
 // ListClients lists OAuth2 clients.
 func (s *ClientManagementServer) ListClients(ctx context.Context, req *connect.Request[ssov1.ListClientsRequest]) (*connect.Response[ssov1.ListClientsResponse], error) {
-	dbClients, err := s.clientRepo.ListClients(ctx, client.ClientFilter{
-		Type:     client.Confidential,
+	dbClients, err := s.clientRepo.ListClients(ctx, domain.ClientFilter{
+		Type:     domain.ClientTypeConfidential,
 		IsActive: false,
 		Search:   "",
 	})

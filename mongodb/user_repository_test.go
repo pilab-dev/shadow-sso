@@ -49,7 +49,7 @@ func setupUserRepoTest(t *testing.T) (domain.UserRepository, func(), error) {
 	db := client.Database(dbName)
 
 	// Create repository instance
-	userRepo, err := mongodb.NewUserRepositoryMongo(ctx, db) // NewUserRepositoryMongo already handles index creation.
+	userRepo, err := mongodb.NewUserRepository(ctx, db) // NewUserRepositoryMongo already handles index creation.
 	if err != nil {
 		client.Disconnect(ctx)
 		return nil, func() {}, fmt.Errorf("NewUserRepositoryMongo failed: %w", err)

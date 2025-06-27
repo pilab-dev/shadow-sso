@@ -9,14 +9,15 @@ import (
 
 // Config holds all configuration for the SSO server.
 type Config struct {
-	HTTPAddr            string        `mapstructure:"http_addr"`
-	LogLevel            string        `mapstructure:"log_level"`
-	MongoURI            string        `mapstructure:"mongo_uri"`
-	MongoDBName         string        `mapstructure:"mongo_db_name"`
-	IssuerURL           string        `mapstructure:"issuer_url"`
-	SigningKeyPath      string        `mapstructure:"signing_key_path"` // Path to RSA private key PEM file
-	KeyRotationInterval time.Duration `mapstructure:"key_rotation_interval"`
-	DefaultRedirectURI  string        `mapstructure:"default_redirect_uri"`
+	HTTPAddr             string        `mapstructure:"http_addr"`
+	LogLevel             string        `mapstructure:"log_level"`
+	MongoURI             string        `mapstructure:"mongo_uri"`
+	MongoDBName          string        `mapstructure:"mongo_db_name"`
+	IssuerURL            string        `mapstructure:"issuer_url"`
+	SigningKeyPath       string        `mapstructure:"signing_key_path"` // Path to RSA private key PEM file
+	KeyRotationInterval  time.Duration `mapstructure:"key_rotation_interval"`
+	TokenCacheDefaultTTL time.Duration `mapstructure:"token_cache_default_ttl"`
+	DefaultRedirectURI   string        `mapstructure:"default_redirect_uri"`
 
 	// OIDC specific configurations that might be part of OpenIDProviderConfig
 	NextJSLoginURL string `mapstructure:"nextjs_login_url"`
@@ -26,6 +27,10 @@ type Config struct {
 	DTSClientAddress  string        `mapstructure:"dts_client_address"`
 	DTSConnectTimeout time.Duration `mapstructure:"dts_connect_timeout"`
 	DTSDefaultPKCETTL time.Duration `mapstructure:"dts_default_pkce_ttl"`
+
+	// Token signing
+	TokenSigningKey     string `mapstructure:"token_signing_key"`
+	TokenSigningKeyFile string `mapstructure:"token_signing_key_file"`
 }
 
 // StorageType defines the type of storage backend to use.
@@ -57,6 +62,7 @@ func LoadConfig() (config Config, err error) {
 	viper.SetDefault("issuer_url", "http://localhost:8080") // Default to HTTP for local dev
 	viper.SetDefault("key_rotation_interval", "24h")
 	viper.SetDefault("default_redirect_uri", "http://localhost:3000/login")
+	viper.SetDefault("token_cache_default_ttl", "1h")
 	// signing_key_path has no default, should be provided or generated on first run.
 	// nextjs_login_url has no default, should be configured if UI flow is used.
 

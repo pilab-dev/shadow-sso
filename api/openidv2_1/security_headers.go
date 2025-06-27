@@ -1,4 +1,4 @@
-package sssogin
+package openidv2_1
 
 import "github.com/gin-gonic/gin"
 
