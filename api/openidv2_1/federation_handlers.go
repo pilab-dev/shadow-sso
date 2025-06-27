@@ -1,4 +1,4 @@
-package sssogin
+package openidv2_1
 
 import (
 	"fmt"

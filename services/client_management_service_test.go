@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/pilab-dev/shadow-sso/client" // Assuming mock for domain.OAuthRepository
-	mock_client "github.com/pilab-dev/shadow-sso/client/mocks"
+	"github.com/pilab-dev/shadow-sso/domain"
+	mock_domain "github.com/pilab-dev/shadow-sso/domain/mocks"
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -42,7 +42,7 @@ func TestClientManagementServer_RegisterClient_WithLDAPMappings(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	clientRepo := mock_client.NewMockClientStore(ctrl)
+	clientRepo := mock_domain.NewMockClientRepository(ctrl)
 	mockHasher := &MockPasswordHasher{}
 	service := NewClientManagementServer(clientRepo, mockHasher)
 
@@ -64,9 +64,9 @@ func TestClientManagementServer_RegisterClient_WithLDAPMappings(t *testing.T) {
 	}
 
 	clientRepo.EXPECT().CreateClient(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, c *client.Client) error {
+		DoAndReturn(func(_ context.Context, c *domain.Client) error {
 			assert.Equal(t, "Test LDAP Client", c.Name)
-			assert.Equal(t, client.Confidential, c.Type)
+			assert.Equal(t, domain.ClientTypeConfidential, c.Type)
 			assert.Equal(t, "mail_ldap", c.ClientLDAPAttributeEmail)
 			assert.Equal(t, "givenName_ldap", c.ClientLDAPAttributeFirstName)
 			assert.Equal(t, "sn_ldap", c.ClientLDAPAttributeLastName)
@@ -96,15 +96,15 @@ func TestClientManagementServer_UpdateClient_WithLDAPMappings(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	clientRepo := mock_client.NewMockClientStore(ctrl)
+	clientRepo := mock_domain.NewMockClientRepository(ctrl)
 	mockHasher := &MockPasswordHasher{} // Not directly used in update for these fields, but part of service
 	service := NewClientManagementServer(clientRepo, mockHasher)
 
 	clientID := "client-123"
-	existingClient := &client.Client{
+	existingClient := &domain.Client{
 		ID:                            clientID,
 		Name:                          "Old Name",
-		Type:                          client.Confidential,
+		Type:                          domain.ClientTypeConfidential,
 		ClientLDAPAttributeEmail:      "old_mail",
 		ClientLDAPCustomClaimsMapping: map[string]string{"old_claim": "old_attr"},
 		UpdatedAt:                     time.Now().Add(-1 * time.Hour),
@@ -132,7 +132,7 @@ func TestClientManagementServer_UpdateClient_WithLDAPMappings(t *testing.T) {
 
 	clientRepo.EXPECT().GetClient(gomock.Any(), clientID).Return(existingClient, nil)
 	clientRepo.EXPECT().UpdateClient(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, c *client.Client) error {
+		DoAndReturn(func(_ context.Context, c *domain.Client) error {
 			assert.Equal(t, clientID, c.ID)
 			assert.Equal(t, "New Name", c.Name)
 			assert.Equal(t, "new_mail_ldap", c.ClientLDAPAttributeEmail)
@@ -161,14 +161,14 @@ func TestClientManagementServer_GetClient_ReturnsLDAPMappings(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockClientRepo := mock_client.NewMockClientStore(ctrl)
+	mockClientRepo := mock_domain.NewMockClientRepository(ctrl)
 	service := NewClientManagementServer(mockClientRepo, &MockPasswordHasher{})
 
 	clientID := "client-with-ldap-mappings"
-	dbClient := &client.Client{
+	dbClient := &domain.Client{
 		ID:                            clientID,
 		Name:                          "Mapped Client",
-		Type:                          client.Confidential,
+		Type:                          domain.ClientTypeConfidential,
 		ClientLDAPAttributeEmail:      "configured_mail_attr",
 		ClientLDAPAttributeFirstName:  "configured_fn_attr",
 		ClientLDAPAttributeLastName:   "configured_ln_attr",

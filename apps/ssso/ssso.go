@@ -6,10 +6,16 @@ import (
 
 	// "os" // No longer needed for direct env var reading here
 
+	ssso "github.com/pilab-dev/shadow-sso"
 	"github.com/pilab-dev/shadow-sso/apps/ssso/config"
 	"github.com/pilab-dev/shadow-sso/apps/ssso/server"
+	"github.com/pilab-dev/shadow-sso/cache"
+	"github.com/pilab-dev/shadow-sso/domain"
+	"github.com/pilab-dev/shadow-sso/dtsclient"
 	"github.com/pilab-dev/shadow-sso/internal/metrics" // Import for custom metrics
 	"github.com/pilab-dev/shadow-sso/internal/telemetry"
+	"github.com/pilab-dev/shadow-sso/mongodb"
+	"github.com/pilab-dev/shadow-sso/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog" // For setting log level
 	"github.com/rs/zerolog/log"
@@ -55,13 +61,143 @@ func main() {
 	}
 	defer telemetry.Shutdown(context.Background(), nil, meterProvider) // Shutdown meter on exit
 
-	// Pass the full application config to the server setup
-	serverCfg := server.ServerConfig{
-		AppConfig:          cfg, // cfg is the loaded application config
-		PrometheusRegistry: promRegistry,
+	// Initialize RepositoryProvider
+	repoProvider, err := mongodb.NewMongoRepositoryProvider(cfg.MongoURI, cfg.MongoDBName)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to initialize MongoRepositoryProvider")
+	}
+	defer repoProvider.Disconnect(context.Background()) // Ensure disconnection
+	log.Info().Msg("MongoRepositoryProvider initialized.")
+
+	// Initialize TokenSigner
+	tokenSigner := services.NewTokenSigner()
+	if cfg.TokenSigningKey != "" { // Assuming cfg.TokenSigningKey holds the primary key material or path
+		// TODO: Implement robust key loading logic from configuration (e.g., type, path, actual key)
+		// For now, using it directly if it's simple, or placeholder.
+		log.Info().Str("key_source", "config (simplified)").Msg("Loading token signing key.")
+		tokenSigner.AddKeySigner(cfg.TokenSigningKey) // This is a simplified assumption
+	} else if cfg.TokenSigningKeyFile != "" {
+		log.Info().Str("key_file", cfg.TokenSigningKeyFile).Msg("Loading token signing key from file.")
+		// TODO: Add logic to read key from cfg.TokenSigningKeyFile
+		// For now, placeholder if file logic not implemented:
+		log.Warn().Msg("Token signing key file loading not implemented, using placeholder.")
+		tokenSigner.AddKeySigner("temporary-secret-for-hs256-change-me")
+	} else {
+		log.Warn().Msg("No token signing key configured, using placeholder - REPLACE IN PRODUCTION")
+		tokenSigner.AddKeySigner("temporary-secret-for-hs256-change-me")
 	}
 
-	if err := server.Start(serverCfg); err != nil {
+	// Initialize TokenCache
+	log.Info().Msg("Initializing in-memory token cache.")
+	tokenCache := cache.NewMemoryTokenStore(cfg.TokenCacheDefaultTTL)
+
+	// Initialize PkceRepository
+	var pkceRepo domain.PkceRepository
+	if cfg.StorageBackend == config.StorageTypeDTS {
+		log.Info().Msg("Initializing DTS client for PKCE repository.")
+		dtsAPIClient, dtsErr := dtsclient.NewClient(dtsclient.Config{
+			Address:        cfg.DTSClientAddress,
+			ConnectTimeout: cfg.DTSConnectTimeout,
+		})
+		if dtsErr != nil {
+			log.Fatal().Err(dtsErr).Msg("Failed to create DTS API Client for PKCE")
+		}
+		pkceRepo = dtsclient.NewDTSPkceRepository(dtsAPIClient, cfg.DTSDefaultPKCETTL)
+		log.Info().Msg("DTS PKCE Repository initialized.")
+	} else {
+		// If not DTS, try to get from MongoRepositoryProvider.
+		// This relies on MongoRepositoryProvider.PkceRepository() returning a valid implementation.
+		// (Currently, it attempts a type assertion on the auth code repo).
+		pkceRepo = repoProvider.PkceRepository(context.Background())
+		if pkceRepo == nil {
+			// This will happen if mongoAuthCodeRepository doesn't implement PkceRepository.
+			// For a production system, this should be a fatal error or a clear fallback.
+			// As per current MongoRepositoryProvider, it returns nil if type assertion fails.
+			log.Fatal().Msg("Failed to initialize PKCE repository: MongoDB provider did not supply one, and not using DTS.")
+			// To allow startup for now IF PKCE is not strictly needed immediately or for all flows,
+			// one might use an in-memory stub, but this is not ideal.
+			// pkceRepo = oidcflow.NewInMemoryPKCERepository() // Example of a temporary in-memory one
+			// log.Warn().Msg("Initialized in-memory PKCE repository as a fallback.")
+		} else {
+			log.Info().Msg("MongoDB PKCE Repository (via AuthCodeRepository) initialized.")
+		}
+	}
+
+	// Initialize ServiceProvider
+	log.Info().Msg("Initializing ServiceProvider...")
+	serviceProviderOpts := services.DefaultServiceProviderOptions{
+		RepositoryProvider: repoProvider,
+		Config: &ssso.OpenIDProviderConfig{
+			Issuer:            cfg.IssuerURL,
+			AccessTokenTTL:    0,
+			RefreshTokenTTL:   0,
+			AuthCodeTTL:       0,
+			IDTokenTTL:        0,
+			SessionTTL:        0,
+			KeyRotationPeriod: 0,
+			RequireConsent:    true,
+			ForceConsent:      true,
+			EnabledEndpoints: ssso.EndpointConfig{
+				Authorization:       true,
+				Token:               true,
+				UserInfo:            true,
+				JWKS:                true,
+				Registration:        true,
+				Revocation:          true,
+				Introspection:       true,
+				EndSession:          true,
+				DeviceAuthorization: true,
+			},
+			EnabledFlows: ssso.FlowConfig{
+				AuthorizationCode: true,
+				Implicit:          true,
+				Hybrid:            true,
+			},
+			EnabledGrantTypes: ssso.GrantTypesConfig{
+				AuthorizationCode: true,
+				ClientCredentials: true,
+				RefreshToken:      true,
+				Password:          true,
+				Implicit:          true,
+				JWTBearer:         true,
+				DeviceCode:        true,
+			},
+			SecurityConfig: ssso.SecurityConfig{
+				RequirePKCE:                   false,
+				RequirePKCEForPublicClients:   false,
+				AllowedSigningAlgs:            []string{},
+				AllowedEncryptionAlgs:         []string{},
+				AllowedEncryptionEnc:          []string{},
+				RequireSignedRequestObject:    false,
+				RequireRequestURIRegistration: false,
+				DefaultMaxAge:                 0,
+				RequireAuthTime:               false,
+				PasswordHashingCost:           0,
+			},
+			TokenConfig:    ssso.TokenConfig{},
+			PKCEConfig:     ssso.PKCEConfig{},
+			ClaimsConfig:   ssso.ClaimsConfig{},
+			NextJSLoginURL: "",
+		},
+		TokenSigner:    tokenSigner,
+		TokenCache:     tokenCache,
+		PkceRepository: pkceRepo, // Pass the explicitly created PkceRepository
+		// FlowStore and UserSessionStore will be initialized by DefaultServiceProvider if nil
+	}
+	serviceProvider, err := services.NewDefaultServiceProvider(serviceProviderOpts)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to initialize DefaultServiceProvider")
+	}
+	log.Info().Msg("ServiceProvider initialized.")
+
+	// Pass the ServiceProvider and other necessary parts of cfg to the server setup
+	serverCfg := server.ServerConfig{
+		AppConfig:          cfg, // Still pass AppConfig for httpAddr, Prometheus, etc.
+		PrometheusRegistry: promRegistry,
+		ServiceProvider:    serviceProvider, // Pass the initialized ServiceProvider
+	}
+
+	if err := server.Start(serverCfg, repoProvider); err != nil {
 		log.Fatal().Err(err).Msg("Failed to start Shadow SSO server")
 	}
 }

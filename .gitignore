@@ -3,3 +3,4 @@ tools
 /sssoctl
 /ssso
 /sso_config.yaml
+/coverage.out

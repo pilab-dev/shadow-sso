@@ -1,8 +1,8 @@
 package auth
 
 import (
-	"fmt"
-	"github.com/pilab-dev/shadow-sso/services" // For services.PasswordHasher interface
+	"fmt" // For services.PasswordHasher interface
+
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -34,6 +34,3 @@ func (h *BcryptPasswordHasher) Hash(password string) (string, error) {
 func (h *BcryptPasswordHasher) Verify(hashedPassword, password string) error {
 	return bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password))
 }
-
-// Ensure it implements the interface
-var _ services.PasswordHasher = (*BcryptPasswordHasher)(nil)

@@ -288,59 +288,45 @@ func (s *TokenService) GenerateTokenPair(ctx context.Context,
 	clientID, userID, scope string, tokenTTL time.Duration,
 ) (*api.TokenResponse, error) {
 	// Generate access token
-	accessToken := &domain.Token{ // Changed to domain.Token
-		ID:         uuid.NewString(),
-		TokenType:  "access_token",
-		TokenValue: "",
-		ClientID:   clientID,
-		UserID:     userID,
-		Scope:      scope,
-		ExpiresAt:  time.Now().Add(tokenTTL),
-		CreatedAt:  time.Now(),
-		LastUsedAt: time.Now(),
-	}
-
-	if err := s.BuildToken(accessToken); err != nil {
-		return nil, fmt.Errorf("failed to build access token: %w", err)
+	accessTokenID := uuid.NewString()
+	accessToken, err := s.CreateToken(ctx, CreateTokenOptions{
+		TokenID:      accessTokenID,
+		Scope:        scope,
+		ClientID:     clientID,
+		UserID:       userID,
+		TokenType:    api.TokenTypeAccessToken,
+		ExpireIn:     tokenTTL,
+		SigningKeyID: "", // Use default key
+	}, nil) // claims can be nil, CreateToken will make its own MapClaims
+	if err != nil {
+		return nil, fmt.Errorf("failed to create access token: %w", err)
 	}
 
 	// Generate refresh token
-	refreshToken := &domain.Token{ // Changed to domain.Token
-		ID:         uuid.NewString(),
-		TokenType:  "refresh_token",
-		TokenValue: uuid.NewString(),
-		ClientID:   clientID,
-		UserID:     userID,
-		Scope:      scope,
-		ExpiresAt:  time.Now().Add(tokenTTL * 24), // Refresh tokens live longer
-		CreatedAt:  time.Now(),
-		LastUsedAt: time.Now(),
+	refreshTokenID := uuid.NewString()
+	refreshTokenTTL := tokenTTL * 24 // Example: Refresh token lives 24x longer
+	refreshToken, err := s.CreateToken(ctx, CreateTokenOptions{
+		TokenID:      refreshTokenID,
+		Scope:        scope,
+		ClientID:     clientID,
+		UserID:       userID,
+		TokenType:    api.TokenTypeRefreshToken,
+		ExpireIn:     refreshTokenTTL,
+		SigningKeyID: "", // Use default key
+	}, nil)
+	if err != nil {
+		// Consider cleanup if access token was stored but refresh token failed
+		// For now, just return the error.
+		return nil, fmt.Errorf("failed to create refresh token: %w", err)
 	}
 
-	if err := s.BuildToken(refreshToken); err != nil {
-		return nil, fmt.Errorf("failed to build refresh token: %w", err)
-	}
-
-	// Store tokens
-	if err := s.repo.StoreToken(ctx, accessToken); err != nil {
-		return nil, fmt.Errorf("failed to store access token: %w", err)
-	}
-	metrics.TokensCreatedTotal.Inc() // Access token
-
-	if err := s.repo.StoreToken(ctx, refreshToken); err != nil {
-		return nil, fmt.Errorf("failed to store refresh token: %w", err)
-	}
-	metrics.TokensCreatedTotal.Inc() // Refresh token
-
-	// Cache access token for faster validation
-	if err := s.cache.Set(ctx, toCacheEntry(accessToken)); err != nil { // Use toCacheEntry
-		log.Warn().Err(err).Msg("failed to cache access token")
-	}
+	// CreateToken already handles storing in repo and caching for access tokens.
+	// The metrics.TokensCreatedTotal.Inc() is also called within CreateToken.
 
 	return &api.TokenResponse{
-		IDToken:      "",
+		IDToken:      "", // ID Token generation is a separate concern if needed
 		AccessToken:  accessToken.TokenValue,
-		TokenType:    "Bearer",
+		TokenType:    "Bearer", // Standard token type for responses
 		ExpiresIn:    int(tokenTTL.Seconds()),
 		RefreshToken: refreshToken.TokenValue,
 	}, nil

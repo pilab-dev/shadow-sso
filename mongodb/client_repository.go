@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pilab-dev/shadow-sso/client"
+	"github.com/pilab-dev/shadow-sso/domain"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )
@@ -29,7 +29,7 @@ func NewClientRepository(db *mongo.Database) *ClientRepository {
 }
 
 // CreateClient implements the ClientStore interface.
-func (s *ClientRepository) CreateClient(ctx context.Context, c *client.Client) error {
+func (s *ClientRepository) CreateClient(ctx context.Context, c *domain.Client) error {
 	c.CreatedAt = time.Now()
 	c.UpdatedAt = time.Now()
 
@@ -38,9 +38,9 @@ func (s *ClientRepository) CreateClient(ctx context.Context, c *client.Client) e
 }
 
 // GetClient implements the ClientStore interface.
-func (s *ClientRepository) GetClient(ctx context.Context, clientID string) (*client.Client, error) {
+func (s *ClientRepository) GetClient(ctx context.Context, clientID string) (*domain.Client, error) {
 	filter := bson.M{"client_id": clientID}
-	var cli client.Client
+	var cli domain.Client
 
 	err := s.coll.FindOne(ctx, filter).Decode(&cli)
 	if err != nil {
@@ -54,7 +54,7 @@ func (s *ClientRepository) GetClient(ctx context.Context, clientID string) (*cli
 }
 
 // UpdateClient implements the ClientStore interface.
-func (s *ClientRepository) UpdateClient(ctx context.Context, c *client.Client) error {
+func (s *ClientRepository) UpdateClient(ctx context.Context, c *domain.Client) error {
 	c.UpdatedAt = time.Now()
 
 	filter := bson.M{"client_id": c.ID}
@@ -83,7 +83,7 @@ func (s *ClientRepository) DeleteClient(ctx context.Context, clientID string) er
 }
 
 // ListClients implements the ClientStore interface.
-func (s *ClientRepository) ListClients(ctx context.Context, filter client.ClientFilter) ([]*client.Client, error) {
+func (s *ClientRepository) ListClients(ctx context.Context, filter domain.ClientFilter) ([]*domain.Client, error) {
 	mongoFilter := bson.M{}
 	if filter.Type != "" {
 		mongoFilter["client_type"] = filter.Type
@@ -105,7 +105,7 @@ func (s *ClientRepository) ListClients(ctx context.Context, filter client.Client
 	}
 	defer cursor.Close(ctx)
 
-	var clients []*client.Client
+	var clients []*domain.Client
 	if err := cursor.All(ctx, &clients); err != nil {
 		return nil, err
 	}
@@ -114,9 +114,9 @@ func (s *ClientRepository) ListClients(ctx context.Context, filter client.Client
 }
 
 // ValidateClient implements domain.ClientRepository.
-func (s *ClientRepository) ValidateClient(ctx context.Context, clientID string, clientSecret string) (*client.Client, error) {
+func (s *ClientRepository) ValidateClient(ctx context.Context, clientID string, clientSecret string) (*domain.Client, error) {
 	filter := bson.M{"client_id": clientID}
-	var cli client.Client
+	var cli domain.Client
 
 	err := s.coll.FindOne(ctx, filter).Decode(&cli)
 	if err != nil {
@@ -128,7 +128,7 @@ func (s *ClientRepository) ValidateClient(ctx context.Context, clientID string, 
 	}
 
 	// For public clients, the secret is not checked
-	if cli.Type == client.Public {
+	if cli.Type == domain.ClientTypePublic {
 		return &cli, nil
 	}
 

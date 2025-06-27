@@ -1,4 +1,3 @@
-//go:generate go run go.uber.org/mock/mockgen -source=$GOFILE -destination=mocks/mock_$GOFILE -package=mock_$GOPACKAGE
 package services
 
 import (
@@ -13,7 +12,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/pilab-dev/shadow-sso/api"
-	"github.com/pilab-dev/shadow-sso/client"
 	"github.com/pilab-dev/shadow-sso/domain"
 	serrors "github.com/pilab-dev/shadow-sso/errors"
 	"github.com/rs/zerolog/log"
@@ -63,7 +61,7 @@ type OAuthService struct {
 	tokenRepo      domain.TokenRepository
 	authCodeRepo   domain.AuthorizationCodeRepository
 	deviceAuthRepo domain.DeviceAuthorizationRepository
-	clientRepo     client.ClientStore // Changed from client.ClientStore for consistency
+	clientRepo     domain.ClientRepository // Changed from client.ClientStore for consistency
 	userRepo       domain.UserRepository
 	sessionRepo    domain.SessionRepository
 	tokenService   *TokenService
@@ -74,7 +72,7 @@ func NewOAuthService(
 	tokenRepo domain.TokenRepository,
 	authCodeRepo domain.AuthorizationCodeRepository,
 	deviceAuthRepo domain.DeviceAuthorizationRepository,
-	clientRepo client.ClientStore,
+	clientRepo domain.ClientRepository,
 	userRepo domain.UserRepository,
 	sessionRepo domain.SessionRepository,
 	tokenService *TokenService,
@@ -168,7 +166,7 @@ func (s *OAuthService) GetJWKS() *JSONWebKeySet {
 	return keyset
 }
 
-func (s *OAuthService) ValidateClient(ctx context.Context, clientID, clientSecret string) (*client.Client, error) {
+func (s *OAuthService) ValidateClient(ctx context.Context, clientID, clientSecret string) (*domain.Client, error) {
 	cli, err := s.clientRepo.GetClient(ctx, clientID)
 	if err != nil {
 		return nil, fmt.Errorf("client not found: %w", err)
@@ -298,7 +296,7 @@ func contains(slice []string, item string) bool {
 }
 
 func (s *OAuthService) PasswordGrant(ctx context.Context,
-	username, password, scope string, cli *client.Client,
+	username, password, scope string, cli *domain.Client,
 ) (*api.TokenResponse, error) {
 	user, err := s.userRepo.GetUserByEmail(ctx, username) // Changed from GetUserByUsername
 	if err != nil {
