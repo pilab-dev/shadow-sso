@@ -45,6 +45,7 @@ type Client struct {
 	UpdatedAt         time.Time  `bson:"updated_at" json:"updated_at,omitempty"`
 	LastUsed          time.Time  `bson:"last_used,omitempty" json:"last_used,omitempty"`
 	IsActive          bool       `bson:"is_active" json:"is_active,omitempty"`
+	IsConfidential    bool       `bson:"is_confidential" json:"is_confidential,omitempty"`
 
 	ClientLDAPAttributeEmail      string            `bson:"client_ldap_attribute_email,omitempty" json:"client_ldap_attribute_email,omitempty"`
 	ClientLDAPAttributeFirstName  string            `bson:"client_ldap_attribute_first_name,omitempty" json:"client_ldap_attribute_first_name,omitempty"`

@@ -1,5 +1,5 @@
 // ! TODO: Check the validity of the token
-package sssogin
+package openidv2_1
 
 import (
 	"errors"

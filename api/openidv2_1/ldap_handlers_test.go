@@ -1,4 +1,4 @@
-package sssogin
+package openidv2_1
 
 import (
 	"testing"
@@ -21,24 +21,24 @@ func TestLDAPAttributeMapping(t *testing.T) {
 		LastName:       "DefaultLast",
 		Username:       "default_uid", // From IdP's default mapping
 		RawData: map[string]interface{}{
-			"mail":         "raw_mail@example.com",
-			"givenName":    "RawFirst",
-			"sn":           "RawLast",
-			"uid":          "raw_uid",
-			"department":   "Engineering",
-			"employeeID":   "E12345",
-			"ldapGroups":   []string{"cn=groupA,ou=groups", "cn=groupB,ou=groups"},
+			"mail":           "raw_mail@example.com",
+			"givenName":      "RawFirst",
+			"sn":             "RawLast",
+			"uid":            "raw_uid",
+			"department":     "Engineering",
+			"employeeID":     "E12345",
+			"ldapGroups":     []string{"cn=groupA,ou=groups", "cn=groupB,ou=groups"},
 			"sAMAccountName": "raw_sam",
 		},
 	}
 
 	testCases := []struct {
-		name              string
-		clientConfig      *client.Client
-		externalUser      *federation.ExternalUserInfo
-		expectedClaims    map[string]interface{}
-		idpProviderName   string // For logging/context if needed
-		loginUsername     string // Username used for login
+		name            string
+		clientConfig    *client.Client
+		externalUser    *federation.ExternalUserInfo
+		expectedClaims  map[string]interface{}
+		idpProviderName string // For logging/context if needed
+		loginUsername   string // Username used for login
 	}{
 		{
 			name: "Client uses specific LDAP attributes, different from IdP defaults",
@@ -47,13 +47,13 @@ func TestLDAPAttributeMapping(t *testing.T) {
 				ClientLDAPAttributeFirstName: "givenName",
 				ClientLDAPAttributeLastName:  "sn",
 				// ClientLDAPAttributeUsername: "uid", // Not specified, so should fallback to externalUser.Username or login username
-				ClientLDAPAttributeGroups:    "ldapGroups",
+				ClientLDAPAttributeGroups: "ldapGroups",
 				ClientLDAPCustomClaimsMapping: map[string]string{
 					"emp_id": "employeeID",
 					"dept":   "department",
 				},
 			},
-			externalUser: baseExternalUser,
+			externalUser:  baseExternalUser,
 			loginUsername: "testuser_login",
 			expectedClaims: map[string]interface{}{
 				"sub":                "uid=testuser,ou=users,dc=example,dc=com",
@@ -75,7 +75,7 @@ func TestLDAPAttributeMapping(t *testing.T) {
 					"custom_sam": "sAMAccountName",
 				},
 			},
-			externalUser: baseExternalUser,
+			externalUser:  baseExternalUser,
 			loginUsername: "testuser_login",
 			expectedClaims: map[string]interface{}{
 				"sub":                "uid=testuser,ou=users,dc=example,dc=com",
@@ -95,7 +95,7 @@ func TestLDAPAttributeMapping(t *testing.T) {
 					"preferred_username": "sAMAccountName", // Override
 				},
 			},
-			externalUser: baseExternalUser,
+			externalUser:  baseExternalUser,
 			loginUsername: "testuser_login",
 			expectedClaims: map[string]interface{}{
 				"sub":                "uid=testuser,ou=users,dc=example,dc=com",
@@ -113,7 +113,7 @@ func TestLDAPAttributeMapping(t *testing.T) {
 					"department_claim": "department",
 				},
 			},
-			externalUser: baseExternalUser,
+			externalUser:  baseExternalUser,
 			loginUsername: "testuser_login",
 			expectedClaims: map[string]interface{}{
 				"sub":                "uid=testuser,ou=users,dc=example,dc=com",
@@ -132,7 +132,7 @@ func TestLDAPAttributeMapping(t *testing.T) {
 					"non_existent_claim": "noSuchAttributeInLDAP",
 				},
 			},
-			externalUser: baseExternalUser,
+			externalUser:  baseExternalUser,
 			loginUsername: "testuser_login",
 			expectedClaims: map[string]interface{}{ // non_existent_claim should be missing
 				"sub":                "uid=testuser,ou=users,dc=example,dc=com",
@@ -162,7 +162,7 @@ func TestLDAPAttributeMapping(t *testing.T) {
 					"preferred_username": "sAMAccountName", // Explicitly map preferred_username
 				},
 			},
-			externalUser: baseExternalUser, // baseExternalUser.Username is "default_uid"
+			externalUser:  baseExternalUser, // baseExternalUser.Username is "default_uid"
 			loginUsername: "testuser_login",
 			expectedClaims: map[string]interface{}{
 				"sub":                "uid=testuser,ou=users,dc=example,dc=com",
@@ -218,7 +218,6 @@ func TestLDAPAttributeMapping(t *testing.T) {
 				preferredUsername = tc.loginUsername // Fallback
 			}
 			claims["preferred_username"] = preferredUsername
-
 
 			// Custom claims mapping (can override standard ones if key matches, e.g., "preferred_username")
 			if tc.clientConfig.ClientLDAPCustomClaimsMapping != nil {

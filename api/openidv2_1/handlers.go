@@ -1,5 +1,5 @@
 //nolint:varnamelen,tagliatelle
-package sssogin
+package openidv2_1
 
 import (
 	goerrors "errors" // Standard Go errors package
@@ -597,8 +597,7 @@ func (oa *OAuth2API) TokenHandler(c *gin.Context) {
 		// Assuming client.Client has IsConfidential() method. If not, this check needs adjustment.
 		// For now, let's assume a helper or direct field access like 'cli.Confidential'.
 		// This is a placeholder for actual IsConfidential() check.
-		isConfidentialClient := false // Placeholder: Replace with actual check e.g. cli.IsConfidential()
-		if !isDeviceCodeGrant && isConfidentialClient {
+		if !isDeviceCodeGrant && cli.IsConfidential {
 			log.Error().Str("client_id", clientID).Msg("Client is confidential but no secret provided")
 			c.JSON(http.StatusUnauthorized, ssoerrors.NewInvalidClient("Client secret required for confidential client"))
 			return

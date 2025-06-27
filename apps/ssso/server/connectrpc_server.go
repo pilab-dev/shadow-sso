@@ -18,7 +18,7 @@ import (
 	// ssso "github.com/pilab-dev/shadow-sso" // Likely no longer needed if types are moved
 	"github.com/gin-gonic/gin"
 	ssso "github.com/pilab-dev/shadow-sso"
-	sssogin "github.com/pilab-dev/shadow-sso/api/gin"
+	sssogin "github.com/pilab-dev/shadow-sso/api/openidv2_1"
 	"github.com/pilab-dev/shadow-sso/cache"
 	"github.com/pilab-dev/shadow-sso/client"
 	"github.com/pilab-dev/shadow-sso/domain" // Ensure domain is imported
