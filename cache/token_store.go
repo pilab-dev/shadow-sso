@@ -1,3 +1,4 @@
+//go:generate go run go.uber.org/mock/mockgen -source=$GOFILE -destination=mocks/mock_token_store.go -package=mock_cache TokenStore
 package cache
 
 import (

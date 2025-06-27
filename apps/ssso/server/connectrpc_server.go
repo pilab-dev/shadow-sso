@@ -278,7 +278,7 @@ func Start(cfg ServerConfig) error {
 	clientService := client.NewClientService(clientRepo)
 
 	// * 8. Initialize API handler and register routes
-	sssogin.NewOAuth2API(&sssogin.OAuth2APIOptions{
+	oauth2api := sssogin.NewOAuth2API(&sssogin.OAuth2APIOptions{
 		OAuthService:      oauthService,
 		JSKSService:       jwksService,
 		ClientService:     clientService,
@@ -291,6 +291,9 @@ func Start(cfg ServerConfig) error {
 		FederationService: federation.NewService(idpRepo, cfg.AppConfig.DefaultRedirectURI),
 		TokenService:      tokenService,
 	})
+
+	// ! Register the routes
+	oauth2api.RegisterRoutes(router)
 
 	// * 9. Create and start HTTP/2 server
 	srv := &http.Server{

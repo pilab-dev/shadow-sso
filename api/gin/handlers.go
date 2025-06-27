@@ -828,7 +828,12 @@ type TokenRequest struct {
 }
 
 func (oa *OAuth2API) OpenIDConfigurationHandler(c *gin.Context) {
-	baseURL := c.Request.URL.Scheme + "://" + c.Request.Host
+	scheme := c.Request.URL.Scheme
+	if scheme == "" {
+		scheme = "http"
+	}
+
+	baseURL := scheme + "://" + c.Request.Host
 	cfg := oa.config // Use the injected OpenIDProviderConfig
 
 	// Initialize the response struct

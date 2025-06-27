@@ -1,4 +1,4 @@
-//go:generate go run go.uber.org/mock/mockgen -source=$GOFILE -destination=mocks/mock_$GOFILE -package=mock_$GOPACKAGE
+//go:generate go run go.uber.org/mock/mockgen -source=$GOFILE -destination=mocks/mock_repositories.go -package=mock_domain PublicKeyRepository,ServiceAccountRepository,UserRepository,SessionRepository,TokenRepository,AuthorizationCodeRepository,PkceRepository,DeviceAuthorizationRepository,ClientRepository,IdPRepository,UserFederatedIdentityRepository
 package domain
 
 import (
@@ -47,7 +47,6 @@ type SessionFilter struct {
 	IsRevoked *bool // Pointer to bool to allow filtering by true/false or ignoring if nil
 }
 
-//go:generate go run go.uber.org/mock/mockgen -source=$GOFILE -destination=mocks/mock_$GOFILE -package=mock_$GOPACKAGE SessionRepository
 type SessionRepository interface {
 	StoreSession(ctx context.Context, session *Session) error
 	GetSessionByID(ctx context.Context, id string) (*Session, error) // Typically by session_id or token_id
@@ -74,8 +73,6 @@ type TokenRepository interface {
 }
 
 // AuthorizationCodeRepository defines the interface for OAuth 2.0 authorization code operations.
-//
-//go:generate go run go.uber.org/mock/mockgen -source=$GOFILE -destination=mocks/mock_$GOFILE -package=mock_$GOPACKAGE AuthorizationCodeRepository
 type AuthorizationCodeRepository interface {
 	SaveAuthCode(ctx context.Context, code *AuthCode) error
 	GetAuthCode(ctx context.Context, code string) (*AuthCode, error)
@@ -91,8 +88,6 @@ type PkceRepository interface {
 }
 
 // DeviceAuthorizationRepository defines methods for managing device authorization flow data.
-//
-//go:generate go run go.uber.org/mock/mockgen -source=$GOFILE -destination=mocks/mock_$GOFILE -package=mock_$GOPACKAGE DeviceAuthorizationRepository
 type DeviceAuthorizationRepository interface {
 	SaveDeviceAuth(ctx context.Context, auth *DeviceCode) error
 	GetDeviceAuthByDeviceCode(ctx context.Context, deviceCode string) (*DeviceCode, error)
