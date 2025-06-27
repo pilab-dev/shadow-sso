@@ -45,7 +45,7 @@ func setupAuthorizeHandlerTest(t *testing.T) (
 	pkceRepo := mock_domain.NewMockPkceRepository(ctrl)
 	userRepo := mock_domain.NewMockUserRepository(ctrl)
 	sessionRepo := mock_domain.NewMockSessionRepository(ctrl)
-	clientRepo := mock_domain.NewMockClientRepository(ctrl)
+	clientRepo := mock_client.NewMockClientStore(ctrl)
 
 	pubkeyRepo := mock_domain.NewMockPublicKeyRepository(ctrl)
 	saRepo := mock_domain.NewMockServiceAccountRepository(ctrl)
@@ -68,23 +68,30 @@ func setupAuthorizeHandlerTest(t *testing.T) (
 	flowStore := oidcflow.NewInMemoryFlowStore()
 	userSessionStore := oidcflow.NewInMemoryUserSessionStore()
 
+	// OAuthService initialization
+	oauthService := services.NewOAuthService(
+		tokenRepo, authCodeRepo, deviceAuthRepo,
+		clientRepo, userRepo, sessionRepo, tokenService, "http://localhost:8080",
+	) // services.OAuthService
+
 	// Simplified NewOAuth2API call for this test's focus
 	// In a real setup, all dependencies would be properly mocked or instantiated.
 	api := sssogin.NewOAuth2API(
-		services.NewOAuthService(
-			tokenRepo, authCodeRepo, deviceAuthRepo,
-			clientRepo, userRepo, sessionRepo, tokenService, "http://localhost:8080",
-		), // services.OAuthService
-		jwksService,       // services.JWKSService (can be nil if not used by this path)
-		mockClientService, // client.ClientService
-		pkceService,       // services.PKCEService
-		cfg,               // ssso.OpenIDProviderConfig
-		flowStore,         // oidcflow.InMemoryFlowStore (mocked via interface)
-		userSessionStore,  // oidcflow.InMemoryUserSessionStore (mocked via interface)
-		nil,               // domain.UserRepository (can be nil if not used by this path)
-		nil,               // services.PasswordHasher (can be nil if not used by this path)
-		nil,               // federation.Service (can be nil)
-		nil,               // services.TokenService (can be nil)
+		&sssogin.OAuth2APIOptions{
+			OAuthService:  oauthService,
+			JSKSService:   jwksService,
+			ClientService: mockClientService,
+			PkceService:   pkceService,
+			Config: &ssso.OpenIDProviderConfig{
+				NextJSLoginURL: "http://localhost:3000/login",
+			},
+			FlowStore:         flowStore,
+			UserSessionStore:  userSessionStore,
+			UserRepo:          userRepo,
+			PasswordHasher:    nil,
+			FederationService: nil,
+			TokenService:      tokenService,
+		}, // services.TokenService (can be nil)
 	)
 
 	router := gin.Default()
@@ -139,6 +146,8 @@ func TestAuthorizeHandler_RedirectsToNextJS_AndSetsFlowIdCookie(t *testing.T) {
 	req.Header.Set("X-Forwarded-Proto", "http") // Simulate http request
 
 	router.ServeHTTP(w, req)
+
+	println(w.Body.String())
 
 	assert.Equal(t, http.StatusFound, w.Code)
 

@@ -63,7 +63,7 @@ type OAuthService struct {
 	tokenRepo      domain.TokenRepository
 	authCodeRepo   domain.AuthorizationCodeRepository
 	deviceAuthRepo domain.DeviceAuthorizationRepository
-	clientRepo     domain.ClientRepository // Changed from client.ClientStore for consistency
+	clientRepo     client.ClientStore // Changed from client.ClientStore for consistency
 	userRepo       domain.UserRepository
 	sessionRepo    domain.SessionRepository
 	tokenService   *TokenService
@@ -74,7 +74,7 @@ func NewOAuthService(
 	tokenRepo domain.TokenRepository,
 	authCodeRepo domain.AuthorizationCodeRepository,
 	deviceAuthRepo domain.DeviceAuthorizationRepository,
-	clientRepo domain.ClientRepository,
+	clientRepo client.ClientStore,
 	userRepo domain.UserRepository,
 	sessionRepo domain.SessionRepository,
 	tokenService *TokenService,

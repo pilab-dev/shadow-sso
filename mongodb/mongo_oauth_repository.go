@@ -31,9 +31,11 @@ func NewDatabaseIndexer(ctx context.Context, db *mongo.Database) (*DatabaseIndex
 		challenges: db.Collection(ChallengesCollection),
 	}
 
-	if err := repo.createIndexes(ctx); err != nil {
-		return nil, err
-	}
+	return nil, nil
+
+	// if err := repo.createIndexes(ctx); err != nil {
+	// 	return nil, err
+	// }
 
 	return repo, nil
 }

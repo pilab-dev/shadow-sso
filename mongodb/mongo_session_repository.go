@@ -25,10 +25,10 @@ func NewSessionRepositoryMongo(ctx context.Context, db *mongo.Database) (domain.
 	}
 
 	indexModels := []mongo.IndexModel{
-		{
-			Keys:    bson.D{{Key: "_id", Value: 1}}, // Session ID
-			Options: options.Index().SetUnique(true),
-		},
+		// {
+		// 	Keys:    bson.D{{Key: "_id", Value: 1}}, // Session ID
+		// 	Options: options.Index().SetUnique(true),
+		// },
 		{
 			Keys:    bson.D{{Key: "token_id", Value: 1}},             // JWT JTI, should be unique if used as main lookup
 			Options: options.Index().SetUnique(true).SetSparse(true), // Sparse if not all sessions have it

@@ -61,7 +61,7 @@ func main() {
 		PrometheusRegistry: promRegistry,
 	}
 
-	if err := server.StartConnectRPCServer(serverCfg); err != nil {
+	if err := server.Start(serverCfg); err != nil {
 		log.Fatal().Err(err).Msg("Failed to start Shadow SSO server")
 	}
 }

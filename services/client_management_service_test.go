@@ -8,7 +8,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/pilab-dev/shadow-sso/client" // Assuming mock for domain.OAuthRepository
-	mock_domain "github.com/pilab-dev/shadow-sso/domain/mocks"
+	mock_client "github.com/pilab-dev/shadow-sso/client/mocks"
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -42,7 +42,7 @@ func TestClientManagementServer_RegisterClient_WithLDAPMappings(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	clientRepo := mock_domain.NewMockClientRepository(ctrl)
+	clientRepo := mock_client.NewMockClientStore(ctrl)
 	mockHasher := &MockPasswordHasher{}
 	service := NewClientManagementServer(clientRepo, mockHasher)
 
@@ -96,7 +96,7 @@ func TestClientManagementServer_UpdateClient_WithLDAPMappings(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	clientRepo := mock_domain.NewMockClientRepository(ctrl)
+	clientRepo := mock_client.NewMockClientStore(ctrl)
 	mockHasher := &MockPasswordHasher{} // Not directly used in update for these fields, but part of service
 	service := NewClientManagementServer(clientRepo, mockHasher)
 
@@ -161,7 +161,7 @@ func TestClientManagementServer_GetClient_ReturnsLDAPMappings(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockClientRepo := mock_domain.NewMockClientRepository(ctrl)
+	mockClientRepo := mock_client.NewMockClientStore(ctrl)
 	service := NewClientManagementServer(mockClientRepo, &MockPasswordHasher{})
 
 	clientID := "client-with-ldap-mappings"

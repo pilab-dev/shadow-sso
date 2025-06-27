@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"fmt"
+
 	// "errors" // No longer needed if all mocks using it are removed
 	"net/http"
 	// "os" // No longer needed for environment variables here
@@ -14,10 +16,16 @@ import (
 
 	"connectrpc.com/otelconnect" // Import for OpenTelemetry Connect interceptor
 	// ssso "github.com/pilab-dev/shadow-sso" // Likely no longer needed if types are moved
+	"github.com/gin-gonic/gin"
+	ssso "github.com/pilab-dev/shadow-sso"
+	sssogin "github.com/pilab-dev/shadow-sso/api/gin"
 	"github.com/pilab-dev/shadow-sso/cache"
+	"github.com/pilab-dev/shadow-sso/client"
 	"github.com/pilab-dev/shadow-sso/domain" // Ensure domain is imported
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
 	"github.com/pilab-dev/shadow-sso/internal/auth"
+	"github.com/pilab-dev/shadow-sso/internal/federation"
+	"github.com/pilab-dev/shadow-sso/internal/oidcflow"
 	"github.com/pilab-dev/shadow-sso/middleware"
 	"github.com/pilab-dev/shadow-sso/mongodb"
 	"github.com/pilab-dev/shadow-sso/services"
@@ -36,14 +44,14 @@ type ServerConfig struct {
 	PrometheusRegistry prometheus.Registerer
 }
 
-// StartConnectRPCServer initializes and starts the ConnectRPC server.
-func StartConnectRPCServer(cfg ServerConfig) error {
+// Start initializes and starts the ConnectRPC server.
+func Start(cfg ServerConfig) error {
 	log.Info().Msgf("Starting ConnectRPC server on %s", cfg.AppConfig.HTTPAddr)
 	ctx := context.Background() // Use a background context for setup
 
 	// Initialize repositories based on StorageBackend
 	var tokenRepo domain.TokenRepository
-	var clientRepo domain.ClientRepository
+	var clientRepo client.ClientStore
 	var authCodeRepo domain.AuthorizationCodeRepository
 	var pkceRepo domain.PkceRepository // TODO: this has been merged to authcoderepo
 	var deviceAuthRepo domain.DeviceAuthorizationRepository
@@ -89,6 +97,11 @@ func StartConnectRPCServer(cfg ServerConfig) error {
 	pubKeyRepo, err = mongodb.NewPublicKeyRepositoryMongo(db)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to init PublicKeyRepositoryMongo")
+		return err
+	}
+	idpRepo, err := mongodb.NewIdPRepositoryMongo(ctx, db)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to init IdPRepositoryMongo")
 		return err
 	}
 
@@ -191,8 +204,11 @@ func StartConnectRPCServer(cfg ServerConfig) error {
 	_ = pkceService  // TODO: pkceService is created but not used yet by other main services. It might be used by an OIDC provider service or directly in handlers.
 	_ = oauthService // TODO: oauthService is created but not yet explicitly used to register handlers. It might be used by other services or OIDC/OAuth2 endpoint handlers.
 
-	// 5. Initialize Authentication Interceptor
-	authInterceptor := middleware.NewAuthInterceptor(tokenService) // TokenService for validating tokens
+	// *
+	// * 5. Initialize Authentication Interceptor
+	// *
+	// TokenService for validating tokens
+	authInterceptor := middleware.NewAuthInterceptor(tokenService)
 	authzInterceptor := middleware.NewAuthorizationInterceptor()
 	otelConnectInterceptor, err := otelconnect.NewInterceptor()
 	if err != nil {
@@ -201,31 +217,38 @@ func StartConnectRPCServer(cfg ServerConfig) error {
 		return err // Propagate error up
 	}
 
-	// Apply interceptors: otel -> authN -> authZ
-	interceptors := connect.WithInterceptors(otelConnectInterceptor, authInterceptor, authzInterceptor)
+	// * Apply interceptors: otel -> authN -> authZ
+	interceptors := connect.WithInterceptors(
+		otelConnectInterceptor, authInterceptor, authzInterceptor)
 
-	// 6. Initialize Service Implementations
+	// *
+	// * 6. Initialize Service Implementations
+	// *
 	defaultKeyGen := &services.DefaultSAKeyGenerator{}
 	saServer := services.NewServiceAccountServer(defaultKeyGen, saRepo, pubKeyRepo)
 	userServer := services.NewUserServer(userRepo, passwordHasher)
 	authServer := services.NewAuthServer(userRepo, sessionRepo, tokenService, passwordHasher)
 
-	// 7. Create mux and register handlers
-	mux := http.NewServeMux()
+	// *
+	// * 7. Create mux and register handlers
+	// *
+	router := gin.New()
+
 	saPath, saHandler := ssov1connect.NewServiceAccountServiceHandler(saServer, interceptors)
-	mux.Handle(saPath, saHandler)
+	router.Any(saPath, gin.WrapH(saHandler))
 	userPath, userHandler := ssov1connect.NewUserServiceHandler(userServer, interceptors)
-	mux.Handle(userPath, userHandler)
+	router.Any(userPath, gin.WrapH(userHandler))
 	authPath, authHandler := ssov1connect.NewAuthServiceHandler(authServer, interceptors)
-	mux.Handle(authPath, authHandler)
+	router.Any(authPath, gin.WrapH(authHandler))
 
-	// Add health check endpoints
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+	// * Add health check endpoints
+	router.GET("/healthz", gin.WrapF(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
-	})
+		_, _ = fmt.Fprintf(w, "OK")
+	}))
 
-	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+	// * Add readiness check
+	router.GET("/readyz", gin.WrapF(func(w http.ResponseWriter, r *http.Request) {
 		// Basic readiness check: try to ping MongoDB
 		// A more comprehensive check might involve other dependencies or internal states.
 		if err := mongodb.Ping(ctx); err != nil {
@@ -234,22 +257,45 @@ func StartConnectRPCServer(cfg ServerConfig) error {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
-	})
-	// Add Prometheus metrics handler
+		_, _ = fmt.Fprintf(w, "OK")
+	}))
+
+	// * Add Prometheus metrics handler
 	if cfg.PrometheusRegistry != nil {
 		promHandler := promhttp.HandlerFor(
 			cfg.PrometheusRegistry.(prometheus.Gatherer),
 			promhttp.HandlerOpts{EnableOpenMetrics: true},
 		)
-		mux.Handle("/metrics", promHandler)
+		router.GET("/metrics", gin.WrapH(promHandler))
 		log.Info().Msg("Prometheus metrics endpoint enabled at /metrics")
 	}
 
-	// 8. Create and start HTTP/2 server
+	jwksService, err := services.NewJWKSService(cfg.AppConfig.KeyRotationInterval)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to create JWKSService")
+	}
+
+	clientService := client.NewClientService(clientRepo)
+
+	// * 8. Initialize API handler and register routes
+	sssogin.NewOAuth2API(&sssogin.OAuth2APIOptions{
+		OAuthService:      oauthService,
+		JSKSService:       jwksService,
+		ClientService:     clientService,
+		PkceService:       pkceService,
+		Config:            ssso.NewDefaultConfig(cfg.AppConfig.IssuerURL),
+		FlowStore:         oidcflow.NewInMemoryFlowStore(),
+		UserSessionStore:  oidcflow.NewInMemoryUserSessionStore(),
+		UserRepo:          userRepo,
+		PasswordHasher:    passwordHasher,
+		FederationService: federation.NewService(idpRepo, cfg.AppConfig.DefaultRedirectURI),
+		TokenService:      tokenService,
+	})
+
+	// * 9. Create and start HTTP/2 server
 	srv := &http.Server{
 		Addr:              cfg.AppConfig.HTTPAddr, // Use httpAddr from config
-		Handler:           h2c.NewHandler(mux, &http2.Server{}),
+		Handler:           h2c.NewHandler(router, &http2.Server{}),
 		ReadHeaderTimeout: 3 * time.Second,
 		ReadTimeout:       5 * time.Minute,
 		WriteTimeout:      5 * time.Minute,
@@ -257,5 +303,6 @@ func StartConnectRPCServer(cfg ServerConfig) error {
 	}
 
 	log.Info().Msgf("ConnectRPC server listening on %s", cfg.AppConfig.HTTPAddr)
+
 	return srv.ListenAndServe()
 }
