@@ -21,7 +21,7 @@ type UserRepository struct {
 	users *mongo.Collection
 }
 
-// NewUserRepository creates a new UserRepositoryMongo.
+// NewUserRepository creates a new UserRepository which implements [domain.UserRepository].
 func NewUserRepository(ctx context.Context, db *mongo.Database) (domain.UserRepository, error) {
 	repo := &UserRepository{
 		db:    db,
@@ -111,7 +111,7 @@ func (r *UserRepository) GetUserByID(ctx context.Context, id string) (*domain.Us
 	err := r.users.FindOne(ctx, bson.M{"_id": id}).Decode(&user)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return nil, errors.New("user not found") // Consider domain.ErrUserNotFound
+			return nil, domain.ErrUserNotFound
 		}
 		log.Error().Err(err).Str("id", id).Msg("Error getting user by ID from MongoDB")
 		return nil, err
@@ -125,7 +125,7 @@ func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*dom
 	err := r.users.FindOne(ctx, bson.M{"email": email}).Decode(&user)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return nil, errors.New("user not found") // Consider domain.ErrUserNotFound
+			return nil, domain.ErrUserNotFound
 		}
 		log.Error().Err(err).Str("email", email).Msg("Error getting user by email from MongoDB")
 		return nil, err
@@ -147,7 +147,7 @@ func (r *UserRepository) UpdateUser(ctx context.Context, user *domain.User) erro
 		return err
 	}
 	if result.MatchedCount == 0 {
-		return errors.New("user not found for update") // Consider domain.ErrUserNotFound
+		return domain.ErrUserNotFound
 	}
 	return nil
 }
@@ -160,9 +160,30 @@ func (r *UserRepository) DeleteUser(ctx context.Context, id string) error {
 		return err
 	}
 	if result.DeletedCount == 0 {
-		return errors.New("user not found for deletion") // Consider domain.ErrUserNotFound
+		return domain.ErrUserNotFound
 	}
 	return nil
+}
+
+// CountUsers counts the total number of users in the repository.
+func (r *UserRepository) CountUsers(ctx context.Context) (int64, error) {
+	count, err := r.users.CountDocuments(ctx, bson.M{})
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to count users")
+		return 0, fmt.Errorf("failed to count users: %w", err)
+	}
+	return count, nil
+}
+
+// CountUsersByRole counts users that have a specific role.
+func (r *UserRepository) CountUsersByRole(ctx context.Context, role string) (int64, error) {
+	filter := bson.M{"roles": role}
+	count, err := r.users.CountDocuments(ctx, filter)
+	if err != nil {
+		log.Error().Err(err).Str("role", role).Msg("Failed to count users by role")
+		return 0, fmt.Errorf("failed to count users by role %s: %w", role, err)
+	}
+	return count, nil
 }
 
 // ListUsers retrieves a paginated list of users.

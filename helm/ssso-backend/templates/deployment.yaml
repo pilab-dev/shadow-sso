@@ -50,6 +50,32 @@ spec:
               value: {{ include "ssso-backend.mongodb.uri" . | quote }}
             - name: SSSO_MONGO_DB_NAME
               value: {{ include "ssso-backend.mongodb.databaseName" . | quote }}
+            {{- if .Values.initialAdmin.enabled }}
+            - name: INITIAL_ADMIN_ENABLED
+              value: "true"
+            - name: INITIAL_ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.initialAdmin.secretName }}
+                  key: INITIAL_ADMIN_EMAIL
+            - name: INITIAL_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.initialAdmin.secretName }}
+                  key: INITIAL_ADMIN_PASSWORD
+            - name: INITIAL_ADMIN_FIRST_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.initialAdmin.secretName }}
+                  key: INITIAL_ADMIN_FIRST_NAME
+                  optional: true # Server provides default if key is missing in secret
+            - name: INITIAL_ADMIN_LAST_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.initialAdmin.secretName }}
+                  key: INITIAL_ADMIN_LAST_NAME
+                  optional: true # Server provides default if key is missing in secret
+            {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

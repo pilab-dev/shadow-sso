@@ -1,6 +1,12 @@
 package domain
 
-import "time"
+import (
+	"errors" // Added for ErrUserNotFound
+	"time"
+)
+
+// ErrUserNotFound is returned when a user is not found in the repository.
+var ErrUserNotFound = errors.New("user not found")
 
 // UserStatus defines the possible statuses of a user account.
 type UserStatus string
