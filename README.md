@@ -101,6 +101,7 @@ The SSO server application is located in the `apps/ssso` directory.
     go run . # Assuming main.go or ssso.go is in apps/ssso
     ```
 
+<<<<<<< HEAD
 ### 🐳 Running with Docker (Standard SSSO)
 
 A `Dockerfile` is provided at the root of the project for the standard SSSO server.
@@ -155,6 +156,47 @@ The easiest way to run the `ssso-alt` variant along with its `ssso-dts` dependen
     *   Standard SSSO environment variables like `SSSO_MONGO_URI`, `SSSO_ISSUER_URL`, etc., are still required as `ssso-alt` uses MongoDB for non-DTS data.
 
     Refer to `apps/ssso-alt/config/config.go` and the `docker-compose.yml` for all configurable options.
+=======
+### 🚀 Initial Admin User Setup
+
+On its first startup, the Shadow SSO server can automatically create an initial administrator user if no other admin users exist in the database. This is useful for bootstrapping a new deployment.
+
+**Configuration:**
+
+This feature is primarily configured via Helm when deploying to Kubernetes, or by setting specific environment variables if running the server binary directly.
+
+**Helm Chart Configuration (`values.yaml`):**
+
+Under the `initialAdmin` section in your `values.yaml` file:
+
+*   `enabled`: (boolean, e.g., `true`) Set to `true` to enable this feature. If `false`, the server will not attempt to create an initial admin.
+*   `createSecret`: (boolean, e.g., `true`) If `true`, Helm will create a Kubernetes Secret to store the initial admin credentials. If `false`, you must ensure a secret named by `secretName` already exists with the required data.
+*   `secretName`: (string, e.g., `ssso-initial-admin-credentials`) The name of the Kubernetes Secret that holds (or will hold) the initial admin credentials.
+*   `credentials`: A map containing:
+    *   `email`: (string) The email address for the initial admin user.
+    *   `password`: (string) The password for the initial admin user. **This must be changed from the default for any real deployment.**
+    *   `firstName`: (string, optional) The first name for the admin user. Defaults to "Admin" if not provided or key is missing in secret.
+    *   `lastName`: (string, optional) The last name for the admin user. Defaults to "User" if not provided or key is missing in secret.
+
+**Environment Variables:**
+
+The server application reads the following environment variables (which are typically populated from the Kubernetes Secret by the Helm chart):
+
+*   `INITIAL_ADMIN_ENABLED`: Set to `"true"` to enable the feature.
+*   `INITIAL_ADMIN_EMAIL`: Email for the first admin.
+*   `INITIAL_ADMIN_PASSWORD`: Password for the first admin.
+*   `INITIAL_ADMIN_FIRST_NAME`: (Optional) First name.
+*   `INITIAL_ADMIN_LAST_NAME`: (Optional) Last name.
+
+**Behavior:**
+
+*   On startup, if `INITIAL_ADMIN_ENABLED` is `"true"`, the server checks if any users with the "admin" role exist.
+*   If no admin users are found, it attempts to read the other `INITIAL_ADMIN_*` environment variables and create the user.
+*   If an admin user already exists, or if the feature is not enabled, this setup step is skipped.
+*   The server will log its actions regarding this setup process.
+
+This ensures that your SSO system can be initialized with a primary administrator account without manual database intervention on the first run.
+>>>>>>> 46dc357 (feat: Implement server-side initial admin user creation)
 
 ###  CLI Tool (`ssoctl`)
 

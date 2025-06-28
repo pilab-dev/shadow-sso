@@ -4,6 +4,21 @@
 
 replicaCount: 1
 
+initialAdmin:
+  # enabled controls whether the server will attempt to create an initial admin user on startup.
+  # This requires INITIAL_ADMIN_EMAIL and INITIAL_ADMIN_PASSWORD to be set (e.g., via the secret).
+  enabled: true
+  # createSecret controls whether Helm should create the K8s Secret for these credentials.
+  # If false, initialAdmin.secretName must point to a pre-existing Secret.
+  createSecret: true
+  secretName: "ssso-initial-admin-credentials"
+  credentials:
+    email: "admin@example.com"
+    # !!IMPORTANT!!: This default password MUST be changed in a values override file for any real deployment.
+    password: "changemeStrongPassword123!"
+    firstName: "Admin" # Optional, defaults in server if not provided
+    lastName: "User"   # Optional, defaults in server if not provided
+
 image:
   repository: ghcr.io/pilab-dev/shadow-sso-backend
   pullPolicy: IfNotPresent

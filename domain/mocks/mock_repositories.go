@@ -219,6 +219,36 @@ func (m *MockUserRepository) EXPECT() *MockUserRepositoryMockRecorder {
 	return m.recorder
 }
 
+// CountUsers mocks base method.
+func (m *MockUserRepository) CountUsers(ctx context.Context) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CountUsers", ctx)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CountUsers indicates an expected call of CountUsers.
+func (mr *MockUserRepositoryMockRecorder) CountUsers(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountUsers", reflect.TypeOf((*MockUserRepository)(nil).CountUsers), ctx)
+}
+
+// CountUsersByRole mocks base method.
+func (m *MockUserRepository) CountUsersByRole(ctx context.Context, role string) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CountUsersByRole", ctx, role)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CountUsersByRole indicates an expected call of CountUsersByRole.
+func (mr *MockUserRepositoryMockRecorder) CountUsersByRole(ctx, role any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountUsersByRole", reflect.TypeOf((*MockUserRepository)(nil).CountUsersByRole), ctx, role)
+}
+
 // CreateUser mocks base method.
 func (m *MockUserRepository) CreateUser(ctx context.Context, user *domain.User) error {
 	m.ctrl.T.Helper()

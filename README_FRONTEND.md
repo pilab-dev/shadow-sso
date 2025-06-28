@@ -42,6 +42,31 @@ In this flow, when a Relying Party (RP) initiates an OIDC login, if the user is 
     *   Display your login form (username/password).
     *   Handle any multi-factor authentication (2FA/MFA) steps if required by your policies. This guide primarily focuses on the initial credential submission. Advanced 2FA flows might involve additional API calls not detailed here.
 
+    ### Logging in with Social Providers (e.g., Google, Facebook, GitHub)
+
+    As an alternative or addition to the traditional email/password login, your frontend can offer users the option to log in using their existing accounts with social identity providers.
+
+    **User Experience:**
+
+    1.  On your login page, alongside the email/password form, display buttons such as "Login with Google", "Login with Facebook", or "Login with GitHub".
+    2.  When the user clicks one of these buttons, your frontend application should redirect the user's browser to a specific endpoint on the Shadow SSO backend that initiates the chosen social login. This endpoint will typically include the `flowId` and the identifier of the chosen social provider.
+        *   Example initiation URL (actual URL pattern to be confirmed with backend team):
+            `https://your-sso-backend.com/api/oidc/federate/{provider}?flowId=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+            (Where `{provider}` could be `google`, `facebook`, `github`, etc.)
+    3.  The Shadow SSO backend will then redirect the user to the respective social provider's authentication page (e.g., Google's login page).
+    4.  The user authenticates with the social provider (e.g., enters Google credentials).
+    5.  Upon successful authentication with the social provider, the user is redirected back to a callback endpoint on the Shadow SSO backend.
+    6.  The Shadow SSO backend processes the social provider's response, links or creates a local user account, establishes an OP session, generates an authorization code, and finally redirects the user back to the Relying Party's `redirect_uri` (similar to the success case in step 5 of the email/password flow).
+
+    **Administrator/Developer Notes:**
+
+    *   **Backend Configuration Required:** For social login buttons to function, the Shadow SSO backend must be pre-configured by an administrator for each social provider. This involves:
+        *   Registering an OAuth application with the social provider (e.g., Google Cloud Console, Facebook for Developers, GitHub OAuth Apps).
+        *   Obtaining a Client ID and Client Secret from the social provider.
+        *   Configuring these credentials and other provider-specific details (like scopes) as an Identity Provider (IdP) within the Shadow SSO backend system.
+    *   **Frontend Responsibility:** The primary responsibility of the frontend is to provide the UI elements (buttons) and correctly redirect the user to the appropriate social login initiation endpoint on the Shadow SSO backend, passing along the current `flowId`. The rest of the social login dance (communication with the social provider, token exchange, user linking/creation) is handled by the Shadow SSO backend.
+    *   **Error Handling:** If a social login attempt fails (e.g., user cancels, provider error, misconfiguration), the Shadow SSO backend should ideally redirect back to your frontend UI with appropriate error information in the URL query parameters, allowing your frontend to display a message to the user. The exact error reporting mechanism should be coordinated with the backend team.
+
 4.  **Frontend Submits Authentication Data to OIDC Provider:**
     *   Once the user successfully authenticates on your frontend (e.g., enters correct username/password), make a `POST` request to the Shadow SSO backend:
         *   **Endpoint:** `POST /api/oidc/authenticate`

@@ -35,6 +35,8 @@ type UserRepository interface {
 	UpdateUser(ctx context.Context, user *User) error                                       // Could also be UpdateUser(id, updates map[string]interface{})
 	DeleteUser(ctx context.Context, id string) error                                        // Optional, consider soft delete by status
 	ListUsers(ctx context.Context, pageToken string, pageSize int) ([]*User, string, error) // Returns users, next page token, error
+	CountUsers(ctx context.Context) (int64, error)                                         // Method to count all users
+	CountUsersByRole(ctx context.Context, role string) (int64, error)                      // New method to count users by role
 }
 
 // SessionRepository defines methods for user session persistence.
