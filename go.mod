@@ -15,7 +15,7 @@ require (
 	github.com/mdp/qrterminal v1.0.1
 	github.com/pquerna/otp v1.5.0
 	github.com/prometheus/client_golang v1.23.0
-	github.com/redis/go-redis/v9 v9.11.0
+	github.com/redis/go-redis/v9 v9.13.0
 	github.com/rs/zerolog v1.34.0
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/viper v1.20.1
