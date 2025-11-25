@@ -21,11 +21,11 @@ import (
 type ClientManagementServer struct {
 	ssov1connect.UnimplementedClientManagementServiceHandler
 	clientRepo   domain.ClientRepository // Changed to domain.OAuthRepository
-	secretHasher PasswordHasher
+	secretHasher domain.PasswordHasher
 }
 
 // NewClientManagementServer creates a new ClientManagementServer.
-func NewClientManagementServer(clientRepo domain.ClientRepository, hasher PasswordHasher) *ClientManagementServer { // Changed to domain.OAuthRepository
+func NewClientManagementServer(clientRepo domain.ClientRepository, hasher domain.PasswordHasher) *ClientManagementServer { // Changed to domain.OAuthRepository
 	return &ClientManagementServer{
 		clientRepo:   clientRepo,
 		secretHasher: hasher,

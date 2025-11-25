@@ -4,10 +4,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pilab-dev/shadow-sso/api"
 	ssso "github.com/pilab-dev/shadow-sso"
 	mock_cache "github.com/pilab-dev/shadow-sso/cache/mocks"
 	mock_domain "github.com/pilab-dev/shadow-sso/domain/mocks"
-	"github.com/pilab-dev/shadow-sso/internal/oidcflow"
 	"github.com/pilab-dev/shadow-sso/services"
 	mock_services "github.com/pilab-dev/shadow-sso/services/mocks"
 	"github.com/stretchr/testify/assert"
@@ -23,7 +23,7 @@ func TestNewDefaultServiceProvider_Success(t *testing.T) {
 	mockTokenSigner := services.NewTokenSigner() // Use actual simple signer
 	mockTokenCache := mock_cache.NewMockTokenStore(ctrl)
 	mockPkceRepo := mock_domain.NewMockPkceRepository(ctrl)
-	appConfig := &ssso.OpenIDProviderConfig{Issuer: "http://issuer.com"}
+	appConfig := &api.OpenIDProviderConfig{Issuer: "http://issuer.com"}
 
 	setupMockRepoProviderForServiceGetters(mockRepoProvider, ctrl)
 
@@ -33,8 +33,8 @@ func TestNewDefaultServiceProvider_Success(t *testing.T) {
 		TokenSigner:        mockTokenSigner,
 		TokenCache:         mockTokenCache,
 		PkceRepository:     mockPkceRepo,
-		FlowStore:          oidcflow.NewInMemoryFlowStore(),
-		UserSessionStore:   oidcflow.NewInMemoryUserSessionStore(),
+		FlowStore:          ssso.NewInMemoryFlowStore(),
+		UserSessionStore:   ssso.NewInMemoryUserSessionStore(),
 	}
 
 	sp, err := services.NewDefaultServiceProvider(opts)
@@ -65,7 +65,7 @@ func TestNewDefaultServiceProvider_Error_MissingPkceRepository(t *testing.T) {
 	mockTokenSigner := services.NewTokenSigner()
 	mockTokenCache := mock_cache.NewMockTokenStore(ctrl)
 	// mockPkceRepo is deliberately omitted / nil
-	appConfig := &ssso.OpenIDProviderConfig{}
+	appConfig := &api.OpenIDProviderConfig{}
 
 	setupMockRepoProviderForServiceGetters(mockRepoProvider, ctrl)
 
@@ -111,10 +111,10 @@ func TestDefaultServiceProvider_Getters(t *testing.T) {
 	mockTokenSigner := services.NewTokenSigner()
 	mockTokenCache := mock_cache.NewMockTokenStore(ctrl)
 	mockPkceRepo := mock_domain.NewMockPkceRepository(ctrl)
-	appConfig := &ssso.OpenIDProviderConfig{
+	appConfig := &api.OpenIDProviderConfig{
 		Issuer:            "http://issuer.com",
 		KeyRotationPeriod: time.Hour,
-		SecurityConfig:    ssso.SecurityConfig{PasswordHashingCost: 10},
+		SecurityConfig:    api.SecurityConfig{PasswordHashingCost: 10},
 		// TOTPIssuerName:    "TestSSO",
 	}
 

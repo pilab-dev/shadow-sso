@@ -12,16 +12,14 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	ssso "github.com/pilab-dev/shadow-sso"
 	sssoapi "github.com/pilab-dev/shadow-sso/api"
 	"github.com/pilab-dev/shadow-sso/client"
 
 	"github.com/google/uuid"
-	"github.com/pilab-dev/shadow-sso/domain"
-	ssoerrors "github.com/pilab-dev/shadow-sso/errors"    // Custom errors
+	"github.com/pilab-dev/shadow-sso/domain" // Corrected: Single import of domain
 	"github.com/pilab-dev/shadow-sso/internal/federation" // Added for federation.Service
 	"github.com/pilab-dev/shadow-sso/internal/metrics"    // For custom metrics
-	"github.com/pilab-dev/shadow-sso/internal/oidcflow"
+	// Removed duplicate domain import
 	"github.com/pilab-dev/shadow-sso/services"
 	"github.com/rs/zerolog/log"
 )
@@ -41,11 +39,11 @@ type OAuth2API struct {
 	jwksService       *services.JWKSService
 	clientService     *client.ClientService
 	pkceService       *services.PKCEService
-	config            *ssso.OpenIDProviderConfig
-	flowStore         *oidcflow.InMemoryFlowStore
-	userSessionStore  *oidcflow.InMemoryUserSessionStore
+	config            *sssoapi.OpenIDProviderConfig
+	flowStore         domain.FlowStore // Changed to domain.FlowStore
+	userSessionStore  domain.UserSessionStore // Changed to domain.UserSessionStore
 	userRepo          domain.UserRepository
-	passwordHasher    services.PasswordHasher
+	passwordHasher    domain.PasswordHasher // Changed to domain.PasswordHasher
 	federationService *federation.Service    // Added for LDAP and other federation flows
 	tokenService      *services.TokenService // Added for issuing tokens after LDAP auth
 }
@@ -55,14 +53,15 @@ type OAuth2APIOptions struct {
 	JSKSService       *services.JWKSService
 	ClientService     *client.ClientService
 	PkceService       *services.PKCEService
-	Config            *ssso.OpenIDProviderConfig
-	FlowStore         *oidcflow.InMemoryFlowStore
-	UserSessionStore  *oidcflow.InMemoryUserSessionStore
+	Config            *sssoapi.OpenIDProviderConfig
+	FlowStore         domain.FlowStore // Changed to domain.FlowStore
+	UserSessionStore  domain.UserSessionStore // Changed to domain.UserSessionStore
 	UserRepo          domain.UserRepository
-	PasswordHasher    services.PasswordHasher
+	PasswordHasher    domain.PasswordHasher // Changed to domain.PasswordHasher
 	FederationService *federation.Service // Added
 	TokenService      *services.TokenService
 }
+
 
 // NewOAuth2API initializes the OAuth2 API.
 func NewOAuth2API(
@@ -70,7 +69,10 @@ func NewOAuth2API(
 ) *OAuth2API {
 	if opts.Config == nil {
 		// This default issuer should ideally be configurable or removed if always provided by caller.
-		opts.Config = ssso.NewDefaultConfig("https://sso.pilab.hu")
+		// Note: NewDefaultConfig would need to be moved to api package or removed
+		// For now, returning an error if config is nil
+		log.Error().Msg("OpenIDProviderConfig is required")
+		return nil
 	}
 	if opts.Config.NextJSLoginURL == "" {
 		// A default or a panic might be appropriate if this is critical and not set.
@@ -261,9 +263,9 @@ func (oa *OAuth2API) DeviceVerificationSubmitHandler(c *gin.Context) {
 	if err != nil {
 		log.Warn().Err(err).Str("userID", userID).Msg("Failed to verify user code")
 		renderData["MessageType"] = "error"
-		if goerrors.Is(err, ssoerrors.ErrUserCodeNotFound) {
+		if goerrors.Is(err, domain.ErrUserCodeNotFound) {
 			renderData["Message"] = "Invalid or expired code. Please check the code and try again."
-		} else if goerrors.Is(err, ssoerrors.ErrCannotApproveDeviceAuth) {
+		} else if goerrors.Is(err, domain.ErrCannotApproveDeviceAuth) {
 			// This might mean it was already used, or status wasn't pending.
 			renderData["Message"] = "This code cannot be used. It might have already been activated or is invalid."
 		} else {
@@ -296,7 +298,7 @@ func (oa *OAuth2API) DeviceAuthorizationHandler(c *gin.Context) {
 	scope := c.PostForm("scope") // Optional
 
 	if clientID == "" {
-		c.JSON(http.StatusBadRequest, ssoerrors.NewInvalidRequest("client_id is required"))
+		c.JSON(http.StatusBadRequest, domain.NewInvalidRequest("client_id is required"))
 		return
 	}
 
@@ -316,17 +318,17 @@ func (oa *OAuth2API) DeviceAuthorizationHandler(c *gin.Context) {
 	resp, err := oa.service.InitiateDeviceAuthorization(ctx, clientID, scope, verificationBaseURI)
 	if err != nil {
 		// Check if the error is an OAuth2Error type from ssoerrors package
-		if oauthErr, ok := err.(*ssoerrors.OAuth2Error); ok {
+		if oauthErr, ok := err.(*domain.OAuth2Error); ok {
 			// Use the Code field for the error type and Description for the message
 			// Assuming NewInvalidClient returns an OAuth2Error with Code "invalid_client"
-			if oauthErr.Code == ssoerrors.InvalidClient {
+			if oauthErr.Code == domain.InvalidClient {
 				c.JSON(http.StatusUnauthorized, oauthErr) // Return the full OAuth2Error
 				return
 			}
 		}
-		// Fallback for other errors. The type assertion above should handle ssoerrors.NewInvalidClient.
+		// Fallback for other errors. The type assertion above should handle domain.NewInvalidClient.
 		log.Error().Err(err).Msg("Failed to initiate device authorization")
-		c.JSON(http.StatusInternalServerError, ssoerrors.NewServerError("Failed to initiate device authorization"))
+		c.JSON(http.StatusInternalServerError, domain.NewServerError("Failed to initiate device authorization"))
 		return
 	}
 
@@ -349,23 +351,23 @@ func (oa *OAuth2API) AuthorizeHandler(c *gin.Context) {
 	}
 
 	if err := oa.validateClientDetails(ctx, authReqData.clientID, authReqData.redirectURI, authReqData.scopeQuery); err != nil {
-		// Ensure the error being cast is actually *ssoerrors.OAuth2Error
-		if oauthErr, ok := err.(*ssoerrors.OAuth2Error); ok {
+		// Ensure the error being cast is actually *domain.OAuth2Error
+		if oauthErr, ok := err.(*domain.OAuth2Error); ok {
 			oa.sendJSONError(c, http.StatusBadRequest, oauthErr)
 		} else {
 			// Fallback for unexpected error types, though validateClientDetails should return ssoerrors
 			log.Error().Err(err).Msg("AuthorizeHandler: Unexpected error type from validateClientDetails")
-			oa.sendJSONError(c, http.StatusInternalServerError, ssoerrors.NewServerError("internal validation error"))
+			oa.sendJSONError(c, http.StatusInternalServerError, domain.NewServerError("internal validation error"))
 		}
 		return
 	}
 
 	if err := oa.validatePKCE(ctx, authReqData.clientID, authReqData.codeChallenge, authReqData.codeChallengeMethod); err != nil {
-		if oauthErr, ok := err.(*ssoerrors.OAuth2Error); ok {
+		if oauthErr, ok := err.(*domain.OAuth2Error); ok {
 			oa.sendJSONError(c, http.StatusBadRequest, oauthErr)
 		} else {
 			log.Error().Err(err).Msg("AuthorizeHandler: Unexpected error type from validatePKCE")
-			oa.sendJSONError(c, http.StatusInternalServerError, ssoerrors.NewServerError("internal PKCE validation error"))
+			oa.sendJSONError(c, http.StatusInternalServerError, domain.NewServerError("internal PKCE validation error"))
 		}
 		return
 	}
@@ -417,12 +419,12 @@ func (oa *OAuth2API) parseAndValidateAuthorizeParams(c *gin.Context) (*authorize
 	}
 
 	if data.clientID == "" || data.redirectURI == "" || data.responseType == "" {
-		err := ssoerrors.NewInvalidRequest("client_id, redirect_uri, and response_type are required")
+		err := domain.NewInvalidRequest("client_id, redirect_uri, and response_type are required")
 		oa.sendJSONError(c, http.StatusBadRequest, err)
 		return nil, err
 	}
 	if data.responseType != "code" {
-		err := ssoerrors.NewInvalidRequest("unsupported response_type, only 'code' is supported")
+		err := domain.NewInvalidRequest("unsupported response_type, only 'code' is supported")
 		oa.sendJSONError(c, http.StatusBadRequest, err)
 		return nil, err
 	}
@@ -430,38 +432,38 @@ func (oa *OAuth2API) parseAndValidateAuthorizeParams(c *gin.Context) (*authorize
 }
 
 // validateClientDetails checks client existence, redirect URI, and scope.
-// Returns *ssoerrors.OAuth2Error or nil.
+// Returns *domain.OAuth2Error or nil.
 func (oa *OAuth2API) validateClientDetails(ctx context.Context, clientID, redirectURI, scopeQuery string) error {
 	_, err := oa.clientService.GetClient(ctx, clientID)
 	if err != nil {
 		log.Warn().Err(err).Str("client_id", clientID).Msg("AuthorizeHandler: Invalid client_id")
-		return ssoerrors.NewInvalidClient("invalid client_id")
+		return domain.NewInvalidClient("invalid client_id")
 	}
 	if err := oa.clientService.ValidateRedirectURI(ctx, clientID, redirectURI); err != nil {
 		log.Warn().Err(err).Str("client_id", clientID).Str("redirect_uri", redirectURI).Msg("AuthorizeHandler: Invalid redirect_uri")
-		return ssoerrors.NewInvalidRequest("invalid redirect_uri")
+		return domain.NewInvalidRequest("invalid redirect_uri")
 	}
 	if err := oa.clientService.ValidateScope(ctx, clientID, strings.Split(scopeQuery, " ")); err != nil {
 		log.Warn().Err(err).Str("client_id", clientID).Str("scope", scopeQuery).Msg("AuthorizeHandler: Invalid scope")
-		return ssoerrors.NewInvalidScope("invalid scope requested")
+		return domain.NewInvalidScope("invalid scope requested")
 	}
 	return nil
 }
 
 // validatePKCE checks PKCE parameters if the client requires PKCE.
-// Returns *ssoerrors.OAuth2Error or nil.
+// Returns *domain.OAuth2Error or nil.
 func (oa *OAuth2API) validatePKCE(ctx context.Context, clientID, codeChallenge, codeChallengeMethod string) error {
 	requiresPKCE, _ := oa.clientService.RequiresPKCE(ctx, clientID) // Error on GetClient already handled by validateClientDetails
 	if requiresPKCE {
 		if codeChallenge == "" {
 			log.Warn().Str("client_id", clientID).Msg("AuthorizeHandler: PKCE code_challenge required but not provided")
-			return ssoerrors.NewPKCERequired()
+			return domain.NewPKCERequired()
 		}
 		// "" for method defaults to plain if allowed, or S256 if plain disabled by server/client config
 		// This logic should ideally be within pkceService or clientService configuration
 		if codeChallengeMethod != "" && codeChallengeMethod != "S256" && codeChallengeMethod != "plain" {
 			log.Warn().Str("client_id", clientID).Str("method", codeChallengeMethod).Msg("AuthorizeHandler: Invalid code_challenge_method")
-			return ssoerrors.NewInvalidRequest("invalid code_challenge_method, only S256 or plain (if enabled) are supported")
+			return domain.NewInvalidRequest("invalid code_challenge_method, only S256 or plain (if enabled) are supported")
 		}
 	}
 	return nil
@@ -494,7 +496,7 @@ func (oa *OAuth2API) tryHandleWithExistingSession(c *gin.Context, data *authoriz
 		)
 		if errGen != nil {
 			log.Error().Err(errGen).Msg("AuthorizeHandler: Failed to generate authorization code for authenticated user")
-			oa.sendJSONError(c, http.StatusInternalServerError, ssoerrors.NewServerError("failed to generate authorization code"))
+			oa.sendJSONError(c, http.StatusInternalServerError, domain.NewServerError("failed to generate authorization code"))
 			return true, errGen // Error occurred, but considered "handled" in terms of flow decision
 		}
 		oa.redirectToClient(c, data.redirectURI, authCode, data.state)
@@ -502,7 +504,7 @@ func (oa *OAuth2API) tryHandleWithExistingSession(c *gin.Context, data *authoriz
 	}
 
 	// If session error is not "not found" or "expired", it's an unexpected error.
-	if !goerrors.Is(sessionErr, oidcflow.ErrSessionNotFound) && !goerrors.Is(sessionErr, oidcflow.ErrSessionExpired) {
+	if !goerrors.Is(sessionErr, domain.ErrSessionNotFound) && !goerrors.Is(sessionErr, domain.ErrSessionExpired) {
 		log.Warn().Err(sessionErr).Msg("AuthorizeHandler: Error validating existing OP session cookie")
 		// Potentially return an error here if this is critical, or clear cookie and proceed.
 	}
@@ -516,13 +518,13 @@ func (oa *OAuth2API) tryHandleWithExistingSession(c *gin.Context, data *authoriz
 func (oa *OAuth2API) initiateExternalLoginFlow(c *gin.Context, data *authorizeRequestData) error {
 	if oa.config.NextJSLoginURL == "" {
 		log.Error().Msg("AuthorizeHandler: NextJSLoginURL is not configured. Cannot redirect to external UI.")
-		err := ssoerrors.NewServerError("authentication UI not configured")
+		err := domain.NewServerError("authentication UI not configured")
 		oa.sendJSONError(c, http.StatusInternalServerError, err)
 		return err
 	}
 
 	flowID := uuid.NewString()
-	flowState := oidcflow.LoginFlowState{
+	flowState := domain.LoginFlowState{
 		FlowID:              flowID,
 		ClientID:            data.clientID,
 		RedirectURI:         data.redirectURI,
@@ -537,7 +539,7 @@ func (oa *OAuth2API) initiateExternalLoginFlow(c *gin.Context, data *authorizeRe
 
 	if err := oa.flowStore.StoreFlow(flowID, flowState); err != nil {
 		log.Error().Err(err).Msg("AuthorizeHandler: Failed to store OIDC flow state")
-		ssoErr := ssoerrors.NewServerError("failed to initiate login flow")
+		ssoErr := domain.NewServerError("failed to initiate login flow")
 		oa.sendJSONError(c, http.StatusInternalServerError, ssoErr)
 		return ssoErr
 	}
@@ -557,7 +559,7 @@ func (oa *OAuth2API) initiateExternalLoginFlow(c *gin.Context, data *authorizeRe
 	nextJSLoginURLParsed, parseErr := url.Parse(oa.config.NextJSLoginURL)
 	if parseErr != nil {
 		log.Error().Err(parseErr).Str("url", oa.config.NextJSLoginURL).Msg("AuthorizeHandler: Failed to parse NextJSLoginURL")
-		ssoErr := ssoerrors.NewServerError("invalid authentication UI configuration")
+		ssoErr := domain.NewServerError("invalid authentication UI configuration")
 		oa.sendJSONError(c, http.StatusInternalServerError, ssoErr)
 		return ssoErr
 	}
@@ -571,7 +573,7 @@ func (oa *OAuth2API) initiateExternalLoginFlow(c *gin.Context, data *authorizeRe
 }
 
 // sendJSONError is a helper to return JSON errors consistently.
-func (oa *OAuth2API) sendJSONError(c *gin.Context, statusCode int, errDetails *ssoerrors.OAuth2Error) {
+func (oa *OAuth2API) sendJSONError(c *gin.Context, statusCode int, errDetails *domain.OAuth2Error) {
 	// Ensure Content-Type is application/json for error responses
 	// Some clients might expect this, especially for OAuth errors.
 	// However, /authorize typically redirects or shows HTML.
@@ -585,7 +587,7 @@ func (oa *OAuth2API) redirectToClient(c *gin.Context, baseRedirectURI, code, sta
 	parsedRedirectURI, err := url.Parse(baseRedirectURI)
 	if err != nil {
 		log.Error().Err(err).Str("redirect_uri", baseRedirectURI).Msg("Failed to parse base redirect URI")
-		oa.sendJSONError(c, http.StatusInternalServerError, ssoerrors.NewServerError("internal error constructing redirect"))
+		oa.sendJSONError(c, http.StatusInternalServerError, domain.NewServerError("internal error constructing redirect"))
 		return
 	}
 
@@ -656,7 +658,7 @@ func (oa *OAuth2API) TokenHandler(c *gin.Context) {
 	isDeviceCodeGrant := GrantType(grantType) == GrantTypeDeviceCode
 
 	if clientID == "" {
-		c.JSON(http.StatusBadRequest, ssoerrors.NewInvalidRequest("client_id is required"))
+		c.JSON(http.StatusBadRequest, domain.NewInvalidRequest("client_id is required"))
 		return
 	}
 
@@ -665,14 +667,14 @@ func (oa *OAuth2API) TokenHandler(c *gin.Context) {
 		cli, err = oa.clientService.ValidateClient(ctx, clientID, clientSecret)
 		if err != nil {
 			log.Error().Err(err).Msg("Invalid client credentials")
-			c.JSON(http.StatusUnauthorized, ssoerrors.NewInvalidClient("Invalid client credentials"))
+			c.JSON(http.StatusUnauthorized, domain.NewInvalidClient("Invalid client credentials"))
 			return
 		}
 	} else {
 		cli, err = oa.clientService.GetClient(ctx, clientID)
 		if err != nil {
 			log.Error().Err(err).Str("client_id", clientID).Msg("Client not found")
-			c.JSON(http.StatusBadRequest, ssoerrors.NewInvalidClient("Invalid client_id"))
+			c.JSON(http.StatusBadRequest, domain.NewInvalidClient("Invalid client_id"))
 			return
 		}
 		// Assuming client.Client has IsConfidential() method. If not, this check needs adjustment.
@@ -680,7 +682,7 @@ func (oa *OAuth2API) TokenHandler(c *gin.Context) {
 		// This is a placeholder for actual IsConfidential() check.
 		if !isDeviceCodeGrant && cli.IsConfidential {
 			log.Error().Str("client_id", clientID).Msg("Client is confidential but no secret provided")
-			c.JSON(http.StatusUnauthorized, ssoerrors.NewInvalidClient("Client secret required for confidential client"))
+			c.JSON(http.StatusUnauthorized, domain.NewInvalidClient("Client secret required for confidential client"))
 			return
 		}
 	}
@@ -688,7 +690,7 @@ func (oa *OAuth2API) TokenHandler(c *gin.Context) {
 	// Validate grant type (check if this client is allowed to use this grant type)
 	if err := oa.clientService.ValidateGrantType(ctx, clientID, grantType); err != nil {
 		log.Error().Err(err).Msg("Grant type not allowed for this client")
-		c.JSON(http.StatusBadRequest, ssoerrors.NewUnauthorizedClient("Grant type not allowed for this client"))
+		c.JSON(http.StatusBadRequest, domain.NewUnauthorizedClient("Grant type not allowed for this client"))
 		return
 	}
 
@@ -707,7 +709,7 @@ func (oa *OAuth2API) TokenHandler(c *gin.Context) {
 	case GrantTypeDeviceCode:
 		tokenResponse, processErr = oa.handleDeviceCodeGrant(c, cli)
 	default:
-		c.JSON(http.StatusBadRequest, ssoerrors.NewUnsupportedGrantType())
+		c.JSON(http.StatusBadRequest, domain.NewUnsupportedGrantType())
 		return
 	}
 
@@ -715,27 +717,27 @@ func (oa *OAuth2API) TokenHandler(c *gin.Context) {
 		if c.Writer.Written() {
 			return
 		}
-		// Try to assert to ssoerrors.OAuth2Error first
-		if oauthErr, ok := processErr.(*ssoerrors.OAuth2Error); ok {
+		// Try to assert to domain.OAuth2Error first
+		if oauthErr, ok := processErr.(*domain.OAuth2Error); ok {
 			log.Error().Err(oauthErr).Str("code", oauthErr.Code).Msg("Token generation failed (OAuth2Error)")
 			// Assuming OAuth2Error has a field like `HTTPStatusCode` or we map codes to status
 			// For now, default to Bad Request for many, but could be Unauthorized for invalid_client etc.
 			statusCode := http.StatusBadRequest
-			if oauthErr.Code == ssoerrors.InvalidClient || oauthErr.Code == ssoerrors.UnauthorizedClient {
+			if oauthErr.Code == domain.InvalidClient || oauthErr.Code == domain.UnauthorizedClient {
 				statusCode = http.StatusUnauthorized
 			}
 			c.JSON(statusCode, oauthErr)
 			return
 		}
-		// The check for ssoerrors.ErrInvalidRequest or ssoerrors.ErrInvalidGrant using goerrors.Is
+		// The check for domain.ErrInvalidRequest or domain.ErrInvalidGrant using goerrors.Is
 		// is likely incorrect if these are not actual exported error variables.
-		// The *ssoerrors.OAuth2Error type assertion above should handle these if processErr is of that type
-		// and its .Code field matches ssoerrors.InvalidRequest or ssoerrors.InvalidGrant.
+		// The *domain.OAuth2Error type assertion above should handle these if processErr is of that type
+		// and its .Code field matches domain.InvalidRequest or domain.InvalidGrant.
 		// If they are some other kind of error that should map to NewInvalidGrant, that's a different scenario.
 		// For now, removing this specific block as it's causing undefined errors.
 
 		log.Error().Err(processErr).Msg("Token generation failed (Non-OAuth2Error)")
-		c.JSON(http.StatusInternalServerError, ssoerrors.NewServerError("Failed to generate token: "+processErr.Error()))
+		c.JSON(http.StatusInternalServerError, domain.NewServerError("Failed to generate token: "+processErr.Error()))
 		return
 	}
 
@@ -751,7 +753,7 @@ func (oa *OAuth2API) TokenHandler(c *gin.Context) {
 	// If tokenResponse is nil and response wasn't written by a sub-handler, it's an internal error.
 	if tokenResponse == nil {
 		log.Error().Str("client_id", clientID).Str("grant_type", grantType).Msg("Token response is nil after grant processing and response not written by sub-handler")
-		c.JSON(http.StatusInternalServerError, ssoerrors.NewServerError("Internal error during token generation"))
+		c.JSON(http.StatusInternalServerError, domain.NewServerError("Internal error during token generation"))
 		return
 	}
 
@@ -821,7 +823,7 @@ func (oa *OAuth2API) UserInfoHandler(c *gin.Context) {
 func (oa *OAuth2API) RevokeHandler(c *gin.Context) {
 	token := c.PostForm("token")
 	if token == "" {
-		c.JSON(http.StatusBadRequest, ssoerrors.NewInvalidRequest("token parameter is required"))
+		c.JSON(http.StatusBadRequest, domain.NewInvalidRequest("token parameter is required"))
 		return
 	}
 
@@ -837,7 +839,7 @@ func (oa *OAuth2API) RevokeHandler(c *gin.Context) {
 		// but RFC 7009 suggests POST body params for client_id for public clients.
 		// For confidential clients, Authorization header is also common.
 		// Here, we are strictly checking POST body for client_id and client_secret.
-		c.JSON(http.StatusBadRequest, ssoerrors.NewInvalidRequest("client_id parameter is required"))
+		c.JSON(http.StatusBadRequest, domain.NewInvalidRequest("client_id parameter is required"))
 		return
 	}
 	// Note: client_secret might be optional for public clients.
@@ -848,9 +850,9 @@ func (oa *OAuth2API) RevokeHandler(c *gin.Context) {
 	err := oa.service.RevokeToken(ctx, token, tokenTypeHint, clientID, clientSecret)
 	if err != nil {
 		// Check for specific OAuth errors to return appropriate status codes
-		if oerr, ok := err.(*ssoerrors.OAuth2Error); ok { // Use ssoerrors.OAuth2Error
+		if oerr, ok := err.(*domain.OAuth2Error); ok { // Use domain.OAuth2Error
 			// Compare with error codes from ssoerrors
-			if oerr.Code == ssoerrors.InvalidClient || oerr.Code == ssoerrors.UnauthorizedClient { // Example comparison
+			if oerr.Code == domain.InvalidClient || oerr.Code == domain.UnauthorizedClient { // Example comparison
 				log.Warn().Err(err).Str("client_id", clientID).Msg("Client authentication failed during token revocation")
 				c.JSON(http.StatusUnauthorized, oerr)
 				return
@@ -878,7 +880,7 @@ func (oa *OAuth2API) RevokeHandler(c *gin.Context) {
 		// so this specific path for internal errors from RevokeToken (post-client-auth) is less likely.
 		// The error here would most likely be from `validateClient` within `RevokeToken`.
 		// If `validateClient` fails, `RevokeToken` returns that error.
-		c.JSON(http.StatusInternalServerError, ssoerrors.NewServerError("Internal server error")) // Use ssoerrors.NewServerError
+		c.JSON(http.StatusInternalServerError, domain.NewServerError("Internal server error")) // Use domain.NewServerError
 		return
 	}
 
@@ -1166,10 +1168,10 @@ func (oa *OAuth2API) handleAuthorizationCodeGrant(c *gin.Context, cli *domain.Cl
 	requiresPKCE, _ := oa.clientService.RequiresPKCE(ctx, cli.ID)
 	if requiresPKCE {
 		if codeVerifier == "" {
-			return nil, ssoerrors.NewPKCERequired()
+			return nil, domain.NewPKCERequired()
 		}
 		if err := oa.pkceService.ValidateCodeVerifier(ctx, code, codeVerifier); err != nil {
-			return nil, ssoerrors.NewInvalidPKCE(err.Error())
+			return nil, domain.NewInvalidPKCE(err.Error())
 		}
 	}
 
@@ -1183,7 +1185,7 @@ func (oa *OAuth2API) handlePasswordGrant(c *gin.Context, cli *domain.Client) (*s
 	scope := c.PostForm("scope")
 
 	if username == "" || password == "" || clientID == "" {
-		return nil, ssoerrors.NewInvalidRequest("missing required parameters. " +
+		return nil, domain.NewInvalidRequest("missing required parameters. " +
 			"Required parameters: username, password, client_id")
 	}
 
@@ -1203,7 +1205,7 @@ func (oa *OAuth2API) handleClientCredentialsGrant(c *gin.Context, cli *domain.Cl
 func (oa *OAuth2API) handleRefreshTokenGrant(c *gin.Context, cli *domain.Client) (*sssoapi.TokenResponse, error) {
 	refreshToken := c.PostForm("refresh_token")
 	if refreshToken == "" {
-		return nil, ssoerrors.NewInvalidRequest("refresh_token is required")
+		return nil, domain.NewInvalidRequest("refresh_token is required")
 	}
 
 	ctx := c.Request.Context()
@@ -1221,18 +1223,18 @@ func (oa *OAuth2API) handleDeviceCodeGrant(c *gin.Context, cli *domain.Client) (
 	requestClientID := c.PostForm("client_id") // client_id from form body
 
 	if deviceCode == "" {
-		return nil, ssoerrors.NewInvalidRequest("device_code is required")
+		return nil, domain.NewInvalidRequest("device_code is required")
 	}
 	// client_id is also required in the body for device_code grant (RFC 8628 Sec 3.4)
 	if requestClientID == "" {
-		return nil, ssoerrors.NewInvalidRequest("client_id is required in request body for device_code grant")
+		return nil, domain.NewInvalidRequest("client_id is required in request body for device_code grant")
 	}
 	// Ensure the client_id in the body matches the authenticated client
 	// cli.ID comes from client authentication (if confidential) or from client_id in body (if public)
 	if cli != nil && requestClientID != cli.ID {
 		// This case implies client_id in body doesn't match client_id used for auth (if any)
 		// or if a public client sent client_id in body that doesn't match the one resolved by GetClient earlier
-		return nil, ssoerrors.NewInvalidGrant("client_id in request body does not match client_id used for request")
+		return nil, domain.NewInvalidGrant("client_id in request body does not match client_id used for request")
 	}
 
 	ctx := c.Request.Context()
@@ -1241,32 +1243,32 @@ func (oa *OAuth2API) handleDeviceCodeGrant(c *gin.Context, cli *domain.Client) (
 	if err != nil {
 		// Handle specific device flow errors by writing to response and returning nil error
 		// so TokenHandler knows response is handled.
-		if goerrors.Is(err, ssoerrors.ErrAuthorizationPending) {
+		if goerrors.Is(err, domain.ErrAuthorizationPending) {
 			c.Header("Cache-Control", "no-store")
 			c.Header("Pragma", "no-cache")
 			c.JSON(http.StatusBadRequest, gin.H{"error": "authorization_pending", "error_description": err.Error()})
 			return nil, nil // Signal to TokenHandler that response is sent
 		}
-		if goerrors.Is(err, ssoerrors.ErrSlowDown) {
+		if goerrors.Is(err, domain.ErrSlowDown) {
 			c.Header("Cache-Control", "no-store")
 			c.Header("Pragma", "no-cache")
 			// HTTP 429 Too Many Requests would also be appropriate for slow_down
 			c.JSON(http.StatusBadRequest, gin.H{"error": "slow_down", "error_description": err.Error()})
 			return nil, nil
 		}
-		if goerrors.Is(err, ssoerrors.ErrDeviceFlowTokenExpired) {
+		if goerrors.Is(err, domain.ErrDeviceFlowTokenExpired) {
 			c.Header("Cache-Control", "no-store")
 			c.Header("Pragma", "no-cache")
 			c.JSON(http.StatusBadRequest, gin.H{"error": "expired_token", "error_description": err.Error()})
 			return nil, nil
 		}
-		if goerrors.Is(err, ssoerrors.ErrDeviceFlowAccessDenied) {
+		if goerrors.Is(err, domain.ErrDeviceFlowAccessDenied) {
 			c.Header("Cache-Control", "no-store")
 			c.Header("Pragma", "no-cache")
 			c.JSON(http.StatusBadRequest, gin.H{"error": "access_denied", "error_description": err.Error()})
 			return nil, nil
 		}
-		if oauthErr, ok := err.(*ssoerrors.OAuth2Error); ok && oauthErr.Code == ssoerrors.InvalidClient {
+		if oauthErr, ok := err.(*domain.OAuth2Error); ok && oauthErr.Code == domain.InvalidClient {
 			c.Header("Cache-Control", "no-store")
 			c.Header("Pragma", "no-cache")
 			c.JSON(http.StatusUnauthorized, oauthErr) // Use StatusUnauthorized for invalid_client
@@ -1297,7 +1299,7 @@ func (oa *OAuth2API) IntrospectHandler(c *gin.Context) {
 
 	token := c.PostForm("token")
 	if token == "" {
-		c.JSON(http.StatusBadRequest, ssoerrors.NewInvalidRequest("token parameter is required"))
+		c.JSON(http.StatusBadRequest, domain.NewInvalidRequest("token parameter is required"))
 		return
 	}
 
@@ -1328,11 +1330,11 @@ func (oa *OAuth2API) GetFlowDetailsHandler(c *gin.Context) {
 
 	flowState, err := oa.flowStore.GetFlow(flowID)
 	if err != nil {
-		if goerrors.Is(err, oidcflow.ErrFlowNotFound) { // Changed errors.Is to goerrors.Is
+		if goerrors.Is(err, domain.ErrFlowNotFound) { // Changed errors.Is to goerrors.Is
 			c.JSON(http.StatusNotFound, gin.H{"error": "invalid_flow", "error_description": "Flow ID not found."})
 			return
 		}
-		if goerrors.Is(err, oidcflow.ErrFlowExpired) { // Changed errors.Is to goerrors.Is
+		if goerrors.Is(err, domain.ErrFlowExpired) { // Changed errors.Is to goerrors.Is
 			c.JSON(http.StatusNotFound, gin.H{"error": "expired_flow", "error_description": "Flow ID has expired."})
 			// Optionally delete it now
 			_ = oa.flowStore.DeleteFlow(flowID)
@@ -1400,9 +1402,9 @@ func (oa *OAuth2API) AuthenticateUserHandler(c *gin.Context) {
 
 	flowState, err := oa.flowStore.GetFlow(req.FlowID)
 	if err != nil {
-		if goerrors.Is(err, oidcflow.ErrFlowNotFound) || goerrors.Is(err, oidcflow.ErrFlowExpired) { // Use goerrors.Is
+		if goerrors.Is(err, domain.ErrFlowNotFound) || goerrors.Is(err, domain.ErrFlowExpired) { // Use goerrors.Is
 			desc := "Flow ID not found or expired."
-			if goerrors.Is(err, oidcflow.ErrFlowExpired) { // Use goerrors.Is
+			if goerrors.Is(err, domain.ErrFlowExpired) { // Use goerrors.Is
 				_ = oa.flowStore.DeleteFlow(req.FlowID)
 			}
 			c.JSON(http.StatusForbidden, gin.H{"error": "invalid_flow", "error_description": desc})
@@ -1444,7 +1446,7 @@ func (oa *OAuth2API) AuthenticateUserHandler(c *gin.Context) {
 	// Authentication successful, create OIDC Provider session for the user.
 	sessionID := uuid.NewString()
 	opSessionExpiry := time.Now().Add(24 * time.Hour) // Example: 24-hour session for the OP
-	userSession := &oidcflow.UserSession{
+	userSession := &domain.UserSession{
 		SessionID:       sessionID,
 		UserID:          user.ID,
 		AuthenticatedAt: time.Now(),

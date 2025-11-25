@@ -1,19 +1,20 @@
-package auth
+package pkgauth
 
 import (
-	"fmt" // For services.PasswordHasher interface
+	"fmt"
 
+	"github.com/pilab-dev/shadow-sso/domain"
 	"golang.org/x/crypto/bcrypt"
 )
 
-// BcryptPasswordHasher implements the services.PasswordHasher interface using bcrypt.
+// BcryptPasswordHasher implements the domain.PasswordHasher interface using bcrypt.
 type BcryptPasswordHasher struct {
 	Cost int
 }
 
 // NewBcryptPasswordHasher creates a new BcryptPasswordHasher.
 // Default cost is bcrypt.DefaultCost if cost <= 0.
-func NewBcryptPasswordHasher(cost int) *BcryptPasswordHasher {
+func NewBcryptPasswordHasher(cost int) domain.PasswordHasher {
 	if cost <= 0 {
 		cost = bcrypt.DefaultCost
 	}

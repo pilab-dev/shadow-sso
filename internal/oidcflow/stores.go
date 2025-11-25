@@ -1,36 +1,28 @@
 package oidcflow
 
 import (
-	"errors"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/pilab-dev/shadow-sso/domain" // Added domain import
 )
 
-var (
-	ErrFlowNotFound      = errors.New("login flow not found")
-	ErrFlowExpired       = errors.New("login flow expired")
-	ErrSessionNotFound   = errors.New("user session not found")
-	ErrSessionExpired    = errors.New("user session expired")
-	ErrSessionIDConflict = errors.New("session ID conflict")
-)
-
-// InMemoryFlowStore stores LoginFlowState in memory.
+// InMemoryFlowStore stores domain.LoginFlowState in memory.
 type InMemoryFlowStore struct {
 	mu    sync.RWMutex
-	flows map[string]LoginFlowState
+	flows map[string]domain.LoginFlowState // Changed to domain.LoginFlowState
 }
 
 // NewInMemoryFlowStore creates a new InMemoryFlowStore.
 func NewInMemoryFlowStore() *InMemoryFlowStore {
 	return &InMemoryFlowStore{
-		flows: make(map[string]LoginFlowState),
+		flows: make(map[string]domain.LoginFlowState), // Changed to domain.LoginFlowState
 	}
 }
 
 // StoreFlow adds a new login flow state to the store.
-func (s *InMemoryFlowStore) StoreFlow(flowID string, state LoginFlowState) error {
+func (s *InMemoryFlowStore) StoreFlow(flowID string, state domain.LoginFlowState) error { // Changed to domain.LoginFlowState
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.flows[flowID] = state
@@ -39,28 +31,28 @@ func (s *InMemoryFlowStore) StoreFlow(flowID string, state LoginFlowState) error
 
 // GetFlow retrieves a login flow state by its ID.
 // It also checks for expiry.
-func (s *InMemoryFlowStore) GetFlow(flowID string) (*LoginFlowState, error) {
+func (s *InMemoryFlowStore) GetFlow(flowID string) (*domain.LoginFlowState, error) { // Changed to domain.LoginFlowState
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	state, ok := s.flows[flowID]
 	if !ok {
-		return nil, ErrFlowNotFound
+		return nil, domain.ErrFlowNotFound
 	}
 	if time.Now().After(state.ExpiresAt) {
 		// Optionally delete expired flow here
 		// go s.DeleteFlow(flowID) // if deletion is desired on access
-		return &state, ErrFlowExpired
+		return &state, domain.ErrFlowExpired
 	}
 	return &state, nil
 }
 
 // UpdateFlow updates an existing login flow state.
-func (s *InMemoryFlowStore) UpdateFlow(flowID string, state *LoginFlowState) error {
+func (s *InMemoryFlowStore) UpdateFlow(flowID string, state *domain.LoginFlowState) error { // Changed to domain.LoginFlowState
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_, ok := s.flows[flowID]
 	if !ok {
-		return ErrFlowNotFound
+		return domain.ErrFlowNotFound
 	}
 	s.flows[flowID] = *state
 	return nil
@@ -74,22 +66,22 @@ func (s *InMemoryFlowStore) DeleteFlow(flowID string) error {
 	return nil
 }
 
-// InMemoryUserSessionStore stores UserSession in memory.
+// InMemoryUserSessionStore stores domain.UserSession in memory.
 type InMemoryUserSessionStore struct {
 	mu       sync.RWMutex
-	sessions map[string]UserSession // Keyed by SessionID
+	sessions map[string]domain.UserSession // Changed to domain.UserSession
 }
 
 // NewInMemoryUserSessionStore creates a new InMemoryUserSessionStore.
 func NewInMemoryUserSessionStore() *InMemoryUserSessionStore {
 	return &InMemoryUserSessionStore{
-		sessions: make(map[string]UserSession),
+		sessions: make(map[string]domain.UserSession), // Changed to domain.UserSession
 	}
 }
 
 // StoreUserSession adds a new user session to the store.
 // It generates a SessionID if not provided.
-func (s *InMemoryUserSessionStore) StoreUserSession(session *UserSession) error {
+func (s *InMemoryUserSessionStore) StoreUserSession(session *domain.UserSession) error { // Changed to domain.UserSession
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -97,7 +89,7 @@ func (s *InMemoryUserSessionStore) StoreUserSession(session *UserSession) error 
 		session.SessionID = uuid.NewString()
 	} else {
 		if _, exists := s.sessions[session.SessionID]; exists {
-			return ErrSessionIDConflict // Or handle regeneration if ID collision is a concern with provided IDs
+			return domain.ErrSessionIDConflict // Or handle regeneration if ID collision is a concern with provided IDs
 		}
 	}
 	s.sessions[session.SessionID] = *session
@@ -106,19 +98,19 @@ func (s *InMemoryUserSessionStore) StoreUserSession(session *UserSession) error 
 
 // GetUserSession retrieves a user session by its ID.
 // It also checks for expiry.
-func (s *InMemoryUserSessionStore) GetUserSession(sessionID string) (*UserSession, error) {
+func (s *InMemoryUserSessionStore) GetUserSession(sessionID string) (*domain.UserSession, error) { // Changed to domain.UserSession
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	session, ok := s.sessions[sessionID]
 	if !ok {
-		return nil, ErrSessionNotFound
+		return nil, domain.ErrSessionNotFound
 	}
 
 	if time.Now().After(session.ExpiresAt) {
 		// Optionally delete expired session here
 		// go s.DeleteUserSession(sessionID) // if deletion is desired on access
-		return &session, ErrSessionExpired
+		return &session, domain.ErrSessionExpired
 	}
 	return &session, nil
 }

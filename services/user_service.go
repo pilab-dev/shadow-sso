@@ -18,11 +18,11 @@ import (
 type UserServer struct {
 	ssov1connect.UnimplementedUserServiceHandler // Embed for forward compatibility
 	userRepo                                     domain.UserRepository
-	passwordHasher                               PasswordHasher
+	passwordHasher                               domain.PasswordHasher
 }
 
 // NewUserServer creates a new UserServer.
-func NewUserServer(userRepo domain.UserRepository, hasher PasswordHasher) *UserServer {
+func NewUserServer(userRepo domain.UserRepository, hasher domain.PasswordHasher) *UserServer {
 	return &UserServer{
 		userRepo:       userRepo,
 		passwordHasher: hasher,

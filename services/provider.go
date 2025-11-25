@@ -2,8 +2,8 @@ package services
 
 import (
 	"github.com/pilab-dev/shadow-sso/client"
+	"github.com/pilab-dev/shadow-sso/domain"
 	"github.com/pilab-dev/shadow-sso/internal/federation"
-	"github.com/pilab-dev/shadow-sso/internal/oidcflow"
 )
 
 // ServiceProvider defines an interface for accessing all service types.
@@ -26,11 +26,11 @@ type ServiceProvider interface {
 	// UserService() *UserService
 	// AuthService() *AuthService // Assuming this is a key service
 	// Utilities / Helper Services often configured at service layer
-	// PasswordHasher() PasswordHasher // Interface for password hashing
+	// PasswordHasher() domain.PasswordHasher // Interface for password hashing
 
 	// OIDC Flow Stores - these might be considered services or state managers
-	FlowStore() *oidcflow.InMemoryFlowStore               // Or an interface if it becomes persistent
-	UserSessionStore() *oidcflow.InMemoryUserSessionStore // Or an interface
+	FlowStore() domain.FlowStore
+	UserSessionStore() domain.UserSessionStore
 
 	// Consider adding other services like AuditService if it exists
 }

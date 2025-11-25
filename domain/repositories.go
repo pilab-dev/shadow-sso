@@ -7,7 +7,28 @@ import (
 	// Added client import
 )
 
+type PasswordHasher interface {
+	Hash(password string) (string, error)
+	Verify(hashedPassword, password string) error
+}
+
+type FlowStore interface {
+	StoreFlow(flowID string, state LoginFlowState) error
+	GetFlow(flowID string) (*LoginFlowState, error)
+	UpdateFlow(flowID string, state *LoginFlowState) error
+	DeleteFlow(flowID string) error
+	CleanupExpiredFlows()
+}
+
+type UserSessionStore interface {
+	StoreUserSession(session *UserSession) error
+	GetUserSession(sessionID string) (*UserSession, error)
+	DeleteUserSession(sessionID string) error
+	CleanupExpiredSessions()
+}
+
 // PublicKeyInfo, ServiceAccount, User, Session are defined in their respective domain files.
+
 
 type PublicKeyRepository interface {
 	GetPublicKey(ctx context.Context, keyID string) (*PublicKeyInfo, error)

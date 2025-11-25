@@ -27,7 +27,7 @@ type AuthServer struct {
 	userRepo                                     domain.UserRepository
 	sessionRepo                                  domain.SessionRepository
 	tokenService                                 *TokenService
-	passwordHasher                               PasswordHasher
+	passwordHasher                               domain.PasswordHasher
 }
 
 // NewAuthServer creates a new AuthServer.
@@ -35,7 +35,7 @@ func NewAuthServer(
 	userRepo domain.UserRepository,
 	sessionRepo domain.SessionRepository, // Added sessionRepo to signature
 	tokenService *TokenService,
-	passwordHasher PasswordHasher,
+	passwordHasher domain.PasswordHasher,
 ) *AuthServer {
 	return &AuthServer{
 		userRepo:       userRepo,
