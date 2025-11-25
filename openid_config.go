@@ -5,6 +5,7 @@ import (
 	"context" // For context.Background()
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/gin-gonic/gin" // For *gin.Engine
 	"github.com/pilab-dev/shadow-sso/api" // For api.OpenIDProviderConfig
@@ -183,6 +184,27 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 	// Setup Gin server
 	router := gin.Default()
 	oauth2API.RegisterRoutes(router)
+
+	// Add health check endpoint
+	router.GET("/healthz", func(c *gin.Context) {
+		c.String(200, "OK")
+	})
+
+	// Add readiness check endpoint - verifies MongoDB connection
+	router.GET("/readyz", func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+
+		// Try to ping MongoDB if using MongoDB repository provider
+		if mongoRp, ok := repoProvider.(*mongodb.MongoRepositoryProvider); ok {
+			if err := mongoRp.Ping(ctx); err != nil {
+				c.String(503, "Service Unavailable: MongoDB connection failed")
+				return
+			}
+		}
+		// If we got here, MongoDB is accessible (or not using MongoDB)
+		c.String(200, "OK")
+	})
 
 	return router, nil
 }

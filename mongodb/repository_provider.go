@@ -91,6 +91,14 @@ func (p *MongoRepositoryProvider) Disconnect(ctx context.Context) error {
 	return nil
 }
 
+// Ping checks the MongoDB connection by pinging the server.
+func (p *MongoRepositoryProvider) Ping(ctx context.Context) error {
+	if p.clientInst == nil {
+		return errors.New("MongoDB client not initialized")
+	}
+	return p.clientInst.Ping(ctx, nil)
+}
+
 // UserRepository returns a MongoDB-backed UserRepository.
 func (p *MongoRepositoryProvider) UserRepository(ctx context.Context) domain.UserRepository {
 	// To make these singletons, initialize in NewMongoRepositoryProvider and return cached instance.
