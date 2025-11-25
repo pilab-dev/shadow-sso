@@ -15,12 +15,10 @@ import (
 	"golang.org/x/net/http2/h2c"
 
 	"connectrpc.com/otelconnect" // Import for OpenTelemetry Connect interceptor
-	// ssso "github.com/pilab-dev/shadow-sso" // Likely no longer needed if types are moved
 	"github.com/gin-gonic/gin"
-	ssso "github.com/pilab-dev/shadow-sso"
 	sssogin "github.com/pilab-dev/shadow-sso/api/openidv2_1" // Ensure domain is imported
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
-	"github.com/pilab-dev/shadow-sso/internal/auth"
+	"github.com/pilab-dev/shadow-sso/pkg/auth"
 	"github.com/pilab-dev/shadow-sso/middleware"
 	"github.com/pilab-dev/shadow-sso/services"
 	"github.com/prometheus/client_golang/prometheus"
@@ -53,7 +51,7 @@ func Start(cfg ServerConfig, repoProvider services.RepositoryProvider) error {
 	// Repositories are no longer initialized here directly. They are accessed via sp.RepositoryProvider()
 	// Services are accessed via sp.ServiceName()
 
-	passwordHasher := auth.NewBcryptPasswordHasher(0)
+	passwordHasher := pkgauth.NewBcryptPasswordHasher(0)
 
 	// Example: Get TokenService
 	tokenService := sp.TokenService()
@@ -143,7 +141,7 @@ func Start(cfg ServerConfig, repoProvider services.RepositoryProvider) error {
 	// * Initialize OAuth2/OIDC API handler (sssogin.OAuth2API)
 	// *
 	// Get all necessary services and configurations from the ServiceProvider
-	appOIDCConfig := ssso.NewDefaultConfig(cfg.AppConfig.IssuerURL) // Create the base config
+	appOIDCConfig := cfg.AppConfig.ToOpenIDProviderConfig() // Create the base config
 	// Override with more specific settings from cfg.AppConfig if they exist in ssso.OpenIDProviderConfig structure
 	appOIDCConfig.NextJSLoginURL = cfg.AppConfig.NextJSLoginURL
 	appOIDCConfig.KeyRotationPeriod = cfg.AppConfig.KeyRotationInterval
