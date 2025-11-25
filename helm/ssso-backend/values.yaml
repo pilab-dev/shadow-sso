@@ -22,9 +22,7 @@ initialAdmin:
 image:
   repository: ghcr.io/pilab-dev/shadow-sso-backend
   pullPolicy: IfNotPresent
-  # tag: "v1" # Overridden by Chart.yaml appVersion by default, but can be specified here
-  # Or use a dynamic tag like below if you have a CI/CD pipeline that updates it
-  tag: "" # An empty tag will use the appVersion from Chart.yaml
+  tag: "v1"
 
 imagePullSecrets: []
 # - name: my-ghcr-secret # If your GHCR package is private and requires auth
