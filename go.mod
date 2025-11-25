@@ -6,7 +6,7 @@ require (
 	connectrpc.com/connect v1.18.1
 	connectrpc.com/grpchealth v1.4.0
 	connectrpc.com/grpcreflect v1.3.0
-	connectrpc.com/otelconnect v0.7.2
+	connectrpc.com/otelconnect v0.8.0
 	github.com/gin-gonic/gin v1.10.1
 	github.com/go-ldap/ldap/v3 v3.4.11
 	github.com/golang-jwt/jwt/v5 v5.3.0
