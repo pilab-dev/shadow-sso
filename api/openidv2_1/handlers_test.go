@@ -15,15 +15,13 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	ssso "github.com/pilab-dev/shadow-sso"
 	sssoapi "github.com/pilab-dev/shadow-sso/api"
 	sssogin "github.com/pilab-dev/shadow-sso/api/openidv2_1"
 	mock_cache "github.com/pilab-dev/shadow-sso/cache/mocks"
 	"github.com/pilab-dev/shadow-sso/client"
 	"github.com/pilab-dev/shadow-sso/domain"
 	mock_domain "github.com/pilab-dev/shadow-sso/domain/mocks"
-	ssoerrors "github.com/pilab-dev/shadow-sso/errors"
-	"github.com/pilab-dev/shadow-sso/internal/auth"
+	pkgauth "github.com/pilab-dev/shadow-sso/pkg/auth"
 	"github.com/pilab-dev/shadow-sso/internal/metrics"
 	"github.com/pilab-dev/shadow-sso/internal/oidcflow"
 	"github.com/pilab-dev/shadow-sso/services"
@@ -111,7 +109,7 @@ func setupTokenHandlerTest(t *testing.T) (
 			JSKSService:   jwksService,
 			ClientService: mockClientService,
 			PkceService:   pkceService,
-			Config: &ssso.OpenIDProviderConfig{
+			Config: &sssoapi.OpenIDProviderConfig{
 				NextJSLoginURL: "http://localhost:3000/login",
 			},
 			FlowStore:         flowStore,
@@ -262,11 +260,11 @@ func TestTokenHandler_MissingClientID(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected status %d, got %d", http.StatusBadRequest, w.Code)
 	}
-	var errResp ssoerrors.OAuth2Error
+	var errResp domain.OAuth2Error
 	if err := json.Unmarshal(w.Body.Bytes(), &errResp); err != nil {
 		t.Fatalf("failed to unmarshal error response: %v", err)
 	}
-	if errResp.Code != ssoerrors.InvalidRequest || !strings.Contains(errResp.Description, "client_id is required") {
+	if errResp.Code != domain.InvalidRequest || !strings.Contains(errResp.Description, "client_id is required") {
 		t.Errorf("unexpected error response: %+v", errResp)
 	}
 }
@@ -278,7 +276,7 @@ func TestTokenHandler_InvalidClientCredentials(t *testing.T) {
 	clientID := "test-client"
 	clientSecret := "wrong-secret"
 
-	mockClientStore.EXPECT().ValidateClient(context.Background(), clientID, clientSecret).Return(nil, ssoerrors.NewInvalidClient("Invalid client credentials"))
+	mockClientStore.EXPECT().ValidateClient(context.Background(), clientID, clientSecret).Return(nil, domain.NewInvalidClient("Invalid client credentials"))
 
 	data := url.Values{}
 	data.Set("grant_type", "authorization_code")
@@ -296,12 +294,12 @@ func TestTokenHandler_InvalidClientCredentials(t *testing.T) {
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("expected status %d, got %d", http.StatusUnauthorized, w.Code)
 	}
-	var errResp ssoerrors.OAuth2Error
+	var errResp domain.OAuth2Error
 	if err := json.Unmarshal(w.Body.Bytes(), &errResp); err != nil {
 		t.Fatalf("failed to unmarshal error response: %v", err)
 	}
-	if errResp.Code != ssoerrors.InvalidClient {
-		t.Errorf("expected error code %s, got %s", ssoerrors.InvalidClient, errResp.Code)
+	if errResp.Code != domain.InvalidClient {
+		t.Errorf("expected error code %s, got %s", domain.InvalidClient, errResp.Code)
 	}
 }
 
@@ -332,12 +330,12 @@ func TestTokenHandler_GrantTypeNotAllowed(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected status %d, got %d, body: %s", http.StatusBadRequest, w.Code, w.Body.String())
 	}
-	var errResp ssoerrors.OAuth2Error
+	var errResp domain.OAuth2Error
 	if err := json.Unmarshal(w.Body.Bytes(), &errResp); err != nil {
 		t.Fatalf("failed to unmarshal error response: %v", err)
 	}
-	if errResp.Code != ssoerrors.UnauthorizedClient {
-		t.Errorf("expected error code %s, got %s", ssoerrors.UnauthorizedClient, errResp.Code)
+	if errResp.Code != domain.UnauthorizedClient {
+		t.Errorf("expected error code %s, got %s", domain.UnauthorizedClient, errResp.Code)
 	}
 }
 
@@ -367,12 +365,12 @@ func TestTokenHandler_UnsupportedGrantType(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected status %d, got %d", http.StatusBadRequest, w.Code)
 	}
-	var errResp ssoerrors.OAuth2Error
+	var errResp domain.OAuth2Error
 	if err := json.Unmarshal(w.Body.Bytes(), &errResp); err != nil {
 		t.Fatalf("failed to unmarshal error response: %v", err)
 	}
-	if errResp.Code != ssoerrors.UnsupportedGrantType {
-		t.Errorf("expected error code %s, got %s", ssoerrors.UnsupportedGrantType, errResp.Code)
+	if errResp.Code != domain.UnsupportedGrantType {
+		t.Errorf("expected error code %s, got %s", domain.UnsupportedGrantType, errResp.Code)
 	}
 }
 
@@ -406,11 +404,11 @@ func TestTokenHandler_AuthorizationCodeGrant_PKCERequired_MissingVerifier(t *tes
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected status %d, got %d", http.StatusBadRequest, w.Code)
 	}
-	var errResp ssoerrors.OAuth2Error
+	var errResp domain.OAuth2Error
 	if err := json.Unmarshal(w.Body.Bytes(), &errResp); err != nil {
 		t.Fatalf("failed to unmarshal error response: %v", err)
 	}
-	pkceErr := ssoerrors.NewPKCERequired()
+	pkceErr := domain.NewPKCERequired()
 	if errResp.Code != pkceErr.Code {
 		t.Errorf("expected error code %s, got %s", pkceErr.Code, errResp.Code)
 	}
@@ -449,11 +447,11 @@ func TestTokenHandler_AuthorizationCodeGrant_PKCEInvalidVerifier(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected status %d, got %d, body: %s", http.StatusBadRequest, w.Code, w.Body.String())
 	}
-	var errResp ssoerrors.OAuth2Error
+	var errResp domain.OAuth2Error
 	if err := json.Unmarshal(w.Body.Bytes(), &errResp); err != nil {
 		t.Fatalf("failed to unmarshal error response: %v", err)
 	}
-	pkceErr := ssoerrors.NewInvalidPKCE("")
+	pkceErr := domain.NewInvalidPKCE("")
 	if errResp.Code != pkceErr.Code {
 		t.Errorf("expected error code %s, got %s", pkceErr.Code, errResp.Code)
 	}
@@ -531,11 +529,11 @@ func TestTokenHandler_RefreshTokenGrant_MissingToken(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected status %d, got %d", http.StatusBadRequest, w.Code)
 	}
-	var errResp ssoerrors.OAuth2Error
+	var errResp domain.OAuth2Error
 	if err := json.Unmarshal(w.Body.Bytes(), &errResp); err != nil {
 		t.Fatalf("failed to unmarshal error response: %v", err)
 	}
-	if errResp.Code != ssoerrors.InvalidRequest || !strings.Contains(errResp.Description, "refresh_token is required") {
+	if errResp.Code != domain.InvalidRequest || !strings.Contains(errResp.Description, "refresh_token is required") {
 		t.Errorf("unexpected error response: %+v", errResp)
 	}
 }
@@ -590,7 +588,7 @@ func TestTokenHandler_PasswordGrant_Success(t *testing.T) {
 	userID := "user-pw-grant"
 
 	mockReturnedClient := &domain.Client{ID: clientID, Secret: clientSecret, AllowedGrantTypes: []string{"password"}, AllowedScopes: []string{"profile", "email", "openid"}}
-	hashedPassword, _ := auth.NewBcryptPasswordHasher(bcrypt.MinCost).Hash(password)
+	hashedPassword, _ := pkgauth.NewBcryptPasswordHasher(bcrypt.MinCost).Hash(password)
 	mockUser := &domain.User{ID: userID, Email: username, PasswordHash: hashedPassword, Status: domain.UserStatusActive, Roles: []string{"user"}}
 
 	mockClientStore.EXPECT().ValidateClient(gomock.Any(), clientID, clientSecret).Return(mockReturnedClient, nil).Times(1)
@@ -654,11 +652,11 @@ func TestTokenHandler_PasswordGrant_MissingParameters(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected status %d, got %d", http.StatusBadRequest, w.Code)
 	}
-	var errResp ssoerrors.OAuth2Error
+	var errResp domain.OAuth2Error
 	if err := json.Unmarshal(w.Body.Bytes(), &errResp); err != nil {
 		t.Fatalf("failed to unmarshal error response: %v", err)
 	}
-	if errResp.Code != ssoerrors.InvalidRequest || !strings.Contains(errResp.Description, "missing required parameters") {
+	if errResp.Code != domain.InvalidRequest || !strings.Contains(errResp.Description, "missing required parameters") {
 		t.Errorf("unexpected error response: %+v", errResp)
 	}
 }
@@ -758,7 +756,7 @@ func TestTokenHandler_AuthorizationCodeGrant_ExchangeError(t *testing.T) {
 	mockClientStore.EXPECT().ValidateClient(context.Background(), clientID, clientSecret).Return(mockReturnedClient, nil)
 	mockClientStore.EXPECT().GetClient(context.Background(), clientID).Times(2).Return(mockReturnedClient, nil)
 	mockClientStore.EXPECT().GetClient(context.Background(), clientID).Return(mockReturnedClient, nil)
-	mockAuthCodeRepo.EXPECT().GetAuthCode(context.Background(), authCodeVal).Return(nil, ssoerrors.NewInvalidGrant("exchange failed"))
+	mockAuthCodeRepo.EXPECT().GetAuthCode(context.Background(), authCodeVal).Return(nil, domain.NewInvalidGrant("exchange failed"))
 
 	data := url.Values{}
 	data.Set("grant_type", "authorization_code")
@@ -776,12 +774,12 @@ func TestTokenHandler_AuthorizationCodeGrant_ExchangeError(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected status %d, got %d. Body: %s", http.StatusBadRequest, w.Code, w.Body.String())
 	}
-	var errResp ssoerrors.OAuth2Error
+	var errResp domain.OAuth2Error
 	if err := json.Unmarshal(w.Body.Bytes(), &errResp); err != nil {
 		t.Fatalf("failed to unmarshal error response: %v", err)
 	}
-	if errResp.Code != ssoerrors.InvalidGrant {
-		t.Errorf("expected error code %s, got %s", ssoerrors.InvalidGrant, errResp.Code)
+	if errResp.Code != domain.InvalidGrant {
+		t.Errorf("expected error code %s, got %s", domain.InvalidGrant, errResp.Code)
 	}
 }
 
@@ -855,12 +853,12 @@ func TestTokenHandler_ConfidentialClient_SecretNotProvided_CorrectedLogic(t *tes
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("expected status %d (due to secret mismatch in OAuthService), got %d. Body: %s", http.StatusUnauthorized, w.Code, w.Body.String())
 	}
-	var errResp ssoerrors.OAuth2Error
+	var errResp domain.OAuth2Error
 	if err := json.Unmarshal(w.Body.Bytes(), &errResp); err != nil {
 		t.Fatalf("failed to unmarshal error response: %v", err)
 	}
-	if errResp.Code != ssoerrors.InvalidClient {
-		t.Errorf("expected error code %s, got %s", ssoerrors.InvalidClient, errResp.Code)
+	if errResp.Code != domain.InvalidClient {
+		t.Errorf("expected error code %s, got %s", domain.InvalidClient, errResp.Code)
 	}
 }
 
@@ -899,12 +897,12 @@ func TestTokenHandler_InternalServerError(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected status %d, got %d. Body: %s", http.StatusBadRequest, w.Code, w.Body.String())
 	}
-	var errResp ssoerrors.OAuth2Error
+	var errResp domain.OAuth2Error
 	if err := json.Unmarshal(w.Body.Bytes(), &errResp); err != nil {
 		t.Fatalf("failed to unmarshal error response: %v", err)
 	}
-	if errResp.Code != ssoerrors.InvalidGrant {
-		t.Errorf("expected error code %s, got %s", ssoerrors.InvalidGrant, errResp.Code)
+	if errResp.Code != domain.InvalidGrant {
+		t.Errorf("expected error code %s, got %s", domain.InvalidGrant, errResp.Code)
 	}
 	if !strings.Contains(errResp.Description, "invalid authorization code") {
 		t.Errorf("expected error description to contain original error, got '%s'", errResp.Description)
