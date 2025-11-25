@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/pilab-dev/shadow-sso/domain" // Corrected: Using domain.LoginFlowState
 	dtsv1 "github.com/pilab-dev/shadow-sso/gen/proto/dts/v1"
-	"github.com/pilab-dev/shadow-sso/internal/oidcflow" // For oidcflow.LoginFlowState and errors
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -22,7 +22,7 @@ var (
 )
 
 // DTSFlowStore provides an OIDC flow store backed by the DTS.
-// It mimics the methods of oidcflow.InMemoryFlowStore.
+// It mimics the methods of domain.FlowStore.
 type DTSFlowStore struct {
 	client *Client
 	// ctx is included if all operations need a default context,
@@ -38,7 +38,7 @@ func NewDTSFlowStore(client *Client) *DTSFlowStore {
 	return &DTSFlowStore{client: client}
 }
 
-func toProtoOIDCFlw(state *oidcflow.LoginFlowState) *dtsv1.OIDCFlw {
+func toProtoOIDCFlw(state *domain.LoginFlowState) *dtsv1.OIDCFlw { // Changed to domain.LoginFlowState
 	if state == nil {
 		return nil
 	}
@@ -60,12 +60,12 @@ func toProtoOIDCFlw(state *oidcflow.LoginFlowState) *dtsv1.OIDCFlw {
 		UserAuthenticatedAt: userAuthAt,
 		ExpiresAt:           timestamppb.New(state.ExpiresAt),
 		OriginalOidcParams:  state.OriginalOIDCParams,
-		// acr_level, amr_methods, session_id are not in oidcflow.LoginFlowState
+		// acr_level, amr_methods, session_id are not in domain.LoginFlowState
 		// They will be default/empty when converting from it.
 	}
 }
 
-func fromProtoOIDCFlw(protoFlw *dtsv1.OIDCFlw) *oidcflow.LoginFlowState {
+func fromProtoOIDCFlw(protoFlw *dtsv1.OIDCFlw) *domain.LoginFlowState { // Changed to domain.LoginFlowState
 	if protoFlw == nil {
 		return nil
 	}
@@ -73,7 +73,7 @@ func fromProtoOIDCFlw(protoFlw *dtsv1.OIDCFlw) *oidcflow.LoginFlowState {
 	if protoFlw.UserAuthenticatedAt != nil && protoFlw.UserAuthenticatedAt.IsValid() {
 		userAuthAt = protoFlw.UserAuthenticatedAt.AsTime()
 	}
-	return &oidcflow.LoginFlowState{
+	return &domain.LoginFlowState{ // Changed to domain.LoginFlowState
 		FlowID:              protoFlw.FlowId,
 		ClientID:            protoFlw.ClientId,
 		RedirectURI:         protoFlw.RedirectUri,
@@ -90,7 +90,7 @@ func fromProtoOIDCFlw(protoFlw *dtsv1.OIDCFlw) *oidcflow.LoginFlowState {
 }
 
 // StoreFlow adds a new login flow state to DTS.
-func (s *DTSFlowStore) StoreFlow(ctx context.Context, flowID string, state oidcflow.LoginFlowState) error {
+func (s *DTSFlowStore) StoreFlow(ctx context.Context, flowID string, state domain.LoginFlowState) error { // Changed to domain.LoginFlowState
 	if flowID == "" || state.FlowID != flowID { // Ensure consistency if flowID is passed separately
 		log.Printf("Warning: flowID parameter ('%s') and state.FlowID"+
 			" ('%s') mismatch or empty. Using state.FlowID.", flowID, state.FlowID)
@@ -102,7 +102,7 @@ func (s *DTSFlowStore) StoreFlow(ctx context.Context, flowID string, state oidcf
 
 	protoFlw := toProtoOIDCFlw(&state)
 	if protoFlw.ExpiresAt.AsTime().Before(time.Now()) || protoFlw.ExpiresAt.AsTime().IsZero() {
-		return oidcflow.ErrFlowExpired // Or codes.InvalidArgument
+		return domain.ErrFlowExpired // Changed to domain.ErrFlowExpired
 	}
 
 	req := connect.NewRequest(&dtsv1.StoreOIDCFlwRequest{
@@ -124,7 +124,7 @@ func (s *DTSFlowStore) StoreFlow(ctx context.Context, flowID string, state oidcf
 }
 
 // GetFlow retrieves a login flow state by its ID from DTS.
-func (s *DTSFlowStore) GetFlow(ctx context.Context, flowID string) (*oidcflow.LoginFlowState, error) {
+func (s *DTSFlowStore) GetFlow(ctx context.Context, flowID string) (*domain.LoginFlowState, error) { // Changed to domain.LoginFlowState
 	if flowID == "" {
 		err := errors.New("flow ID cannot be empty")
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
@@ -144,7 +144,7 @@ func (s *DTSFlowStore) GetFlow(ctx context.Context, flowID string) (*oidcflow.Lo
 		if connect.CodeOf(err) == connect.CodeNotFound {
 			log.Printf("OIDC flow %s not found in DTS.", flowID)
 
-			return nil, connect.NewError(connect.CodeInvalidArgument, oidcflow.ErrFlowNotFound)
+			return nil, connect.NewError(connect.CodeInvalidArgument, domain.ErrFlowNotFound) // Changed to domain.ErrFlowNotFound
 		}
 
 		log.Printf("Error getting OIDC flow %s from DTS: %v", flowID, err)
@@ -158,14 +158,14 @@ func (s *DTSFlowStore) GetFlow(ctx context.Context, flowID string) (*oidcflow.Lo
 		log.Printf("OIDC flow %s retrieved from DTS but is expired.", flowID)
 
 		// Return state along with expired error as per InMemoryFlowStore
-		return nil, connect.NewError(connect.CodeInvalidArgument, oidcflow.ErrFlowExpired)
+		return nil, connect.NewError(connect.CodeInvalidArgument, domain.ErrFlowExpired) // Changed to domain.ErrFlowExpired
 	}
 
 	return state, nil
 }
 
 // UpdateFlow updates an existing login flow state in DTS.
-func (s *DTSFlowStore) UpdateFlow(ctx context.Context, flowID string, state *oidcflow.LoginFlowState) error {
+func (s *DTSFlowStore) UpdateFlow(ctx context.Context, flowID string, state *domain.LoginFlowState) error { // Changed to domain.LoginFlowState
 	if flowID == "" || state == nil || state.FlowID != flowID {
 		err := errors.New("flow ID mismatch or state is nil")
 
@@ -175,7 +175,7 @@ func (s *DTSFlowStore) UpdateFlow(ctx context.Context, flowID string, state *oid
 	protoFlw := toProtoOIDCFlw(state)
 	// Expiration check might be relevant here too, depending on desired behavior for updating expired flows
 	// if protoFlw.ExpiresAt.AsTime().Before(time.Now()) {
-	// 	return oidcflow.ErrFlowExpired
+	// 	return domain.ErrFlowExpired // Changed to domain.ErrFlowExpired
 	// }
 
 	req := connect.NewRequest(&dtsv1.UpdateOIDCFlwRequest{
@@ -185,7 +185,7 @@ func (s *DTSFlowStore) UpdateFlow(ctx context.Context, flowID string, state *oid
 	if err != nil {
 		// DTS UpdateOIDCFlw might return NotFound if the flow doesn't exist and it's not an upsert.
 		// The current DTS service implementation of Update is an upsert (uses storeProtoMessage).
-		// If it were a strict update, we'd map status.Code(err) == codes.NotFound to oidcflow.ErrFlowNotFound
+		// If it were a strict update, we'd map status.Code(err) == codes.NotFound to domain.ErrFlowNotFound // Changed to domain.ErrFlowNotFound
 		log.Printf("Error updating OIDC flow %s in DTS: %v", flowID, err)
 
 		err = fmt.Errorf("%w: %v", ErrFailedToUpdateFlow, err)
@@ -228,13 +228,3 @@ func (s *DTSFlowStore) DeleteFlow(ctx context.Context, flowID string) error {
 func (s *DTSFlowStore) CleanupExpiredFlows() {
 	log.Println("CleanupExpiredFlows is a no-op for DTSFlowStore; DTS handles TTL cleanup automatically.")
 }
-
-// Ensure DTSFlowStore satisfies a potential FlowStore interface (if one were defined matching these methods)
-// type FlowStoreInterface interface {
-//   StoreFlow(ctx context.Context, flowID string, state oidcflow.LoginFlowState) error
-//   GetFlow(ctx context.Context, flowID string) (*oidcflow.LoginFlowState, error)
-//   UpdateFlow(ctx context.Context, flowID string, state *oidcflow.LoginFlowState) error
-//   DeleteFlow(ctx context.Context, flowID string) error
-//   CleanupExpiredFlows()
-// }
-// var _ FlowStoreInterface = (*DTSFlowStore)(nil)

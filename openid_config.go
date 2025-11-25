@@ -2,218 +2,199 @@
 package ssso
 
 import (
+	"context" // For context.Background()
 	"errors"
 	"fmt"
-	"time"
+
+	"github.com/gin-gonic/gin" // For *gin.Engine
+	"github.com/pilab-dev/shadow-sso/api" // For api.OpenIDProviderConfig
+	"github.com/pilab-dev/shadow-sso/api/openidv2_1" // For api.NewOAuth2API
+	"github.com/pilab-dev/shadow-sso/cache" // For cache.NewMemoryTokenStore
+	"github.com/pilab-dev/shadow-sso/domain"
+	"github.com/pilab-dev/shadow-sso/internal/oidcflow" // Still needed for concrete in-memory store instantiation
+	"github.com/pilab-dev/shadow-sso/mongodb" // For mongodb.NewMongoRepositoryProvider
+	pkgAuth "github.com/pilab-dev/shadow-sso/pkg/auth" // For auth.NewBcryptPasswordHasher
+	"github.com/pilab-dev/shadow-sso/services" // For services.NewTokenSigner, services.NewDefaultServiceProvider
+	"sync" // For InMemoryPkceRepository
 )
 
-// OpenIDProviderConfig represents the complete configuration for the OpenID Connect provider
-type OpenIDProviderConfig struct {
-	// Basic Settings
-	Issuer            string        `json:"issuer"`
-	AccessTokenTTL    time.Duration `json:"access_token_ttl"`
-	RefreshTokenTTL   time.Duration `json:"refresh_token_ttl"`
-	AuthCodeTTL       time.Duration `json:"auth_code_ttl"`
-	IDTokenTTL        time.Duration `json:"id_token_ttl"`
-	SessionTTL        time.Duration `json:"session_ttl"`
-	KeyRotationPeriod time.Duration `json:"key_rotation_period"`
-	RequireConsent    bool          `json:"require_consent"`
-	ForceConsent      bool          `json:"force_consent"`
-
-	// Endpoint Configuration
-	EnabledEndpoints EndpointConfig `json:"enabled_endpoints"`
-
-	// Flow Configuration
-	EnabledFlows FlowConfig `json:"enabled_flows"`
-
-	// Grant Types Configuration
-	EnabledGrantTypes GrantTypesConfig `json:"enabled_grant_types"`
-
-	// Security Configuration
-	SecurityConfig SecurityConfig `json:"security_config"`
-
-	// Token Configuration
-	TokenConfig TokenConfig `json:"token_config"`
-
-	// PKCE Configuration
-	PKCEConfig PKCEConfig `json:"pkce_config"`
-
-	// Claims Configuration
-	ClaimsConfig ClaimsConfig `json:"claims_config"`
-
-	// External UI Configuration
-	NextJSLoginURL string `json:"nextjs_login_url,omitempty"` // URL for the Next.js login page
+// NewInMemoryFlowStore creates a new in-memory implementation of domain.FlowStore.
+// This is suitable for development and testing environments.
+func NewInMemoryFlowStore() domain.FlowStore {
+	return oidcflow.NewInMemoryFlowStore()
 }
 
-// EndpointConfig controls which endpoints are enabled
-type EndpointConfig struct {
-	Authorization       bool `json:"authorization"`
-	Token               bool `json:"token"`
-	UserInfo            bool `json:"userinfo"`
-	JWKS                bool `json:"jwks"`
-	Registration        bool `json:"registration"`
-	Revocation          bool `json:"revocation"`
-	Introspection       bool `json:"introspection"`
-	EndSession          bool `json:"end_session"`
-	DeviceAuthorization bool `json:"device_authorization"`
+// NewInMemoryUserSessionStore creates a new in-memory implementation of domain.UserSessionStore.
+// This is suitable for development and testing environments.
+func NewInMemoryUserSessionStore() domain.UserSessionStore {
+	return oidcflow.NewInMemoryUserSessionStore()
 }
 
-// FlowConfig controls which OAuth2/OIDC flows are enabled
-type FlowConfig struct {
-	AuthorizationCode bool `json:"authorization_code"`
-	Implicit          bool `json:"implicit"`
-	Hybrid            bool `json:"hybrid"`
+// NewMongoRepositoryProvider creates a new services.RepositoryProvider backed by MongoDB.
+// It connects to the specified MongoDB URI and uses the given database name.
+func NewMongoRepositoryProvider(mongoURI, dbName string) (services.RepositoryProvider, error) {
+	return mongodb.NewMongoRepositoryProvider(mongoURI, dbName)
 }
 
-// GrantTypesConfig controls which grant types are enabled
-type GrantTypesConfig struct {
-	AuthorizationCode bool `json:"authorization_code"`
-	ClientCredentials bool `json:"client_credentials"`
-	RefreshToken      bool `json:"refresh_token"`
-	Password          bool `json:"password"`
-	Implicit          bool `json:"implicit"`
-	JWTBearer         bool `json:"jwt_bearer"`
-	DeviceCode        bool `json:"device_code"`
+// InMemoryPkceRepository implements domain.PkceRepository for testing and development.
+type InMemoryPkceRepository struct {
+	codes map[string]string
+	mu    sync.RWMutex
 }
 
-// SecurityConfig contains security-related settings
-type SecurityConfig struct {
-	RequirePKCE                   bool     `json:"require_pkce"`
-	RequirePKCEForPublicClients   bool     `json:"require_pkce_for_public_clients"`
-	AllowedSigningAlgs            []string `json:"allowed_signing_algs"`
-	AllowedEncryptionAlgs         []string `json:"allowed_encryption_algs"`
-	AllowedEncryptionEnc          []string `json:"allowed_encryption_enc"`
-	RequireSignedRequestObject    bool     `json:"require_signed_request_object"`
-	RequireRequestURIRegistration bool     `json:"require_request_uri_registration"`
-	DefaultMaxAge                 int      `json:"default_max_age"`
-	RequireAuthTime               bool     `json:"require_auth_time"`
-	PasswordHashingCost           int      `json:"password_hashing_cost"`
-}
-
-// TokenConfig contains token-related settings
-type TokenConfig struct {
-	AccessTokenFormat          string   `json:"access_token_format"` // JWT or opaque
-	IDTokenSigningAlg          string   `json:"id_token_signing_alg"`
-	AccessTokenSigningAlg      string   `json:"access_token_signing_alg"`
-	SupportedResponseTypes     []string `json:"supported_response_types"`
-	SupportedResponseModes     []string `json:"supported_response_modes"`
-	SupportedTokenEndpointAuth []string `json:"supported_token_endpoint_auth"`
-}
-
-// PKCEConfig contains PKCE-related settings
-type PKCEConfig struct {
-	Enabled                   bool     `json:"enabled"`
-	AllowPlainChallengeMethod bool     `json:"allow_plain_challenge_method"`
-	SupportedMethods          []string `json:"supported_methods"`
-}
-
-// ClaimsConfig contains claims-related settings
-type ClaimsConfig struct {
-	SupportedClaims       []string          `json:"supported_claims"`
-	SupportedScopes       []string          `json:"supported_scopes"`
-	ClaimsMappings        map[string]string `json:"claims_mappings"`
-	EnableClaimsParameter bool              `json:"enable_claims_parameter"`
-}
-
-// NewDefaultConfig creates a new OpenIDProviderConfig with sensible defaults.
-//
-//nolint:funlen
-func NewDefaultConfig(issuer string) *OpenIDProviderConfig {
-	return &OpenIDProviderConfig{
-		Issuer:            issuer,
-		AccessTokenTTL:    time.Hour,
-		RefreshTokenTTL:   time.Hour * 24 * 30, // 30 days
-		AuthCodeTTL:       time.Minute * 10,
-		IDTokenTTL:        time.Hour,
-		SessionTTL:        time.Hour * 24,
-		KeyRotationPeriod: time.Hour * 24,
-		RequireConsent:    true,
-		ForceConsent:      false,
-
-		EnabledEndpoints: EndpointConfig{
-			Authorization: true,
-			Token:         true,
-			UserInfo:      true,
-			JWKS:          true,
-			Registration:  false,
-			Revocation:    true,
-			Introspection: true,
-			EndSession:    true,
-		},
-
-		EnabledFlows: FlowConfig{
-			AuthorizationCode: true,
-			Implicit:          true,
-			Hybrid:            true,
-		},
-
-		EnabledGrantTypes: GrantTypesConfig{
-			AuthorizationCode: true,
-			ClientCredentials: true,
-			RefreshToken:      true,
-			Password:          false,
-			Implicit:          true,
-			JWTBearer:         false,
-			DeviceCode:        false,
-		},
-
-		SecurityConfig: SecurityConfig{
-			RequirePKCE:                   false,
-			RequirePKCEForPublicClients:   true,
-			AllowedSigningAlgs:            []string{"RS256", "RS384", "RS512"},
-			AllowedEncryptionAlgs:         []string{"RSA-OAEP", "RSA-OAEP-256"},
-			AllowedEncryptionEnc:          []string{"A128CBC-HS256", "A256CBC-HS512"},
-			RequireSignedRequestObject:    false,
-			DefaultMaxAge:                 3600,
-			RequireAuthTime:               false,
-			RequireRequestURIRegistration: false,
-		},
-
-		TokenConfig: TokenConfig{
-			AccessTokenFormat:      "jwt",
-			IDTokenSigningAlg:      "RS256",
-			AccessTokenSigningAlg:  "RS256",
-			SupportedResponseTypes: []string{"code", "token", "id_token", "code token", "code id_token"},
-			SupportedResponseModes: []string{"query", "fragment", "form_post"},
-			SupportedTokenEndpointAuth: []string{
-				"client_secret_basic",
-				"client_secret_post",
-				"private_key_jwt",
-			},
-		},
-
-		PKCEConfig: PKCEConfig{
-			Enabled:                   true,
-			AllowPlainChallengeMethod: false,
-			SupportedMethods:          []string{"S256"},
-		},
-
-		ClaimsConfig: ClaimsConfig{
-			SupportedClaims: []string{
-				"sub", "iss", "auth_time", "name",
-				"given_name", "family_name", "email",
-			},
-			SupportedScopes: []string{
-				"openid", "profile", "email", "address", "phone",
-				"offline_access",
-			},
-			ClaimsMappings: map[string]string{
-				"name":       "display_name",
-				"given_name": "first_name",
-				"email":      "email_address",
-			},
-			EnableClaimsParameter: true,
-		},
+// NewInMemoryPkceRepository creates a new in-memory PKCE repository.
+func NewInMemoryPkceRepository() domain.PkceRepository {
+	return &InMemoryPkceRepository{
+		codes: make(map[string]string),
 	}
 }
+
+// SaveCodeChallenge stores a code and its challenge.
+func (r *InMemoryPkceRepository) SaveCodeChallenge(ctx context.Context, code, challenge string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.codes[code] = challenge
+	return nil
+}
+
+// GetCodeChallenge retrieves the challenge for a given code.
+func (r *InMemoryPkceRepository) GetCodeChallenge(ctx context.Context, code string) (string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	challenge, ok := r.codes[code]
+	if !ok {
+		return "", fmt.Errorf("code challenge not found for code: %s", code)
+	}
+	return challenge, nil
+}
+
+// DeleteCodeChallenge removes a code and its challenge.
+func (r *InMemoryPkceRepository) DeleteCodeChallenge(ctx context.Context, code string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.codes, code)
+	return nil
+}
+
+// OpenIDProviderConfig is now in the api package
+// Use api.OpenIDProviderConfig instead
+
+// SSOServerOptions provides options for configuring the NewSSOServer function.
+type SSOServerOptions struct {
+	Config             *api.OpenIDProviderConfig
+	RepositoryProvider services.RepositoryProvider
+	TokenSigner        *services.TokenSigner
+	TokenCache         cache.TokenStore
+	PkceRepository     domain.PkceRepository
+	FlowStore          domain.FlowStore
+	UserSessionStore   domain.UserSessionStore
+}
+
+// NewSSOServer initializes and returns a configured Gin engine for the SSO server.
+func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
+	if opts.Config == nil {
+		return nil, errors.New("OpenIDProviderConfig is required")
+	}
+
+	// Initialize RepositoryProvider
+	var repoProvider services.RepositoryProvider
+	if opts.RepositoryProvider != nil {
+		repoProvider = opts.RepositoryProvider
+	} else {
+		// Default to MongoDB if not provided
+		// Assuming config has MongoURI and MongoDBName. This should be part of app-level config.
+		// For now, hardcoding for example purposes, but this should come from opts.Config or dedicated server config.
+		// A better approach would be to pass a context.Context to the repository provider factory if it needs to connect.
+		var err error
+		repoProvider, err = mongodb.NewMongoRepositoryProvider("mongodb://localhost:27017", "shadow_sso_db")
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize default MongoDB repository provider: %w", err)
+		}
+	}
+
+	// Initialize TokenSigner
+	tokenSigner := opts.TokenSigner
+	if tokenSigner == nil {
+		// Default token signer (e.g., with a generated key for HS256 for simplicity in example, or from file)
+		tokenSigner = services.NewTokenSigner()
+		// For a real setup, this key should be loaded securely
+		tokenSigner.AddKeySigner("super-secret-default-key-replace-me-in-production")
+	}
+
+	// Initialize TokenCache
+	tokenCache := opts.TokenCache
+	// Note: In-memory token store was removed. TokenCache must be provided in opts.
+	if tokenCache == nil {
+		return nil, errors.New("TokenCache is required (in-memory implementation was removed)")
+	}
+
+	// Initialize PKCE Repository
+	pkceRepo := opts.PkceRepository
+	if pkceRepo == nil {
+		pkceRepo = NewInMemoryPkceRepository()
+	}
+
+	// Initialize FlowStore
+	flowStore := opts.FlowStore
+	if flowStore == nil {
+		flowStore = NewInMemoryFlowStore()
+	}
+
+	// Initialize UserSessionStore
+	userSessionStore := opts.UserSessionStore
+	if userSessionStore == nil {
+		userSessionStore = NewInMemoryUserSessionStore()
+	}
+
+	// Create DefaultServiceProviderOptions
+	spOpts := services.DefaultServiceProviderOptions{
+		RepositoryProvider: repoProvider,
+		Config:             opts.Config,
+		TokenSigner:        tokenSigner,
+		TokenCache:         tokenCache,
+		PkceRepository:     pkceRepo,
+		FlowStore:          flowStore,
+		UserSessionStore:   userSessionStore,
+	}
+
+	serviceProvider, err := services.NewDefaultServiceProvider(spOpts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize service provider: %w", err)
+	}
+
+	// Initialize password hasher (moved here as it's a service)
+	passwordHasher := pkgAuth.NewBcryptPasswordHasher(opts.Config.SecurityConfig.PasswordHashingCost)
+
+	// Create OAuth2 API handlers
+	oauth2API := openidv2_1.NewOAuth2API(&openidv2_1.OAuth2APIOptions{
+		OAuthService:      serviceProvider.OAuthService(),
+		JSKSService:       serviceProvider.JWKSService(),
+		ClientService:     serviceProvider.ClientService(),
+		PkceService:       serviceProvider.PKCEService(),
+		Config:            opts.Config,
+		FlowStore:         serviceProvider.FlowStore(),
+		UserSessionStore:  serviceProvider.UserSessionStore(),
+		UserRepo:          repoProvider.UserRepository(context.Background()),
+		PasswordHasher:   passwordHasher,
+		FederationService: serviceProvider.FederationService(),
+		TokenService:      serviceProvider.TokenService(),
+	})
+
+	// Setup Gin server
+	router := gin.Default()
+	oauth2API.RegisterRoutes(router)
+
+	return router, nil
+}
+
 
 var (
 	ErrInvalidConfig       = errors.New("invalid configuration")
 	ErrInvalidScopeRequest = errors.New("invalid scope request")
 )
 
-// Validate checks if the configuration is valid
-func (c *OpenIDProviderConfig) Validate() error {
+// ValidateConfig checks if the configuration is valid
+func ValidateConfig(c *api.OpenIDProviderConfig) error {
 	if c.Issuer == "" {
 		return fmt.Errorf("%w: issuer cannot be empty", ErrInvalidConfig)
 	}
@@ -244,7 +225,7 @@ func (c *OpenIDProviderConfig) Validate() error {
 }
 
 // IsGrantTypeEnabled checks if a specific grant type is enabled
-func (c *OpenIDProviderConfig) IsGrantTypeEnabled(grantType string) bool {
+func IsGrantTypeEnabled(c *api.OpenIDProviderConfig, grantType string) bool {
 	switch grantType {
 	case "authorization_code":
 		return c.EnabledGrantTypes.AuthorizationCode
@@ -266,7 +247,7 @@ func (c *OpenIDProviderConfig) IsGrantTypeEnabled(grantType string) bool {
 }
 
 // IsEndpointEnabled checks if a specific endpoint is enabled
-func (c *OpenIDProviderConfig) IsEndpointEnabled(endpoint string) bool {
+func IsEndpointEnabled(c *api.OpenIDProviderConfig, endpoint string) bool {
 	switch endpoint {
 	case "authorization":
 		return c.EnabledEndpoints.Authorization

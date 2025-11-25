@@ -43,7 +43,7 @@ type FederationServer struct {
 	idpRepo        domain.IdPRepository // To resolve provider_id to provider_name for responses
 	tokenService   *TokenService        // To issue local tokens
 	sessionRepo    domain.SessionRepository
-	passwordHasher PasswordHasher // For creating users if local password setup is part of flow
+	passwordHasher domain.PasswordHasher // For creating users if local password setup is part of flow
 
 	continuationCache *ttlcache.Cache[string, *ContinuationTokenData]
 }
@@ -56,7 +56,7 @@ func NewFederationServer(
 	idpRepo domain.IdPRepository,
 	tokenService *TokenService,
 	sessionRepo domain.SessionRepository,
-	passwordHasher PasswordHasher,
+	passwordHasher domain.PasswordHasher,
 ) *FederationServer {
 	cache := ttlcache.New(
 		ttlcache.WithTTL[string, *ContinuationTokenData](defaultContinuationTokenTTL),

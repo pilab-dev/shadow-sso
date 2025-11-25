@@ -4,6 +4,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pilab-dev/shadow-sso/api"
 	"github.com/spf13/viper"
 )
 
@@ -40,6 +41,73 @@ const (
 	StorageTypeMongoDB StorageType = "mongodb"
 	StorageTypeDTS     StorageType = "dts"
 )
+
+// ToOpenIDProviderConfig converts the internal app configuration to a public api.OpenIDProviderConfig.
+// This function maps relevant fields from the internal config to the external OIDC provider config.
+func (c *Config) ToOpenIDProviderConfig() *api.OpenIDProviderConfig {
+	// Create a default config - NewDefaultConfig was removed, so we initialize manually
+	oidcConfig := &api.OpenIDProviderConfig{
+		Issuer:            c.IssuerURL,
+		AccessTokenTTL:    15 * time.Minute,  // Default
+		RefreshTokenTTL:   24 * time.Hour,     // Default
+		AuthCodeTTL:       10 * time.Minute,  // Default
+		IDTokenTTL:        15 * time.Minute,  // Default
+		SessionTTL:        24 * time.Hour,     // Default
+		KeyRotationPeriod: c.KeyRotationInterval,
+		NextJSLoginURL:    c.NextJSLoginURL,
+		// Set default enabled endpoints, grant types, etc.
+		EnabledEndpoints: api.EndpointConfig{
+			Authorization:       true,
+			Token:               true,
+			UserInfo:            true,
+			JWKS:                true,
+			Revocation:          true,
+			Introspection:       true,
+			DeviceAuthorization: true,
+		},
+		EnabledGrantTypes: api.GrantTypesConfig{
+			AuthorizationCode: true,
+			RefreshToken:      true,
+			ClientCredentials: true,
+			DeviceCode:        true,
+		},
+		SecurityConfig: api.SecurityConfig{
+			AllowedSigningAlgs:  []string{"RS256", "HS256"},
+			PasswordHashingCost: 10,
+		},
+		TokenConfig: api.TokenConfig{
+			AccessTokenFormat: "jwt",
+			SupportedResponseTypes: []string{"code"},
+		},
+		PKCEConfig: api.PKCEConfig{
+			Enabled:          true,
+			SupportedMethods: []string{"S256"},
+		},
+	}
+
+	// Override defaults with values from the app's config
+	oidcConfig.AccessTokenTTL = c.TokenCacheDefaultTTL // Assuming this is the desired mapping
+	oidcConfig.RefreshTokenTTL = c.TokenCacheDefaultTTL * 24 * 30 // Example mapping, adjust as needed
+	oidcConfig.AuthCodeTTL = 10 * time.Minute // Hardcoded default, can be from config if exposed
+	oidcConfig.IDTokenTTL = c.TokenCacheDefaultTTL
+	oidcConfig.SessionTTL = c.KeyRotationInterval // Assuming session TTL can be linked to this or another config entry
+	oidcConfig.KeyRotationPeriod = c.KeyRotationInterval
+	oidcConfig.NextJSLoginURL = c.NextJSLoginURL
+
+	// Map other fields from c.Config to oidcConfig, especially those in SecurityConfig, TokenConfig, etc.
+	// For now, many of these will retain the NewDefaultConfig values unless explicitly mapped here.
+	// For example, PasswordHashingCost can be mapped:
+	// oidcConfig.SecurityConfig.PasswordHashingCost = 10 // Assuming a default or from config.
+	// As this internal config struct doesn't expose many granular OIDC config fields,
+	// NewDefaultConfig's values will largely be used for those.
+
+	// Example of mapping a security config field if it exists in internal Config
+	// if c.PasswordHashingCost > 0 { // Assuming PasswordHashingCost is exposed in config.Config
+	// 	oidcConfig.SecurityConfig.PasswordHashingCost = c.PasswordHashingCost
+	// }
+
+	return oidcConfig
+}
 
 // LoadConfig loads configuration from file and environment variables.
 func LoadConfig() (config Config, err error) {

@@ -13,7 +13,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/pilab-dev/shadow-sso/api"
 	"github.com/pilab-dev/shadow-sso/domain"
-	serrors "github.com/pilab-dev/shadow-sso/errors"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -113,7 +112,7 @@ func (s *OAuthService) Login(ctx context.Context, username, password, deviceInfo
 		return nil, fmt.Errorf("user not found: %w", err)
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
-		return nil, serrors.ErrInvalidCredentials
+		return nil, domain.ErrInvalidCredentials
 	}
 
 	// Create a user session
@@ -150,10 +149,10 @@ func (s *OAuthService) GetUserSessions(ctx context.Context, userID string) ([]*d
 func (s *OAuthService) RefreshToken(ctx context.Context, refreshTokenValue string, clientID string) (*api.TokenResponse, error) {
 	tokenInfo, err := s.tokenRepo.GetRefreshTokenInfo(ctx, refreshTokenValue)
 	if err != nil {
-		return nil, serrors.NewInvalidGrant("invalid refresh token")
+		return nil, domain.NewInvalidGrant("invalid refresh token")
 	}
 	if tokenInfo.IsRevoked || time.Now().After(tokenInfo.ExpiresAt) {
-		return nil, serrors.NewInvalidGrant("refresh token expired or revoked")
+		return nil, domain.NewInvalidGrant("refresh token expired or revoked")
 	}
 	return s.tokenService.GenerateTokenPair(ctx, clientID, tokenInfo.UserID, tokenInfo.Scope, time.Hour)
 }
@@ -172,7 +171,7 @@ func (s *OAuthService) ValidateClient(ctx context.Context, clientID, clientSecre
 		return nil, fmt.Errorf("client not found: %w", err)
 	}
 	if subtle.ConstantTimeCompare([]byte(cli.Secret), []byte(clientSecret)) != 1 {
-		return nil, serrors.ErrInvalidClientCredentials
+		return nil, domain.ErrInvalidClientCredentials
 	}
 	return cli, nil
 }
@@ -185,17 +184,17 @@ func (s *OAuthService) DirectGrant(ctx context.Context,
 		return nil, err
 	}
 	if !contains(cli.AllowedGrantTypes, "password") {
-		return nil, serrors.ErrInvalidConfig
+		return nil, domain.ErrInvalidConfig
 	}
 	user, err := s.userRepo.GetUserByEmail(ctx, username) // Changed from GetUserByUsername
 	if err != nil {
-		return nil, serrors.ErrInvalidCredentials
+		return nil, domain.ErrInvalidCredentials
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
-		return nil, serrors.ErrInvalidCredentials
+		return nil, domain.ErrInvalidCredentials
 	}
 	if !s.validateScope(scope, cli.AllowedScopes) {
-		return nil, serrors.NewInvalidScope("invalid scope requested by client")
+		return nil, domain.NewInvalidScope("invalid scope requested by client")
 	}
 
 	session := &domain.Session{
@@ -242,10 +241,10 @@ func (s *OAuthService) ClientCredentials(ctx context.Context,
 		return nil, err
 	}
 	if !contains(cli.AllowedGrantTypes, "client_credentials") {
-		return nil, serrors.ErrInvalidConfig
+		return nil, domain.ErrInvalidConfig
 	}
 	if !s.validateScope(scope, cli.AllowedScopes) {
-		return nil, serrors.NewInvalidScope("invalid scope requested by client")
+		return nil, domain.NewInvalidScope("invalid scope requested by client")
 	}
 	token, err := s.tokenService.CreateToken(ctx, CreateTokenOptions{
 		TokenID:      uuid.NewString(),
@@ -300,10 +299,10 @@ func (s *OAuthService) PasswordGrant(ctx context.Context,
 ) (*api.TokenResponse, error) {
 	user, err := s.userRepo.GetUserByEmail(ctx, username) // Changed from GetUserByUsername
 	if err != nil {
-		return nil, serrors.ErrInvalidCredentials
+		return nil, domain.ErrInvalidCredentials
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
-		return nil, serrors.ErrInvalidCredentials
+		return nil, domain.ErrInvalidCredentials
 	}
 	return s.tokenService.GenerateTokenPair(ctx, cli.ID, user.ID, scope, time.Hour)
 }
@@ -317,13 +316,13 @@ func (s *OAuthService) ExchangeAuthorizationCode(ctx context.Context,
 	}
 	authCodeDomain, err := s.authCodeRepo.GetAuthCode(ctx, code)
 	if err != nil {
-		return nil, serrors.NewInvalidGrant("invalid authorization code")
+		return nil, domain.NewInvalidGrant("invalid authorization code")
 	}
 	if authCodeDomain.Used || time.Now().After(authCodeDomain.ExpiresAt) {
-		return nil, serrors.NewInvalidGrant("authorization code expired or already used")
+		return nil, domain.NewInvalidGrant("authorization code expired or already used")
 	}
 	if authCodeDomain.ClientID != clientID || authCodeDomain.RedirectURI != redirectURI {
-		return nil, serrors.NewInvalidGrant("invalid client or redirect URI for auth code")
+		return nil, domain.NewInvalidGrant("invalid client or redirect URI for auth code")
 	}
 	if err := s.authCodeRepo.MarkAuthCodeAsUsed(ctx, code); err != nil {
 		return nil, fmt.Errorf("failed to mark auth code as used: %w", err)
@@ -430,7 +429,7 @@ func (s *OAuthService) GenerateAuthCode(
 func (s *OAuthService) InitiateDeviceAuthorization(ctx context.Context, clientID string, scope string, verificationBaseURI string) (*api.DeviceAuthResponse, error) {
 	cli, err := s.clientRepo.GetClient(ctx, clientID)
 	if err != nil {
-		return nil, serrors.NewInvalidClient("client not found or invalid")
+		return nil, domain.NewInvalidClient("client not found or invalid")
 	}
 	_ = cli
 	deviceCodeVal, err := generateRandomString(deviceCodeLength)
@@ -469,22 +468,22 @@ func (s *OAuthService) InitiateDeviceAuthorization(ctx context.Context, clientID
 func (s *OAuthService) VerifyUserCode(ctx context.Context, userCode string, userID string) (*domain.DeviceCode, error) {
 	deviceAuth, err := s.deviceAuthRepo.GetDeviceAuthByUserCode(ctx, userCode)
 	if err != nil {
-		if err == serrors.ErrUserCodeNotFound { // Assuming ErrUserCodeNotFound is defined in serrors
-			return nil, serrors.ErrUserCodeNotFound
+		if err == domain.ErrUserCodeNotFound { // Assuming ErrUserCodeNotFound is defined in domain
+			return nil, domain.ErrUserCodeNotFound
 		}
 		return nil, fmt.Errorf("failed to retrieve device authorization by user code: %w", err)
 	}
 	if deviceAuth.Status != domain.DeviceCodeStatusPending {
-		return nil, serrors.ErrCannotApproveDeviceAuth // Assuming ErrCannotApproveDeviceAuth is defined
+		return nil, domain.ErrCannotApproveDeviceAuth // Assuming ErrCannotApproveDeviceAuth is defined
 	}
 	if time.Now().UTC().After(deviceAuth.ExpiresAt) {
 		_ = s.deviceAuthRepo.UpdateDeviceAuthStatus(ctx, deviceAuth.DeviceCode, domain.DeviceCodeStatusExpired)
-		return nil, serrors.ErrUserCodeNotFound // Or ErrDeviceFlowTokenExpired
+		return nil, domain.ErrUserCodeNotFound // Or ErrDeviceFlowTokenExpired
 	}
 	updatedDeviceAuth, err := s.deviceAuthRepo.ApproveDeviceAuth(ctx, userCode, userID)
 	if err != nil {
-		if err == serrors.ErrCannotApproveDeviceAuth {
-			return nil, serrors.ErrCannotApproveDeviceAuth
+		if err == domain.ErrCannotApproveDeviceAuth {
+			return nil, domain.ErrCannotApproveDeviceAuth
 		}
 		return nil, fmt.Errorf("failed to approve device authorization: %w", err)
 	}
@@ -494,21 +493,21 @@ func (s *OAuthService) VerifyUserCode(ctx context.Context, userCode string, user
 func (s *OAuthService) IssueTokenForDeviceFlow(ctx context.Context, deviceCode string, clientID string) (*api.TokenResponse, error) {
 	deviceAuth, err := s.deviceAuthRepo.GetDeviceAuthByDeviceCode(ctx, deviceCode)
 	if err != nil {
-		// Assuming ErrDeviceCodeNotFound is defined in serrors
-		if err == serrors.ErrDeviceCodeNotFound || (err != nil && strings.Contains(err.Error(), "not found")) {
-			return nil, serrors.ErrDeviceFlowTokenExpired
+		// Assuming ErrDeviceCodeNotFound is defined in domain
+		if err == domain.ErrDeviceCodeNotFound || (err != nil && strings.Contains(err.Error(), "not found")) {
+			return nil, domain.ErrDeviceFlowTokenExpired
 		}
 		return nil, fmt.Errorf("failed to retrieve device auth by device code: %w", err)
 	}
 	if deviceAuth.ClientID != clientID {
-		return nil, serrors.NewInvalidClient("client ID mismatch")
+		return nil, domain.NewInvalidClient("client ID mismatch")
 	}
 	switch deviceAuth.Status {
 	case domain.DeviceCodeStatusPending:
 		if pollErr := s.deviceAuthRepo.UpdateDeviceAuthLastPolledAt(ctx, deviceAuth.DeviceCode); pollErr != nil {
 			fmt.Printf("Warning: failed to update last polled at for device code %s: %v\n", deviceAuth.DeviceCode, pollErr)
 		}
-		return nil, serrors.ErrAuthorizationPending
+		return nil, domain.ErrAuthorizationPending
 	case domain.DeviceCodeStatusAuthorized:
 		tokenResponse, tokenErr := s.tokenService.GenerateTokenPair(ctx, deviceAuth.ClientID, deviceAuth.UserID, deviceAuth.Scope, time.Hour)
 		if tokenErr != nil {
@@ -519,13 +518,13 @@ func (s *OAuthService) IssueTokenForDeviceFlow(ctx context.Context, deviceCode s
 		}
 		return tokenResponse, nil
 	case domain.DeviceCodeStatusExpired:
-		return nil, serrors.ErrDeviceFlowTokenExpired
+		return nil, domain.ErrDeviceFlowTokenExpired
 	case domain.DeviceCodeStatusDenied:
-		return nil, serrors.ErrDeviceFlowAccessDenied
+		return nil, domain.ErrDeviceFlowAccessDenied
 	case domain.DeviceCodeStatusRedeemed:
-		return nil, serrors.ErrDeviceFlowTokenExpired
+		return nil, domain.ErrDeviceFlowTokenExpired
 	default:
-		return nil, serrors.NewServerError("unexpected device authorization status")
+		return nil, domain.NewServerError("unexpected device authorization status")
 	}
 }
 
@@ -534,7 +533,7 @@ func (s *OAuthService) IssueTokenForDeviceFlow(ctx context.Context, deviceCode s
 // TokenIntrospection struct was moved to domain package.
 // JSONWebKey and JSONWebKeySet are local to jwks_service.go and used there.
 // User, UserSession, Token, AuthCode, DeviceCode, DeviceCodeStatus are now from domain package.
-// Error variables are now from serrors (github.com/pilab-dev/shadow-sso/errors).
+// Error variables are now from domain (github.com/pilab-dev/shadow-sso/errors).
 // UserRepository.GetUserByUsername changed to GetUserByEmail.
 // UserRepository.CreateSession changed to SessionRepository.StoreSession.
 // UserRepository.GetUserSessions changed to SessionRepository.ListSessionsByUserID.

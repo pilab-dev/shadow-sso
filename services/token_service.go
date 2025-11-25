@@ -14,7 +14,6 @@ import (
 	"github.com/pilab-dev/shadow-sso/api"
 	"github.com/pilab-dev/shadow-sso/cache"
 	"github.com/pilab-dev/shadow-sso/domain"
-	serrors "github.com/pilab-dev/shadow-sso/errors" // Added for serrors
 	"github.com/pilab-dev/shadow-sso/internal/metrics"
 	"github.com/rs/zerolog/log"
 )
@@ -383,7 +382,7 @@ func (s *TokenService) ValidateAccessToken(ctx context.Context, tokenValue strin
 				return nil, errors.New("SA JWT missing 'exp' claim")
 			}
 			if time.Now().After(expiresAt) {
-				return nil, serrors.ErrTokenExpiredOrRevoked // Use serrors
+				return nil, domain.ErrTokenExpiredOrRevoked // Use domain
 			}
 			var issuedAt time.Time
 			if iat, okClaim := (*claims)["iat"].(float64); okClaim {
@@ -429,7 +428,7 @@ func (s *TokenService) ValidateAccessToken(ctx context.Context, tokenValue strin
 				return userToken, nil
 			}
 			_ = s.cache.Delete(ctx, tokenValue)          // Delete expired/revoked from cache
-			return nil, serrors.ErrTokenExpiredOrRevoked // Use serrors
+			return nil, domain.ErrTokenExpiredOrRevoked // Use domain
 		}
 		// Check repository (for user tokens)
 		userTokenDB, repoErr := s.repo.GetAccessToken(ctx, tokenValue) // Assumes s.repo is TokenRepository, returns *domain.Token
@@ -438,7 +437,7 @@ func (s *TokenService) ValidateAccessToken(ctx context.Context, tokenValue strin
 			return nil, fmt.Errorf("token not found or invalid: %w", repoErr)
 		}
 		if userTokenDB.IsRevoked || time.Now().After(userTokenDB.ExpiresAt) {
-			return nil, serrors.ErrTokenExpiredOrRevoked // Use serrors
+			return nil, domain.ErrTokenExpiredOrRevoked // Use domain
 		}
 		// Ensure Issuer is set for user tokens from repo
 		if userTokenDB.Issuer == "" { // If not already set by repo (e.g. older tokens)

@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/pilab-dev/shadow-sso/domain"
-	serrors "github.com/pilab-dev/shadow-sso/errors"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -42,7 +41,7 @@ func (r *DeviceAuthRepository) GetDeviceAuthByDeviceCode(ctx context.Context, de
 	err := r.deviceAuth.FindOne(ctx, bson.M{"device_code": deviceCode}).Decode(&result)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return nil, serrors.ErrDeviceCodeNotFound
+			return nil, domain.ErrDeviceCodeNotFound
 		}
 
 		return nil, err
@@ -60,7 +59,7 @@ func (r *DeviceAuthRepository) GetDeviceAuthByUserCode(ctx context.Context, user
 	err := r.deviceAuth.FindOne(ctx, filter).Decode(&result)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return nil, serrors.ErrUserCodeNotFound
+			return nil, domain.ErrUserCodeNotFound
 		}
 		return nil, err
 	}
@@ -85,7 +84,7 @@ func (r *DeviceAuthRepository) ApproveDeviceAuth(ctx context.Context, userCode s
 	err := r.deviceAuth.FindOneAndUpdate(ctx, filter, update, opt).Decode(&updatedDoc)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return nil, serrors.ErrCannotApproveDeviceAuth
+			return nil, domain.ErrCannotApproveDeviceAuth
 		}
 		return nil, err
 	}
@@ -103,7 +102,7 @@ func (r *DeviceAuthRepository) UpdateDeviceAuthStatus(ctx context.Context, devic
 	}
 
 	if result.MatchedCount == 0 {
-		return serrors.ErrDeviceCodeNotFound
+		return domain.ErrDeviceCodeNotFound
 	}
 
 	return nil
@@ -119,7 +118,7 @@ func (r *DeviceAuthRepository) UpdateDeviceAuthLastPolledAt(ctx context.Context,
 	}
 
 	if result.MatchedCount == 0 {
-		return serrors.ErrDeviceCodeNotFound
+		return domain.ErrDeviceCodeNotFound
 	}
 
 	return nil

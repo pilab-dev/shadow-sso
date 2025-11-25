@@ -3,6 +3,8 @@ package cache
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"time"
 )
 
@@ -19,6 +21,13 @@ type TokenEntry struct {
 	CreatedAt  time.Time `redis:"createdAt"`       // Creation timestamp
 	LastUsedAt time.Time `redis:"lastUsedAt"`      // Last usage timestamp
 	Roles      []string  `redis:"roles,omitempty"` // New field
+}
+
+// HashToken generates a SHA256 hash of the token value.
+// This is used to securely store and retrieve tokens by their hashed value.
+func HashToken(tokenValue string) string {
+	hash := sha256.Sum256([]byte(tokenValue))
+	return hex.EncodeToString(hash[:])
 }
 
 // TokenStore defines the interface for token caching implementations

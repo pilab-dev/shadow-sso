@@ -4,9 +4,8 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/pilab-dev/shadow-sso/domain"
 	"github.com/pilab-dev/shadow-sso/internal/federation"
-
-	ssoerrors "github.com/pilab-dev/shadow-sso/errors"
 	"github.com/rs/zerolog/log"
 )
 
@@ -23,7 +22,7 @@ func (oa *OAuth2API) LDAPLoginHandler(c *gin.Context) {
 	var req LDAPLoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		log.Warn().Err(err).Msg("LDAPLoginHandler: Invalid request payload")
-		c.JSON(http.StatusBadRequest, ssoerrors.NewInvalidRequest("Invalid request payload: "+err.Error()))
+		c.JSON(http.StatusBadRequest, domain.NewInvalidRequest("Invalid request payload: "+err.Error()))
 		return
 	}
 
@@ -34,17 +33,17 @@ func (oa *OAuth2API) LDAPLoginHandler(c *gin.Context) {
 	if err != nil {
 		log.Warn().Err(err).Str("provider", req.ProviderName).Str("username", req.Username).Msg("LDAP authentication failed")
 		// Check for specific federation errors to return appropriate responses
-		if _, ok := err.(*ssoerrors.OAuth2Error); ok { // Assuming AuthenticateDirect might return OAuth2Error for consistency
-			oa.sendJSONError(c, http.StatusUnauthorized, err.(*ssoerrors.OAuth2Error))
+		if _, ok := err.(*domain.OAuth2Error); ok { // Assuming AuthenticateDirect might return OAuth2Error for consistency
+			oa.sendJSONError(c, http.StatusUnauthorized, err.(*domain.OAuth2Error))
 		} else if err == federation.ErrInvalidCredentials {
-			oa.sendJSONError(c, http.StatusUnauthorized, ssoerrors.NewInvalidGrant("Invalid username or password."))
+			oa.sendJSONError(c, http.StatusUnauthorized, domain.NewInvalidGrant("Invalid username or password."))
 		} else if err == federation.ErrUserNotFound {
-			oa.sendJSONError(c, http.StatusUnauthorized, ssoerrors.NewInvalidGrant("Invalid username or password.")) // Generic message
+			oa.sendJSONError(c, http.StatusUnauthorized, domain.NewInvalidGrant("Invalid username or password.")) // Generic message
 		} else if err == federation.ErrProviderMisconfigured {
 			log.Error().Err(err).Str("provider", req.ProviderName).Msg("LDAP provider misconfigured")
-			oa.sendJSONError(c, http.StatusInternalServerError, ssoerrors.NewServerError("Authentication provider error."))
+			oa.sendJSONError(c, http.StatusInternalServerError, domain.NewServerError("Authentication provider error."))
 		} else {
-			oa.sendJSONError(c, http.StatusUnauthorized, ssoerrors.NewInvalidGrant("Authentication failed."))
+			oa.sendJSONError(c, http.StatusUnauthorized, domain.NewInvalidGrant("Authentication failed."))
 		}
 		return
 	}
@@ -53,7 +52,7 @@ func (oa *OAuth2API) LDAPLoginHandler(c *gin.Context) {
 	oauthClient, err := oa.clientService.GetClient(ctx, req.ClientID)
 	if err != nil {
 		log.Error().Err(err).Str("client_id", req.ClientID).Msg("LDAPLoginHandler: Failed to get client details")
-		oa.sendJSONError(c, http.StatusBadRequest, ssoerrors.NewInvalidClient("Invalid client_id."))
+		oa.sendJSONError(c, http.StatusBadRequest, domain.NewInvalidClient("Invalid client_id."))
 		return
 	}
 

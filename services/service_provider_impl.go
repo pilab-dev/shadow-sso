@@ -4,26 +4,25 @@ import (
 	"context" // Generally useful for service initialization context if needed
 	"errors"
 
-	ssso "github.com/pilab-dev/shadow-sso"
+	"github.com/pilab-dev/shadow-sso/api"
 	"github.com/pilab-dev/shadow-sso/cache"
 	"github.com/pilab-dev/shadow-sso/client"
-	"github.com/pilab-dev/shadow-sso/domain"
-	"github.com/pilab-dev/shadow-sso/internal/auth" // For BcryptPasswordHasher
+	"github.com/pilab-dev/shadow-sso/domain" // Corrected: Single import of domain
 	"github.com/pilab-dev/shadow-sso/internal/federation"
 	"github.com/pilab-dev/shadow-sso/internal/oidcflow"
+	"github.com/pilab-dev/shadow-sso/pkg/auth"
 	"golang.org/x/crypto/bcrypt" // For bcrypt.DefaultCost
 )
 
 // DefaultServiceProvider implements the ServiceProvider interface.
 type DefaultServiceProvider struct {
 	repoProvider RepositoryProvider
-	config       *ssso.OpenIDProviderConfig // General app/OIDC config
+	config       *api.OpenIDProviderConfig // General app/OIDC config
 	tokenSigner  *TokenSigner
 	tokenCache   cache.TokenStore
-	// For OIDC flows, these are currently in-memory.
-	// If they become interface-based and provided by RepositoryProvider, adjust accordingly.
-	flowStore        *oidcflow.InMemoryFlowStore
-	userSessionStore *oidcflow.InMemoryUserSessionStore
+	// For OIDC flows, these are now interface-based.
+	flowStore        domain.FlowStore
+	userSessionStore domain.UserSessionStore
 
 	// Cached services to ensure singletons where appropriate
 	oauthService      *OAuthService
@@ -32,18 +31,18 @@ type DefaultServiceProvider struct {
 	jwksService       *JWKSService
 	clientService     *client.ClientService
 	federationService *federation.Service
-	passwordHasher    PasswordHasher
+	passwordHasher    domain.PasswordHasher // Corrected: use domain.PasswordHasher
 }
 
 // DefaultServiceProviderOptions holds all necessary dependencies to create a DefaultServiceProvider.
 type DefaultServiceProviderOptions struct {
 	RepositoryProvider RepositoryProvider
-	Config             *ssso.OpenIDProviderConfig
+	Config             *api.OpenIDProviderConfig
 	TokenSigner        *TokenSigner
 	TokenCache         cache.TokenStore
-	PkceRepository     domain.PkceRepository              // Explicit PKCE repository
-	FlowStore          *oidcflow.InMemoryFlowStore        // Optional: if not provided, can be initialized internally
-	UserSessionStore   *oidcflow.InMemoryUserSessionStore // Optional: if not provided, can be initialized internally
+	PkceRepository     domain.PkceRepository   // Explicit PKCE repository
+	FlowStore          domain.FlowStore        // Optional: if not provided, can be initialized internally
+	UserSessionStore   domain.UserSessionStore // Optional: if not provided, can be initialized internally
 }
 
 // NewDefaultServiceProvider creates a new instance of DefaultServiceProvider.
@@ -59,9 +58,6 @@ func NewDefaultServiceProvider(opts DefaultServiceProviderOptions) (*DefaultServ
 	}
 
 	if opts.PkceRepository == nil {
-		// PKCE is fundamental for OAuth2, so we should fail fast if no implementation is provided.
-		// Alternatively, could try to get from opts.RepositoryProvider.PkceRepository(initCtx)
-		// but making it explicit in options is cleaner.
 		return nil, errors.New("PkceRepository is required in DefaultServiceProviderOptions")
 	}
 
@@ -176,25 +172,24 @@ func (p *DefaultServiceProvider) FederationService() *federation.Service {
 	return p.federationService
 }
 
-func (p *DefaultServiceProvider) PasswordHasher() PasswordHasher {
+func (p *DefaultServiceProvider) PasswordHasher() domain.PasswordHasher {
 	if p.passwordHasher == nil {
 		// Using bcrypt as the default. Cost can be from config.
 		cost := bcrypt.DefaultCost
 		if p.config.SecurityConfig.PasswordHashingCost > 0 {
 			cost = p.config.SecurityConfig.PasswordHashingCost
 		}
-		p.passwordHasher = auth.NewBcryptPasswordHasher(cost)
+		p.passwordHasher = pkgauth.NewBcryptPasswordHasher(cost)
 	}
 	return p.passwordHasher
 }
 
-func (p *DefaultServiceProvider) FlowStore() *oidcflow.InMemoryFlowStore {
+func (p *DefaultServiceProvider) FlowStore() domain.FlowStore {
 	// Already initialized in NewDefaultServiceProvider, just return it.
-	// If it were interface-based and from repoProvider, the pattern would be similar to other services.
 	return p.flowStore
 }
 
-func (p *DefaultServiceProvider) UserSessionStore() *oidcflow.InMemoryUserSessionStore {
+func (p *DefaultServiceProvider) UserSessionStore() domain.UserSessionStore {
 	// Already initialized in NewDefaultServiceProvider.
 	return p.userSessionStore
 }
