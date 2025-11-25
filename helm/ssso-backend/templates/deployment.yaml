@@ -89,13 +89,13 @@ spec:
               protocol: TCP
           livenessProbe:
             httpGet:
-              path: /healthz # Assuming a /healthz endpoint exists or will be added
+              path: /healthz
               port: http
             initialDelaySeconds: 30
             periodSeconds: 10
           readinessProbe:
             httpGet:
-              path: /readyz # Assuming a /readyz endpoint exists or will be added
+              path: /readyz
               port: http
             initialDelaySeconds: 5
             periodSeconds: 10

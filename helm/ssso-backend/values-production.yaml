@@ -1,0 +1,135 @@
+# Production values for Shadow SSO Backend deployment
+# This file configures the application for production use with existing MongoDB
+
+replicaCount: 2
+
+initialAdmin:
+  enabled: true
+  createSecret: true
+  secretName: "ssso-initial-admin-credentials"
+  credentials:
+    email: "admin@pilab.hu"
+    password: "PilabSSO2025!"  # CHANGE THIS IMMEDIATELY AFTER FIRST LOGIN
+    firstName: "Admin"
+    lastName: "PiLab"
+
+image:
+  repository: ghcr.io/pilab-dev/shadow-sso-backend
+  pullPolicy: IfNotPresent
+  tag: "v1"
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+serviceAccount:
+  create: true
+  annotations: {}
+
+podAnnotations: {}
+
+podSecurityContext:
+  fsGroup: 1001
+  runAsUser: 1001
+  runAsNonRoot: true
+
+securityContext:
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: true
+
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+
+ingress:
+  enabled: true
+  className: "nginx"  # Adjust based on your ingress controller
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+  hosts:
+    - host: sso.pilab.hu
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: sso-pilab-hu-tls
+      hosts:
+        - sso.pilab.hu
+
+# Configuration for the SSSO application
+config:
+  SSSO_LOG_LEVEL: "info"
+  SSSO_ISSUER_URL: "https://sso.pilab.hu"
+  SSSO_MONGO_URI: "mongodb://ssso_user:changeme_ssso_password_123!@mongodb.pishop-base.svc.cluster.local:27017/shadow_sso?authSource=shadow_sso"
+  SSSO_MONGO_DB_NAME: "shadow_sso"
+  SSSO_SIGNING_KEY_PATH: "/etc/sso/keys/private.pem"
+  SSSO_KEY_ROTATION_INTERVAL: "24h"
+  SSSO_NEXTJS_LOGIN_URL: "https://sso.pilab.hu/login"  # Assuming login UI is on same domain
+
+# Secret containing the RSA private key for signing tokens
+signingKeySecretName: "sso-signing-key"
+
+# Create a secret for the signing key
+createSigningKeySecret: true
+signingKeyPrivatePem: |
+  -----BEGIN PRIVATE KEY-----
+  MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCtz1MtQg6QCRaR
+  3cHyjkNGGdrmXejA7RvJsTIHkpSy77Y9cO7ooUpxWpglikWob+R3SBLCzZhc7M4Uf
+  QYfWMB6WftJDFNd9m2eYnpenJj3YtaN6TnDtF8+cE8R3jbA7sJzk3tDeUyb/JQkb
+  ePIw91EiFglbaQlj5HCH3e5SLTkKJgjeVI7xotlg70ONv+b5Yt3QR4ih2aFGXbpe
+  7uImJSoek0JCh7jwC/QTxDKf3yBozESY9uN0kk7KqP3IQsOdUHv10U4vlhfbqlEL
+  DpKkMBtVHuTFRdHREHNMCGP3wa+/G+Fbmv9py9BbHQtOBZ1miko911JunWkux+l9
+  iwrVXOUdAgMBAAECggEATB4YwiBEumWQgZ8upn88k1OZUbJMPxmB/1W+KQEBR0fx
+  WaY6j4AmQXgzcfxW6Os/WQN+0wIpuF6GtTqAn5exPZ1Kvd/5w2N0ig0iQyxnN2nM
+  rzp9EAg2fpbVmrntbSaaf0zpUgQ+dsykYWilQDZ/TJsz+9lTKHEZqxbRUSHG8h8f
+  RsywpSTRApiyDPRAeREGXMU8HvAB20tNLf1Px9ixmkx6e72MNAks62/VrP6fWhC3
+  nHdvOEBmOIoFGaIQdqNpCrr5AgtdPtsn6PgrF4Azkt3IRCymcY/46uNs1myZqCia
+  7YGGyQRFIT3mAs22HNuKsiThaLQ6GAWBGaOnKL4aTQKBgQDW5tvtUHXBp+9pFLH0
+  foJ7rOj3Hzb7XJYJAn7ye00eSat/1iP0AQrKQX/WmTxJDKu9mZTny4i3hbEsTBtC
+  j2hAL5X4sX2QJ6uHVQUjfDid59vLnkw6OimhKQeLRFErBJ1yvIyBvs2GyonQ9BWq
+  MdiHICzKn+cUZvRt6+E7UPxlQwKBgQDPDLDtdxAVvSQGfCxyv8sdhZqf7DlNFvJ+
+  VrKVyuWFB9OIKLCoAt+5cECV43j6jN8tOscSM+sSqbrkXuogudCU6kH48XL0MtPj
+  EXhv/RQ10e8TLTFQ5CZwkSgc39iXT2BtDOxu9rOzZkmKkUbTwmS4Fc/Rdbvqp08b
+  R/sq6YW2HwKBgDtp8i3nS9cxndA4h4aoH10gDfycpa/TBiwRg5V4n3abOY4LXz9L
+  tnb6quRi0zcDCMxPlMqNDAxpKvWrSPIbAeCVB2qNb8CWJycwS05nPqPxgWQHLN4A
+  TJgg5tQLHEG/ceRR2qrYXKxCfN3HTeITC+E39QpEMTgDytpFF601k8JPAoGAOFex
+  xc0CmYfQx9r+lXNPqIb03tP/e9TkxDB/hHekIaFRlNnNyMqPavz69k7iWvv+t2Yp
+  SfDK5Vc+vmp9t84Yzo04yq+Zoo46Tq4wYfkyiLrKHiPMKcEMHNHDYqgfXn2BNeuw
+  YznLCOSq2oRSC8n4coes98jcDCzfQANEfBb0Be0CgYBjC2nB8nnNmCo3tpe5ACXI
+  nzGhIzeu1w+yVvqfR1jy2HarO4y6t2Tr47tfhBDiXZ4iYTWQgi27GYPZS3u7fQxK
+  cxyJJ0fbnKaimxVxce6oZluk2yi2PYTUaN08kk3VuqA6MMXxCXTOxR7yttjuLRCD
+  llpzAoQaQD/C2RA9fZziKw==
+  -----END PRIVATE KEY-----
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 200m
+    memory: 256Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+
+# MongoDB configuration - disabled since using existing instance
+mongodb:
+  enabled: false
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+extraEnv: []
+
+extraEnvFrom: []
