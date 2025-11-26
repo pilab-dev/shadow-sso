@@ -25,6 +25,12 @@ RUN go build -ldflags="-w -s" -o /ssso ./apps/ssso/
 # Stage 2: Create the final lightweight image
 FROM alpine:latest
 
+LABEL org.opencontainers.image.authors="Paal Gyula <gyula@pilab.hu>"
+LABEL org.opencontainers.image.source="https://github.com/pilab-dev/shadow-sso"
+LABEL org.opencontainers.image.description="Shadow Single Sign-On (SSO) backend headless SSO solution"
+LABEL org.opencontainers.image.title="Shadow SSO Backend"
+LABEL org.opencontainers.image.vendor="Progressive Innovation LAB"
+
 # Import the user and group from the builder stage
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 

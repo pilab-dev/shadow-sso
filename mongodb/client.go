@@ -43,7 +43,7 @@ func InitMongoDB(ctx context.Context, uri, dbName string) error {
 		// Instrument the MongoDB client - currently incompatible with mongo-driver/v2
 		// clientOptions := options.Client().ApplyURI(uri).SetMonitor(otelmongo.NewMonitor())
 		clientOptions := options.Client().ApplyURI(uri)
-		clientOptions.SetConnectTimeout(10 * time.Second)
+		clientOptions.SetConnectTimeout(5 * time.Second)
 		// Add other client options as needed (e.g., auth, replica set)
 		clientOptions.SetMonitor(
 			otelmongo.NewMonitor(),
@@ -120,7 +120,7 @@ func Ping(ctx context.Context) error {
 		return errors.New("MongoDB client is not initialized. Call InitMongoDB first.")
 	}
 	// Use a short timeout for pings
-	pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	return clientInstance.Ping(pingCtx, readpref.Primary())
 }

@@ -4,4 +4,4 @@ tools
 /ssso
 /sso_config.yaml
 /coverage.out
-#.env
+.env
