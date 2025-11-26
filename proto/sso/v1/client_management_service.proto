@@ -4,6 +4,7 @@ package sso.v1;
 
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/empty.proto";
+import "buf/validate/validate.proto";
 
 option go_package = "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1;ssov1";
 
@@ -80,29 +81,29 @@ message RegisterClientRequest {
   // can suggest or it's generated. string client_id_suggestion = 1; //
   // Optional: if client wants to suggest an ID
   ClientTypeProto client_type = 2;   // Required: confidential or public
-  string client_name = 3;            // Required
-  string description = 4;            // Optional
+  string client_name = 3 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 250];            // Required
+  string description = 4 [(buf.validate.field).string.max_len = 250];            // Optional
   repeated string redirect_uris = 5; // Required for some grant types
   repeated string post_logout_redirect_uris = 6; // Optional
   repeated string allowed_scopes = 7; // Optional, server might enforce defaults
   repeated string allowed_grant_types =
       8; // Optional, server might set defaults based on type
   string token_endpoint_auth_method =
-      9; // Optional, server defaults based on type
+      9 [(buf.validate.field).string.max_len = 250]; // Optional, server defaults based on type
   // JWKS/JWKSUri for advanced clients
-  string jwks_uri = 10;
+  string jwks_uri = 10 [(buf.validate.field).string.max_len = 250];
   // JWKSProto jwks_content = 11; // If providing full JWKS at registration
   repeated string contacts = 12;
-  string logo_uri = 13;
-  string policy_uri = 14;
-  string terms_uri = 15;
+  string logo_uri = 13 [(buf.validate.field).string.max_len = 250];
+  string policy_uri = 14 [(buf.validate.field).string.max_len = 250];
+  string terms_uri = 15 [(buf.validate.field).string.max_len = 250];
   bool require_consent = 16; // Server might override
   // require_pkce is often determined by client_type
 
-  string client_ldap_attribute_email = 17;
-  string client_ldap_attribute_first_name = 18;
-  string client_ldap_attribute_last_name = 19;
-  string client_ldap_attribute_groups = 20;
+  string client_ldap_attribute_email = 17 [(buf.validate.field).string.max_len = 250];
+  string client_ldap_attribute_first_name = 18 [(buf.validate.field).string.max_len = 250];
+  string client_ldap_attribute_last_name = 19 [(buf.validate.field).string.max_len = 250];
+  string client_ldap_attribute_groups = 20 [(buf.validate.field).string.max_len = 250];
   map<string, string> client_ldap_custom_claims_mapping = 21;
 }
 
@@ -112,7 +113,7 @@ message RegisterClientResponse {
 }
 
 // --- GetClient ---
-message GetClientRequest { string client_id = 1; }
+message GetClientRequest { string client_id = 1 [(buf.validate.field).string.min_len = 1]; }
 
 message GetClientResponse {
   ClientProto client = 1; // client_secret should be masked or omitted
@@ -133,33 +134,33 @@ message ListClientsResponse {
 
 // --- UpdateClient ---
 message UpdateClientRequest {
-  string client_id = 1; // Required to identify client to update
+  string client_id = 1 [(buf.validate.field).string.min_len = 1]; // Required to identify client to update
 
   // Fields to update (use FieldMask in production for partial updates)
   // For simplicity, this request includes all modifiable fields.
   // Server should only update fields that are actually provided
   // (non-zero/non-empty). This is better handled with
   // google.protobuf.FieldMask. For now, include common fields.
-  string client_name = 2;
-  string description = 3;
+  string client_name = 2 [(buf.validate.field).string.max_len = 250];
+  string description = 3 [(buf.validate.field).string.max_len = 250];
   repeated string redirect_uris = 4;
   repeated string post_logout_redirect_uris = 5;
   repeated string allowed_scopes = 6;
   // Grant types and token auth method are usually not changed post-creation
   // without care. string token_endpoint_auth_method = 7;
-  string jwks_uri = 8;
+  string jwks_uri = 8 [(buf.validate.field).string.max_len = 250];
   // JWKSProto jwks_content = 9;
   repeated string contacts = 10;
-  string logo_uri = 11;
-  string policy_uri = 12;
-  string terms_uri = 13;
+  string logo_uri = 11 [(buf.validate.field).string.max_len = 250];
+  string policy_uri = 12 [(buf.validate.field).string.max_len = 250];
+  string terms_uri = 13 [(buf.validate.field).string.max_len = 250];
   bool require_consent = 14;
   bool is_active = 15; // To activate/deactivate client
 
-  string client_ldap_attribute_email = 16;
-  string client_ldap_attribute_first_name = 17;
-  string client_ldap_attribute_last_name = 18;
-  string client_ldap_attribute_groups = 19;
+  string client_ldap_attribute_email = 16 [(buf.validate.field).string.max_len = 250];
+  string client_ldap_attribute_first_name = 17 [(buf.validate.field).string.max_len = 250];
+  string client_ldap_attribute_last_name = 18 [(buf.validate.field).string.max_len = 250];
+  string client_ldap_attribute_groups = 19 [(buf.validate.field).string.max_len = 250];
   map<string, string> client_ldap_custom_claims_mapping = 20;
 }
 
@@ -168,6 +169,6 @@ message UpdateClientResponse {
 }
 
 // --- DeleteClient ---
-message DeleteClientRequest { string client_id = 1; }
+message DeleteClientRequest { string client_id = 1 [(buf.validate.field).string.min_len = 1]; }
 
 // (google.protobuf.Empty is used for DeleteClientResponse)

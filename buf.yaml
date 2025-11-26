@@ -2,6 +2,7 @@ version: v1
 name: github.com/pilab-dev/shadow-sso # Or your actual module name
 deps:
   - buf.build/googleapis/googleapis
+  - buf.build/bufbuild/protovalidate
 lint:
   use:
     - DEFAULT

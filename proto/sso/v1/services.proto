@@ -4,6 +4,7 @@ package sso.v1;
 
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/empty.proto";
+import "buf/validate/validate.proto";
 
 option go_package = "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1;ssov1";
 
@@ -21,7 +22,73 @@ service UserService {
   rpc LockUser(LockUserRequest) returns (google.protobuf.Empty);
   rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
   rpc GetUser(GetUserRequest) returns (GetUserResponse);
+  rpc UpdateUser(UpdateUserRequest) returns (UpdateUserResponse);
+  rpc DeleteUser(DeleteUserRequest) returns (google.protobuf.Empty);
   rpc ChangePassword(ChangePasswordRequest) returns (google.protobuf.Empty);
+
+  // MFA Management
+  rpc AddMfaMethod(AddMfaMethodRequest) returns (AddMfaMethodResponse);
+  rpc GetMfaMethod(GetMfaMethodRequest) returns (GetMfaMethodResponse);
+  rpc ListMfaMethods(ListMfaMethodsRequest) returns (ListMfaMethodsResponse);
+  rpc VerifyMfaMethod(VerifyMfaMethodRequest) returns (google.protobuf.Empty);
+  rpc RemoveMfaMethod(RemoveMfaMethodRequest) returns (google.protobuf.Empty);
+
+  // WebAuthn Device Management
+  rpc AddWebAuthnDevice(AddWebAuthnDeviceRequest) returns (AddWebAuthnDeviceResponse);
+  rpc GetWebAuthnDevice(GetWebAuthnDeviceRequest) returns (GetWebAuthnDeviceResponse);
+  rpc ListWebAuthnDevices(ListWebAuthnDevicesRequest) returns (ListWebAuthnDevicesResponse);
+  rpc UpdateWebAuthnDeviceCounter(UpdateWebAuthnDeviceCounterRequest) returns (google.protobuf.Empty);
+  rpc RemoveWebAuthnDevice(RemoveWebAuthnDeviceRequest) returns (google.protobuf.Empty);
+
+  // Failed login attempts
+  rpc IncrementFailedLoginAttempts(IncrementFailedLoginAttemptsRequest) returns (IncrementFailedLoginAttemptsResponse);
+  rpc ResetFailedLoginAttempts(ResetFailedLoginAttemptsRequest) returns (google.protobuf.Empty);
+
+  // Email Verification
+  rpc SetEmailAsVerified(SetEmailAsVerifiedRequest) returns (google.protobuf.Empty);
+  rpc StoreEmailVerificationToken(StoreEmailVerificationTokenRequest) returns (google.protobuf.Empty);
+  rpc ClearEmailVerificationToken(ClearEmailVerificationTokenRequest) returns (google.protobuf.Empty);
+  rpc GetUserByEmailVerificationToken(GetUserByEmailVerificationTokenRequest) returns (GetUserByEmailVerificationTokenResponse);
+
+  // Password Reset
+  rpc StorePasswordResetToken(StorePasswordResetTokenRequest) returns (google.protobuf.Empty);
+  rpc GetUserByPasswordResetToken(GetUserByPasswordResetTokenRequest) returns (GetUserByPasswordResetTokenResponse);
+  rpc ClearPasswordResetToken(ClearPasswordResetTokenRequest) returns (google.protobuf.Empty);
+  rpc UpdateUserPassword(UpdateUserPasswordRequest) returns (google.protobuf.Empty);
+
+  // Login OTP Management
+  rpc StoreLoginOtp(StoreLoginOtpRequest) returns (google.protobuf.Empty);
+  rpc ClearLoginOtp(ClearLoginOtpRequest) returns (google.protobuf.Empty);
+
+  // Phone Number Management
+  rpc SetPhoneNumber(SetPhoneNumberRequest) returns (google.protobuf.Empty);
+  rpc StorePhoneVerificationOtp(StorePhoneVerificationOtpRequest) returns (google.protobuf.Empty);
+  rpc ClearPhoneVerificationOtp(ClearPhoneVerificationOtpRequest) returns (google.protobuf.Empty);
+
+  // Phone Verification Actions
+  rpc SendPhoneVerificationOtp(SendPhoneVerificationOtpRequest) returns (SendPhoneVerificationOtpResponse);
+  rpc VerifyPhoneNumber(VerifyPhoneNumberRequest) returns (VerifyPhoneNumberResponse);
+
+  // Email Verification Actions
+  rpc SendEmailVerification(SendEmailVerificationRequest) returns (google.protobuf.Empty);
+  rpc VerifyEmail(VerifyEmailRequest) returns (VerifyEmailResponse);
+
+  // Password Reset Actions
+  rpc RequestPasswordReset(RequestPasswordResetRequest) returns (RequestPasswordResetResponse);
+  rpc ResetPassword(ResetPasswordRequest) returns (ResetPasswordResponse);
+
+  // MFA Setup and Verification
+  rpc SendSmsOtp(SendSmsOtpRequest) returns (SendSmsOtpResponse);
+  rpc SendEmailOtp(SendEmailOtpRequest) returns (SendEmailOtpResponse);
+  rpc VerifyLoginOtp(VerifyLoginOtpRequest) returns (VerifyLoginOtpResponse);
+  rpc SetupTotp(SetupTotpRequest) returns (SetupTotpResponse);
+  rpc VerifyTotpSetup(VerifyTotpSetupRequest) returns (VerifyTotpSetupResponse);
+
+  // WebAuthn Setup and Authentication
+  rpc SetupWebAuthnRegistration(SetupWebAuthnRegistrationRequest) returns (SetupWebAuthnRegistrationResponse);
+  rpc VerifyWebAuthnRegistration(VerifyWebAuthnRegistrationRequest) returns (VerifyWebAuthnRegistrationResponse);
+  rpc SetupWebAuthnAuthentication(SetupWebAuthnAuthenticationRequest) returns (SetupWebAuthnAuthenticationResponse);
+  rpc VerifyWebAuthnAuthentication(VerifyWebAuthnAuthenticationRequest) returns (VerifyWebAuthnAuthenticationResponse);
 }
 
 // AuthService handles authentication and session management
@@ -31,13 +98,53 @@ service AuthService {
   rpc ListUserSessions(ListUserSessionsRequest) returns (ListUserSessionsResponse); // Requires auth token, admin or self
   rpc ClearUserSessions(ClearUserSessionsRequest) returns (google.protobuf.Empty); // Requires auth token, admin or self
   rpc Verify2FA(Verify2FARequest) returns (LoginResponse);
+
+  // OAuth Consent Flow
+  rpc GetConsentInfo(GetConsentInfoRequest) returns (GetConsentInfoResponse);
+  rpc SubmitConsent(SubmitConsentRequest) returns (SubmitConsentResponse);
+  rpc DenyConsent(DenyConsentRequest) returns (DenyConsentResponse);
 }
 
 // Verify 2FA Request
 message Verify2FARequest {
-  string user_id = 1;
-  string two_factor_session_token = 2;
-  string totp_code = 3;
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+  string two_factor_session_token = 2 [(buf.validate.field).string.min_len = 1];
+  string totp_code = 3 [(buf.validate.field).string.min_len = 1];
+}
+
+// Consent Flow Messages
+message GetConsentInfoRequest {
+  string flow_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message ConsentScope {
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+  string description = 2;
+  bool required = 3;
+}
+
+message GetConsentInfoResponse {
+  string client_name = 1;
+  string client_logo_uri = 2;
+  repeated ConsentScope scopes = 3;
+}
+
+message SubmitConsentRequest {
+  string flow_id = 1 [(buf.validate.field).string.min_len = 1];
+  repeated string accepted_scopes = 2;
+  bool remember_consent = 3;
+}
+
+message SubmitConsentResponse {
+  string redirect_url = 1;
+}
+
+message DenyConsentRequest {
+  string flow_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message DenyConsentResponse {
+  string redirect_url = 1;
 }
 
 // --- ServiceAccountService Messages ---
@@ -56,9 +163,9 @@ message ServiceAccountKey {
 }
 
 message CreateServiceAccountKeyRequest {
-  string project_id = 1;
-  string client_email = 2; // Optional: if not provided, can be generated
-  string display_name = 3; // Optional: for the service account
+  string project_id = 1 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 250];
+  string client_email = 2 [(buf.validate.field).string.max_len = 250]; // Optional: if not provided, can be generated
+  string display_name = 3 [(buf.validate.field).string.max_len = 250]; // Optional: for the service account
 }
 
 message CreateServiceAccountKeyResponse {
@@ -76,7 +183,7 @@ message StoredServiceAccountKeyInfo {
 }
 
 message ListServiceAccountKeysRequest {
-  string service_account_id = 1; // The ID of the service account itself
+  string service_account_id = 1 [(buf.validate.field).string.min_len = 1]; // The ID of the service account itself
 }
 
 message ListServiceAccountKeysResponse {
@@ -84,8 +191,8 @@ message ListServiceAccountKeysResponse {
 }
 
 message DeleteServiceAccountKeyRequest {
-  string service_account_id = 1;
-  string key_id = 2; // private_key_id
+  string service_account_id = 1 [(buf.validate.field).string.min_len = 1];
+  string key_id = 2 [(buf.validate.field).string.min_len = 1]; // private_key_id
 }
 
 // --- UserService Messages ---
@@ -107,13 +214,54 @@ message User {
   google.protobuf.Timestamp updated_at = 7;
   google.protobuf.Timestamp last_login_at = 8;
   repeated string roles = 9; // Comma-separated roles or a repeated field if needed
+  repeated MfaMethod mfa_methods = 10;
+  repeated WebAuthnDevice web_authn_devices = 11;
+  int32 failed_login_attempts = 12;
+  google.protobuf.Timestamp last_failed_login_time = 13;
+  bool is_email_verified = 14;
+  bool is_phone_number_verified = 15;
+  string phone_number = 16;
+  string login_otp = 17;
+  google.protobuf.Timestamp login_otp_expires_at = 18;
+  string login_otp_method_type = 19;
+  google.protobuf.Timestamp email_verification_token_expires_at = 20;
+  google.protobuf.Timestamp password_reset_token_expires_at = 21;
+  string phone_verification_otp = 22;
+  google.protobuf.Timestamp phone_verification_otp_expires_at = 23;
+}
+
+enum MfaMethodType {
+  MFA_METHOD_TYPE_UNSPECIFIED = 0;
+  MFA_METHOD_TYPE_TOTP = 1;
+  MFA_METHOD_TYPE_SMS = 2;
+  MFA_METHOD_TYPE_EMAIL = 3;
+  MFA_METHOD_TYPE_WEBAUTHN = 4;
+}
+
+message MfaMethod {
+  string id = 1;
+  MfaMethodType type = 2;
+  string secret = 3; // For TOTP
+  bool verified = 4;
+  google.protobuf.Timestamp created_at = 5;
+  string name = 6; // Human-readable name
+}
+
+message WebAuthnDevice {
+  string id = 1;
+  string name = 2; // Human-readable name
+  string credential_id = 3; // Base64 encoded
+  string public_key = 4; // Base64 encoded
+  int32 counter = 5;
+  google.protobuf.Timestamp created_at = 6;
+  repeated string transports = 7; // Authenticator transports
 }
 
 message RegisterUserRequest {
-  string email = 1;
-  string password = 2;
-  string first_name = 3;
-  string last_name = 4;
+  string email = 1 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 250];
+  string password = 2 [(buf.validate.field).string.min_len = 1];
+  string first_name = 3 [(buf.validate.field).string.max_len = 250];
+  string last_name = 4 [(buf.validate.field).string.max_len = 250];
 }
 
 message RegisterUserResponse {
@@ -122,12 +270,12 @@ message RegisterUserResponse {
 }
 
 message ActivateUserRequest {
-  string user_id = 1; // or email
+  string user_id = 1 [(buf.validate.field).string.min_len = 1]; // or email
   // string activation_token = 2; // if used
 }
 
 message LockUserRequest {
-  string user_id = 1; // or email
+  string user_id = 1 [(buf.validate.field).string.min_len = 1]; // or email
 }
 
 message ListUsersRequest {
@@ -142,7 +290,7 @@ message ListUsersResponse {
 }
 
 message GetUserRequest {
-  string user_id = 1; // or email
+  string user_id = 1 [(buf.validate.field).string.min_len = 1]; // or email
 }
 
 message GetUserResponse {
@@ -150,16 +298,196 @@ message GetUserResponse {
 }
 
 message ChangePasswordRequest {
-  string user_id = 1; // or email
+  string user_id = 1 [(buf.validate.field).string.min_len = 1]; // or email
   string old_password = 2; // Required if user changes their own, not for admin reset
-  string new_password = 3;
+  string new_password = 3 [(buf.validate.field).string.min_len = 1];
+}
+
+message UpdateUserRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+  string email = 2;
+  string first_name = 3;
+  string last_name = 4;
+  repeated string roles = 5;
+}
+
+message UpdateUserResponse {
+  User user = 1;
+}
+
+message DeleteUserRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// MFA Management Messages
+message AddMfaMethodRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+  MfaMethod method = 2;
+}
+
+message AddMfaMethodResponse {
+  MfaMethod method = 1;
+}
+
+message GetMfaMethodRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+  string method_id = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message GetMfaMethodResponse {
+  MfaMethod method = 1;
+}
+
+message ListMfaMethodsRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message ListMfaMethodsResponse {
+  repeated MfaMethod methods = 1;
+}
+
+message VerifyMfaMethodRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+  string method_id = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message RemoveMfaMethodRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+  string method_id = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+// WebAuthn Device Management Messages
+message AddWebAuthnDeviceRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+  WebAuthnDevice device = 2;
+}
+
+message AddWebAuthnDeviceResponse {
+  WebAuthnDevice device = 1;
+}
+
+message GetWebAuthnDeviceRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+  string device_id = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message GetWebAuthnDeviceResponse {
+  WebAuthnDevice device = 1;
+}
+
+message ListWebAuthnDevicesRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message ListWebAuthnDevicesResponse {
+  repeated WebAuthnDevice devices = 1;
+}
+
+message UpdateWebAuthnDeviceCounterRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+  string device_id = 2 [(buf.validate.field).string.min_len = 1];
+  int32 new_counter = 3;
+}
+
+message RemoveWebAuthnDeviceRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+  string device_id = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+// Failed login attempts
+message IncrementFailedLoginAttemptsRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message IncrementFailedLoginAttemptsResponse {
+  int32 current_attempts = 1;
+}
+
+message ResetFailedLoginAttemptsRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// Email Verification
+message SetEmailAsVerifiedRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message StoreEmailVerificationTokenRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+  string token = 2 [(buf.validate.field).string.min_len = 1];
+  google.protobuf.Timestamp expires_at = 3;
+}
+
+message ClearEmailVerificationTokenRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message GetUserByEmailVerificationTokenRequest {
+  string token = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message GetUserByEmailVerificationTokenResponse {
+  User user = 1;
+}
+
+// Password Reset
+message StorePasswordResetTokenRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+  string token = 2 [(buf.validate.field).string.min_len = 1];
+  google.protobuf.Timestamp expires_at = 3;
+}
+
+message GetUserByPasswordResetTokenRequest {
+  string token = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message GetUserByPasswordResetTokenResponse {
+  User user = 1;
+}
+
+message ClearPasswordResetTokenRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message UpdateUserPasswordRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+  string new_password_hash = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+// Login OTP Management
+message StoreLoginOtpRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+  string otp = 2 [(buf.validate.field).string.min_len = 1];
+  MfaMethodType method_type = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}
+
+message ClearLoginOtpRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// Phone Number Management
+message SetPhoneNumberRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+  string phone_number = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+
+message StorePhoneVerificationOtpRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+  string otp = 2 [(buf.validate.field).string.min_len = 1];
+  google.protobuf.Timestamp expires_at = 3;
+}
+
+message ClearPhoneVerificationOtpRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
 }
 
 // --- AuthService Messages ---
 
 message LoginRequest {
-  string email = 1;
-  string password = 2;
+  string email = 1 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 250];
+  string password = 2 [(buf.validate.field).string.min_len = 1];
   // string scope = 3; // Optional: requested scopes
 }
 
@@ -190,7 +518,7 @@ message SessionInfo {
 }
 
 message ListUserSessionsRequest {
-  string user_id = 1; // Required, can be "me" for current user or specific ID for admin
+  string user_id = 1 [(buf.validate.field).string.min_len = 1]; // Required, can be "me" for current user or specific ID for admin
 }
 
 message ListUserSessionsResponse {
@@ -198,6 +526,231 @@ message ListUserSessionsResponse {
 }
 
 message ClearUserSessionsRequest {
-  string user_id = 1; // Required, can be "me" or specific ID for admin
+  string user_id = 1 [(buf.validate.field).string.min_len = 1]; // Required, can be "me" or specific ID for admin
   repeated string session_ids = 2; // Optional: if empty, clear all sessions for the user_id
+}
+
+// Email Verification Messages
+message SendEmailVerificationRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message VerifyEmailRequest {
+  string token = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message VerifyEmailResponse {
+  bool success = 1;
+  string message = 2;
+  string error = 3;
+}
+
+// Password Reset Messages
+message RequestPasswordResetRequest {
+  string email = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message RequestPasswordResetResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message ResetPasswordRequest {
+  string token = 1 [(buf.validate.field).string.min_len = 1];
+  string new_password = 2 [(buf.validate.field).string.min_len = 8];
+}
+
+message ResetPasswordResponse {
+  bool success = 1;
+  string message = 2;
+  string error = 3;
+}
+
+// MFA Messages
+message SendSmsOtpRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message SendSmsOtpResponse {
+  bool success = 1;
+  string message = 2;
+  string error = 3;
+}
+
+message SendEmailOtpRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message SendEmailOtpResponse {
+  bool success = 1;
+  string message = 2;
+  string error = 3;
+}
+
+message VerifyLoginOtpRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+  string otp = 2 [(buf.validate.field).string.min_len = 1];
+  MfaMethodType method_type = 3;
+}
+
+message VerifyLoginOtpResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message SetupTotpRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message SetupTotpResponse {
+  bool success = 1;
+  string secret = 2;
+  string qr_code_uri = 3;
+  string method_id = 4;
+  string error = 5;
+}
+
+message VerifyTotpSetupRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+  string method_id = 2 [(buf.validate.field).string.min_len = 1];
+  string token = 3 [(buf.validate.field).string.min_len = 1];
+}
+
+message VerifyTotpSetupResponse {
+  bool verified = 1;
+  string error = 2;
+}
+
+// WebAuthn Messages
+message SetupWebAuthnRegistrationRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message SetupWebAuthnRegistrationResponse {
+  string challenge = 1;
+  PublicKeyCredentialCreationOptions options = 2;
+  string error = 3;
+}
+
+message VerifyWebAuthnRegistrationRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+  RegistrationResponseJSON registration_response = 2;
+  string device_name = 3;
+}
+
+message VerifyWebAuthnRegistrationResponse {
+  bool verified = 1;
+  string error = 2;
+}
+
+message SetupWebAuthnAuthenticationRequest {
+  string email = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message SetupWebAuthnAuthenticationResponse {
+  string challenge = 1;
+  PublicKeyCredentialRequestOptions options = 2;
+  string error = 3;
+}
+
+message VerifyWebAuthnAuthenticationRequest {
+  string challenge_key = 1 [(buf.validate.field).string.min_len = 1];
+  AuthenticationResponseJSON authentication_response = 2;
+}
+
+message VerifyWebAuthnAuthenticationResponse {
+  bool verified = 1;
+  string user_id = 2;
+  string error = 3;
+}
+
+// WebAuthn Credential Types (simplified for protobuf)
+message PublicKeyCredentialCreationOptions {
+  string challenge = 1;
+  string rp_id = 2;
+  string rp_name = 3;
+  string user_id = 4;
+  string user_name = 5;
+  string user_display_name = 6;
+  repeated PublicKeyCredentialDescriptor exclude_credentials = 7;
+  AuthenticatorSelectionCriteria authenticator_selection = 8;
+  int32 timeout = 9;
+  string attestation = 10;
+}
+
+message PublicKeyCredentialRequestOptions {
+  string challenge = 1;
+  int32 timeout = 2;
+  string rp_id = 3;
+  repeated PublicKeyCredentialDescriptor allow_credentials = 4;
+  string user_verification = 5;
+}
+
+message PublicKeyCredentialDescriptor {
+  string type = 1;
+  string id = 2;
+  repeated string transports = 3;
+}
+
+message AuthenticatorSelectionCriteria {
+  string authenticator_attachment = 1;
+  bool require_resident_key = 2;
+  string resident_key = 3;
+  string user_verification = 4;
+}
+
+message RegistrationResponseJSON {
+  string id = 1;
+  string raw_id = 2;
+  AuthenticatorResponse response = 3;
+  string authenticator_attachment = 4;
+  repeated string client_extension_results = 5;
+  string type = 6;
+}
+
+message AuthenticationResponseJSON {
+  string id = 1;
+  string raw_id = 2;
+  AuthenticatorResponse response = 3;
+  string authenticator_attachment = 4;
+  repeated string client_extension_results = 5;
+  string type = 6;
+}
+
+message AuthenticatorResponse {
+  string client_data_json = 1;
+  AuthenticatorAssertionResponse authenticator_assertion_response = 2;
+  AuthenticatorAttestationResponse authenticator_attestation_response = 3;
+}
+
+message AuthenticatorAssertionResponse {
+  string authenticator_data = 1;
+  string signature = 2;
+  string user_handle = 3;
+}
+
+message AuthenticatorAttestationResponse {
+  string attestation_object = 1;
+}
+
+// Phone Verification Messages
+message SendPhoneVerificationOtpRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message SendPhoneVerificationOtpResponse {
+  bool success = 1;
+  string message = 2;
+  string error = 3;
+}
+
+message VerifyPhoneNumberRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+  string otp = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message VerifyPhoneNumberResponse {
+  bool success = 1;
+  string message = 2;
+  string error = 3;
 }

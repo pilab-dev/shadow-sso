@@ -13,8 +13,8 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/pilab-dev/shadow-sso/apps/ssso-dts/internal/storage"
-	dtsv1 "github.com/pilab-dev/shadow-sso/gen/proto/dts/v1"
-	"github.com/pilab-dev/shadow-sso/gen/proto/dts/v1/dtsv1connect"
+	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
+	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/test/bufconn"
@@ -32,7 +32,7 @@ var (
 
 // setupBufconnServer starts the gRPC server on a bufconn listener
 // and initializes the storage backend for tests.
-func setupBufconnServer(t *testing.T) (client dtsv1connect.TokenStoreServiceClient, cleanupFunc func()) {
+func setupBufconnServer(t *testing.T) (client ssov1connect.TokenStoreServiceClient, cleanupFunc func()) {
 	t.Helper()
 	var err error
 	tempTestDir, err = os.MkdirTemp("", "dts_service_test_")
@@ -45,7 +45,7 @@ func setupBufconnServer(t *testing.T) (client dtsv1connect.TokenStoreServiceClie
 
 	lis = bufconn.Listen(bufSize)
 	dtsServer := NewDTSService(dtsStorage)
-	path, handler := dtsv1connect.NewTokenStoreServiceHandler(dtsServer)
+	path, handler := ssov1connect.NewTokenStoreServiceHandler(dtsServer)
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
 
@@ -63,7 +63,7 @@ func setupBufconnServer(t *testing.T) (client dtsv1connect.TokenStoreServiceClie
 		},
 	}
 
-	client = dtsv1connect.NewTokenStoreServiceClient(
+	client = ssov1connect.NewTokenStoreServiceClient(
 		hc,
 		"http://"+lis.Addr().String(),
 		connect.WithGRPC(),
@@ -89,7 +89,7 @@ func TestDTSService_AuthCode_StoreGetDelete(t *testing.T) {
 	now := time.Now()
 	expiresAtProto := timestamppb.New(now.Add(10 * time.Minute))
 
-	authCode := &dtsv1.AuthCode{
+	authCode := &ssov1.AuthCode{
 		Code:                "testcode123",
 		ClientId:            "testclient",
 		UserId:              "testuser",
@@ -101,13 +101,13 @@ func TestDTSService_AuthCode_StoreGetDelete(t *testing.T) {
 	}
 
 	// 1. Store AuthCode
-	_, err := client.StoreAuthCode(ctx, connect.NewRequest(&dtsv1.StoreAuthCodeRequest{
+	_, err := client.StoreAuthCode(ctx, connect.NewRequest(&ssov1.StoreAuthCodeRequest{
 		AuthCode: authCode,
 	}))
 	require.NoError(t, err, "StoreAuthCode should succeed")
 
 	// 2. Get AuthCode
-	getReq := connect.NewRequest(&dtsv1.GetAuthCodeRequest{Code: authCode.Code})
+	getReq := connect.NewRequest(&ssov1.GetAuthCodeRequest{Code: authCode.Code})
 	retrievedAC, err := client.GetAuthCode(ctx, getReq)
 	require.NoError(t, err, "GetAuthCode should succeed")
 	require.NotNil(t, retrievedAC, "Retrieved AuthCode should not be nil")
@@ -120,7 +120,7 @@ func TestDTSService_AuthCode_StoreGetDelete(t *testing.T) {
 	assert.Equal(t, authCode.ExpiresAt.Seconds, retrievedAC.Msg.ExpiresAt.Seconds)
 
 	// 3. Get Non-existent AuthCode
-	_, err = client.GetAuthCode(ctx, connect.NewRequest(&dtsv1.GetAuthCodeRequest{Code: "nonexistentcode"}))
+	_, err = client.GetAuthCode(ctx, connect.NewRequest(&ssov1.GetAuthCodeRequest{Code: "nonexistentcode"}))
 	require.Error(t, err, "GetAuthCode for non-existent code should fail")
 	connectErr := new(connect.Error)
 	ok := errors.As(err, &connectErr)
@@ -128,7 +128,7 @@ func TestDTSService_AuthCode_StoreGetDelete(t *testing.T) {
 	assert.Equal(t, connect.CodeNotFound, connect.CodeOf(connectErr), "Error code should be NotFound")
 
 	// 4. Delete AuthCode
-	_, err = client.DeleteAuthCode(ctx, connect.NewRequest(&dtsv1.DeleteAuthCodeRequest{Code: authCode.Code}))
+	_, err = client.DeleteAuthCode(ctx, connect.NewRequest(&ssov1.DeleteAuthCodeRequest{Code: authCode.Code}))
 	require.NoError(t, err, "DeleteAuthCode should succeed")
 
 	// 5. Get AuthCode after delete
@@ -144,13 +144,13 @@ func TestDTSService_AuthCode_StoreExpired(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 
-	expiredAuthCode := &dtsv1.AuthCode{
+	expiredAuthCode := &ssov1.AuthCode{
 		Code:      "expiredTestCode",
 		ClientId:  "client1",
 		UserId:    "user1",
 		ExpiresAt: timestamppb.New(time.Now().Add(-5 * time.Minute)), // Already expired
 	}
-	_, err := client.StoreAuthCode(ctx, connect.NewRequest(&dtsv1.StoreAuthCodeRequest{AuthCode: expiredAuthCode}))
+	_, err := client.StoreAuthCode(ctx, connect.NewRequest(&ssov1.StoreAuthCodeRequest{AuthCode: expiredAuthCode}))
 	require.Error(t, err, "Storing an already expired auth code should fail with InvalidArgument")
 
 	connectErr := new(connect.Error)
@@ -170,7 +170,7 @@ func TestDTSService_GenericSetGetDelete(t *testing.T) {
 	ttl := 5 * time.Minute // Using time.Duration for SetRequest's TTL
 
 	// 1. Set
-	_, err := client.Set(ctx, connect.NewRequest(&dtsv1.SetRequest{
+	_, err := client.Set(ctx, connect.NewRequest(&ssov1.SetRequest{
 		Bucket: bucket,
 		Key:    key,
 		Value:  value,
@@ -178,7 +178,7 @@ func TestDTSService_GenericSetGetDelete(t *testing.T) {
 	}))
 	require.NoError(t, err, "Generic Set operation failed")
 
-	req2 := connect.NewRequest(&dtsv1.GetRequest{
+	req2 := connect.NewRequest(&ssov1.GetRequest{
 		Bucket: bucket,
 		Key:    key,
 	})
@@ -192,7 +192,7 @@ func TestDTSService_GenericSetGetDelete(t *testing.T) {
 	assert.WithinDuration(t, time.Now().Add(ttl), res2.Msg.ExpiresAt.AsTime(), 1*time.Second)
 
 	// 3. Delete
-	req3 := connect.NewRequest(&dtsv1.DeleteRequest{
+	req3 := connect.NewRequest(&ssov1.DeleteRequest{
 		Bucket: bucket,
 		Key:    key,
 	})
@@ -200,7 +200,7 @@ func TestDTSService_GenericSetGetDelete(t *testing.T) {
 	require.NoError(t, err, "Generic Delete operation failed")
 
 	// 4. Get after delete
-	req4 := connect.NewRequest(&dtsv1.GetRequest{
+	req4 := connect.NewRequest(&ssov1.GetRequest{
 		Bucket: bucket,
 		Key:    key,
 	})

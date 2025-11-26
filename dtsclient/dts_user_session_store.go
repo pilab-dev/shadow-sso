@@ -7,7 +7,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/pilab-dev/shadow-sso/domain" // Corrected: Using domain.UserSession
-	dtsv1 "github.com/pilab-dev/shadow-sso/gen/proto/dts/v1"
+	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -27,11 +27,11 @@ func NewDTSUserSessionStore(client *Client) *DTSUserSessionStore {
 	return &DTSUserSessionStore{client: client}
 }
 
-func toProtoUserSession(session *domain.UserSession) *dtsv1.UserSession { // Changed to domain.UserSession
+func toProtoUserSession(session *domain.UserSession) *ssov1.UserSession { // Changed to domain.UserSession
 	if session == nil {
 		return nil
 	}
-	return &dtsv1.UserSession{
+	return &ssov1.UserSession{
 		SessionId:       session.SessionID,
 		UserId:          session.UserID,
 		AuthenticatedAt: timestamppb.New(session.AuthenticatedAt),
@@ -42,7 +42,7 @@ func toProtoUserSession(session *domain.UserSession) *dtsv1.UserSession { // Cha
 	}
 }
 
-func fromProtoUserSession(protoSession *dtsv1.UserSession) *domain.UserSession { // Changed to domain.UserSession
+func fromProtoUserSession(protoSession *ssov1.UserSession) *domain.UserSession { // Changed to domain.UserSession
 	if protoSession == nil {
 		return nil
 	}
@@ -75,7 +75,7 @@ func (s *DTSUserSessionStore) StoreUserSession(ctx context.Context, session *dom
 	// DTS StoreUserSession is an upsert, so it won't return conflict on existing ID, it will overwrite.
 	// If conflict detection is critical, a Get call would be needed first, making the operation non-atomic.
 
-	req := connect.NewRequest(&dtsv1.StoreUserSessionRequest{
+	req := connect.NewRequest(&ssov1.StoreUserSessionRequest{
 		UserSession: protoSession,
 	})
 
@@ -96,7 +96,7 @@ func (s *DTSUserSessionStore) GetUserSession(ctx context.Context, sessionID stri
 		return nil, status.Error(codes.InvalidArgument, "session ID cannot be empty")
 	}
 
-	req := connect.NewRequest(&dtsv1.GetUserSessionRequest{SessionId: sessionID})
+	req := connect.NewRequest(&ssov1.GetUserSessionRequest{SessionId: sessionID})
 	protoSession, err := s.client.DTS.GetUserSession(ctx, req)
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
@@ -123,7 +123,7 @@ func (s *DTSUserSessionStore) DeleteUserSession(ctx context.Context, sessionID s
 		return status.Error(codes.InvalidArgument, "session ID cannot be empty")
 	}
 
-	req := connect.NewRequest(&dtsv1.DeleteUserSessionRequest{
+	req := connect.NewRequest(&ssov1.DeleteUserSessionRequest{
 		SessionId: sessionID,
 	})
 

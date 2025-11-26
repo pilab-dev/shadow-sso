@@ -9,7 +9,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/pilab-dev/shadow-sso/domain" // Corrected: Using domain.LoginFlowState
-	dtsv1 "github.com/pilab-dev/shadow-sso/gen/proto/dts/v1"
+	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -38,7 +38,7 @@ func NewDTSFlowStore(client *Client) *DTSFlowStore {
 	return &DTSFlowStore{client: client}
 }
 
-func toProtoOIDCFlw(state *domain.LoginFlowState) *dtsv1.OIDCFlw { // Changed to domain.LoginFlowState
+func toProtoOIDCFlw(state *domain.LoginFlowState) *ssov1.OIDCFlw { // Changed to domain.LoginFlowState
 	if state == nil {
 		return nil
 	}
@@ -47,7 +47,7 @@ func toProtoOIDCFlw(state *domain.LoginFlowState) *dtsv1.OIDCFlw { // Changed to
 		userAuthAt = timestamppb.New(state.UserAuthenticatedAt)
 	}
 
-	return &dtsv1.OIDCFlw{
+	return &ssov1.OIDCFlw{
 		FlowId:              state.FlowID,
 		ClientId:            state.ClientID,
 		RedirectUri:         state.RedirectURI,
@@ -65,7 +65,7 @@ func toProtoOIDCFlw(state *domain.LoginFlowState) *dtsv1.OIDCFlw { // Changed to
 	}
 }
 
-func fromProtoOIDCFlw(protoFlw *dtsv1.OIDCFlw) *domain.LoginFlowState { // Changed to domain.LoginFlowState
+func fromProtoOIDCFlw(protoFlw *ssov1.OIDCFlw) *domain.LoginFlowState { // Changed to domain.LoginFlowState
 	if protoFlw == nil {
 		return nil
 	}
@@ -105,7 +105,7 @@ func (s *DTSFlowStore) StoreFlow(ctx context.Context, flowID string, state domai
 		return domain.ErrFlowExpired // Changed to domain.ErrFlowExpired
 	}
 
-	req := connect.NewRequest(&dtsv1.StoreOIDCFlwRequest{
+	req := connect.NewRequest(&ssov1.StoreOIDCFlwRequest{
 		OidcFlow: protoFlw,
 	})
 
@@ -130,7 +130,7 @@ func (s *DTSFlowStore) GetFlow(ctx context.Context, flowID string) (*domain.Logi
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 
-	req := connect.NewRequest(&dtsv1.GetOIDCFlwRequest{
+	req := connect.NewRequest(&ssov1.GetOIDCFlwRequest{
 		FlowId: flowID,
 	})
 
@@ -178,7 +178,7 @@ func (s *DTSFlowStore) UpdateFlow(ctx context.Context, flowID string, state *dom
 	// 	return domain.ErrFlowExpired // Changed to domain.ErrFlowExpired
 	// }
 
-	req := connect.NewRequest(&dtsv1.UpdateOIDCFlwRequest{
+	req := connect.NewRequest(&ssov1.UpdateOIDCFlwRequest{
 		OidcFlow: protoFlw,
 	})
 	_, err := s.client.DTS.UpdateOIDCFlw(ctx, req)
@@ -206,7 +206,7 @@ func (s *DTSFlowStore) DeleteFlow(ctx context.Context, flowID string) error {
 		return connect.NewError(connect.CodeInvalidArgument, err)
 	}
 
-	req := connect.NewRequest(&dtsv1.DeleteOIDCFlwRequest{
+	req := connect.NewRequest(&ssov1.DeleteOIDCFlwRequest{
 		FlowId: flowID,
 	})
 

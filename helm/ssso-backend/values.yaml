@@ -90,6 +90,16 @@ config:
   SSSO_NEXTJS_LOGIN_URL: "https://login.example.com" # If using external login UI
   # SSSO_MONGO_URI: "mongodb://user:pass@host:port/mydb" # Set if not using the bundled MongoDB
 
+  # Notification Services
+  # SSSO_RESEND_API_KEY: "your_resend_api_key"
+  # SSSO_FROM_EMAIL: "noreply@yourdomain.com"
+  # SSSO_NEXT_PUBLIC_BASE_URL: "https://yourdomain.com"
+  # SSSO_TWILIO_ACCOUNT_SID: "your_twilio_account_sid"
+  # SSSO_TWILIO_AUTH_TOKEN: "your_twilio_auth_token"
+  # SSSO_TWILIO_PHONE_NUMBER: "+1234567890"
+  # SSSO_FIREBASE_PROJECT_ID: "your_firebase_project_id"
+  # SSSO_FIREBASE_CREDENTIALS_PATH: "/etc/sso/firebase-credentials.json"
+
 # Secret containing the RSA private key for signing tokens
 # This secret should have a key named 'private.pem'
 signingKeySecretName: "sso-signing-key" # Name of the Kubernetes secret
@@ -165,6 +175,69 @@ mongodb:
     uriOverride: "" # e.g. "mongodb://user:pass@mongodb-host:27017/db_name?authSource=admin"
                     # If empty and mongodb.enabled is true, it will be constructed.
     databaseName: "shadow_sso_db"
+
+# Frontend configuration
+frontend:
+  enabled: false
+  replicaCount: 1
+  
+  image:
+    repository: ghcr.io/pilab-dev/shadow-sso-ui
+    pullPolicy: Always
+    tag: "latest"
+  
+  imagePullSecrets: []
+  # - name: regcred
+  
+  podAnnotations: {}
+  podSecurityContext: {}
+  
+  securityContext:
+    capabilities:
+      drop:
+      - ALL
+    readOnlyRootFilesystem: false # Next.js needs write access for cache
+  
+  service:
+    type: ClusterIP
+    port: 3000
+    targetPort: 3000
+  
+  config:
+    NEXT_PUBLIC_USE_REAL_BACKEND: "true"
+    NEXT_PUBLIC_RP_ID: "" # e.g., "sso.pilab.hu"
+    NEXT_PUBLIC_RP_NAME: "" # e.g., "Shadow SSO"
+    NEXT_PUBLIC_EXPECTED_ORIGIN: "" # e.g., "https://sso.pilab.hu"
+    SECRET_COOKIE_PASSWORD: "" # If set, will be read from secret
+  
+  secrets:
+    secretName: "shadow-sso-frontend-secrets"
+    createSecret: false
+    cookieSecret: "" # Only used if createSecret is true
+  
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  
+  persistence:
+    enabled: true
+    storageClassName: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 1Gi
+  
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 80
+  
+  extraEnv: []
+  extraEnvFrom: []
 
 nodeSelector: {}
 

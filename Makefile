@@ -39,6 +39,8 @@ proto: install-deps ## Generate Go code from Protocol Buffer definitions
 	@echo "Generating Go code from Protocol Buffers..."
 	@export PATH="$(HOME)/.local/bin:$$PATH"; \
 	$(BUF) generate
+	@echo "Fixing generated TypeScript files..."
+#	@./scripts/fix-generated-typescript.sh
 	@echo "Proto generation complete."
 
 # This target might need to be adjusted if other generated files exist outside 'gen/' from proto

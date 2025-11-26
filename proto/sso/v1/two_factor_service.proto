@@ -3,21 +3,60 @@ syntax = "proto3";
 package sso.v1;
 
 import "google/protobuf/empty.proto";
+import "buf/validate/validate.proto";
 
 option go_package = "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1;ssov1";
 
 // TwoFactorService provides methods for managing Two-Factor Authentication (2FA) for users.
-// Initially, this service will focus on Time-based One-Time Password (TOTP).
+// Supports TOTP, HOTP, and Email-based MFA methods.
 service TwoFactorService {
   // Initiates the setup process for TOTP.
   // Generates a new TOTP secret and a corresponding QR code URI for the authenticated user.
   // The user must verify with a TOTP code from their authenticator app to enable 2FA.
   rpc InitiateTOTPSetup(InitiateTOTPSetupRequest) returns (InitiateTOTPSetupResponse);
 
+  // Initiates the setup process for HOTP.
+  // Generates a new HOTP secret and a corresponding QR code URI for the authenticated user.
+  rpc InitiateHOTPSetup(InitiateHOTPSetupRequest) returns (InitiateHOTPSetupResponse);
+
   // Verifies a TOTP code provided by the user during setup and enables 2FA if the code is valid.
   // This should be called after InitiateTOTPSetup.
   // Returns a list of recovery codes upon successful enablement.
   rpc VerifyAndEnableTOTP(VerifyAndEnableTOTPRequest) returns (VerifyAndEnableTOTPResponse);
+
+  // Verifies an HOTP code provided by the user during setup and enables 2FA if the code is valid.
+  // This should be called after InitiateHOTPSetup.
+  rpc VerifyAndEnableHOTP(VerifyAndEnableHOTPRequest) returns (VerifyAndEnableHOTPResponse);
+
+  // Initiates email-based MFA setup by sending an OTP to the user's email.
+  rpc InitiateEmailMFASetup(InitiateEmailMFASetupRequest) returns (InitiateEmailMFASetupResponse);
+
+  // Verifies the email OTP and enables email-based MFA.
+  rpc VerifyAndEnableEmailMFA(VerifyAndEnableEmailMFARequest) returns (VerifyAndEnableEmailMFAResponse);
+
+  // Initiates push MFA setup by registering a device token.
+  rpc InitiatePushMFASetup(InitiatePushMFASetupRequest) returns (InitiatePushMFASetupResponse);
+
+  // Enables push MFA for the user.
+  rpc VerifyAndEnablePushMFA(VerifyAndEnablePushMFARequest) returns (VerifyAndEnablePushMFAResponse);
+
+  // Registers a device token for push notifications.
+  rpc RegisterPushDevice(RegisterPushDeviceRequest) returns (RegisterPushDeviceResponse);
+
+  // Unregisters a device token.
+  rpc UnregisterPushDevice(UnregisterPushDeviceRequest) returns (UnregisterPushDeviceResponse);
+
+  // Allows users to respond to push MFA challenges.
+  rpc RespondToPushChallenge(RespondToPushChallengeRequest) returns (RespondToPushChallengeResponse);
+
+  // Gets the status of a push MFA challenge.
+  rpc GetPushChallengeStatus(GetPushChallengeStatusRequest) returns (GetPushChallengeStatusResponse);
+
+  // Sends an MFA code via the user's configured method (TOTP/HOTP/Email/Push).
+  rpc SendMFAChallenge(SendMFAChallengeRequest) returns (SendMFAChallengeResponse);
+
+  // Verifies an MFA code against the user's configured method.
+  rpc VerifyMFAChallenge(VerifyMFAChallengeRequest) returns (VerifyMFAChallengeResponse);
 
   // Disables 2FA for the authenticated user.
   // May require current password or a 2FA code (if already enabled) for verification.
@@ -44,7 +83,7 @@ message InitiateTOTPSetupResponse {
 
 // --- VerifyAndEnableTOTP ---
 message VerifyAndEnableTOTPRequest {
-  string totp_code = 1; // The TOTP code from the user's authenticator app.
+  string totp_code = 1 [(buf.validate.field).string.min_len = 1]; // The TOTP code from the user's authenticator app.
   // string user_id = 2; // For admin use cases. For self-service, uses authenticated user.
   // The server will use the secret generated during InitiateTOTPSetup for this user.
 }
@@ -56,7 +95,7 @@ message VerifyAndEnableTOTPResponse {
 // --- Disable2FA ---
 message Disable2FARequest {
   // For security, disabling 2FA often requires re-authentication.
-  string password_or_2fa_code = 1; // User provides current password or a 2FA code to confirm.
+  string password_or_2fa_code = 1 [(buf.validate.field).string.min_len = 1]; // User provides current password or a 2FA code to confirm.
                                    // Server determines which is expected/valid.
   // string user_id = 2; // For admin use cases.
 }
@@ -70,4 +109,122 @@ message GenerateRecoveryCodesRequest {
 
 message GenerateRecoveryCodesResponse {
   repeated string recovery_codes = 1; // A new set of recovery codes.
+}
+
+// --- InitiateHOTPSetup ---
+message InitiateHOTPSetupRequest {
+  // No fields needed; operates on the currently authenticated user.
+  // string user_id = 1; // Could be added for admin use cases later.
+}
+
+message InitiateHOTPSetupResponse {
+  string secret = 1;         // The base32 encoded HOTP secret.
+  string qr_code_uri = 2;    // The otpauth:// URI to be rendered as a QR code.
+  uint64 initial_counter = 3; // The initial counter value.
+}
+
+// --- VerifyAndEnableHOTP ---
+message VerifyAndEnableHOTPRequest {
+  string hotp_code = 1 [(buf.validate.field).string.min_len = 1]; // The HOTP code from the user's authenticator app.
+}
+
+message VerifyAndEnableHOTPResponse {
+  repeated string recovery_codes = 1; // A new set of recovery codes.
+}
+
+// --- InitiateEmailMFASetup ---
+message InitiateEmailMFASetupRequest {
+  // No fields needed; operates on the currently authenticated user.
+  // string user_id = 1; // Could be added for admin use cases later.
+}
+
+message InitiateEmailMFASetupResponse {
+  string message = 1; // Confirmation message that OTP was sent to email.
+}
+
+// --- VerifyAndEnableEmailMFA ---
+message VerifyAndEnableEmailMFARequest {
+  string email_otp = 1 [(buf.validate.field).string.min_len = 1]; // The OTP code sent to user's email.
+}
+
+message VerifyAndEnableEmailMFAResponse {
+  repeated string recovery_codes = 1; // A new set of recovery codes.
+}
+
+// --- SendMFAChallenge ---
+message SendMFAChallengeRequest {
+  // No fields needed; operates on the currently authenticated user.
+  // string user_id = 1; // Could be added for admin use cases later.
+}
+
+message SendMFAChallengeResponse {
+  string method = 1;         // The MFA method used ("TOTP", "HOTP", "EMAIL", "PUSH").
+  string message = 2;        // Confirmation message.
+  uint64 counter = 3;        // Current counter for HOTP (if applicable).
+  string challenge_id = 4;   // Challenge ID for push MFA (if applicable).
+}
+
+// --- VerifyMFAChallenge ---
+message VerifyMFAChallengeRequest {
+  string code = 1 [(buf.validate.field).string.min_len = 1]; // The MFA code to verify.
+  uint64 counter = 2; // Current counter for HOTP verification (if applicable).
+}
+
+message VerifyMFAChallengeResponse {
+  bool verified = 1; // Whether the code was successfully verified.
+}
+
+// --- InitiatePushMFASetup ---
+message InitiatePushMFASetupRequest {
+  string device_token = 1 [(buf.validate.field).string.min_len = 1]; // Firebase device token.
+}
+
+message InitiatePushMFASetupResponse {
+  string message = 1; // Confirmation message.
+}
+
+// --- VerifyAndEnablePushMFA ---
+message VerifyAndEnablePushMFARequest {
+  // No additional fields needed; enables push MFA for the authenticated user.
+}
+
+message VerifyAndEnablePushMFAResponse {
+  repeated string recovery_codes = 1; // A new set of recovery codes.
+}
+
+// --- RegisterPushDevice ---
+message RegisterPushDeviceRequest {
+  string device_token = 1 [(buf.validate.field).string.min_len = 1]; // Firebase device token.
+}
+
+message RegisterPushDeviceResponse {
+  string message = 1; // Confirmation message.
+}
+
+// --- UnregisterPushDevice ---
+message UnregisterPushDeviceRequest {
+  string device_token = 1 [(buf.validate.field).string.min_len = 1]; // Firebase device token to remove.
+}
+
+message UnregisterPushDeviceResponse {
+  string message = 1; // Confirmation message.
+}
+
+// --- RespondToPushChallenge ---
+message RespondToPushChallengeRequest {
+  string challenge_id = 1 [(buf.validate.field).string.min_len = 1]; // The challenge ID from the push notification.
+  string response = 2 [(buf.validate.field).string.min_len = 1]; // "approve" or "deny".
+}
+
+message RespondToPushChallengeResponse {
+  string status = 1; // "approved" or "denied".
+}
+
+// --- GetPushChallengeStatus ---
+message GetPushChallengeStatusRequest {
+  string challenge_id = 1 [(buf.validate.field).string.min_len = 1]; // The challenge ID to check.
+}
+
+message GetPushChallengeStatusResponse {
+  string status = 1; // "pending", "approved", "denied", or "expired".
 }

@@ -24,23 +24,62 @@ Shadow SSO provides a complete suite of tools to implement secure authentication
 
 ## ✨ Key Features
 
-Shadow SSO is packed with essential functionality to ensure top-tier security and control over access:
+Shadow SSO is packed with comprehensive authentication functionality to ensure top-tier security and control:
 
--   **⚙️ Full OAuth 2.0 Support (RFC 6749):** Complete implementation covering all necessary protocols, allowing you to manage token lifecycles securely.
--   **🌐 OpenID Connect (OIDC) Support:** Secure user identification and profile access using OIDC extensions to OAuth 2.0, bringing trust and interoperability to the table.
--   **🔑 PKCE Support (RFC 7636):** Public client security via Proof Key for Code Exchange. This essential addition fortifies against Authorization Code interception threats.
--   **🧐 Token Introspection (RFC 7662):** Validate the validity and properties of tokens via a standardized mechanism that doesn't leak crucial information on every request.
--   **🚫 Token Revocation (RFC 7009):** Granting immediate cancellation of sessions and ensuring swift response to access threats.
--   **🔑 Session Management:** Efficient management of user session state.
--   **✅ Support for Multiple Grant Types:**
-    -   `authorization_code` - Industry standard for web application login flow.
-    -   `client_credentials` - For machine-to-machine authorizations.
-    -   `resource_owner_password` - Direct user authorization to protect legacy apps.
-    -   `refresh_token` - Seamless re-authentication without re-entering user credentials.
--   **🔒 Secure Token Handling:**  Ensures sensitive credentials and tokens are stored with encryption where needed, handled with precision, and safeguarded.
--  **👥 Client Application Management:** Control registration of clients in order to use and delegate your authentication server.
--   **🕹️ User Session Management:**  Fine grained access and revocation control over each individual session.
--   **🛡️ LDAP / Active Directory Integration:** Supports using external LDAP/AD servers as a user authentication source with per-client attribute mapping. See [LDAP Setup Guide](docs/ldap_setup.md).
+### 🔐 Core Authentication
+-   **⚙️ Full OAuth 2.0 Support (RFC 6749):** Complete implementation covering all necessary protocols
+-   **🌐 OpenID Connect (OIDC) Support:** Secure user identification and profile access
+-   **🔑 PKCE Support (RFC 7636):** Public client security via Proof Key for Code Exchange
+-   **🧐 Token Introspection (RFC 7662):** Validate token validity and properties securely
+-   **🚫 Token Revocation (RFC 7009):** Immediate session cancellation and threat response
+-   **🔑 JWT Token Management:** Secure JWT-based access and refresh tokens with configurable TTL
+
+### 🔐 Advanced Multi-Factor Authentication (MFA)
+-   **📱 TOTP (Time-based One-Time Password):** Authenticator app integration (Google Authenticator, Authy, etc.)
+-   **📧 Email-based MFA:** One-time passwords sent via email for authentication
+-   **📱 Push Notification MFA:** Firebase-powered push notifications for mobile approval
+-   **📞 SMS/Phone Verification:** Phone number verification with OTP codes
+-   **🔄 Recovery Codes:** Backup authentication codes for account recovery
+-   **🔐 HOTP Support:** HMAC-based one-time passwords for advanced use cases
+
+### 👤 User Management & Lifecycle
+-   **📝 User Registration:** Self-service user registration with email verification
+-   **🔒 Account Activation:** Admin-controlled account activation workflow
+-   **🚫 Account Locking:** Security-focused account suspension capabilities
+-   **🔑 Password Management:** Secure password changes with old password verification
+-   **📧 Password Reset:** Self-service password reset via email with secure tokens
+-   **👤 Profile Management:** User profile editing and updates
+-   **📱 Phone Number Management:** Phone number verification and updates
+
+### 🖥️ Session & Security Management
+-   **🕹️ Advanced Session Management:** Fine-grained session control and revocation
+-   **🔍 Session Monitoring:** Real-time session tracking and audit capabilities
+-   **🛡️ Security Audit Logging:** Comprehensive audit trails for all authentication events
+-   **⏰ Account Lockout Protection:** Failed login attempt tracking and lockout
+-   **📊 Metrics & Monitoring:** Built-in Prometheus metrics for monitoring
+
+### 🤖 Client & API Management
+-  **👥 OAuth2 Client Management:** Complete client registration and configuration
+-   **🔐 Client Authentication:** Secure client credential validation
+-   **🎯 Scope Management:** Granular permission and scope control
+-   **🔄 Grant Types Support:**
+    -   `authorization_code` - Industry standard for web applications
+    -   `client_credentials` - Machine-to-machine authentication
+    -   `resource_owner_password` - Direct user authorization
+    -   `refresh_token` - Seamless token renewal
+
+### 🏢 Enterprise Features
+-   **🛡️ LDAP / Active Directory Integration:** External user authentication with attribute mapping
+-   **🔗 Identity Provider Federation:** Support for external IdPs (OIDC, SAML)
+-   **👨‍💼 Service Accounts:** Machine identities with downloadable JSON keys
+-   **🏗️ Distributed Token Store (DTS):** High-performance BBoltDB-based token storage
+-   **🐳 Kubernetes Integration:** Helm charts for production deployment
+
+### 📱 Mobile & Modern UX
+-   **📲 Firebase Push Notifications:** Native mobile push authentication
+-   **🌐 External Login UI:** Next.js-based login interface support
+-   **📊 Consent Management:** OAuth scope consent with detailed descriptions
+-   **🔄 Real-time Status Updates:** Live MFA challenge status monitoring
 
 ## 🚀 Getting Started
 
@@ -69,25 +108,90 @@ The SSO server application is located in the `apps/ssso` directory.
     Alternatively, configuration can be provided via environment variables prefixed with `SSSO_`.
 
     Key configuration options (environment variables):
-    -   `SSSO_HTTP_ADDR`: Address for the HTTP server (e.g., `0.0.0.0:8080`). Default: `0.0.0.0:8080`.
-    -   `SSSO_LOG_LEVEL`: Log level (e.g., `debug`, `info`, `warn`, `error`). Default: `info`.
-    -   `SSSO_MONGO_URI`: MongoDB connection URI. Default: `mongodb://localhost:27017`.
-    -   `SSSO_MONGO_DB_NAME`: MongoDB database name. Default: `shadow_sso_db`.
-    -   `SSSO_ISSUER_URL`: The issuer URL for tokens. Default: `http://localhost:8080`.
-    -   `SSSO_SIGNING_KEY_PATH`: Path to the RSA private key PEM file for signing tokens. (No default, must be provided or generated).
-    -   `SSSO_KEY_ROTATION_INTERVAL`: Interval for JWKS key rotation (e.g., `24h`). Default: `24h`.
-    -   `SSSO_NEXTJS_LOGIN_URL`: URL for the external Next.js login UI if using the separate UI flow.
+
+    ### Core Configuration
+    -   `SSSO_HTTP_ADDR`: HTTP server address (default: `0.0.0.0:8080`)
+    -   `SSSO_LOG_LEVEL`: Logging level - `debug`, `info`, `warn`, `error` (default: `info`)
+    -   `SSSO_ISSUER_URL`: OIDC issuer URL for tokens (default: `http://localhost:8080`)
+
+    ### Database Configuration
+    -   `SSSO_MONGO_URI`: MongoDB connection URI (default: `mongodb://localhost:27017`)
+    -   `SSSO_MONGO_DB_NAME`: MongoDB database name (default: `shadow_sso_db`)
+    -   `SSSO_STORAGE_BACKEND`: Storage backend - `mongodb` or `dts` (default: `mongodb`)
+
+    ### Security Configuration
+    -   `SSSO_SIGNING_KEY_PATH`: RSA private key PEM file path for JWT signing (required)
+    -   `SSSO_KEY_ROTATION_INTERVAL`: JWKS key rotation interval (default: `24h`)
+    -   `SSSO_ACCESS_TOKEN_TTL`: Access token lifetime (default: `1h`)
+    -   `SSSO_REFRESH_TOKEN_TTL`: Refresh token lifetime (default: `720h`)
+    -   `SSSO_SECURITY_PASSWORD_HASH_COST`: Bcrypt cost factor (default: `12`)
+
+    ### Distributed Token Store (DTS)
+    -   `SSSO_DTS_CLIENT_ADDRESS`: DTS gRPC service address (default: `ssso-dts:50051`)
+    -   `SSSO_DTS_TIMEOUT`: DTS connection timeout (default: `5s`)
+
+    ### External Services Integration
+    -   `SSSO_NEXTJS_LOGIN_URL`: External Next.js login UI URL
+
+    ### Notification Services
+    -   `SSSO_RESEND_API_KEY`: Resend API key for email notifications
+    -   `SSSO_FROM_EMAIL`: Sender email address for outgoing emails
+    -   `SSSO_NEXT_PUBLIC_BASE_URL`: Base URL for email verification links
+    -   `SSSO_TWILIO_ACCOUNT_SID`: Twilio Account SID for SMS
+    -   `SSSO_TWILIO_AUTH_TOKEN`: Twilio Auth Token for SMS
+    -   `SSSO_TWILIO_PHONE_NUMBER`: Twilio phone number for sending SMS
+    -   `SSSO_FIREBASE_PROJECT_ID`: Firebase project ID for push notifications
+    -   `SSSO_FIREBASE_CREDENTIALS_PATH`: Path to Firebase service account credentials
+
+    ### Initial Admin Setup
+    -   `SSSO_INITIAL_ADMIN_ENABLED`: Enable automatic admin creation (default: `false`)
+    -   `SSSO_INITIAL_ADMIN_EMAIL`: Initial admin email address
+    -   `SSSO_INITIAL_ADMIN_PASSWORD`: Initial admin password (change immediately)
+    -   `SSSO_INITIAL_ADMIN_FIRST_NAME`: Initial admin first name
+    -   `SSSO_INITIAL_ADMIN_LAST_NAME`: Initial admin last name
 
     Example `sso_config.yaml`:
     ```yaml
-    http_addr: "0.0.0.0:9090"
-    log_level: "debug"
-    mongo_uri: "mongodb://user:pass@host:port/mydb"
-    mongo_db_name: "my_sso_database"
+    # Server Configuration
+    http_addr: "0.0.0.0:8080"
+    log_level: "info"
     issuer_url: "https://sso.example.com"
+
+    # Database Configuration
+    mongo_uri: "mongodb://user:pass@host:port/shadow_sso_db"
+    mongo_db_name: "shadow_sso_db"
+    storage_backend: "mongodb"  # or "dts" for Distributed Token Store
+
+    # Security Configuration
     signing_key_path: "/etc/sso/keys/private.pem"
-    key_rotation_interval: "72h"
+    key_rotation_interval: "24h"
+    access_token_ttl: "1h"
+    refresh_token_ttl: "720h"  # 30 days
+    security_password_hash_cost: 12
+
+    # Distributed Token Store (when using DTS)
+    dts_client_address: "ssso-dts:50051"
+    dts_timeout: "5s"
+
+    # External Services
     nextjs_login_url: "https://login.example.com"
+
+    # Notification Services
+    resend_api_key: "your_resend_api_key"
+    from_email: "noreply@yourdomain.com"
+    next_public_base_url: "https://yourdomain.com"
+    twilio_account_sid: "your_twilio_account_sid"
+    twilio_auth_token: "your_twilio_auth_token"
+    twilio_phone_number: "+1234567890"
+    firebase_project_id: "your_firebase_project_id"
+    firebase_credentials_path: "/etc/sso/firebase-credentials.json"
+
+    # Initial Admin Setup
+    initial_admin_enabled: false
+    initial_admin_email: "admin@example.com"
+    initial_admin_password: "change-me-immediately"
+    initial_admin_first_name: "Admin"
+    initial_admin_last_name: "User"
     ```
 
 2.  **Running the server:**
@@ -101,102 +205,125 @@ The SSO server application is located in the `apps/ssso` directory.
     go run . # Assuming main.go or ssso.go is in apps/ssso
     ```
 
-<<<<<<< HEAD
-### 🐳 Running with Docker (Standard SSSO)
+### 🐳 Docker Deployment
 
-A `Dockerfile` is provided at the root of the project for the standard SSSO server.
+Shadow SSO provides flexible Docker deployment options for different architectures:
 
-1.  **Build the Docker image:**
-    ```bash
-    docker build -t pilab/ssso:latest .
-    ```
+#### Standard MongoDB Deployment
+```bash
+docker run -d \
+  --name ssso-server \
+  -p 8080:8080 \
+  -e SSSO_MONGO_URI="mongodb://your_mongo_host:27017/shadow_sso_db" \
+  -e SSSO_ISSUER_URL="http://localhost:8080" \
+  -e SSSO_SIGNING_KEY_PATH="/path/to/your/signing_key.pem" \
+  -e SSSO_FIREBASE_PROJECT_ID="your-firebase-project" \
+  -e SSSO_FIREBASE_CREDENTIALS_PATH="/etc/sso/firebase/credentials.json" \
+  -e SSSO_TWILIO_ACCOUNT_SID="your-twilio-sid" \
+  -e SSSO_TWILIO_AUTH_TOKEN="your-twilio-token" \
+  -e SSSO_TWILIO_PHONE_NUMBER="+1234567890" \
+  -e SSSO_RESEND_API_KEY="your-resend-key" \
+  -e SSSO_FROM_EMAIL="noreply@yourdomain.com" \
+  -e SSSO_NEXT_PUBLIC_BASE_URL="https://yourdomain.com" \
+  -v /path/to/keys:/etc/sso/keys:ro \
+  -v /path/to/firebase-creds:/etc/sso/firebase:ro \
+  pilab/ssso:latest
+```
 
-2.  **Run the Docker container:**
-    ```bash
-    docker run -d \
-      -p 8080:8080 \
-      -e SSSO_MONGO_URI="mongodb://your_mongo_host:27017/shadow_sso_db" \
-      -e SSSO_ISSUER_URL="http://localhost:8080" \
-      -e SSSO_SIGNING_KEY_PATH="/path/to/your/signing_key.pem" \
-      # Add other necessary SSSO_... environment variables
-      # Potentially mount volumes for keys or persistent data if not using external Mongo
-      --name ssso-server \
-      pilab/ssso:latest
-    ```
+#### Distributed Token Store (DTS) Deployment
+```bash
+# Start MongoDB
+docker run -d --name mongodb -p 27017:27017 mongo:latest
 
-## ✨ Distributed Token Store (DTS) and SSSO-Alt Variant
+# Start DTS service
+docker run -d --name ssso-dts -p 50051:50051 pilab/ssso-dts:latest
 
-To offer an alternative storage backend for improved performance and reduced dependency on MongoDB for ephemeral token data, Shadow SSO now includes:
+# Start SSO server with DTS
+docker run -d \
+  --name ssso-server \
+  -p 8080:8080 \
+  --link ssso-dts \
+  -e SSSO_STORAGE_BACKEND="dts" \
+  -e SSSO_DTS_CLIENT_ADDRESS="ssso-dts:50051" \
+  -e SSSO_MONGO_URI="mongodb://mongodb:27017/shadow_sso_db" \
+  -e SSSO_ISSUER_URL="http://localhost:8080" \
+  pilab/ssso:latest
+```
 
-*   **`ssso-dts` Service**: A gRPC service using BBoltDB for persistent, high-performance storage of session data, OIDC flows, and tokens. See `apps/ssso-dts/README.md` for details on this service.
-*   **`ssso-alt` Service Variant**: An alternative version of the SSSO server (`apps/ssso-alt/`) that can be configured to use the `ssso-dts` service for storing specific OAuth/OIDC artifacts (like authorization codes, PKCE states, OIDC flow states, and refresh token details). Other data like user profiles, client configurations, and service account details still use MongoDB.
-
-### 🚀 Running `ssso-alt` with `ssso-dts` using Docker Compose
-
-The easiest way to run the `ssso-alt` variant along with its `ssso-dts` dependency and a MongoDB instance is using the provided `docker-compose.yml` file at the root of the project.
-
-1.  **Prerequisites:**
-    *   Docker and Docker Compose installed.
-
-2.  **Build and Run:**
-    Navigate to the root of the Shadow SSO project and run:
-    ```bash
-    docker-compose up --build
-    ```
-    This will:
-    *   Build the Docker images for `ssso-dts` and `ssso-alt`.
-    *   Start three services: `mongo`, `ssso-dts`, and `ssso-alt`.
-    *   `ssso-dts` will listen on port `50051`.
-    *   `ssso-alt` will listen on port `8081` (to avoid conflict with a standard `ssso` instance on `8080`).
-
-3.  **Configuration for `ssso-alt`:**
-    The `docker-compose.yml` file sets the necessary environment variables for `ssso-alt` to connect to `ssso-dts` and `mongo`. Key environment variables for `ssso-alt` include:
-    *   `SSSO_ALT_STORAGE_BACKEND`: Set to `dts` to enable the Distributed Token Store. (Default is `mongodb` if not set, but compose file sets it to `dts`).
-    *   `SSSO_DTS_CLIENT_ADDRESS`: Address of the `ssso-dts` gRPC service (e.g., `ssso-dts:50051` within the Docker network).
-    *   Standard SSSO environment variables like `SSSO_MONGO_URI`, `SSSO_ISSUER_URL`, etc., are still required as `ssso-alt` uses MongoDB for non-DTS data.
-
-    Refer to `apps/ssso-alt/config/config.go` and the `docker-compose.yml` for all configurable options.
-=======
 ### 🚀 Initial Admin User Setup
 
-On its first startup, the Shadow SSO server can automatically create an initial administrator user if no other admin users exist in the database. This is useful for bootstrapping a new deployment.
+On first startup, Shadow SSO can automatically create an initial administrator user if no admin users exist in the database.
 
-**Configuration:**
-
-This feature is primarily configured via Helm when deploying to Kubernetes, or by setting specific environment variables if running the server binary directly.
-
-**Helm Chart Configuration (`values.yaml`):**
-
-Under the `initialAdmin` section in your `values.yaml` file:
-
-*   `enabled`: (boolean, e.g., `true`) Set to `true` to enable this feature. If `false`, the server will not attempt to create an initial admin.
-*   `createSecret`: (boolean, e.g., `true`) If `true`, Helm will create a Kubernetes Secret to store the initial admin credentials. If `false`, you must ensure a secret named by `secretName` already exists with the required data.
-*   `secretName`: (string, e.g., `ssso-initial-admin-credentials`) The name of the Kubernetes Secret that holds (or will hold) the initial admin credentials.
-*   `credentials`: A map containing:
-    *   `email`: (string) The email address for the initial admin user.
-    *   `password`: (string) The password for the initial admin user. **This must be changed from the default for any real deployment.**
-    *   `firstName`: (string, optional) The first name for the admin user. Defaults to "Admin" if not provided or key is missing in secret.
-    *   `lastName`: (string, optional) The last name for the admin user. Defaults to "User" if not provided or key is missing in secret.
+**Helm Configuration:**
+```yaml
+initialAdmin:
+  enabled: true
+  credentials:
+    email: admin@example.com
+    password: "secure-password-change-me"
+    firstName: "Admin"
+    lastName: "User"
+```
 
 **Environment Variables:**
+- `SSSO_INITIAL_ADMIN_ENABLED=true`
+- `SSSO_INITIAL_ADMIN_EMAIL=admin@example.com`
+- `SSSO_INITIAL_ADMIN_PASSWORD=secure-password`
 
-The server application reads the following environment variables (which are typically populated from the Kubernetes Secret by the Helm chart):
+## ✨ Distributed Token Store (DTS) Architecture
 
-*   `INITIAL_ADMIN_ENABLED`: Set to `"true"` to enable the feature.
-*   `INITIAL_ADMIN_EMAIL`: Email for the first admin.
-*   `INITIAL_ADMIN_PASSWORD`: Password for the first admin.
-*   `INITIAL_ADMIN_FIRST_NAME`: (Optional) First name.
-*   `INITIAL_ADMIN_LAST_NAME`: (Optional) Last name.
+Shadow SSO features a high-performance distributed architecture with specialized storage backends:
 
-**Behavior:**
+### 🏗️ Architecture Components
 
-*   On startup, if `INITIAL_ADMIN_ENABLED` is `"true"`, the server checks if any users with the "admin" role exist.
-*   If no admin users are found, it attempts to read the other `INITIAL_ADMIN_*` environment variables and create the user.
-*   If an admin user already exists, or if the feature is not enabled, this setup step is skipped.
-*   The server will log its actions regarding this setup process.
+*   **`ssso-dts` Service**: High-performance gRPC microservice using BBoltDB for ephemeral token storage
+*   **MongoDB Integration**: Persistent storage for user profiles, clients, and service accounts
+*   **Hybrid Storage Model**: Optimal performance with specialized storage for different data types
 
-This ensures that your SSO system can be initialized with a primary administrator account without manual database intervention on the first run.
->>>>>>> 46dc357 (feat: Implement server-side initial admin user creation)
+### 🚀 Performance Benefits
+
+- **⚡ Sub-millisecond Token Operations**: BBoltDB provides extremely fast key-value operations
+- **📈 Horizontal Scalability**: Distributed token storage across multiple DTS instances
+- **💾 Reduced MongoDB Load**: Ephemeral OAuth artifacts separated from persistent user data
+- **🔄 Automatic Cleanup**: Built-in token expiration and cleanup mechanisms
+
+### 🐳 Production Deployment
+
+#### Docker Compose Setup
+```bash
+docker-compose up --build
+```
+
+This deploys:
+- **MongoDB**: User data and configurations (port 27017)
+- **ssso-dts**: Distributed token store (port 50051)
+- **ssso**: Main authentication service (port 8080)
+
+#### Kubernetes with Helm
+```bash
+helm install ssso-backend ./helm/ssso-backend
+```
+
+Includes:
+- **Configurable Storage Backends**: MongoDB or DTS options
+- **High Availability**: Multi-replica deployments
+- **Auto-scaling**: Horizontal Pod Autoscaling support
+- **Security**: Network policies and RBAC integration
+
+### ⚙️ Configuration Options
+
+**DTS Configuration:**
+```yaml
+storage_backend: dts
+dts_client_address: ssso-dts:50051
+dts_timeout: 5s
+```
+
+**MongoDB Configuration:**
+```yaml
+mongo_uri: mongodb://user:pass@host:27017/shadow_sso_db
+mongo_db_name: shadow_sso_db
+```
 
 ###  CLI Tool (`ssoctl`)
 
@@ -224,137 +351,246 @@ The `ssoctl` CLI tool helps manage your Shadow SSO instance. It's located in `ap
 
 ### 📚 Using Shadow SSO as a Library
 
-To embed Shadow SSO into your own Go application, you can now use the simplified `ssso.NewSSOServer` function. This function encapsulates the complex setup, allowing you to quickly get a fully configured OAuth 2.0 and OpenID Connect server.
+Shadow SSO can be embedded into your Go applications as a library with comprehensive service providers:
 
-1.  **Basic Setup (MongoDB and In-Memory Defaults):**
-
-    This example shows how to set up an SSO server with a MongoDB backend and in-memory stores for OIDC flows and PKCE challenges, using default values where possible.
-
-    ```go
-    package main
-
-    import (
-        "context"
-        "log"
-        "net/http"
-        "time"
-
-        ssso "github.com/pilab-dev/shadow-sso"
-    )
-
-    func main() {
-        // 1. Define your OpenID Provider Configuration
-        // Start with sensible defaults and customize as needed.
-        oidcConfig := ssso.NewDefaultConfig("http://localhost:8080")
-        oidcConfig.NextJSLoginURL = "http://localhost:3000/login" // Example: integrate with an external login UI
-        oidcConfig.AccessTokenTTL = 1 * time.Hour
-        oidcConfig.RefreshTokenTTL = 24 * 30 * time.Hour // 30 days
-
-        // 2. Initialize your Repository Provider (e.g., MongoDB)
-        // You can use ssso.NewMongoRepositoryProvider for a MongoDB backend.
-        // For production, ensure these values come from secure configuration.
-        mongoURI := "mongodb://localhost:27017"
-        dbName := "shadow_sso_example"
-        repoProvider, err := ssso.NewMongoRepositoryProvider(mongoURI, dbName)
-        if err != nil {
-            log.Fatalf("Error initializing MongoDB repository provider: %v", err)
-        }
-        // For MongoDB-specific disconnection (e.g., if you need to call a Close method),
-        // you might need to assert the concrete type if the ssso.RepositoryProvider interface
-        // does not expose a Close/Disconnect method.
-        // For example:
-        // if mongoRp, ok := repoProvider.(*mongodb.MongoRepositoryProvider); ok { // Note: mongodb.MongoRepositoryProvider is the concrete type
-        //     defer mongoRp.Disconnect(context.Background())
-        // }
-        // For simplicity in this example, deferring directly is omitted assuming the main app manages lifecycle.
-
-        // 3. (Optional) Customize other components if defaults are not sufficient
-        //    For example, a custom TokenSigner, TokenCache, or specific PkceRepository.
-        //    If left nil, NewSSOServer will use sensible in-memory defaults.
-
-        // 4. Create SSOServerOptions
-        serverOpts := ssso.SSOServerOptions{
-            Config:             oidcConfig,
-            RepositoryProvider: repoProvider,
-            // TokenSigner:        ssso.New...TokenSigner(), // Provide custom signer if needed (e.g., for RSA keys)
-            // TokenCache:         ssso.New...TokenCache(),    // Provide custom cache if needed
-            // PkceRepository:     ssso.New...PkceRepository(), // Provide custom PKCE repo if needed
-            // FlowStore:          ssso.New...FlowStore(),      // Provide custom flow store if needed
-            // UserSessionStore:   ssso.New...UserSessionStore(), // Provide custom user session store if needed
-        }
-
-        // 5. Initialize the SSO Server (Gin engine)
-        router, err := ssso.NewSSOServer(serverOpts)
-        if err != nil {
-            log.Fatalf("Error initializing SSO server: %v", err)
-        }
-
-        // 6. Start the HTTP server
-        addr := ":8080"
-        log.Printf("SSO server starting on %s", addr)
-        if err := http.ListenAndServe(addr, router); err != nil {
-            log.Fatalf("SSO server failed to start: %v", err)
-        }
-    }
-    ```
-
-Our goal with Shadow SSO is not only powerful functionality but, also, unmatched security. For your trust, it comes with these implemented practices:
-
-- **Constant-time Comparisons**: For sensitive data (like client secrets or authentication codes) we always use comparison methods that take same time regardless of differences to avoid timing attack possibilities.
--   **PKCE by Default**: Security is paramount, so public clients are mandated to use PKCE protocol by default, making man-in-the-middle attacks nearly impossible.
--   **Secure Token Storage**: You have all control and we give all control to ensure encryption when persisting data using repositories implementation, guaranteeing safe storing of all the token, user and client informations.
--   **Full-Spectrum Session Management:** Our session management approach allows full flexibility when using web and mobile client apps; you can audit user activity and selectively invalidate suspicious ones in response to suspicious requests and/or vulnerabilities discovered.
--   **Detailed Token Introspection**: Grant granular authorization using our `IntrospectToken` endpoint for each authorization access request coming from client app for APIs you are in charge to secure.
--   **Scope Validation**: Each scope requested on the `authorize` endpoint is validated and unauthorized permissions aren't assigned by our services.
--  **Client Authentication:** Authenticate any requesting app/client using credentials provided during registration before processing requests with endpoints, giving additional security check.
-
-## ⚙️ Configuration
-
-Customize Shadow SSO with fine-grained control. You are responsible of what configuration object to pass as configuration to your sso server instance during creation. All the configurable variables are presented in the `ssso.OpenIDProviderConfig` struct:
+#### Basic Setup with Service Providers
 
 ```go
-    config := &ssso.OpenIDProviderConfig{
-    Issuer:                "https://your-issuer.com",
-        AuthorizationEndpoint: "https://your-issuer.com/oauth2/authorize",
-        TokenEndpoint:         "https://your-issuer.com/oauth2/token",
-        UserInfoEndpoint:      "https://your-issuer.com/oauth2/userinfo",
-        JwksURI:              "https://your-issuer.com/.well-known/jwks.json",
-        NextJSLoginURL:       "https://your-nextjs-sso-ui.com/login", // URL for external login UI
-        // ... additional configuration
+package main
+
+import (
+    "log"
+    "net/http"
+    "time"
+
+    "github.com/pilab-dev/shadow-sso/api"
+    "github.com/pilab-dev/shadow-sso/cache"
+    "github.com/pilab-dev/shadow-sso/mongodb"
+    "github.com/pilab-dev/shadow-sso/services"
+    "github.com/pilab-dev/shadow-sso/internal/oidcflow"
+)
+
+func main() {
+    // 1. Configure OpenID Provider
+    oidcConfig := &api.OpenIDProviderConfig{
+        Issuer:             "http://localhost:8080",
+        HTTPAddr:           "0.0.0.0:8080",
+        AccessTokenTTL:     1 * time.Hour,
+        RefreshTokenTTL:    30 * 24 * time.Hour,
+        NextJSLoginURL:     "http://localhost:3000/login",
     }
 
-	    oauth2API := sssogin.NewOAuth2API( // Assuming sssogin is the package for NewOAuth2API
-		    oauthService,
-		    jwksService,
-		    clientService,
-		    pkceService,
-		    config,
-            flowStore,          // New: OIDC flow state store
-            userSessionStore,   // New: OP user session store
-            userRepo,           // New: User repository (also used by OAuthService)
-            passwordHasher,     // New: Password hasher
-    	)
+    // 2. Initialize MongoDB repository provider
+    mongoURI := "mongodb://localhost:27017"
+    dbName := "shadow_sso"
+    repoProvider, err := mongodb.NewMongoRepositoryProvider(mongoURI, dbName)
+    if err != nil {
+        log.Fatalf("Failed to initialize MongoDB: %v", err)
+    }
+
+    // 3. Create service provider with all dependencies
+    serviceProvider, err := services.NewDefaultServiceProvider(services.DefaultServiceProviderOptions{
+        RepositoryProvider: repoProvider,
+        Config:            oidcConfig,
+        FlowStore:         oidcflow.NewInMemoryFlowStore(),
+        UserSessionStore:  oidcflow.NewInMemoryUserSessionStore(),
+    })
+    if err != nil {
+        log.Fatalf("Failed to initialize services: %v", err)
+    }
+
+    // 4. Start gRPC server with all services
+    server := &connectrpc.Server{
+        AuthService:         services.NewAuthServer(serviceProvider),
+        UserService:         serviceProvider.UserService(),
+        TwoFactorService:    serviceProvider.TwoFactorService(),
+        ClientManagementService: serviceProvider.ClientService(),
+        // ... other services
+    }
+
+    log.Println("SSO server starting on :8080")
+    if err := http.ListenAndServe(":8080", server.Router()); err != nil {
+        log.Fatalf("Server failed: %v", err)
+    }
+}
+```
+
+#### Advanced Configuration with External Services
+
+```go
+// Configure external services for enhanced functionality
+serviceProviderOpts := services.DefaultServiceProviderOptions{
+    RepositoryProvider: repoProvider,
+    Config:            oidcConfig,
+    // Add Firebase for push notifications
+    PushNotificationService: notifications.NewFirebasePushService(
+        "your-firebase-project",
+        "/path/to/firebase-credentials.json",
+    ),
+    // Add Twilio for SMS
+    SMSService: notifications.NewTwilioSMSService(
+        "your-twilio-sid",
+        "your-twilio-token",
+    ),
+    // Add Resend for email
+    EmailService: notifications.NewResendEmailService(
+        "your-resend-api-key",
+    ),
+}
+```
+
+Our goal with Shadow SSO is not only powerful functionality but also unmatched security. For your trust, it comes with these implemented practices:
+
+### 🔒 Security-First Design
+- **⏱️ Constant-time Comparisons**: All sensitive data comparisons (passwords, tokens, secrets) use timing-attack-resistant algorithms
+- **🔑 PKCE by Default**: Public clients are mandated to use Proof Key for Code Exchange, preventing authorization code interception
+- **🏦 Bcrypt Password Hashing**: Industry-standard password hashing with configurable cost factor
+- **🔐 JWT Security**: Secure JWT token generation with proper signing and configurable expiration
+
+### 🛡️ Advanced Security Features
+- **🔍 Comprehensive Audit Logging**: Every authentication event is logged with detailed context for security monitoring
+- **🚫 Account Lockout Protection**: Configurable failed login attempt tracking with automatic account suspension
+- **⏰ Session Expiry Management**: Automatic session invalidation with configurable timeouts
+- **🔄 Secure Token Rotation**: Support for refresh token rotation to prevent token replay attacks
+- **📱 Device-based Security**: Push MFA with device registration and challenge-response authentication
+
+### ✅ Authorization & Access Control
+- **👮 RBAC Integration**: Role-Based Access Control with configurable permissions
+- **🎯 Granular Scope Validation**: Every OAuth scope is validated and unauthorized permissions are blocked
+- **🤖 Client Authentication**: Multi-level client verification (confidential vs public clients)
+- **🔎 Token Introspection**: Real-time token validation with detailed metadata exposure control
+- **📊 Security Metrics**: Prometheus metrics for monitoring authentication patterns and anomalies
+
+## ⚙️ Configuration Reference
+
+Shadow SSO provides extensive configuration options through the `api.OpenIDProviderConfig` struct:
+
+### Core OIDC Configuration
+
+```go
+config := &api.OpenIDProviderConfig{
+    // Server Settings
+    Issuer:      "https://sso.example.com",
+    HTTPAddr:    "0.0.0.0:8080",
+    LogLevel:    "info",
+
+    // Token Configuration
+    AccessTokenTTL:  1 * time.Hour,
+    RefreshTokenTTL: 30 * 24 * time.Hour,
+
+    // Security Settings
+    SecurityConfig: api.SecurityConfig{
+        PasswordHashingCost: 12,
+        RequirePKCE:         true,
+    },
+
+    // External UI Integration
+    NextJSLoginURL: "https://login.example.com",
+
+    // Database Settings
+    MongoURI:    "mongodb://localhost:27017",
+    MongoDBName: "shadow_sso_db",
+    StorageBackend: "mongodb", // or "dts"
+}
+```
+
+### Distributed Token Store Configuration
+
+```go
+// For DTS backend
+config.StorageBackend = "dts"
+config.DTSClientAddress = "ssso-dts:50051"
+config.DTSTimeout = 5 * time.Second
+```
+
+### External Service Integration
+
+```go
+// Firebase for push notifications
+pushService := notifications.NewFirebasePushService(
+    "your-project-id",
+    "/etc/sso/firebase-credentials.json",
+)
+
+// Twilio for SMS
+smsService := notifications.NewTwilioSMSService(
+    "your-account-sid",
+    "your-auth-token",
+)
+
+// Resend for email
+emailService := notifications.NewResendEmailService(
+    "your-api-key",
+)
 ```
 
 ## 🌊 OIDC Authentication Flow with Separate UI
 
-Shadow SSO now supports an OIDC authentication flow where the user authentication can be delegated to a separate frontend UI (e.g., a Next.js application).
+Shadow SSO supports modern OIDC authentication flows with separate frontend UI integration:
 
-1.  The user is redirected from the `/oauth2/authorize` endpoint to your configured `NextJSLoginURL` with a `flowId`.
-2.  The frontend UI uses this `flowId` to fetch OIDC request details from `/api/oidc/flow/:flowId`.
-3.  The user authenticates on the frontend UI.
-4.  The frontend UI `POST`s the credentials and `flowId` to `/api/oidc/authenticate`.
-5.  The Shadow SSO backend validates credentials, establishes an OP session (via cookie), generates an authorization code, and redirects the user back to the Relying Party.
+1.  **Authorization Request**: User redirected to `/oauth2/authorize` endpoint
+2.  **UI Delegation**: Redirected to configured Next.js login UI with secure `flowId`
+3.  **Authentication**: Frontend UI handles user login with full MFA support
+4.  **Token Generation**: Backend validates credentials and generates authorization codes
+5.  **Callback**: User redirected back to relying party with authorization code
 
-For detailed instructions on frontend integration, see `README_FRONTEND.md`.
+### 📱 Mobile-First Authentication
+- **Push Notifications**: Firebase-powered mobile push authentication
+- **App Integration**: Native mobile app support with device registration
+- **Real-time Updates**: Live MFA challenge status monitoring
+- **Offline Support**: Recovery codes for offline authentication scenarios
 
-## 🧩 Essential Interface Implementation
+For detailed frontend integration instructions, see `README_FRONTEND.md`.
 
-You’re in the driver's seat on persisting the states. You will need to implement several interfaces.  This modular architecture grants the flexibility to incorporate it with your tech stack and specific security standards, if any are required. Implementations stubs are available within the `/interfaces` module of this repo.
+## 🧩 Repository Interfaces
 
--   **`OAuthRepository`:** Interface for persisting data like client registrations, authorization codes, access and refresh tokens, in your preferred method, from standard data store or specific cloud platform solution (check documentation folder for interfaces definition and stub samples).
--   **`UserRepository`:** Implements a persistent storage mechanism and manipulation method for sessions associated with a user during usage. (check documentation folder for interfaces definition and stub samples).
--  **`TokenStore`:** Implement this in case of memory usage problems and need some form of state management between access token introspection endpoints calls (Optional caching) (check documentation folder for interfaces definition and stub samples).
+Shadow SSO uses a modular architecture with well-defined interfaces for data persistence. The current implementation provides MongoDB and in-memory implementations:
+
+### Core Repository Interfaces
+
+-   **`UserRepository`**: User account management, authentication, and profile data
+-   **`SessionRepository`**: User session tracking and management
+-   **`ClientRepository`**: OAuth2 client application configuration
+-   **`TokenRepository`**: JWT token storage and management
+-   **`AuthorizationCodeRepository`**: OAuth2 authorization code storage
+-   **`DeviceAuthorizationRepository`**: OAuth2 device flow state management
+
+### Advanced Repository Interfaces
+
+-   **`FlowStore`**: OIDC flow state management (in-memory or persistent)
+-   **`UserSessionStore`**: User session state for OIDC flows
+-   **`PkceRepository`**: PKCE challenge storage
+-   **`PublicKeyRepository`**: JWKS key management
+-   **`ServiceAccountRepository`**: Machine identity management
+
+### External Service Interfaces
+
+-   **`PushNotificationService`**: Firebase push notification delivery
+-   **`SMSService`**: SMS OTP delivery (Twilio integration)
+-   **`EmailService`**: Email delivery (Resend integration)
+-   **`MFAService`**: Multi-factor authentication orchestration
+-   **`PhoneVerificationService`**: Phone number verification logic
+
+### Implementing Custom Repositories
+
+```go
+// Example: Custom User Repository
+type CustomUserRepository struct {
+    db *sql.DB
+}
+
+func (r *CustomUserRepository) GetUserByID(ctx context.Context, id string) (*domain.User, error) {
+    // Your implementation
+}
+
+func (r *CustomUserRepository) GetUserByEmail(ctx context.Context, email string) (*domain.User, error) {
+    // Your implementation
+}
+
+// Implement remaining UserRepository methods...
+```
+
+All interfaces are defined in `domain/repositories.go` with comprehensive documentation.
 
 ## ⚠️ Standardized Error Handling
 
@@ -384,15 +620,35 @@ This updated README provides a clearer structure, utilizes visuals, and offers a
 
 ---
 
-## TODO
+## 📚 Documentation
 
-- [ ] Implement refresh token rotation.
-- [ ] Add support for more OIDC features (e.g., back-channel logout, front-channel logout).
-- [ ] Enhance client authentication options (e.g., private_key_jwt).
-- [ ] Improve documentation for advanced configuration and customization.
-- [ ] Add more examples for different use cases and grant types.
-- [ ] Implement a more robust solution for distributed session management.
-- [ ] Add support for SAML.
-- [ ] Implement rate limiting and brute-force protection.
-- [ ] Add more comprehensive audit logging.
-- [ ] Create a CLI for managing users, clients, and other aspects of the SSO.
+- **[API Documentation](docs/api.md)**: Comprehensive gRPC service reference
+- **[CLI Documentation](docs/cli.md)**: Command-line interface usage guide
+- **[Federation Setup](docs/federation.md)**: External identity provider integration
+- **[LDAP Setup](docs/ldap_setup.md)**: Active Directory integration guide
+- **[Service Accounts](docs/service_accounts_usage.md)**: Machine identity management
+
+## 🔄 Recent Updates
+
+### ✅ Implemented Features
+- **🔐 Advanced MFA**: Push notifications via Firebase, TOTP, HOTP, Email MFA
+- **📱 Phone Verification**: SMS OTP verification for phone numbers
+- **🔑 Password Reset**: Secure self-service password reset with email tokens
+- **👤 User Registration**: Complete user lifecycle management
+- **📊 Distributed Token Store**: High-performance BBoltDB backend for tokens
+- **🔍 Comprehensive Audit**: Full audit logging for security compliance
+
+### 🚧 In Development
+- **🔄 Refresh Token Rotation**: Enhanced token security
+- **📤 Back-channel Logout**: OIDC session management
+- **🔐 Private Key JWT**: Advanced client authentication
+- **🛡️ Rate Limiting**: Brute-force protection
+- **📊 SAML Support**: Additional federation protocol
+
+## 🤝 Contributing
+
+We welcome contributions! Please see our [Contributing Guide](.github/CONTRIBUTING.md) for details on:
+- Code style and standards
+- Testing requirements
+- Pull request process
+- Development setup

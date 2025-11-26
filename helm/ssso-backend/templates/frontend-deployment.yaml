@@ -1,0 +1,89 @@
+{{- if .Values.frontend.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ssso-backend.fullname" . }}-frontend
+  labels:
+    {{- include "ssso-backend.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+spec:
+  {{- if not .Values.frontend.autoscaling.enabled }}
+  replicas: {{ .Values.frontend.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "ssso-backend.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: frontend
+  template:
+    metadata:
+      {{- with .Values.frontend.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "ssso-backend.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: frontend
+    spec:
+      {{- with .Values.frontend.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.frontend.podSecurityContext | nindent 8 }}
+      containers:
+        - name: frontend
+          securityContext:
+            {{- toYaml .Values.frontend.securityContext | nindent 12 }}
+          image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag | default "latest" }}"
+          imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.frontend.service.targetPort }}
+              protocol: TCP
+          env:
+            - name: NEXT_PUBLIC_API_BASE
+              value: "http://{{ include "ssso-backend.fullname" . }}:{{ .Values.service.port }}/api"
+            - name: NEXT_PUBLIC_USE_REAL_BACKEND
+              value: {{ .Values.frontend.config.NEXT_PUBLIC_USE_REAL_BACKEND | quote }}
+            - name: NEXT_PUBLIC_SSO_BACKEND_URL
+              value: "http://{{ include "ssso-backend.fullname" . }}:{{ .Values.service.port }}"
+            {{- if .Values.frontend.config.SECRET_COOKIE_PASSWORD }}
+            - name: SECRET_COOKIE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.frontend.secrets.secretName }}
+                  key: cookie-secret
+            {{- end }}
+            {{- if .Values.frontend.config.NEXT_PUBLIC_RP_ID }}
+            - name: NEXT_PUBLIC_RP_ID
+              value: {{ .Values.frontend.config.NEXT_PUBLIC_RP_ID | quote }}
+            {{- end }}
+            {{- if .Values.frontend.config.NEXT_PUBLIC_RP_NAME }}
+            - name: NEXT_PUBLIC_RP_NAME
+              value: {{ .Values.frontend.config.NEXT_PUBLIC_RP_NAME | quote }}
+            {{- end }}
+            {{- if .Values.frontend.config.NEXT_PUBLIC_EXPECTED_ORIGIN }}
+            - name: NEXT_PUBLIC_EXPECTED_ORIGIN
+              value: {{ .Values.frontend.config.NEXT_PUBLIC_EXPECTED_ORIGIN | quote }}
+            {{- end }}
+            {{- with .Values.frontend.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- if .Values.frontend.extraEnvFrom }}
+          envFrom:
+            {{- toYaml .Values.frontend.extraEnvFrom | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+          {{- if .Values.frontend.persistence.enabled }}
+          volumeMounts:
+            - name: cache-volume
+              mountPath: /app/.next/cache
+          {{- end }}
+      {{- if .Values.frontend.persistence.enabled }}
+      volumes:
+        - name: cache-volume
+          persistentVolumeClaim:
+            claimName: {{ include "ssso-backend.fullname" . }}-frontend-cache
+      {{- end }}
+{{- end }}

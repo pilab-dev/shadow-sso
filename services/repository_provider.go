@@ -30,6 +30,7 @@ type RepositoryProvider interface {
 	PublicKeyRepository(ctx context.Context) domain.PublicKeyRepository
 	ServiceAccountRepository(ctx context.Context) domain.ServiceAccountRepository
 	IdPRepository(ctx context.Context) domain.IdPRepository
+	ConfigurationRepository(ctx context.Context) domain.ConfigurationRepository
 
 	// Add other repository getters here as they are defined and needed.
 	// Example: AuditLogRepository() AuditLogRepository

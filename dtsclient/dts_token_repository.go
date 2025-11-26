@@ -7,7 +7,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/pilab-dev/shadow-sso/domain"
-	dtsv1 "github.com/pilab-dev/shadow-sso/gen/proto/dts/v1"
+	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -33,14 +33,14 @@ func NewDTSTokenRepository(client *Client) domain.TokenRepository {
 
 // --- Helper functions for conversion ---
 
-func domainTokenToProtoRefreshToken(token *domain.Token) *dtsv1.RefreshToken {
+func domainTokenToProtoRefreshToken(token *domain.Token) *ssov1.RefreshToken {
 	if token == nil || token.TokenType != domain.TokenTypeRefreshToken { // Ensure it's a refresh token
 		return nil
 	}
 	// Extract claims and session_id if they are available in a structured way in domain.Token
 	// For now, assuming they are not directly available or are part of a generic field not mapped.
 	// Roles could be part of claims.
-	return &dtsv1.RefreshToken{
+	return &ssov1.RefreshToken{
 		Token:     token.TokenValue,
 		ClientId:  token.ClientID,
 		UserId:    token.UserID,
@@ -51,11 +51,11 @@ func domainTokenToProtoRefreshToken(token *domain.Token) *dtsv1.RefreshToken {
 	}
 }
 
-func protoRefreshTokenToDomainToken(protoRT *dtsv1.RefreshToken) *domain.Token {
+func protoRefreshTokenToDomainToken(protoRT *ssov1.RefreshToken) *domain.Token {
 	if protoRT == nil {
 		return nil
 	}
-	// CreatedAt, LastUsedAt, IsRevoked, Issuer, Roles are not directly in dtsv1.RefreshToken
+	// CreatedAt, LastUsedAt, IsRevoked, Issuer, Roles are not directly in ssov1.RefreshToken
 	// IsRevoked is true if not found / deleted from DTS. If found, it's not revoked.
 	return &domain.Token{
 		// ID: // Not directly stored/retrieved unless token value is used as ID
@@ -70,11 +70,11 @@ func protoRefreshTokenToDomainToken(protoRT *dtsv1.RefreshToken) *domain.Token {
 	}
 }
 
-func protoRefreshTokenToDomainTokenInfo(protoRT *dtsv1.RefreshToken) *domain.TokenInfo {
+func protoRefreshTokenToDomainTokenInfo(protoRT *ssov1.RefreshToken) *domain.TokenInfo {
 	if protoRT == nil {
 		return nil
 	}
-	// IssuedAt, Roles not directly in dtsv1.RefreshToken
+	// IssuedAt, Roles not directly in ssov1.RefreshToken
 	return &domain.TokenInfo{
 		// ID: // Not directly stored/retrieved
 		TokenType: domain.TokenTypeRefreshToken,
@@ -102,14 +102,14 @@ func (r *dtsTokenRepository) StoreToken(ctx context.Context, token *domain.Token
 		protoRT := domainTokenToProtoRefreshToken(token)
 
 		if protoRT == nil {
-			return status.Error(codes.InvalidArgument, "failed to convert domain.Token to dtsv1.RefreshToken, ensure TokenType is correct")
+			return status.Error(codes.InvalidArgument, "failed to convert domain.Token to ssov1.RefreshToken, ensure TokenType is correct")
 		}
 
 		if protoRT.ExpiresAt.AsTime().Before(time.Now()) || protoRT.ExpiresAt.AsTime().IsZero() {
 			return status.Error(codes.InvalidArgument, "refresh token is already expired or has invalid expiration")
 		}
 
-		req := connect.NewRequest(&dtsv1.StoreRefreshTokenRequest{
+		req := connect.NewRequest(&ssov1.StoreRefreshTokenRequest{
 			RefreshToken: protoRT,
 		})
 
@@ -140,7 +140,7 @@ func (r *dtsTokenRepository) GetRefreshToken(ctx context.Context, tokenValue str
 	if tokenValue == "" {
 		return nil, status.Error(codes.InvalidArgument, "refresh token value cannot be empty")
 	}
-	req := connect.NewRequest(&dtsv1.GetRefreshTokenRequest{
+	req := connect.NewRequest(&ssov1.GetRefreshTokenRequest{
 		Token: tokenValue,
 	})
 
@@ -170,7 +170,7 @@ func (r *dtsTokenRepository) GetRefreshTokenInfo(ctx context.Context, tokenValue
 		return nil, status.Error(codes.InvalidArgument, "refresh token value cannot be empty")
 	}
 	// This is similar to GetRefreshToken, but returns TokenInfo
-	req := connect.NewRequest(&dtsv1.GetRefreshTokenRequest{Token: tokenValue})
+	req := connect.NewRequest(&ssov1.GetRefreshTokenRequest{Token: tokenValue})
 	protoRT, err := r.client.DTS.GetRefreshToken(ctx, req)
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
@@ -199,7 +199,7 @@ func (r *dtsTokenRepository) GetAccessTokenInfo(ctx context.Context, tokenValue 
 
 	// Example if using AccessTokenMetadata store:
 	// tokenHash := computeHash(tokenValue) // Or however the key is derived
-	// req := &dtsv1.GetAccessTokenMetadataRequest{TokenHash: tokenHash}
+	// req := &ssov1.GetAccessTokenMetadataRequest{TokenHash: tokenHash}
 	// metadata, err := r.client.DTS.GetAccessTokenMetadata(ctx, req)
 	// if err != nil { ... handle not found ... }
 	// return convertAccessTokenMetadataToTokenInfo(metadata), nil
@@ -225,7 +225,7 @@ func (r *dtsTokenRepository) RevokeRefreshToken(ctx context.Context, tokenValue 
 		return status.Error(codes.InvalidArgument, "refresh token value cannot be empty for revocation")
 	}
 
-	req := connect.NewRequest(&dtsv1.DeleteRefreshTokenRequest{
+	req := connect.NewRequest(&ssov1.DeleteRefreshTokenRequest{
 		Token: tokenValue,
 	})
 	_, err := r.client.DTS.DeleteRefreshToken(ctx, req)

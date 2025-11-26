@@ -33,9 +33,15 @@ spec:
             pathType: {{ .pathType }}
             backend:
               service:
+                {{- if $.Values.frontend.enabled }}
+                name: {{ include "ssso-backend.fullname" $ }}-frontend
+                port:
+                  number: {{ $.Values.frontend.service.port }}
+                {{- else }}
                 name: {{ include "ssso-backend.fullname" $ }}
                 port:
                   number: {{ $.Values.service.port }}
+                {{- end }}
           {{- end }}
     {{- end }}
 {{- end }}

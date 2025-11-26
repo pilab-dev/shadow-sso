@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/pilab-dev/shadow-sso/gen/proto/dts/v1/dtsv1connect"
+	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
 	// Use secure credentials in production
 	// "google.golang.org/grpc/resolver"
 	// "google.golang.org/grpc/balancer/roundrobin"
@@ -14,7 +14,7 @@ import (
 
 // Client wraps the gRPC client for the TokenStoreService.
 type Client struct {
-	DTS    dtsv1connect.TokenStoreServiceClient
+	DTS    ssov1connect.TokenStoreServiceClient
 	config Config
 }
 
@@ -39,7 +39,7 @@ func NewClient(cfg Config) (*Client, error) {
 		cfg.MaxMsgSize = 16 * 1024 * 1024 // 16MB default, matching server
 	}
 
-	client := dtsv1connect.NewTokenStoreServiceClient(
+	client := ssov1connect.NewTokenStoreServiceClient(
 		http.DefaultClient,
 		cfg.Address,
 		connect.WithGRPC(),
