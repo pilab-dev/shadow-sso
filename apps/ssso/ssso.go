@@ -12,6 +12,7 @@ import (
 	"github.com/pilab-dev/shadow-sso/mongodb"
 	"github.com/pilab-dev/shadow-sso/services"
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
@@ -19,6 +20,9 @@ import (
 )
 
 func main() {
+	// Load .env file if it exists
+	_ = godotenv.Load()
+
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to load configuration")
@@ -77,6 +81,15 @@ func main() {
 		}
 	}
 
+	// Bootstrap default configurations from environment variables
+	log.Info().Msg("Bootstrapping default configurations...")
+	configRepo := repoProvider.ConfigurationRepository(context.Background())
+	if err := configRepo.CreateDefaultConfigs(context.Background()); err != nil {
+		log.Warn().Err(err).Msg("Failed to bootstrap default configurations, some features may not work correctly")
+	} else {
+		log.Info().Msg("Default configurations bootstrapped successfully")
+	}
+
 	// Initialize TokenSigner (potentially from file/env)
 	tokenSigner := services.NewTokenSigner()
 	if cfg.TokenSigningKey != "" {
@@ -92,15 +105,25 @@ func main() {
 		tokenSigner.AddKeySigner("temporary-secret-for-hs256-change-me") // Fallback for HS256
 	}
 
+	// Get encryption key for configuration service from viper config
+	encryptionKey := cfg.ConfigEncryptionKey
+	if encryptionKey == "" {
+		// Use a default key for development - in production, this should be set
+		encryptionKey = "your-32-byte-encryption-key-here!!" // 32 bytes
+		log.Warn().Msg("config_encryption_key not set, using default key. Set this configuration in production!")
+	}
+
 	// Create SSOServerOptions
 	opts := ssso.SSOServerOptions{
 		Config:             oidcConfig,
+		AppConfig:          &cfg,
 		RepositoryProvider: repoProvider,
 		TokenSigner:        tokenSigner,
 		TokenCache:         cache.NewMemoryTokenStore(oidcConfig.AccessTokenTTL), // Use OIDC config's TTL
 		PkceRepository:     nil, // Let NewSSOServer default to in-memory if not provided by repoProvider
 		FlowStore:          nil, // Let NewSSOServer default to in-memory
 		UserSessionStore:   nil, // Let NewSSOServer default to in-memory
+		EncryptionKey:      encryptionKey,
 	}
 
 	router, err := ssso.NewSSOServer(opts)

@@ -29,6 +29,23 @@ type Config struct {
 	DTSConnectTimeout time.Duration `mapstructure:"dts_connect_timeout"`
 	DTSDefaultPKCETTL time.Duration `mapstructure:"dts_default_pkce_ttl"`
 
+	// SMS configuration
+	TwilioAccountSID   string `mapstructure:"twilio_account_sid"`
+	TwilioAuthToken    string `mapstructure:"twilio_auth_token"`
+	TwilioPhoneNumber  string `mapstructure:"twilio_phone_number"`
+
+	// Email service configuration
+	ResendAPIKey      string `mapstructure:"resend_api_key"`
+	FromEmail         string `mapstructure:"from_email"`
+	NextPublicBaseURL string `mapstructure:"next_public_base_url"`
+
+	// Push notification service configuration
+	FirebaseProjectID       string `mapstructure:"firebase_project_id"`
+	FirebaseCredentialsPath string `mapstructure:"firebase_credentials_path"`
+
+	// Configuration service encryption key
+	ConfigEncryptionKey string `mapstructure:"config_encryption_key"`
+
 	// Token signing
 	TokenSigningKey     string `mapstructure:"token_signing_key"`
 	TokenSigningKeyFile string `mapstructure:"token_signing_key_file"`
@@ -140,6 +157,23 @@ func LoadConfig() (config Config, err error) {
 	viper.SetDefault("dts_client_address", "localhost:50051") // Default for local dev
 	viper.SetDefault("dts_connect_timeout", "5s")             // Consistent with time.ParseDuration
 	viper.SetDefault("dts_default_pkce_ttl", "10m")           // Consistent with time.ParseDuration
+
+	// Default values for SMS configuration
+	viper.SetDefault("twilio_account_sid", "")
+	viper.SetDefault("twilio_auth_token", "")
+	viper.SetDefault("twilio_phone_number", "")
+
+	// Default values for email service configuration
+	viper.SetDefault("resend_api_key", "")
+	viper.SetDefault("from_email", "")
+	viper.SetDefault("next_public_base_url", "")
+
+	// Default values for push notification service configuration
+	viper.SetDefault("firebase_project_id", "")
+	viper.SetDefault("firebase_credentials_path", "")
+
+	// Default value for configuration service encryption key
+	viper.SetDefault("config_encryption_key", "your-32-byte-encryption-key-here!!")
 
 	if errRead := viper.ReadInConfig(); errRead != nil {
 		if _, ok := errRead.(viper.ConfigFileNotFoundError); ok {
