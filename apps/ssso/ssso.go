@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 
 	ssso "github.com/pilab-dev/shadow-sso"
 	"github.com/pilab-dev/shadow-sso/apps/ssso/config"
@@ -17,6 +18,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"github.com/rs/zerolog/pkgerrors"
 )
 
 func main() {
@@ -28,6 +30,11 @@ func main() {
 		log.Fatal().Err(err).Msg("Failed to load configuration")
 	}
 
+	// Configure pretty console logger
+	consoleWriter := zerolog.ConsoleWriter{Out: os.Stdout}
+	log.Logger = zerolog.New(consoleWriter).With().Timestamp().Logger()
+	zerolog.ErrorStackMarshaler = pkgerrors.MarshalStack
+
 	// Set log level
 	logLevel, err := zerolog.ParseLevel(cfg.LogLevel)
 	if err != nil {
@@ -38,7 +45,6 @@ func main() {
 	}
 
 	log.Info().Msg(fmt.Sprintf("Shadow SSO server starting on %s", cfg.HTTPAddr))
-	log.Info().Interface("configuration", cfg).Msg("Loaded configuration")
 
 	// Initialize OpenTelemetry
 	tracerProvider, err := telemetry.InitTracer()
