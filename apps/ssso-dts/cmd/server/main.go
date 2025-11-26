@@ -13,7 +13,7 @@ import (
 	"github.com/pilab-dev/shadow-sso/apps/ssso-dts/config"
 	"github.com/pilab-dev/shadow-sso/apps/ssso-dts/internal/service"
 	"github.com/pilab-dev/shadow-sso/apps/ssso-dts/internal/storage" // Assuming buf generate worked
-	"github.com/pilab-dev/shadow-sso/gen/proto/dts/v1/dtsv1connect"
+	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
 
 	"connectrpc.com/grpchealth"
 	"connectrpc.com/grpcreflect"
@@ -44,7 +44,7 @@ func main() {
 	dtsServer := service.NewDTSService(store)
 
 	// Register DTS service
-	path, tokenServiceHandler := dtsv1connect.NewTokenStoreServiceHandler(dtsServer)
+	path, tokenServiceHandler := ssov1connect.NewTokenStoreServiceHandler(dtsServer)
 	log.Println("TokenStoreService registered.")
 
 	mux := http.NewServeMux()
@@ -55,11 +55,11 @@ func main() {
 		// protoc-gen-connect-go generates package-level constants
 		// for these fully-qualified protobuf service names, so you'd more likely
 		// reference userv1.UserServiceName and groupv1.GroupServiceName.
-		dtsv1connect.TokenStoreServiceName,
+		ssov1connect.TokenStoreServiceName,
 	)
 
 	reflector := grpcreflect.NewStaticReflector(
-		dtsv1connect.TokenStoreServiceName,
+		ssov1connect.TokenStoreServiceName,
 		// protoc-gen-connect-go generates package-level constants
 		// for these fully-qualified protobuf service names, so you'd more likely
 		// reference userv1.UserServiceName and groupv1.GroupServiceName.

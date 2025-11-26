@@ -101,99 +101,289 @@ Commands for logging in and out of the SSO server.
 
 ## User Management Commands (`ssoctl user`)
 
-Commands for managing user accounts.
+Comprehensive user lifecycle management including registration, profiles, security, and verification.
+
+### Account Management
 
 **1. Register a User:**
-   Typically requires administrator privileges.
+   Create new user accounts with initial setup.
    ```bash
    ssoctl user register --email newuser@example.com --first-name New --last-name User [--password <password>]
-   # (Prompts for password if not provided)
-   # User registered successfully:
-   # (YAML output of the new user)
+   # User registered successfully with pending activation status
    ```
 
-**2. Get User Details:**
-   ```bash
-   ssoctl user get <user_id_or_email>
-   # (YAML output of the user details)
-   ```
-
-**3. List Users:**
-   Lists users with pagination. Typically requires admin privileges.
-   ```bash
-   ssoctl user list [--page-size 10] [--page-token <token>]
-   # (YAML output of user list)
-   # Next page token: <next_token_if_any>
-   ```
-
-**4. Activate a User:**
-   Typically requires admin privileges.
+**2. Activate a User:**
+   Enable pending user accounts after verification.
    ```bash
    ssoctl user activate <user_id_or_email>
-   # User <user_id_or_email> activated successfully.
+   # User activated and can now log in
    ```
 
-**5. Lock a User:**
-   Typically requires admin privileges.
+**3. Lock/Unlock a User:**
+   Temporarily disable or re-enable user access.
    ```bash
    ssoctl user lock <user_id_or_email>
-   # User <user_id_or_email> locked successfully.
+   ssoctl user unlock <user_id_or_email>  # If unlock command exists
    ```
 
-**6. Change Password:**
-   Allows an administrator to change a user's password, or a user to change their own password.
+### User Information
+
+**4. Get User Details:**
+   Retrieve complete user profile information.
    ```bash
-   # Admin changing password for a user:
-   ssoctl user change-password <user_id_or_email> [--new-password <password>]
-   # (Prompts for new password if not provided)
-
-   # User changing their own password (assuming logged in as that user):
-   ssoctl user change-password <their_own_user_id_or_email> --old-password <current_password> [--new-password <password>]
-   # (Prompts for new password if not provided)
+   ssoctl user get <user_id_or_email>
+   # Displays: ID, email, names, status, roles, MFA status, last login, etc.
    ```
 
-### User 2FA Management (`ssoctl user 2fa ...`)
-   These are self-service commands for managing your own Two-Factor Authentication settings.
+**5. List Users:**
+   Administrative user listing with pagination.
+   ```bash
+   ssoctl user list [--page-size 10] [--page-token <token>] [--status active|pending|locked]
+   # Paginated list with user metadata
+   ```
+
+**6. Update User Profile:**
+   Modify user information (admin or self-service).
+   ```bash
+   ssoctl user update <user_id> --first-name "Updated Name" --email "newemail@example.com"
+   ```
+
+### Password Management
+
+**7. Change Password:**
+   Secure password updates with validation.
+   ```bash
+   # Self-service password change (requires current password):
+   ssoctl user change-password --old-password <current> --new-password <new>
+
+   # Admin password reset (no old password required):
+   ssoctl user change-password <user_id> --new-password <new>
+   ```
+
+**8. Password Reset Flow:**
+   Self-service password recovery.
+   ```bash
+   # Request password reset (sends email):
+   ssoctl user request-password-reset --email user@example.com
+
+   # Complete password reset (with token from email):
+   ssoctl user reset-password --token <reset_token> --new-password <new_password>
+   ```
+
+### Phone Verification
+
+**9. Phone Number Management:**
+   Associate and verify phone numbers for enhanced security.
+   ```bash
+   # Set phone number:
+   ssoctl user set-phone-number <user_id> --phone "+1234567890"
+
+   # Send verification OTP:
+   ssoctl user send-phone-verification <user_id>
+
+   # Verify phone with OTP:
+   ssoctl user verify-phone <user_id> --otp "123456"
+   ```
+
+### Email Verification
+
+**10. Email Verification:**
+    Manage email verification status.
+    ```bash
+    # Send verification email:
+    ssoctl user send-email-verification <user_id>
+
+    # Verify email with token:
+    ssoctl user verify-email --token <verification_token>
+
+    # Mark email as verified (admin):
+    ssoctl user set-email-verified <user_id>
+    ```
+
+### Multi-Factor Authentication (`ssoctl mfa`)
+
+Advanced MFA management supporting multiple authentication methods for enhanced security.
+
+#### TOTP (Authenticator Apps)
 
 **1. Setup TOTP:**
-   Initiates the Time-based One-Time Password (TOTP) setup for your account.
+   Initialize TOTP with authenticator apps (Google Authenticator, Authy, etc.)
    ```bash
-   ssoctl user 2fa setup
+   ssoctl mfa totp setup
    # TOTP Setup Initiated:
-   #   Secret (for manual entry): <BASE32_SECRET_KEY>
-   #   QR Code URI: otpauth://totp/YourAppName:user@example.com?secret=<BASE32_SECRET_KEY>&issuer=YourAppName
+   #   Secret: JBSWY3DPEHPK3PXP (for manual entry)
+   #   QR Code URI: otpauth://totp/ShadowSSO:user@example.com?secret=JBSWY3DPEHPK3PXP&issuer=ShadowSSO
    #
-   # Scan the QR code with your authenticator app (e.g., Google Authenticator, Authy).
-   # ...
-   # After scanning/entering, use 'ssoctl user 2fa verify <TOTP_CODE>' to enable 2FA.
+   # Scan the QR code with your authenticator app, then verify:
    ```
 
-**2. Verify and Enable TOTP:**
-   Verifies the TOTP code from your authenticator app and enables 2FA.
+**2. Verify TOTP Setup:**
+   Complete TOTP setup and receive recovery codes.
    ```bash
-   ssoctl user 2fa verify <totp_code_from_app>
+   ssoctl mfa totp verify <totp_code>
    # 2FA (TOTP) enabled successfully!
-   # Store these recovery codes securely...:
-   #   1. <recovery_code_1>
-   #   ...
+   # Save these recovery codes securely:
+   #   1. abc123-def456
+   #   2. ghi789-jkl012
    ```
 
-**3. Disable 2FA:**
-   Disables 2FA for your account. Requires re-authentication (password or a current 2FA code).
+#### HOTP (Hardware Tokens)
+
+**3. Setup HOTP:**
+   Configure hardware-based one-time password tokens.
    ```bash
-   ssoctl user 2fa disable [--password-or-code <current_password_or_2fa_code>]
-   # (Prompts for password or 2FA code if not provided)
-   # 2FA disabled successfully for your account.
+   ssoctl mfa hotp setup
+   # HOTP Setup Initiated:
+   #   Secret: JBSWY3DPEHPK3PXP
+   #   QR Code URI: otpauth://hotp/ShadowSSO:user@example.com?secret=JBSWY3DPEHPK3PXP&issuer=ShadowSSO
+   #   Initial Counter: 0
    ```
 
-**4. Generate New Recovery Codes:**
-   Generates a new set of recovery codes, invalidating any old ones. Requires 2FA to be enabled. May require re-authentication.
+**4. Verify HOTP Setup:**
    ```bash
-   ssoctl user 2fa recovery-codes [--password-or-code <current_password_or_2fa_code>]
-   # (Prompts for password or 2FA code if not provided and server requires it)
-   # New recovery codes generated. Store these securely...:
-   #   1. <new_recovery_code_1>
-   #   ...
+   ssoctl mfa hotp verify <hotp_code>
+   # HOTP enabled successfully with recovery codes
+   ```
+
+#### Email-Based MFA
+
+**5. Setup Email MFA:**
+   Use email as a secondary authentication factor.
+   ```bash
+   ssoctl mfa email setup
+   # Email MFA setup initiated. Check your inbox for verification code.
+   ```
+
+**6. Verify Email MFA:**
+   ```bash
+   ssoctl mfa email verify <email_otp>
+   # Email MFA enabled successfully
+   ```
+
+#### Push Notification MFA (Firebase)
+
+**7. Setup Push MFA:**
+   Register mobile device for push notifications.
+   ```bash
+   # Register device token (obtained from mobile app):
+   ssoctl mfa push register --token <firebase_device_token>
+
+   # Enable push MFA:
+   ssoctl mfa push enable
+   # Push MFA enabled successfully
+   ```
+
+**8. Manage Push Devices:**
+   ```bash
+   # List registered devices:
+   ssoctl mfa push devices
+
+   # Remove device:
+   ssoctl mfa push unregister --token <device_token>
+   ```
+
+#### MFA Challenge Management
+
+**9. Send MFA Challenge:**
+   Manually trigger MFA verification.
+   ```bash
+   ssoctl mfa challenge send
+   # MFA challenge sent via your configured method
+   ```
+
+**10. Verify MFA Challenge:**
+   Respond to MFA challenges.
+   ```bash
+   ssoctl mfa challenge verify <code>
+   # MFA challenge verified successfully
+   ```
+
+**11. Check Push Challenge Status:**
+   Monitor push notification challenges.
+   ```bash
+   ssoctl mfa push status --challenge-id <id>
+   # Status: approved|denied|pending|expired
+   ```
+
+#### Recovery & Security
+
+**12. Generate Recovery Codes:**
+   Create new backup codes (invalidates old ones).
+   ```bash
+   ssoctl mfa recovery generate [--password-or-code <verification>]
+   # New recovery codes:
+   #   1. new123-code456
+   #   2. backup789-secure012
+   ```
+
+**13. Disable MFA:**
+   Remove all multi-factor authentication.
+   ```bash
+   ssoctl mfa disable [--password-or-code <verification>]
+   # All MFA methods disabled. Account security reduced.
+   ```
+
+#### MFA Status & Information
+
+**14. View MFA Status:**
+   Check current MFA configuration.
+   ```bash
+   ssoctl mfa status
+   # MFA Status: enabled
+   # Methods:
+   #   - TOTP: enabled
+   #   - Push: enabled (2 devices)
+   #   - Recovery Codes: available
+   ```
+
+**15. List Recovery Codes:**
+   View remaining recovery codes without regenerating.
+   ```bash
+   ssoctl mfa recovery list
+   # Remaining recovery codes: 8
+   ```
+
+## Phone Verification Commands (`ssoctl phone`)
+
+SMS-based phone number verification for enhanced account security.
+
+**1. Set Phone Number:**
+   Associate a phone number with a user account.
+   ```bash
+   ssoctl phone set <user_id> --number "+1234567890"
+   # Phone number set successfully
+   ```
+
+**2. Send Verification OTP:**
+   Send SMS verification code to the user's phone.
+   ```bash
+   ssoctl phone send-otp <user_id>
+   # Verification OTP sent to +1234567890
+   ```
+
+**3. Verify Phone Number:**
+   Confirm phone ownership with the received OTP.
+   ```bash
+   ssoctl phone verify <user_id> --otp "123456"
+   # Phone number verified successfully
+   ```
+
+## Password Reset Commands (`ssoctl password`)
+
+Self-service password recovery and reset functionality.
+
+**1. Request Password Reset:**
+   Initiate password reset process (sends email with reset token).
+   ```bash
+   ssoctl password request-reset --email user@example.com
+   # Password reset email sent to user@example.com
+   ```
+
+**2. Reset Password:**
+   Complete password reset using token from email.
+   ```bash
+   ssoctl password reset --token <reset_token> --new-password <secure_password>
+   # Password reset successfully
    ```
 
 ## OAuth Client Management Commands (`ssoctl client`)
@@ -308,32 +498,77 @@ Commands for managing service accounts and their keys. These typically require a
 
 ## Session Management Commands (`ssoctl session`)
 
-Commands for managing user login sessions.
+Advanced session management for security monitoring and control.
 
 **1. List Sessions:**
-   Lists active sessions. Defaults to the current authenticated user. Admins can use `--user-id` to specify another user.
+   Display active user sessions with metadata.
    ```bash
-   ssoctl session list [--user-id <target_user_id>]
-   # Active sessions:
-   # (YAML output of session list)
+   ssoctl session list [--user-id <target_user_id>] [--include-expired]
+   # Active sessions with IP, User-Agent, creation time, expiry
    ```
 
 **2. Clear Sessions:**
-   Clears/revokes sessions.
+   Revoke specific or all user sessions for security.
    ```bash
-   # Clear a specific session by its ID (for current user or specified --user-id)
-   ssoctl session clear --session-id <session_id_to_clear> [--user-id <target_user_id>]
+   # Clear specific session:
+   ssoctl session clear --session-id <session_id> [--user-id <target_user_id>]
 
-   # Clear all sessions for a specific user (admin)
+   # Clear all sessions for a user (admin):
    ssoctl session clear --user-id <target_user_id>
-   # (The --all flag can be used for clarity but is implicit if --session-id is not given for a specific user)
 
-   # Clear all sessions for the current authenticated user (including the ssoctl session itself)
+   # Clear all sessions for current user (including current session):
    ssoctl session clear --all
 
-   # Clear all *other* sessions for the current authenticated user (leaving ssoctl session active)
-   # This is the default behavior of 'ssoctl session clear' when no flags are provided for the current user.
+   # Clear all other sessions (keep current session active):
    ssoctl session clear
+   ```
+
+## Identity Provider Management (`ssoctl idp`)
+
+Manage external identity providers for federation.
+
+**1. Add Identity Provider:**
+   Configure external IdP (OIDC, SAML, LDAP).
+   ```bash
+   ssoctl idp add --name "Google OAuth" --type oidc \
+     --client-id <client_id> --client-secret <secret> \
+     --issuer-url https://accounts.google.com \
+     --enabled=true
+   ```
+
+**2. List Identity Providers:**
+   View configured external providers.
+   ```bash
+   ssoctl idp list [--only-enabled]
+   # Configured IdPs with status and configuration
+   ```
+
+**3. Update Identity Provider:**
+   Modify IdP configuration.
+   ```bash
+   ssoctl idp update <idp_id> --name "Updated Google" --enabled=false
+   ```
+
+**4. Delete Identity Provider:**
+   Remove external provider configuration.
+   ```bash
+   ssoctl idp delete <idp_id>
+   ```
+
+## Federation Commands (`ssoctl federation`)
+
+Manage cross-domain identity federation.
+
+**1. List Federation Partners:**
+   View configured federation relationships.
+   ```bash
+   ssoctl federation partners
+   ```
+
+**2. Configure Federation:**
+   Set up federation with external domains.
+   ```bash
+   ssoctl federation configure --domain example.com --trust-level high
    ```
 
 ---

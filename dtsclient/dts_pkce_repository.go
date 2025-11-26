@@ -7,7 +7,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/pilab-dev/shadow-sso/domain"
-	dtsv1 "github.com/pilab-dev/shadow-sso/gen/proto/dts/v1"
+	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -41,14 +41,14 @@ func (r *dtsPkceRepository) SaveCodeChallenge(ctx context.Context, codeHash, cha
 	}
 
 	expiresAt := time.Now().Add(r.defaultTTLExpiry)
-	protoState := &dtsv1.PKCEState{
+	protoState := &ssov1.PKCEState{
 		CodeHash:            codeHash,
 		CodeChallenge:       challenge,
 		CodeChallengeMethod: "", // Not available from current PkceRepository interface
 		ExpiresAt:           timestamppb.New(expiresAt),
 	}
 
-	req := connect.NewRequest(&dtsv1.StorePKCEStateRequest{
+	req := connect.NewRequest(&ssov1.StorePKCEStateRequest{
 		PkceState: protoState,
 	})
 
@@ -72,7 +72,7 @@ func (r *dtsPkceRepository) GetCodeChallenge(ctx context.Context, codeHash strin
 		return "", status.Error(codes.InvalidArgument, "code hash cannot be empty")
 	}
 
-	req := connect.NewRequest(&dtsv1.GetPKCEStateRequest{
+	req := connect.NewRequest(&ssov1.GetPKCEStateRequest{
 		CodeHash: codeHash,
 	})
 	protoState, err := r.client.DTS.GetPKCEState(ctx, req)
@@ -106,7 +106,7 @@ func (r *dtsPkceRepository) DeleteCodeChallenge(ctx context.Context, codeHash st
 		return status.Error(codes.InvalidArgument, "code hash cannot be empty")
 	}
 
-	req := connect.NewRequest(&dtsv1.DeletePKCEStateRequest{
+	req := connect.NewRequest(&ssov1.DeletePKCEStateRequest{
 		CodeHash: codeHash,
 	})
 	_, err := r.client.DTS.DeletePKCEState(ctx, req)

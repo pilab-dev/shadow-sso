@@ -7,7 +7,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/pilab-dev/shadow-sso/domain"
-	dtsv1 "github.com/pilab-dev/shadow-sso/gen/proto/dts/v1"
+	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -27,11 +27,11 @@ func NewDTSDeviceAuthorizationRepository(client *Client) domain.DeviceAuthorizat
 	return &dtsDeviceAuthRepository{client: client}
 }
 
-func toProtoDeviceAuth(da *domain.DeviceCode) *dtsv1.DeviceAuth {
+func toProtoDeviceAuth(da *domain.DeviceCode) *ssov1.DeviceAuth {
 	if da == nil {
 		return nil
 	}
-	return &dtsv1.DeviceAuth{
+	return &ssov1.DeviceAuth{
 		DeviceCode:   da.DeviceCode,
 		UserCode:     da.UserCode,
 		ClientId:     da.ClientID,
@@ -46,7 +46,7 @@ func toProtoDeviceAuth(da *domain.DeviceCode) *dtsv1.DeviceAuth {
 	}
 }
 
-func fromProtoDeviceAuth(pda *dtsv1.DeviceAuth) *domain.DeviceCode {
+func fromProtoDeviceAuth(pda *ssov1.DeviceAuth) *domain.DeviceCode {
 	if pda == nil {
 		return nil
 	}
@@ -72,7 +72,7 @@ func fromProtoDeviceAuth(pda *dtsv1.DeviceAuth) *domain.DeviceCode {
 		ExpiresAt:    pda.ExpiresAt.AsTime(),
 		Interval:     intervalSeconds,
 		LastPolledAt: lastPolledAt,
-		// CreatedAt: not stored in dtsv1.DeviceAuth
+		// CreatedAt: not stored in ssov1.DeviceAuth
 		DeviceCodeData: domain.DeviceCodeData{
 			SessionID: pda.SessionId,
 			Claims:    pda.Claims,
@@ -90,7 +90,7 @@ func (r *dtsDeviceAuthRepository) SaveDeviceAuth(ctx context.Context, auth *doma
 		return status.Error(codes.InvalidArgument, "device auth is already expired or has invalid expiration")
 	}
 
-	req := connect.NewRequest(&dtsv1.StoreDeviceAuthRequest{DeviceAuth: protoDA})
+	req := connect.NewRequest(&ssov1.StoreDeviceAuthRequest{DeviceAuth: protoDA})
 	_, err := r.client.DTS.StoreDeviceAuth(ctx, req)
 	if err != nil {
 		log.Printf("Error storing device auth for device code %s to DTS: %v", auth.DeviceCode, err)
@@ -108,7 +108,7 @@ func (r *dtsDeviceAuthRepository) GetDeviceAuthByDeviceCode(ctx context.Context,
 		return nil, status.Error(codes.InvalidArgument, "device code string cannot be empty")
 	}
 
-	req := connect.NewRequest(&dtsv1.GetDeviceAuthByDeviceCodeRequest{
+	req := connect.NewRequest(&ssov1.GetDeviceAuthByDeviceCodeRequest{
 		DeviceCode: deviceCodeStr,
 	})
 
@@ -139,7 +139,7 @@ func (r *dtsDeviceAuthRepository) GetDeviceAuthByUserCode(ctx context.Context, u
 		return nil, status.Error(codes.InvalidArgument, "user code string cannot be empty")
 	}
 
-	req := connect.NewRequest(&dtsv1.GetDeviceAuthByUserCodeRequest{
+	req := connect.NewRequest(&ssov1.GetDeviceAuthByUserCodeRequest{
 		UserCode: userCodeStr,
 	})
 
@@ -183,7 +183,7 @@ func (r *dtsDeviceAuthRepository) getAndUpdateDeviceAuth(ctx context.Context, de
 	protoDA := toProtoDeviceAuth(da)
 	// The DTS service's UpdateDeviceAuth is an upsert, suitable here.
 	// Or we can use StoreDeviceAuth if that's how updates are handled (overwrite)
-	updateReq := connect.NewRequest(&dtsv1.UpdateDeviceAuthRequest{
+	updateReq := connect.NewRequest(&ssov1.UpdateDeviceAuthRequest{
 		DeviceAuth: protoDA,
 	})
 

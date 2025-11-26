@@ -7,7 +7,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/pilab-dev/shadow-sso/domain"
-	dtsv1 "github.com/pilab-dev/shadow-sso/gen/proto/dts/v1"
+	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -26,15 +26,15 @@ func NewDTSAuthorizationCodeRepository(client *Client) domain.AuthorizationCodeR
 	return &dtsAuthCodeRepository{client: client}
 }
 
-func toProtoAuthCode(domainAC *domain.AuthCode) *dtsv1.AuthCode {
+func toProtoAuthCode(domainAC *domain.AuthCode) *ssov1.AuthCode {
 	if domainAC == nil {
 		return nil
 	}
-	// Note: domain.AuthCode.Used and domain.AuthCode.CreatedAt are not directly mapped to dtsv1.AuthCode.
+	// Note: domain.AuthCode.Used and domain.AuthCode.CreatedAt are not directly mapped to ssov1.AuthCode.
 	// 'Used' status is handled by deleting the code in DTS after use.
 	// 'CreatedAt' is not stored in DTS by default with this mapping.
 	// Fields from domain.AuthCode.AuthCodeData ARE mapped.
-	return &dtsv1.AuthCode{
+	return &ssov1.AuthCode{
 		Code:                domainAC.Code,
 		ClientId:            domainAC.ClientID,
 		UserId:              domainAC.UserID,
@@ -49,14 +49,14 @@ func toProtoAuthCode(domainAC *domain.AuthCode) *dtsv1.AuthCode {
 	}
 }
 
-func fromProtoAuthCode(protoAC *dtsv1.AuthCode) *domain.AuthCode {
+func fromProtoAuthCode(protoAC *ssov1.AuthCode) *domain.AuthCode {
 	if protoAC == nil {
 		return nil
 	}
 	// 'Used' field in domain.AuthCode defaults to false.
 	// If a code is retrieved, it's considered not used yet from DTS perspective.
 	// If it's not found, it might have been used (deleted) or expired.
-	// 'CreatedAt' is not available from dtsv1.AuthCode, will be zero time.
+	// 'CreatedAt' is not available from ssov1.AuthCode, will be zero time.
 	return &domain.AuthCode{
 		Code:                protoAC.Code,
 		ClientID:            protoAC.ClientId,
@@ -86,7 +86,7 @@ func (r *dtsAuthCodeRepository) SaveAuthCode(ctx context.Context, code *domain.A
 		return status.Error(codes.InvalidArgument, "auth code is already expired or has invalid expiration")
 	}
 
-	req := connect.NewRequest(&dtsv1.StoreAuthCodeRequest{
+	req := connect.NewRequest(&ssov1.StoreAuthCodeRequest{
 		AuthCode: protoAC,
 	})
 	_, err := r.client.DTS.StoreAuthCode(ctx, req)
@@ -106,7 +106,7 @@ func (r *dtsAuthCodeRepository) GetAuthCode(ctx context.Context, codeStr string)
 		return nil, status.Error(codes.InvalidArgument, "auth code string cannot be empty")
 	}
 
-	req := connect.NewRequest(&dtsv1.GetAuthCodeRequest{
+	req := connect.NewRequest(&ssov1.GetAuthCodeRequest{
 		Code: codeStr,
 	})
 
@@ -153,7 +153,7 @@ func (r *dtsAuthCodeRepository) MarkAuthCodeAsUsed(ctx context.Context, codeStr 
 	// return fmt.Errorf("auth code %s not found or expired, cannot mark as used", codeStr) // Or specific error
 	// }
 
-	req := connect.NewRequest(&dtsv1.DeleteAuthCodeRequest{Code: codeStr})
+	req := connect.NewRequest(&ssov1.DeleteAuthCodeRequest{Code: codeStr})
 	_, err := r.client.DTS.DeleteAuthCode(ctx, req)
 	if err != nil {
 		log.Printf("Error deleting (marking as used) auth code %s from DTS: %v", codeStr, err)

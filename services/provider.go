@@ -18,15 +18,21 @@ type ServiceProvider interface {
 
 	// Client and User Services
 	ClientService() *client.ClientService // from client package
+	UserService() *UserServer
+
+	// Domain Services
+	PhoneVerificationService() *domain.PhoneVerificationService
+	MFAService() *domain.MFAService
+	PushNotificationService() domain.PushNotificationService
+
+	// Two-Factor Authentication Service
+	TwoFactorService() *TwoFactorServer
 
 	// Federation and Identity Provider Services
 	FederationService() *federation.Service // from internal/federation
-	// ServiceAccountService() *ServiceAccountService
-	// TwoFactorService() *TwoFactorService // 2FA Service
-	// UserService() *UserService
-	// AuthService() *AuthService // Assuming this is a key service
-	// Utilities / Helper Services often configured at service layer
-	// PasswordHasher() domain.PasswordHasher // Interface for password hashing
+
+	// Configuration Service for operational settings
+	ConfigurationService() *ConfigurationService
 
 	// OIDC Flow Stores - these might be considered services or state managers
 	FlowStore() domain.FlowStore

@@ -59,9 +59,130 @@ const (
 	UserServiceListUsersProcedure = "/sso.v1.UserService/ListUsers"
 	// UserServiceGetUserProcedure is the fully-qualified name of the UserService's GetUser RPC.
 	UserServiceGetUserProcedure = "/sso.v1.UserService/GetUser"
+	// UserServiceUpdateUserProcedure is the fully-qualified name of the UserService's UpdateUser RPC.
+	UserServiceUpdateUserProcedure = "/sso.v1.UserService/UpdateUser"
+	// UserServiceDeleteUserProcedure is the fully-qualified name of the UserService's DeleteUser RPC.
+	UserServiceDeleteUserProcedure = "/sso.v1.UserService/DeleteUser"
 	// UserServiceChangePasswordProcedure is the fully-qualified name of the UserService's
 	// ChangePassword RPC.
 	UserServiceChangePasswordProcedure = "/sso.v1.UserService/ChangePassword"
+	// UserServiceAddMfaMethodProcedure is the fully-qualified name of the UserService's AddMfaMethod
+	// RPC.
+	UserServiceAddMfaMethodProcedure = "/sso.v1.UserService/AddMfaMethod"
+	// UserServiceGetMfaMethodProcedure is the fully-qualified name of the UserService's GetMfaMethod
+	// RPC.
+	UserServiceGetMfaMethodProcedure = "/sso.v1.UserService/GetMfaMethod"
+	// UserServiceListMfaMethodsProcedure is the fully-qualified name of the UserService's
+	// ListMfaMethods RPC.
+	UserServiceListMfaMethodsProcedure = "/sso.v1.UserService/ListMfaMethods"
+	// UserServiceVerifyMfaMethodProcedure is the fully-qualified name of the UserService's
+	// VerifyMfaMethod RPC.
+	UserServiceVerifyMfaMethodProcedure = "/sso.v1.UserService/VerifyMfaMethod"
+	// UserServiceRemoveMfaMethodProcedure is the fully-qualified name of the UserService's
+	// RemoveMfaMethod RPC.
+	UserServiceRemoveMfaMethodProcedure = "/sso.v1.UserService/RemoveMfaMethod"
+	// UserServiceAddWebAuthnDeviceProcedure is the fully-qualified name of the UserService's
+	// AddWebAuthnDevice RPC.
+	UserServiceAddWebAuthnDeviceProcedure = "/sso.v1.UserService/AddWebAuthnDevice"
+	// UserServiceGetWebAuthnDeviceProcedure is the fully-qualified name of the UserService's
+	// GetWebAuthnDevice RPC.
+	UserServiceGetWebAuthnDeviceProcedure = "/sso.v1.UserService/GetWebAuthnDevice"
+	// UserServiceListWebAuthnDevicesProcedure is the fully-qualified name of the UserService's
+	// ListWebAuthnDevices RPC.
+	UserServiceListWebAuthnDevicesProcedure = "/sso.v1.UserService/ListWebAuthnDevices"
+	// UserServiceUpdateWebAuthnDeviceCounterProcedure is the fully-qualified name of the UserService's
+	// UpdateWebAuthnDeviceCounter RPC.
+	UserServiceUpdateWebAuthnDeviceCounterProcedure = "/sso.v1.UserService/UpdateWebAuthnDeviceCounter"
+	// UserServiceRemoveWebAuthnDeviceProcedure is the fully-qualified name of the UserService's
+	// RemoveWebAuthnDevice RPC.
+	UserServiceRemoveWebAuthnDeviceProcedure = "/sso.v1.UserService/RemoveWebAuthnDevice"
+	// UserServiceIncrementFailedLoginAttemptsProcedure is the fully-qualified name of the UserService's
+	// IncrementFailedLoginAttempts RPC.
+	UserServiceIncrementFailedLoginAttemptsProcedure = "/sso.v1.UserService/IncrementFailedLoginAttempts"
+	// UserServiceResetFailedLoginAttemptsProcedure is the fully-qualified name of the UserService's
+	// ResetFailedLoginAttempts RPC.
+	UserServiceResetFailedLoginAttemptsProcedure = "/sso.v1.UserService/ResetFailedLoginAttempts"
+	// UserServiceSetEmailAsVerifiedProcedure is the fully-qualified name of the UserService's
+	// SetEmailAsVerified RPC.
+	UserServiceSetEmailAsVerifiedProcedure = "/sso.v1.UserService/SetEmailAsVerified"
+	// UserServiceStoreEmailVerificationTokenProcedure is the fully-qualified name of the UserService's
+	// StoreEmailVerificationToken RPC.
+	UserServiceStoreEmailVerificationTokenProcedure = "/sso.v1.UserService/StoreEmailVerificationToken"
+	// UserServiceClearEmailVerificationTokenProcedure is the fully-qualified name of the UserService's
+	// ClearEmailVerificationToken RPC.
+	UserServiceClearEmailVerificationTokenProcedure = "/sso.v1.UserService/ClearEmailVerificationToken"
+	// UserServiceGetUserByEmailVerificationTokenProcedure is the fully-qualified name of the
+	// UserService's GetUserByEmailVerificationToken RPC.
+	UserServiceGetUserByEmailVerificationTokenProcedure = "/sso.v1.UserService/GetUserByEmailVerificationToken"
+	// UserServiceStorePasswordResetTokenProcedure is the fully-qualified name of the UserService's
+	// StorePasswordResetToken RPC.
+	UserServiceStorePasswordResetTokenProcedure = "/sso.v1.UserService/StorePasswordResetToken"
+	// UserServiceGetUserByPasswordResetTokenProcedure is the fully-qualified name of the UserService's
+	// GetUserByPasswordResetToken RPC.
+	UserServiceGetUserByPasswordResetTokenProcedure = "/sso.v1.UserService/GetUserByPasswordResetToken"
+	// UserServiceClearPasswordResetTokenProcedure is the fully-qualified name of the UserService's
+	// ClearPasswordResetToken RPC.
+	UserServiceClearPasswordResetTokenProcedure = "/sso.v1.UserService/ClearPasswordResetToken"
+	// UserServiceUpdateUserPasswordProcedure is the fully-qualified name of the UserService's
+	// UpdateUserPassword RPC.
+	UserServiceUpdateUserPasswordProcedure = "/sso.v1.UserService/UpdateUserPassword"
+	// UserServiceStoreLoginOtpProcedure is the fully-qualified name of the UserService's StoreLoginOtp
+	// RPC.
+	UserServiceStoreLoginOtpProcedure = "/sso.v1.UserService/StoreLoginOtp"
+	// UserServiceClearLoginOtpProcedure is the fully-qualified name of the UserService's ClearLoginOtp
+	// RPC.
+	UserServiceClearLoginOtpProcedure = "/sso.v1.UserService/ClearLoginOtp"
+	// UserServiceSetPhoneNumberProcedure is the fully-qualified name of the UserService's
+	// SetPhoneNumber RPC.
+	UserServiceSetPhoneNumberProcedure = "/sso.v1.UserService/SetPhoneNumber"
+	// UserServiceStorePhoneVerificationOtpProcedure is the fully-qualified name of the UserService's
+	// StorePhoneVerificationOtp RPC.
+	UserServiceStorePhoneVerificationOtpProcedure = "/sso.v1.UserService/StorePhoneVerificationOtp"
+	// UserServiceClearPhoneVerificationOtpProcedure is the fully-qualified name of the UserService's
+	// ClearPhoneVerificationOtp RPC.
+	UserServiceClearPhoneVerificationOtpProcedure = "/sso.v1.UserService/ClearPhoneVerificationOtp"
+	// UserServiceSendPhoneVerificationOtpProcedure is the fully-qualified name of the UserService's
+	// SendPhoneVerificationOtp RPC.
+	UserServiceSendPhoneVerificationOtpProcedure = "/sso.v1.UserService/SendPhoneVerificationOtp"
+	// UserServiceVerifyPhoneNumberProcedure is the fully-qualified name of the UserService's
+	// VerifyPhoneNumber RPC.
+	UserServiceVerifyPhoneNumberProcedure = "/sso.v1.UserService/VerifyPhoneNumber"
+	// UserServiceSendEmailVerificationProcedure is the fully-qualified name of the UserService's
+	// SendEmailVerification RPC.
+	UserServiceSendEmailVerificationProcedure = "/sso.v1.UserService/SendEmailVerification"
+	// UserServiceVerifyEmailProcedure is the fully-qualified name of the UserService's VerifyEmail RPC.
+	UserServiceVerifyEmailProcedure = "/sso.v1.UserService/VerifyEmail"
+	// UserServiceRequestPasswordResetProcedure is the fully-qualified name of the UserService's
+	// RequestPasswordReset RPC.
+	UserServiceRequestPasswordResetProcedure = "/sso.v1.UserService/RequestPasswordReset"
+	// UserServiceResetPasswordProcedure is the fully-qualified name of the UserService's ResetPassword
+	// RPC.
+	UserServiceResetPasswordProcedure = "/sso.v1.UserService/ResetPassword"
+	// UserServiceSendSmsOtpProcedure is the fully-qualified name of the UserService's SendSmsOtp RPC.
+	UserServiceSendSmsOtpProcedure = "/sso.v1.UserService/SendSmsOtp"
+	// UserServiceSendEmailOtpProcedure is the fully-qualified name of the UserService's SendEmailOtp
+	// RPC.
+	UserServiceSendEmailOtpProcedure = "/sso.v1.UserService/SendEmailOtp"
+	// UserServiceVerifyLoginOtpProcedure is the fully-qualified name of the UserService's
+	// VerifyLoginOtp RPC.
+	UserServiceVerifyLoginOtpProcedure = "/sso.v1.UserService/VerifyLoginOtp"
+	// UserServiceSetupTotpProcedure is the fully-qualified name of the UserService's SetupTotp RPC.
+	UserServiceSetupTotpProcedure = "/sso.v1.UserService/SetupTotp"
+	// UserServiceVerifyTotpSetupProcedure is the fully-qualified name of the UserService's
+	// VerifyTotpSetup RPC.
+	UserServiceVerifyTotpSetupProcedure = "/sso.v1.UserService/VerifyTotpSetup"
+	// UserServiceSetupWebAuthnRegistrationProcedure is the fully-qualified name of the UserService's
+	// SetupWebAuthnRegistration RPC.
+	UserServiceSetupWebAuthnRegistrationProcedure = "/sso.v1.UserService/SetupWebAuthnRegistration"
+	// UserServiceVerifyWebAuthnRegistrationProcedure is the fully-qualified name of the UserService's
+	// VerifyWebAuthnRegistration RPC.
+	UserServiceVerifyWebAuthnRegistrationProcedure = "/sso.v1.UserService/VerifyWebAuthnRegistration"
+	// UserServiceSetupWebAuthnAuthenticationProcedure is the fully-qualified name of the UserService's
+	// SetupWebAuthnAuthentication RPC.
+	UserServiceSetupWebAuthnAuthenticationProcedure = "/sso.v1.UserService/SetupWebAuthnAuthentication"
+	// UserServiceVerifyWebAuthnAuthenticationProcedure is the fully-qualified name of the UserService's
+	// VerifyWebAuthnAuthentication RPC.
+	UserServiceVerifyWebAuthnAuthenticationProcedure = "/sso.v1.UserService/VerifyWebAuthnAuthentication"
 	// AuthServiceLoginProcedure is the fully-qualified name of the AuthService's Login RPC.
 	AuthServiceLoginProcedure = "/sso.v1.AuthService/Login"
 	// AuthServiceLogoutProcedure is the fully-qualified name of the AuthService's Logout RPC.
@@ -74,6 +195,14 @@ const (
 	AuthServiceClearUserSessionsProcedure = "/sso.v1.AuthService/ClearUserSessions"
 	// AuthServiceVerify2FAProcedure is the fully-qualified name of the AuthService's Verify2FA RPC.
 	AuthServiceVerify2FAProcedure = "/sso.v1.AuthService/Verify2FA"
+	// AuthServiceGetConsentInfoProcedure is the fully-qualified name of the AuthService's
+	// GetConsentInfo RPC.
+	AuthServiceGetConsentInfoProcedure = "/sso.v1.AuthService/GetConsentInfo"
+	// AuthServiceSubmitConsentProcedure is the fully-qualified name of the AuthService's SubmitConsent
+	// RPC.
+	AuthServiceSubmitConsentProcedure = "/sso.v1.AuthService/SubmitConsent"
+	// AuthServiceDenyConsentProcedure is the fully-qualified name of the AuthService's DenyConsent RPC.
+	AuthServiceDenyConsentProcedure = "/sso.v1.AuthService/DenyConsent"
 )
 
 // ServiceAccountServiceClient is a client for the sso.v1.ServiceAccountService service.
@@ -197,7 +326,61 @@ type UserServiceClient interface {
 	LockUser(context.Context, *connect.Request[v1.LockUserRequest]) (*connect.Response[emptypb.Empty], error)
 	ListUsers(context.Context, *connect.Request[v1.ListUsersRequest]) (*connect.Response[v1.ListUsersResponse], error)
 	GetUser(context.Context, *connect.Request[v1.GetUserRequest]) (*connect.Response[v1.GetUserResponse], error)
+	UpdateUser(context.Context, *connect.Request[v1.UpdateUserRequest]) (*connect.Response[v1.UpdateUserResponse], error)
+	DeleteUser(context.Context, *connect.Request[v1.DeleteUserRequest]) (*connect.Response[emptypb.Empty], error)
 	ChangePassword(context.Context, *connect.Request[v1.ChangePasswordRequest]) (*connect.Response[emptypb.Empty], error)
+	// MFA Management
+	AddMfaMethod(context.Context, *connect.Request[v1.AddMfaMethodRequest]) (*connect.Response[v1.AddMfaMethodResponse], error)
+	GetMfaMethod(context.Context, *connect.Request[v1.GetMfaMethodRequest]) (*connect.Response[v1.GetMfaMethodResponse], error)
+	ListMfaMethods(context.Context, *connect.Request[v1.ListMfaMethodsRequest]) (*connect.Response[v1.ListMfaMethodsResponse], error)
+	VerifyMfaMethod(context.Context, *connect.Request[v1.VerifyMfaMethodRequest]) (*connect.Response[emptypb.Empty], error)
+	RemoveMfaMethod(context.Context, *connect.Request[v1.RemoveMfaMethodRequest]) (*connect.Response[emptypb.Empty], error)
+	// WebAuthn Device Management
+	AddWebAuthnDevice(context.Context, *connect.Request[v1.AddWebAuthnDeviceRequest]) (*connect.Response[v1.AddWebAuthnDeviceResponse], error)
+	GetWebAuthnDevice(context.Context, *connect.Request[v1.GetWebAuthnDeviceRequest]) (*connect.Response[v1.GetWebAuthnDeviceResponse], error)
+	ListWebAuthnDevices(context.Context, *connect.Request[v1.ListWebAuthnDevicesRequest]) (*connect.Response[v1.ListWebAuthnDevicesResponse], error)
+	UpdateWebAuthnDeviceCounter(context.Context, *connect.Request[v1.UpdateWebAuthnDeviceCounterRequest]) (*connect.Response[emptypb.Empty], error)
+	RemoveWebAuthnDevice(context.Context, *connect.Request[v1.RemoveWebAuthnDeviceRequest]) (*connect.Response[emptypb.Empty], error)
+	// Failed login attempts
+	IncrementFailedLoginAttempts(context.Context, *connect.Request[v1.IncrementFailedLoginAttemptsRequest]) (*connect.Response[v1.IncrementFailedLoginAttemptsResponse], error)
+	ResetFailedLoginAttempts(context.Context, *connect.Request[v1.ResetFailedLoginAttemptsRequest]) (*connect.Response[emptypb.Empty], error)
+	// Email Verification
+	SetEmailAsVerified(context.Context, *connect.Request[v1.SetEmailAsVerifiedRequest]) (*connect.Response[emptypb.Empty], error)
+	StoreEmailVerificationToken(context.Context, *connect.Request[v1.StoreEmailVerificationTokenRequest]) (*connect.Response[emptypb.Empty], error)
+	ClearEmailVerificationToken(context.Context, *connect.Request[v1.ClearEmailVerificationTokenRequest]) (*connect.Response[emptypb.Empty], error)
+	GetUserByEmailVerificationToken(context.Context, *connect.Request[v1.GetUserByEmailVerificationTokenRequest]) (*connect.Response[v1.GetUserByEmailVerificationTokenResponse], error)
+	// Password Reset
+	StorePasswordResetToken(context.Context, *connect.Request[v1.StorePasswordResetTokenRequest]) (*connect.Response[emptypb.Empty], error)
+	GetUserByPasswordResetToken(context.Context, *connect.Request[v1.GetUserByPasswordResetTokenRequest]) (*connect.Response[v1.GetUserByPasswordResetTokenResponse], error)
+	ClearPasswordResetToken(context.Context, *connect.Request[v1.ClearPasswordResetTokenRequest]) (*connect.Response[emptypb.Empty], error)
+	UpdateUserPassword(context.Context, *connect.Request[v1.UpdateUserPasswordRequest]) (*connect.Response[emptypb.Empty], error)
+	// Login OTP Management
+	StoreLoginOtp(context.Context, *connect.Request[v1.StoreLoginOtpRequest]) (*connect.Response[emptypb.Empty], error)
+	ClearLoginOtp(context.Context, *connect.Request[v1.ClearLoginOtpRequest]) (*connect.Response[emptypb.Empty], error)
+	// Phone Number Management
+	SetPhoneNumber(context.Context, *connect.Request[v1.SetPhoneNumberRequest]) (*connect.Response[emptypb.Empty], error)
+	StorePhoneVerificationOtp(context.Context, *connect.Request[v1.StorePhoneVerificationOtpRequest]) (*connect.Response[emptypb.Empty], error)
+	ClearPhoneVerificationOtp(context.Context, *connect.Request[v1.ClearPhoneVerificationOtpRequest]) (*connect.Response[emptypb.Empty], error)
+	// Phone Verification Actions
+	SendPhoneVerificationOtp(context.Context, *connect.Request[v1.SendPhoneVerificationOtpRequest]) (*connect.Response[v1.SendPhoneVerificationOtpResponse], error)
+	VerifyPhoneNumber(context.Context, *connect.Request[v1.VerifyPhoneNumberRequest]) (*connect.Response[v1.VerifyPhoneNumberResponse], error)
+	// Email Verification Actions
+	SendEmailVerification(context.Context, *connect.Request[v1.SendEmailVerificationRequest]) (*connect.Response[emptypb.Empty], error)
+	VerifyEmail(context.Context, *connect.Request[v1.VerifyEmailRequest]) (*connect.Response[v1.VerifyEmailResponse], error)
+	// Password Reset Actions
+	RequestPasswordReset(context.Context, *connect.Request[v1.RequestPasswordResetRequest]) (*connect.Response[v1.RequestPasswordResetResponse], error)
+	ResetPassword(context.Context, *connect.Request[v1.ResetPasswordRequest]) (*connect.Response[v1.ResetPasswordResponse], error)
+	// MFA Setup and Verification
+	SendSmsOtp(context.Context, *connect.Request[v1.SendSmsOtpRequest]) (*connect.Response[v1.SendSmsOtpResponse], error)
+	SendEmailOtp(context.Context, *connect.Request[v1.SendEmailOtpRequest]) (*connect.Response[v1.SendEmailOtpResponse], error)
+	VerifyLoginOtp(context.Context, *connect.Request[v1.VerifyLoginOtpRequest]) (*connect.Response[v1.VerifyLoginOtpResponse], error)
+	SetupTotp(context.Context, *connect.Request[v1.SetupTotpRequest]) (*connect.Response[v1.SetupTotpResponse], error)
+	VerifyTotpSetup(context.Context, *connect.Request[v1.VerifyTotpSetupRequest]) (*connect.Response[v1.VerifyTotpSetupResponse], error)
+	// WebAuthn Setup and Authentication
+	SetupWebAuthnRegistration(context.Context, *connect.Request[v1.SetupWebAuthnRegistrationRequest]) (*connect.Response[v1.SetupWebAuthnRegistrationResponse], error)
+	VerifyWebAuthnRegistration(context.Context, *connect.Request[v1.VerifyWebAuthnRegistrationRequest]) (*connect.Response[v1.VerifyWebAuthnRegistrationResponse], error)
+	SetupWebAuthnAuthentication(context.Context, *connect.Request[v1.SetupWebAuthnAuthenticationRequest]) (*connect.Response[v1.SetupWebAuthnAuthenticationResponse], error)
+	VerifyWebAuthnAuthentication(context.Context, *connect.Request[v1.VerifyWebAuthnAuthenticationRequest]) (*connect.Response[v1.VerifyWebAuthnAuthenticationResponse], error)
 }
 
 // NewUserServiceClient constructs a client for the sso.v1.UserService service. By default, it uses
@@ -235,9 +418,219 @@ func NewUserServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			baseURL+UserServiceGetUserProcedure,
 			opts...,
 		),
+		updateUser: connect.NewClient[v1.UpdateUserRequest, v1.UpdateUserResponse](
+			httpClient,
+			baseURL+UserServiceUpdateUserProcedure,
+			opts...,
+		),
+		deleteUser: connect.NewClient[v1.DeleteUserRequest, emptypb.Empty](
+			httpClient,
+			baseURL+UserServiceDeleteUserProcedure,
+			opts...,
+		),
 		changePassword: connect.NewClient[v1.ChangePasswordRequest, emptypb.Empty](
 			httpClient,
 			baseURL+UserServiceChangePasswordProcedure,
+			opts...,
+		),
+		addMfaMethod: connect.NewClient[v1.AddMfaMethodRequest, v1.AddMfaMethodResponse](
+			httpClient,
+			baseURL+UserServiceAddMfaMethodProcedure,
+			opts...,
+		),
+		getMfaMethod: connect.NewClient[v1.GetMfaMethodRequest, v1.GetMfaMethodResponse](
+			httpClient,
+			baseURL+UserServiceGetMfaMethodProcedure,
+			opts...,
+		),
+		listMfaMethods: connect.NewClient[v1.ListMfaMethodsRequest, v1.ListMfaMethodsResponse](
+			httpClient,
+			baseURL+UserServiceListMfaMethodsProcedure,
+			opts...,
+		),
+		verifyMfaMethod: connect.NewClient[v1.VerifyMfaMethodRequest, emptypb.Empty](
+			httpClient,
+			baseURL+UserServiceVerifyMfaMethodProcedure,
+			opts...,
+		),
+		removeMfaMethod: connect.NewClient[v1.RemoveMfaMethodRequest, emptypb.Empty](
+			httpClient,
+			baseURL+UserServiceRemoveMfaMethodProcedure,
+			opts...,
+		),
+		addWebAuthnDevice: connect.NewClient[v1.AddWebAuthnDeviceRequest, v1.AddWebAuthnDeviceResponse](
+			httpClient,
+			baseURL+UserServiceAddWebAuthnDeviceProcedure,
+			opts...,
+		),
+		getWebAuthnDevice: connect.NewClient[v1.GetWebAuthnDeviceRequest, v1.GetWebAuthnDeviceResponse](
+			httpClient,
+			baseURL+UserServiceGetWebAuthnDeviceProcedure,
+			opts...,
+		),
+		listWebAuthnDevices: connect.NewClient[v1.ListWebAuthnDevicesRequest, v1.ListWebAuthnDevicesResponse](
+			httpClient,
+			baseURL+UserServiceListWebAuthnDevicesProcedure,
+			opts...,
+		),
+		updateWebAuthnDeviceCounter: connect.NewClient[v1.UpdateWebAuthnDeviceCounterRequest, emptypb.Empty](
+			httpClient,
+			baseURL+UserServiceUpdateWebAuthnDeviceCounterProcedure,
+			opts...,
+		),
+		removeWebAuthnDevice: connect.NewClient[v1.RemoveWebAuthnDeviceRequest, emptypb.Empty](
+			httpClient,
+			baseURL+UserServiceRemoveWebAuthnDeviceProcedure,
+			opts...,
+		),
+		incrementFailedLoginAttempts: connect.NewClient[v1.IncrementFailedLoginAttemptsRequest, v1.IncrementFailedLoginAttemptsResponse](
+			httpClient,
+			baseURL+UserServiceIncrementFailedLoginAttemptsProcedure,
+			opts...,
+		),
+		resetFailedLoginAttempts: connect.NewClient[v1.ResetFailedLoginAttemptsRequest, emptypb.Empty](
+			httpClient,
+			baseURL+UserServiceResetFailedLoginAttemptsProcedure,
+			opts...,
+		),
+		setEmailAsVerified: connect.NewClient[v1.SetEmailAsVerifiedRequest, emptypb.Empty](
+			httpClient,
+			baseURL+UserServiceSetEmailAsVerifiedProcedure,
+			opts...,
+		),
+		storeEmailVerificationToken: connect.NewClient[v1.StoreEmailVerificationTokenRequest, emptypb.Empty](
+			httpClient,
+			baseURL+UserServiceStoreEmailVerificationTokenProcedure,
+			opts...,
+		),
+		clearEmailVerificationToken: connect.NewClient[v1.ClearEmailVerificationTokenRequest, emptypb.Empty](
+			httpClient,
+			baseURL+UserServiceClearEmailVerificationTokenProcedure,
+			opts...,
+		),
+		getUserByEmailVerificationToken: connect.NewClient[v1.GetUserByEmailVerificationTokenRequest, v1.GetUserByEmailVerificationTokenResponse](
+			httpClient,
+			baseURL+UserServiceGetUserByEmailVerificationTokenProcedure,
+			opts...,
+		),
+		storePasswordResetToken: connect.NewClient[v1.StorePasswordResetTokenRequest, emptypb.Empty](
+			httpClient,
+			baseURL+UserServiceStorePasswordResetTokenProcedure,
+			opts...,
+		),
+		getUserByPasswordResetToken: connect.NewClient[v1.GetUserByPasswordResetTokenRequest, v1.GetUserByPasswordResetTokenResponse](
+			httpClient,
+			baseURL+UserServiceGetUserByPasswordResetTokenProcedure,
+			opts...,
+		),
+		clearPasswordResetToken: connect.NewClient[v1.ClearPasswordResetTokenRequest, emptypb.Empty](
+			httpClient,
+			baseURL+UserServiceClearPasswordResetTokenProcedure,
+			opts...,
+		),
+		updateUserPassword: connect.NewClient[v1.UpdateUserPasswordRequest, emptypb.Empty](
+			httpClient,
+			baseURL+UserServiceUpdateUserPasswordProcedure,
+			opts...,
+		),
+		storeLoginOtp: connect.NewClient[v1.StoreLoginOtpRequest, emptypb.Empty](
+			httpClient,
+			baseURL+UserServiceStoreLoginOtpProcedure,
+			opts...,
+		),
+		clearLoginOtp: connect.NewClient[v1.ClearLoginOtpRequest, emptypb.Empty](
+			httpClient,
+			baseURL+UserServiceClearLoginOtpProcedure,
+			opts...,
+		),
+		setPhoneNumber: connect.NewClient[v1.SetPhoneNumberRequest, emptypb.Empty](
+			httpClient,
+			baseURL+UserServiceSetPhoneNumberProcedure,
+			opts...,
+		),
+		storePhoneVerificationOtp: connect.NewClient[v1.StorePhoneVerificationOtpRequest, emptypb.Empty](
+			httpClient,
+			baseURL+UserServiceStorePhoneVerificationOtpProcedure,
+			opts...,
+		),
+		clearPhoneVerificationOtp: connect.NewClient[v1.ClearPhoneVerificationOtpRequest, emptypb.Empty](
+			httpClient,
+			baseURL+UserServiceClearPhoneVerificationOtpProcedure,
+			opts...,
+		),
+		sendPhoneVerificationOtp: connect.NewClient[v1.SendPhoneVerificationOtpRequest, v1.SendPhoneVerificationOtpResponse](
+			httpClient,
+			baseURL+UserServiceSendPhoneVerificationOtpProcedure,
+			opts...,
+		),
+		verifyPhoneNumber: connect.NewClient[v1.VerifyPhoneNumberRequest, v1.VerifyPhoneNumberResponse](
+			httpClient,
+			baseURL+UserServiceVerifyPhoneNumberProcedure,
+			opts...,
+		),
+		sendEmailVerification: connect.NewClient[v1.SendEmailVerificationRequest, emptypb.Empty](
+			httpClient,
+			baseURL+UserServiceSendEmailVerificationProcedure,
+			opts...,
+		),
+		verifyEmail: connect.NewClient[v1.VerifyEmailRequest, v1.VerifyEmailResponse](
+			httpClient,
+			baseURL+UserServiceVerifyEmailProcedure,
+			opts...,
+		),
+		requestPasswordReset: connect.NewClient[v1.RequestPasswordResetRequest, v1.RequestPasswordResetResponse](
+			httpClient,
+			baseURL+UserServiceRequestPasswordResetProcedure,
+			opts...,
+		),
+		resetPassword: connect.NewClient[v1.ResetPasswordRequest, v1.ResetPasswordResponse](
+			httpClient,
+			baseURL+UserServiceResetPasswordProcedure,
+			opts...,
+		),
+		sendSmsOtp: connect.NewClient[v1.SendSmsOtpRequest, v1.SendSmsOtpResponse](
+			httpClient,
+			baseURL+UserServiceSendSmsOtpProcedure,
+			opts...,
+		),
+		sendEmailOtp: connect.NewClient[v1.SendEmailOtpRequest, v1.SendEmailOtpResponse](
+			httpClient,
+			baseURL+UserServiceSendEmailOtpProcedure,
+			opts...,
+		),
+		verifyLoginOtp: connect.NewClient[v1.VerifyLoginOtpRequest, v1.VerifyLoginOtpResponse](
+			httpClient,
+			baseURL+UserServiceVerifyLoginOtpProcedure,
+			opts...,
+		),
+		setupTotp: connect.NewClient[v1.SetupTotpRequest, v1.SetupTotpResponse](
+			httpClient,
+			baseURL+UserServiceSetupTotpProcedure,
+			opts...,
+		),
+		verifyTotpSetup: connect.NewClient[v1.VerifyTotpSetupRequest, v1.VerifyTotpSetupResponse](
+			httpClient,
+			baseURL+UserServiceVerifyTotpSetupProcedure,
+			opts...,
+		),
+		setupWebAuthnRegistration: connect.NewClient[v1.SetupWebAuthnRegistrationRequest, v1.SetupWebAuthnRegistrationResponse](
+			httpClient,
+			baseURL+UserServiceSetupWebAuthnRegistrationProcedure,
+			opts...,
+		),
+		verifyWebAuthnRegistration: connect.NewClient[v1.VerifyWebAuthnRegistrationRequest, v1.VerifyWebAuthnRegistrationResponse](
+			httpClient,
+			baseURL+UserServiceVerifyWebAuthnRegistrationProcedure,
+			opts...,
+		),
+		setupWebAuthnAuthentication: connect.NewClient[v1.SetupWebAuthnAuthenticationRequest, v1.SetupWebAuthnAuthenticationResponse](
+			httpClient,
+			baseURL+UserServiceSetupWebAuthnAuthenticationProcedure,
+			opts...,
+		),
+		verifyWebAuthnAuthentication: connect.NewClient[v1.VerifyWebAuthnAuthenticationRequest, v1.VerifyWebAuthnAuthenticationResponse](
+			httpClient,
+			baseURL+UserServiceVerifyWebAuthnAuthenticationProcedure,
 			opts...,
 		),
 	}
@@ -245,12 +638,54 @@ func NewUserServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 
 // userServiceClient implements UserServiceClient.
 type userServiceClient struct {
-	registerUser   *connect.Client[v1.RegisterUserRequest, v1.RegisterUserResponse]
-	activateUser   *connect.Client[v1.ActivateUserRequest, emptypb.Empty]
-	lockUser       *connect.Client[v1.LockUserRequest, emptypb.Empty]
-	listUsers      *connect.Client[v1.ListUsersRequest, v1.ListUsersResponse]
-	getUser        *connect.Client[v1.GetUserRequest, v1.GetUserResponse]
-	changePassword *connect.Client[v1.ChangePasswordRequest, emptypb.Empty]
+	registerUser                    *connect.Client[v1.RegisterUserRequest, v1.RegisterUserResponse]
+	activateUser                    *connect.Client[v1.ActivateUserRequest, emptypb.Empty]
+	lockUser                        *connect.Client[v1.LockUserRequest, emptypb.Empty]
+	listUsers                       *connect.Client[v1.ListUsersRequest, v1.ListUsersResponse]
+	getUser                         *connect.Client[v1.GetUserRequest, v1.GetUserResponse]
+	updateUser                      *connect.Client[v1.UpdateUserRequest, v1.UpdateUserResponse]
+	deleteUser                      *connect.Client[v1.DeleteUserRequest, emptypb.Empty]
+	changePassword                  *connect.Client[v1.ChangePasswordRequest, emptypb.Empty]
+	addMfaMethod                    *connect.Client[v1.AddMfaMethodRequest, v1.AddMfaMethodResponse]
+	getMfaMethod                    *connect.Client[v1.GetMfaMethodRequest, v1.GetMfaMethodResponse]
+	listMfaMethods                  *connect.Client[v1.ListMfaMethodsRequest, v1.ListMfaMethodsResponse]
+	verifyMfaMethod                 *connect.Client[v1.VerifyMfaMethodRequest, emptypb.Empty]
+	removeMfaMethod                 *connect.Client[v1.RemoveMfaMethodRequest, emptypb.Empty]
+	addWebAuthnDevice               *connect.Client[v1.AddWebAuthnDeviceRequest, v1.AddWebAuthnDeviceResponse]
+	getWebAuthnDevice               *connect.Client[v1.GetWebAuthnDeviceRequest, v1.GetWebAuthnDeviceResponse]
+	listWebAuthnDevices             *connect.Client[v1.ListWebAuthnDevicesRequest, v1.ListWebAuthnDevicesResponse]
+	updateWebAuthnDeviceCounter     *connect.Client[v1.UpdateWebAuthnDeviceCounterRequest, emptypb.Empty]
+	removeWebAuthnDevice            *connect.Client[v1.RemoveWebAuthnDeviceRequest, emptypb.Empty]
+	incrementFailedLoginAttempts    *connect.Client[v1.IncrementFailedLoginAttemptsRequest, v1.IncrementFailedLoginAttemptsResponse]
+	resetFailedLoginAttempts        *connect.Client[v1.ResetFailedLoginAttemptsRequest, emptypb.Empty]
+	setEmailAsVerified              *connect.Client[v1.SetEmailAsVerifiedRequest, emptypb.Empty]
+	storeEmailVerificationToken     *connect.Client[v1.StoreEmailVerificationTokenRequest, emptypb.Empty]
+	clearEmailVerificationToken     *connect.Client[v1.ClearEmailVerificationTokenRequest, emptypb.Empty]
+	getUserByEmailVerificationToken *connect.Client[v1.GetUserByEmailVerificationTokenRequest, v1.GetUserByEmailVerificationTokenResponse]
+	storePasswordResetToken         *connect.Client[v1.StorePasswordResetTokenRequest, emptypb.Empty]
+	getUserByPasswordResetToken     *connect.Client[v1.GetUserByPasswordResetTokenRequest, v1.GetUserByPasswordResetTokenResponse]
+	clearPasswordResetToken         *connect.Client[v1.ClearPasswordResetTokenRequest, emptypb.Empty]
+	updateUserPassword              *connect.Client[v1.UpdateUserPasswordRequest, emptypb.Empty]
+	storeLoginOtp                   *connect.Client[v1.StoreLoginOtpRequest, emptypb.Empty]
+	clearLoginOtp                   *connect.Client[v1.ClearLoginOtpRequest, emptypb.Empty]
+	setPhoneNumber                  *connect.Client[v1.SetPhoneNumberRequest, emptypb.Empty]
+	storePhoneVerificationOtp       *connect.Client[v1.StorePhoneVerificationOtpRequest, emptypb.Empty]
+	clearPhoneVerificationOtp       *connect.Client[v1.ClearPhoneVerificationOtpRequest, emptypb.Empty]
+	sendPhoneVerificationOtp        *connect.Client[v1.SendPhoneVerificationOtpRequest, v1.SendPhoneVerificationOtpResponse]
+	verifyPhoneNumber               *connect.Client[v1.VerifyPhoneNumberRequest, v1.VerifyPhoneNumberResponse]
+	sendEmailVerification           *connect.Client[v1.SendEmailVerificationRequest, emptypb.Empty]
+	verifyEmail                     *connect.Client[v1.VerifyEmailRequest, v1.VerifyEmailResponse]
+	requestPasswordReset            *connect.Client[v1.RequestPasswordResetRequest, v1.RequestPasswordResetResponse]
+	resetPassword                   *connect.Client[v1.ResetPasswordRequest, v1.ResetPasswordResponse]
+	sendSmsOtp                      *connect.Client[v1.SendSmsOtpRequest, v1.SendSmsOtpResponse]
+	sendEmailOtp                    *connect.Client[v1.SendEmailOtpRequest, v1.SendEmailOtpResponse]
+	verifyLoginOtp                  *connect.Client[v1.VerifyLoginOtpRequest, v1.VerifyLoginOtpResponse]
+	setupTotp                       *connect.Client[v1.SetupTotpRequest, v1.SetupTotpResponse]
+	verifyTotpSetup                 *connect.Client[v1.VerifyTotpSetupRequest, v1.VerifyTotpSetupResponse]
+	setupWebAuthnRegistration       *connect.Client[v1.SetupWebAuthnRegistrationRequest, v1.SetupWebAuthnRegistrationResponse]
+	verifyWebAuthnRegistration      *connect.Client[v1.VerifyWebAuthnRegistrationRequest, v1.VerifyWebAuthnRegistrationResponse]
+	setupWebAuthnAuthentication     *connect.Client[v1.SetupWebAuthnAuthenticationRequest, v1.SetupWebAuthnAuthenticationResponse]
+	verifyWebAuthnAuthentication    *connect.Client[v1.VerifyWebAuthnAuthenticationRequest, v1.VerifyWebAuthnAuthenticationResponse]
 }
 
 // RegisterUser calls sso.v1.UserService.RegisterUser.
@@ -278,9 +713,219 @@ func (c *userServiceClient) GetUser(ctx context.Context, req *connect.Request[v1
 	return c.getUser.CallUnary(ctx, req)
 }
 
+// UpdateUser calls sso.v1.UserService.UpdateUser.
+func (c *userServiceClient) UpdateUser(ctx context.Context, req *connect.Request[v1.UpdateUserRequest]) (*connect.Response[v1.UpdateUserResponse], error) {
+	return c.updateUser.CallUnary(ctx, req)
+}
+
+// DeleteUser calls sso.v1.UserService.DeleteUser.
+func (c *userServiceClient) DeleteUser(ctx context.Context, req *connect.Request[v1.DeleteUserRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.deleteUser.CallUnary(ctx, req)
+}
+
 // ChangePassword calls sso.v1.UserService.ChangePassword.
 func (c *userServiceClient) ChangePassword(ctx context.Context, req *connect.Request[v1.ChangePasswordRequest]) (*connect.Response[emptypb.Empty], error) {
 	return c.changePassword.CallUnary(ctx, req)
+}
+
+// AddMfaMethod calls sso.v1.UserService.AddMfaMethod.
+func (c *userServiceClient) AddMfaMethod(ctx context.Context, req *connect.Request[v1.AddMfaMethodRequest]) (*connect.Response[v1.AddMfaMethodResponse], error) {
+	return c.addMfaMethod.CallUnary(ctx, req)
+}
+
+// GetMfaMethod calls sso.v1.UserService.GetMfaMethod.
+func (c *userServiceClient) GetMfaMethod(ctx context.Context, req *connect.Request[v1.GetMfaMethodRequest]) (*connect.Response[v1.GetMfaMethodResponse], error) {
+	return c.getMfaMethod.CallUnary(ctx, req)
+}
+
+// ListMfaMethods calls sso.v1.UserService.ListMfaMethods.
+func (c *userServiceClient) ListMfaMethods(ctx context.Context, req *connect.Request[v1.ListMfaMethodsRequest]) (*connect.Response[v1.ListMfaMethodsResponse], error) {
+	return c.listMfaMethods.CallUnary(ctx, req)
+}
+
+// VerifyMfaMethod calls sso.v1.UserService.VerifyMfaMethod.
+func (c *userServiceClient) VerifyMfaMethod(ctx context.Context, req *connect.Request[v1.VerifyMfaMethodRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.verifyMfaMethod.CallUnary(ctx, req)
+}
+
+// RemoveMfaMethod calls sso.v1.UserService.RemoveMfaMethod.
+func (c *userServiceClient) RemoveMfaMethod(ctx context.Context, req *connect.Request[v1.RemoveMfaMethodRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.removeMfaMethod.CallUnary(ctx, req)
+}
+
+// AddWebAuthnDevice calls sso.v1.UserService.AddWebAuthnDevice.
+func (c *userServiceClient) AddWebAuthnDevice(ctx context.Context, req *connect.Request[v1.AddWebAuthnDeviceRequest]) (*connect.Response[v1.AddWebAuthnDeviceResponse], error) {
+	return c.addWebAuthnDevice.CallUnary(ctx, req)
+}
+
+// GetWebAuthnDevice calls sso.v1.UserService.GetWebAuthnDevice.
+func (c *userServiceClient) GetWebAuthnDevice(ctx context.Context, req *connect.Request[v1.GetWebAuthnDeviceRequest]) (*connect.Response[v1.GetWebAuthnDeviceResponse], error) {
+	return c.getWebAuthnDevice.CallUnary(ctx, req)
+}
+
+// ListWebAuthnDevices calls sso.v1.UserService.ListWebAuthnDevices.
+func (c *userServiceClient) ListWebAuthnDevices(ctx context.Context, req *connect.Request[v1.ListWebAuthnDevicesRequest]) (*connect.Response[v1.ListWebAuthnDevicesResponse], error) {
+	return c.listWebAuthnDevices.CallUnary(ctx, req)
+}
+
+// UpdateWebAuthnDeviceCounter calls sso.v1.UserService.UpdateWebAuthnDeviceCounter.
+func (c *userServiceClient) UpdateWebAuthnDeviceCounter(ctx context.Context, req *connect.Request[v1.UpdateWebAuthnDeviceCounterRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.updateWebAuthnDeviceCounter.CallUnary(ctx, req)
+}
+
+// RemoveWebAuthnDevice calls sso.v1.UserService.RemoveWebAuthnDevice.
+func (c *userServiceClient) RemoveWebAuthnDevice(ctx context.Context, req *connect.Request[v1.RemoveWebAuthnDeviceRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.removeWebAuthnDevice.CallUnary(ctx, req)
+}
+
+// IncrementFailedLoginAttempts calls sso.v1.UserService.IncrementFailedLoginAttempts.
+func (c *userServiceClient) IncrementFailedLoginAttempts(ctx context.Context, req *connect.Request[v1.IncrementFailedLoginAttemptsRequest]) (*connect.Response[v1.IncrementFailedLoginAttemptsResponse], error) {
+	return c.incrementFailedLoginAttempts.CallUnary(ctx, req)
+}
+
+// ResetFailedLoginAttempts calls sso.v1.UserService.ResetFailedLoginAttempts.
+func (c *userServiceClient) ResetFailedLoginAttempts(ctx context.Context, req *connect.Request[v1.ResetFailedLoginAttemptsRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.resetFailedLoginAttempts.CallUnary(ctx, req)
+}
+
+// SetEmailAsVerified calls sso.v1.UserService.SetEmailAsVerified.
+func (c *userServiceClient) SetEmailAsVerified(ctx context.Context, req *connect.Request[v1.SetEmailAsVerifiedRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.setEmailAsVerified.CallUnary(ctx, req)
+}
+
+// StoreEmailVerificationToken calls sso.v1.UserService.StoreEmailVerificationToken.
+func (c *userServiceClient) StoreEmailVerificationToken(ctx context.Context, req *connect.Request[v1.StoreEmailVerificationTokenRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.storeEmailVerificationToken.CallUnary(ctx, req)
+}
+
+// ClearEmailVerificationToken calls sso.v1.UserService.ClearEmailVerificationToken.
+func (c *userServiceClient) ClearEmailVerificationToken(ctx context.Context, req *connect.Request[v1.ClearEmailVerificationTokenRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.clearEmailVerificationToken.CallUnary(ctx, req)
+}
+
+// GetUserByEmailVerificationToken calls sso.v1.UserService.GetUserByEmailVerificationToken.
+func (c *userServiceClient) GetUserByEmailVerificationToken(ctx context.Context, req *connect.Request[v1.GetUserByEmailVerificationTokenRequest]) (*connect.Response[v1.GetUserByEmailVerificationTokenResponse], error) {
+	return c.getUserByEmailVerificationToken.CallUnary(ctx, req)
+}
+
+// StorePasswordResetToken calls sso.v1.UserService.StorePasswordResetToken.
+func (c *userServiceClient) StorePasswordResetToken(ctx context.Context, req *connect.Request[v1.StorePasswordResetTokenRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.storePasswordResetToken.CallUnary(ctx, req)
+}
+
+// GetUserByPasswordResetToken calls sso.v1.UserService.GetUserByPasswordResetToken.
+func (c *userServiceClient) GetUserByPasswordResetToken(ctx context.Context, req *connect.Request[v1.GetUserByPasswordResetTokenRequest]) (*connect.Response[v1.GetUserByPasswordResetTokenResponse], error) {
+	return c.getUserByPasswordResetToken.CallUnary(ctx, req)
+}
+
+// ClearPasswordResetToken calls sso.v1.UserService.ClearPasswordResetToken.
+func (c *userServiceClient) ClearPasswordResetToken(ctx context.Context, req *connect.Request[v1.ClearPasswordResetTokenRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.clearPasswordResetToken.CallUnary(ctx, req)
+}
+
+// UpdateUserPassword calls sso.v1.UserService.UpdateUserPassword.
+func (c *userServiceClient) UpdateUserPassword(ctx context.Context, req *connect.Request[v1.UpdateUserPasswordRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.updateUserPassword.CallUnary(ctx, req)
+}
+
+// StoreLoginOtp calls sso.v1.UserService.StoreLoginOtp.
+func (c *userServiceClient) StoreLoginOtp(ctx context.Context, req *connect.Request[v1.StoreLoginOtpRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.storeLoginOtp.CallUnary(ctx, req)
+}
+
+// ClearLoginOtp calls sso.v1.UserService.ClearLoginOtp.
+func (c *userServiceClient) ClearLoginOtp(ctx context.Context, req *connect.Request[v1.ClearLoginOtpRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.clearLoginOtp.CallUnary(ctx, req)
+}
+
+// SetPhoneNumber calls sso.v1.UserService.SetPhoneNumber.
+func (c *userServiceClient) SetPhoneNumber(ctx context.Context, req *connect.Request[v1.SetPhoneNumberRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.setPhoneNumber.CallUnary(ctx, req)
+}
+
+// StorePhoneVerificationOtp calls sso.v1.UserService.StorePhoneVerificationOtp.
+func (c *userServiceClient) StorePhoneVerificationOtp(ctx context.Context, req *connect.Request[v1.StorePhoneVerificationOtpRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.storePhoneVerificationOtp.CallUnary(ctx, req)
+}
+
+// ClearPhoneVerificationOtp calls sso.v1.UserService.ClearPhoneVerificationOtp.
+func (c *userServiceClient) ClearPhoneVerificationOtp(ctx context.Context, req *connect.Request[v1.ClearPhoneVerificationOtpRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.clearPhoneVerificationOtp.CallUnary(ctx, req)
+}
+
+// SendPhoneVerificationOtp calls sso.v1.UserService.SendPhoneVerificationOtp.
+func (c *userServiceClient) SendPhoneVerificationOtp(ctx context.Context, req *connect.Request[v1.SendPhoneVerificationOtpRequest]) (*connect.Response[v1.SendPhoneVerificationOtpResponse], error) {
+	return c.sendPhoneVerificationOtp.CallUnary(ctx, req)
+}
+
+// VerifyPhoneNumber calls sso.v1.UserService.VerifyPhoneNumber.
+func (c *userServiceClient) VerifyPhoneNumber(ctx context.Context, req *connect.Request[v1.VerifyPhoneNumberRequest]) (*connect.Response[v1.VerifyPhoneNumberResponse], error) {
+	return c.verifyPhoneNumber.CallUnary(ctx, req)
+}
+
+// SendEmailVerification calls sso.v1.UserService.SendEmailVerification.
+func (c *userServiceClient) SendEmailVerification(ctx context.Context, req *connect.Request[v1.SendEmailVerificationRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.sendEmailVerification.CallUnary(ctx, req)
+}
+
+// VerifyEmail calls sso.v1.UserService.VerifyEmail.
+func (c *userServiceClient) VerifyEmail(ctx context.Context, req *connect.Request[v1.VerifyEmailRequest]) (*connect.Response[v1.VerifyEmailResponse], error) {
+	return c.verifyEmail.CallUnary(ctx, req)
+}
+
+// RequestPasswordReset calls sso.v1.UserService.RequestPasswordReset.
+func (c *userServiceClient) RequestPasswordReset(ctx context.Context, req *connect.Request[v1.RequestPasswordResetRequest]) (*connect.Response[v1.RequestPasswordResetResponse], error) {
+	return c.requestPasswordReset.CallUnary(ctx, req)
+}
+
+// ResetPassword calls sso.v1.UserService.ResetPassword.
+func (c *userServiceClient) ResetPassword(ctx context.Context, req *connect.Request[v1.ResetPasswordRequest]) (*connect.Response[v1.ResetPasswordResponse], error) {
+	return c.resetPassword.CallUnary(ctx, req)
+}
+
+// SendSmsOtp calls sso.v1.UserService.SendSmsOtp.
+func (c *userServiceClient) SendSmsOtp(ctx context.Context, req *connect.Request[v1.SendSmsOtpRequest]) (*connect.Response[v1.SendSmsOtpResponse], error) {
+	return c.sendSmsOtp.CallUnary(ctx, req)
+}
+
+// SendEmailOtp calls sso.v1.UserService.SendEmailOtp.
+func (c *userServiceClient) SendEmailOtp(ctx context.Context, req *connect.Request[v1.SendEmailOtpRequest]) (*connect.Response[v1.SendEmailOtpResponse], error) {
+	return c.sendEmailOtp.CallUnary(ctx, req)
+}
+
+// VerifyLoginOtp calls sso.v1.UserService.VerifyLoginOtp.
+func (c *userServiceClient) VerifyLoginOtp(ctx context.Context, req *connect.Request[v1.VerifyLoginOtpRequest]) (*connect.Response[v1.VerifyLoginOtpResponse], error) {
+	return c.verifyLoginOtp.CallUnary(ctx, req)
+}
+
+// SetupTotp calls sso.v1.UserService.SetupTotp.
+func (c *userServiceClient) SetupTotp(ctx context.Context, req *connect.Request[v1.SetupTotpRequest]) (*connect.Response[v1.SetupTotpResponse], error) {
+	return c.setupTotp.CallUnary(ctx, req)
+}
+
+// VerifyTotpSetup calls sso.v1.UserService.VerifyTotpSetup.
+func (c *userServiceClient) VerifyTotpSetup(ctx context.Context, req *connect.Request[v1.VerifyTotpSetupRequest]) (*connect.Response[v1.VerifyTotpSetupResponse], error) {
+	return c.verifyTotpSetup.CallUnary(ctx, req)
+}
+
+// SetupWebAuthnRegistration calls sso.v1.UserService.SetupWebAuthnRegistration.
+func (c *userServiceClient) SetupWebAuthnRegistration(ctx context.Context, req *connect.Request[v1.SetupWebAuthnRegistrationRequest]) (*connect.Response[v1.SetupWebAuthnRegistrationResponse], error) {
+	return c.setupWebAuthnRegistration.CallUnary(ctx, req)
+}
+
+// VerifyWebAuthnRegistration calls sso.v1.UserService.VerifyWebAuthnRegistration.
+func (c *userServiceClient) VerifyWebAuthnRegistration(ctx context.Context, req *connect.Request[v1.VerifyWebAuthnRegistrationRequest]) (*connect.Response[v1.VerifyWebAuthnRegistrationResponse], error) {
+	return c.verifyWebAuthnRegistration.CallUnary(ctx, req)
+}
+
+// SetupWebAuthnAuthentication calls sso.v1.UserService.SetupWebAuthnAuthentication.
+func (c *userServiceClient) SetupWebAuthnAuthentication(ctx context.Context, req *connect.Request[v1.SetupWebAuthnAuthenticationRequest]) (*connect.Response[v1.SetupWebAuthnAuthenticationResponse], error) {
+	return c.setupWebAuthnAuthentication.CallUnary(ctx, req)
+}
+
+// VerifyWebAuthnAuthentication calls sso.v1.UserService.VerifyWebAuthnAuthentication.
+func (c *userServiceClient) VerifyWebAuthnAuthentication(ctx context.Context, req *connect.Request[v1.VerifyWebAuthnAuthenticationRequest]) (*connect.Response[v1.VerifyWebAuthnAuthenticationResponse], error) {
+	return c.verifyWebAuthnAuthentication.CallUnary(ctx, req)
 }
 
 // UserServiceHandler is an implementation of the sso.v1.UserService service.
@@ -290,7 +935,61 @@ type UserServiceHandler interface {
 	LockUser(context.Context, *connect.Request[v1.LockUserRequest]) (*connect.Response[emptypb.Empty], error)
 	ListUsers(context.Context, *connect.Request[v1.ListUsersRequest]) (*connect.Response[v1.ListUsersResponse], error)
 	GetUser(context.Context, *connect.Request[v1.GetUserRequest]) (*connect.Response[v1.GetUserResponse], error)
+	UpdateUser(context.Context, *connect.Request[v1.UpdateUserRequest]) (*connect.Response[v1.UpdateUserResponse], error)
+	DeleteUser(context.Context, *connect.Request[v1.DeleteUserRequest]) (*connect.Response[emptypb.Empty], error)
 	ChangePassword(context.Context, *connect.Request[v1.ChangePasswordRequest]) (*connect.Response[emptypb.Empty], error)
+	// MFA Management
+	AddMfaMethod(context.Context, *connect.Request[v1.AddMfaMethodRequest]) (*connect.Response[v1.AddMfaMethodResponse], error)
+	GetMfaMethod(context.Context, *connect.Request[v1.GetMfaMethodRequest]) (*connect.Response[v1.GetMfaMethodResponse], error)
+	ListMfaMethods(context.Context, *connect.Request[v1.ListMfaMethodsRequest]) (*connect.Response[v1.ListMfaMethodsResponse], error)
+	VerifyMfaMethod(context.Context, *connect.Request[v1.VerifyMfaMethodRequest]) (*connect.Response[emptypb.Empty], error)
+	RemoveMfaMethod(context.Context, *connect.Request[v1.RemoveMfaMethodRequest]) (*connect.Response[emptypb.Empty], error)
+	// WebAuthn Device Management
+	AddWebAuthnDevice(context.Context, *connect.Request[v1.AddWebAuthnDeviceRequest]) (*connect.Response[v1.AddWebAuthnDeviceResponse], error)
+	GetWebAuthnDevice(context.Context, *connect.Request[v1.GetWebAuthnDeviceRequest]) (*connect.Response[v1.GetWebAuthnDeviceResponse], error)
+	ListWebAuthnDevices(context.Context, *connect.Request[v1.ListWebAuthnDevicesRequest]) (*connect.Response[v1.ListWebAuthnDevicesResponse], error)
+	UpdateWebAuthnDeviceCounter(context.Context, *connect.Request[v1.UpdateWebAuthnDeviceCounterRequest]) (*connect.Response[emptypb.Empty], error)
+	RemoveWebAuthnDevice(context.Context, *connect.Request[v1.RemoveWebAuthnDeviceRequest]) (*connect.Response[emptypb.Empty], error)
+	// Failed login attempts
+	IncrementFailedLoginAttempts(context.Context, *connect.Request[v1.IncrementFailedLoginAttemptsRequest]) (*connect.Response[v1.IncrementFailedLoginAttemptsResponse], error)
+	ResetFailedLoginAttempts(context.Context, *connect.Request[v1.ResetFailedLoginAttemptsRequest]) (*connect.Response[emptypb.Empty], error)
+	// Email Verification
+	SetEmailAsVerified(context.Context, *connect.Request[v1.SetEmailAsVerifiedRequest]) (*connect.Response[emptypb.Empty], error)
+	StoreEmailVerificationToken(context.Context, *connect.Request[v1.StoreEmailVerificationTokenRequest]) (*connect.Response[emptypb.Empty], error)
+	ClearEmailVerificationToken(context.Context, *connect.Request[v1.ClearEmailVerificationTokenRequest]) (*connect.Response[emptypb.Empty], error)
+	GetUserByEmailVerificationToken(context.Context, *connect.Request[v1.GetUserByEmailVerificationTokenRequest]) (*connect.Response[v1.GetUserByEmailVerificationTokenResponse], error)
+	// Password Reset
+	StorePasswordResetToken(context.Context, *connect.Request[v1.StorePasswordResetTokenRequest]) (*connect.Response[emptypb.Empty], error)
+	GetUserByPasswordResetToken(context.Context, *connect.Request[v1.GetUserByPasswordResetTokenRequest]) (*connect.Response[v1.GetUserByPasswordResetTokenResponse], error)
+	ClearPasswordResetToken(context.Context, *connect.Request[v1.ClearPasswordResetTokenRequest]) (*connect.Response[emptypb.Empty], error)
+	UpdateUserPassword(context.Context, *connect.Request[v1.UpdateUserPasswordRequest]) (*connect.Response[emptypb.Empty], error)
+	// Login OTP Management
+	StoreLoginOtp(context.Context, *connect.Request[v1.StoreLoginOtpRequest]) (*connect.Response[emptypb.Empty], error)
+	ClearLoginOtp(context.Context, *connect.Request[v1.ClearLoginOtpRequest]) (*connect.Response[emptypb.Empty], error)
+	// Phone Number Management
+	SetPhoneNumber(context.Context, *connect.Request[v1.SetPhoneNumberRequest]) (*connect.Response[emptypb.Empty], error)
+	StorePhoneVerificationOtp(context.Context, *connect.Request[v1.StorePhoneVerificationOtpRequest]) (*connect.Response[emptypb.Empty], error)
+	ClearPhoneVerificationOtp(context.Context, *connect.Request[v1.ClearPhoneVerificationOtpRequest]) (*connect.Response[emptypb.Empty], error)
+	// Phone Verification Actions
+	SendPhoneVerificationOtp(context.Context, *connect.Request[v1.SendPhoneVerificationOtpRequest]) (*connect.Response[v1.SendPhoneVerificationOtpResponse], error)
+	VerifyPhoneNumber(context.Context, *connect.Request[v1.VerifyPhoneNumberRequest]) (*connect.Response[v1.VerifyPhoneNumberResponse], error)
+	// Email Verification Actions
+	SendEmailVerification(context.Context, *connect.Request[v1.SendEmailVerificationRequest]) (*connect.Response[emptypb.Empty], error)
+	VerifyEmail(context.Context, *connect.Request[v1.VerifyEmailRequest]) (*connect.Response[v1.VerifyEmailResponse], error)
+	// Password Reset Actions
+	RequestPasswordReset(context.Context, *connect.Request[v1.RequestPasswordResetRequest]) (*connect.Response[v1.RequestPasswordResetResponse], error)
+	ResetPassword(context.Context, *connect.Request[v1.ResetPasswordRequest]) (*connect.Response[v1.ResetPasswordResponse], error)
+	// MFA Setup and Verification
+	SendSmsOtp(context.Context, *connect.Request[v1.SendSmsOtpRequest]) (*connect.Response[v1.SendSmsOtpResponse], error)
+	SendEmailOtp(context.Context, *connect.Request[v1.SendEmailOtpRequest]) (*connect.Response[v1.SendEmailOtpResponse], error)
+	VerifyLoginOtp(context.Context, *connect.Request[v1.VerifyLoginOtpRequest]) (*connect.Response[v1.VerifyLoginOtpResponse], error)
+	SetupTotp(context.Context, *connect.Request[v1.SetupTotpRequest]) (*connect.Response[v1.SetupTotpResponse], error)
+	VerifyTotpSetup(context.Context, *connect.Request[v1.VerifyTotpSetupRequest]) (*connect.Response[v1.VerifyTotpSetupResponse], error)
+	// WebAuthn Setup and Authentication
+	SetupWebAuthnRegistration(context.Context, *connect.Request[v1.SetupWebAuthnRegistrationRequest]) (*connect.Response[v1.SetupWebAuthnRegistrationResponse], error)
+	VerifyWebAuthnRegistration(context.Context, *connect.Request[v1.VerifyWebAuthnRegistrationRequest]) (*connect.Response[v1.VerifyWebAuthnRegistrationResponse], error)
+	SetupWebAuthnAuthentication(context.Context, *connect.Request[v1.SetupWebAuthnAuthenticationRequest]) (*connect.Response[v1.SetupWebAuthnAuthenticationResponse], error)
+	VerifyWebAuthnAuthentication(context.Context, *connect.Request[v1.VerifyWebAuthnAuthenticationRequest]) (*connect.Response[v1.VerifyWebAuthnAuthenticationResponse], error)
 }
 
 // NewUserServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -324,9 +1023,219 @@ func NewUserServiceHandler(svc UserServiceHandler, opts ...connect.HandlerOption
 		svc.GetUser,
 		opts...,
 	)
+	userServiceUpdateUserHandler := connect.NewUnaryHandler(
+		UserServiceUpdateUserProcedure,
+		svc.UpdateUser,
+		opts...,
+	)
+	userServiceDeleteUserHandler := connect.NewUnaryHandler(
+		UserServiceDeleteUserProcedure,
+		svc.DeleteUser,
+		opts...,
+	)
 	userServiceChangePasswordHandler := connect.NewUnaryHandler(
 		UserServiceChangePasswordProcedure,
 		svc.ChangePassword,
+		opts...,
+	)
+	userServiceAddMfaMethodHandler := connect.NewUnaryHandler(
+		UserServiceAddMfaMethodProcedure,
+		svc.AddMfaMethod,
+		opts...,
+	)
+	userServiceGetMfaMethodHandler := connect.NewUnaryHandler(
+		UserServiceGetMfaMethodProcedure,
+		svc.GetMfaMethod,
+		opts...,
+	)
+	userServiceListMfaMethodsHandler := connect.NewUnaryHandler(
+		UserServiceListMfaMethodsProcedure,
+		svc.ListMfaMethods,
+		opts...,
+	)
+	userServiceVerifyMfaMethodHandler := connect.NewUnaryHandler(
+		UserServiceVerifyMfaMethodProcedure,
+		svc.VerifyMfaMethod,
+		opts...,
+	)
+	userServiceRemoveMfaMethodHandler := connect.NewUnaryHandler(
+		UserServiceRemoveMfaMethodProcedure,
+		svc.RemoveMfaMethod,
+		opts...,
+	)
+	userServiceAddWebAuthnDeviceHandler := connect.NewUnaryHandler(
+		UserServiceAddWebAuthnDeviceProcedure,
+		svc.AddWebAuthnDevice,
+		opts...,
+	)
+	userServiceGetWebAuthnDeviceHandler := connect.NewUnaryHandler(
+		UserServiceGetWebAuthnDeviceProcedure,
+		svc.GetWebAuthnDevice,
+		opts...,
+	)
+	userServiceListWebAuthnDevicesHandler := connect.NewUnaryHandler(
+		UserServiceListWebAuthnDevicesProcedure,
+		svc.ListWebAuthnDevices,
+		opts...,
+	)
+	userServiceUpdateWebAuthnDeviceCounterHandler := connect.NewUnaryHandler(
+		UserServiceUpdateWebAuthnDeviceCounterProcedure,
+		svc.UpdateWebAuthnDeviceCounter,
+		opts...,
+	)
+	userServiceRemoveWebAuthnDeviceHandler := connect.NewUnaryHandler(
+		UserServiceRemoveWebAuthnDeviceProcedure,
+		svc.RemoveWebAuthnDevice,
+		opts...,
+	)
+	userServiceIncrementFailedLoginAttemptsHandler := connect.NewUnaryHandler(
+		UserServiceIncrementFailedLoginAttemptsProcedure,
+		svc.IncrementFailedLoginAttempts,
+		opts...,
+	)
+	userServiceResetFailedLoginAttemptsHandler := connect.NewUnaryHandler(
+		UserServiceResetFailedLoginAttemptsProcedure,
+		svc.ResetFailedLoginAttempts,
+		opts...,
+	)
+	userServiceSetEmailAsVerifiedHandler := connect.NewUnaryHandler(
+		UserServiceSetEmailAsVerifiedProcedure,
+		svc.SetEmailAsVerified,
+		opts...,
+	)
+	userServiceStoreEmailVerificationTokenHandler := connect.NewUnaryHandler(
+		UserServiceStoreEmailVerificationTokenProcedure,
+		svc.StoreEmailVerificationToken,
+		opts...,
+	)
+	userServiceClearEmailVerificationTokenHandler := connect.NewUnaryHandler(
+		UserServiceClearEmailVerificationTokenProcedure,
+		svc.ClearEmailVerificationToken,
+		opts...,
+	)
+	userServiceGetUserByEmailVerificationTokenHandler := connect.NewUnaryHandler(
+		UserServiceGetUserByEmailVerificationTokenProcedure,
+		svc.GetUserByEmailVerificationToken,
+		opts...,
+	)
+	userServiceStorePasswordResetTokenHandler := connect.NewUnaryHandler(
+		UserServiceStorePasswordResetTokenProcedure,
+		svc.StorePasswordResetToken,
+		opts...,
+	)
+	userServiceGetUserByPasswordResetTokenHandler := connect.NewUnaryHandler(
+		UserServiceGetUserByPasswordResetTokenProcedure,
+		svc.GetUserByPasswordResetToken,
+		opts...,
+	)
+	userServiceClearPasswordResetTokenHandler := connect.NewUnaryHandler(
+		UserServiceClearPasswordResetTokenProcedure,
+		svc.ClearPasswordResetToken,
+		opts...,
+	)
+	userServiceUpdateUserPasswordHandler := connect.NewUnaryHandler(
+		UserServiceUpdateUserPasswordProcedure,
+		svc.UpdateUserPassword,
+		opts...,
+	)
+	userServiceStoreLoginOtpHandler := connect.NewUnaryHandler(
+		UserServiceStoreLoginOtpProcedure,
+		svc.StoreLoginOtp,
+		opts...,
+	)
+	userServiceClearLoginOtpHandler := connect.NewUnaryHandler(
+		UserServiceClearLoginOtpProcedure,
+		svc.ClearLoginOtp,
+		opts...,
+	)
+	userServiceSetPhoneNumberHandler := connect.NewUnaryHandler(
+		UserServiceSetPhoneNumberProcedure,
+		svc.SetPhoneNumber,
+		opts...,
+	)
+	userServiceStorePhoneVerificationOtpHandler := connect.NewUnaryHandler(
+		UserServiceStorePhoneVerificationOtpProcedure,
+		svc.StorePhoneVerificationOtp,
+		opts...,
+	)
+	userServiceClearPhoneVerificationOtpHandler := connect.NewUnaryHandler(
+		UserServiceClearPhoneVerificationOtpProcedure,
+		svc.ClearPhoneVerificationOtp,
+		opts...,
+	)
+	userServiceSendPhoneVerificationOtpHandler := connect.NewUnaryHandler(
+		UserServiceSendPhoneVerificationOtpProcedure,
+		svc.SendPhoneVerificationOtp,
+		opts...,
+	)
+	userServiceVerifyPhoneNumberHandler := connect.NewUnaryHandler(
+		UserServiceVerifyPhoneNumberProcedure,
+		svc.VerifyPhoneNumber,
+		opts...,
+	)
+	userServiceSendEmailVerificationHandler := connect.NewUnaryHandler(
+		UserServiceSendEmailVerificationProcedure,
+		svc.SendEmailVerification,
+		opts...,
+	)
+	userServiceVerifyEmailHandler := connect.NewUnaryHandler(
+		UserServiceVerifyEmailProcedure,
+		svc.VerifyEmail,
+		opts...,
+	)
+	userServiceRequestPasswordResetHandler := connect.NewUnaryHandler(
+		UserServiceRequestPasswordResetProcedure,
+		svc.RequestPasswordReset,
+		opts...,
+	)
+	userServiceResetPasswordHandler := connect.NewUnaryHandler(
+		UserServiceResetPasswordProcedure,
+		svc.ResetPassword,
+		opts...,
+	)
+	userServiceSendSmsOtpHandler := connect.NewUnaryHandler(
+		UserServiceSendSmsOtpProcedure,
+		svc.SendSmsOtp,
+		opts...,
+	)
+	userServiceSendEmailOtpHandler := connect.NewUnaryHandler(
+		UserServiceSendEmailOtpProcedure,
+		svc.SendEmailOtp,
+		opts...,
+	)
+	userServiceVerifyLoginOtpHandler := connect.NewUnaryHandler(
+		UserServiceVerifyLoginOtpProcedure,
+		svc.VerifyLoginOtp,
+		opts...,
+	)
+	userServiceSetupTotpHandler := connect.NewUnaryHandler(
+		UserServiceSetupTotpProcedure,
+		svc.SetupTotp,
+		opts...,
+	)
+	userServiceVerifyTotpSetupHandler := connect.NewUnaryHandler(
+		UserServiceVerifyTotpSetupProcedure,
+		svc.VerifyTotpSetup,
+		opts...,
+	)
+	userServiceSetupWebAuthnRegistrationHandler := connect.NewUnaryHandler(
+		UserServiceSetupWebAuthnRegistrationProcedure,
+		svc.SetupWebAuthnRegistration,
+		opts...,
+	)
+	userServiceVerifyWebAuthnRegistrationHandler := connect.NewUnaryHandler(
+		UserServiceVerifyWebAuthnRegistrationProcedure,
+		svc.VerifyWebAuthnRegistration,
+		opts...,
+	)
+	userServiceSetupWebAuthnAuthenticationHandler := connect.NewUnaryHandler(
+		UserServiceSetupWebAuthnAuthenticationProcedure,
+		svc.SetupWebAuthnAuthentication,
+		opts...,
+	)
+	userServiceVerifyWebAuthnAuthenticationHandler := connect.NewUnaryHandler(
+		UserServiceVerifyWebAuthnAuthenticationProcedure,
+		svc.VerifyWebAuthnAuthentication,
 		opts...,
 	)
 	return "/sso.v1.UserService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -341,8 +1250,92 @@ func NewUserServiceHandler(svc UserServiceHandler, opts ...connect.HandlerOption
 			userServiceListUsersHandler.ServeHTTP(w, r)
 		case UserServiceGetUserProcedure:
 			userServiceGetUserHandler.ServeHTTP(w, r)
+		case UserServiceUpdateUserProcedure:
+			userServiceUpdateUserHandler.ServeHTTP(w, r)
+		case UserServiceDeleteUserProcedure:
+			userServiceDeleteUserHandler.ServeHTTP(w, r)
 		case UserServiceChangePasswordProcedure:
 			userServiceChangePasswordHandler.ServeHTTP(w, r)
+		case UserServiceAddMfaMethodProcedure:
+			userServiceAddMfaMethodHandler.ServeHTTP(w, r)
+		case UserServiceGetMfaMethodProcedure:
+			userServiceGetMfaMethodHandler.ServeHTTP(w, r)
+		case UserServiceListMfaMethodsProcedure:
+			userServiceListMfaMethodsHandler.ServeHTTP(w, r)
+		case UserServiceVerifyMfaMethodProcedure:
+			userServiceVerifyMfaMethodHandler.ServeHTTP(w, r)
+		case UserServiceRemoveMfaMethodProcedure:
+			userServiceRemoveMfaMethodHandler.ServeHTTP(w, r)
+		case UserServiceAddWebAuthnDeviceProcedure:
+			userServiceAddWebAuthnDeviceHandler.ServeHTTP(w, r)
+		case UserServiceGetWebAuthnDeviceProcedure:
+			userServiceGetWebAuthnDeviceHandler.ServeHTTP(w, r)
+		case UserServiceListWebAuthnDevicesProcedure:
+			userServiceListWebAuthnDevicesHandler.ServeHTTP(w, r)
+		case UserServiceUpdateWebAuthnDeviceCounterProcedure:
+			userServiceUpdateWebAuthnDeviceCounterHandler.ServeHTTP(w, r)
+		case UserServiceRemoveWebAuthnDeviceProcedure:
+			userServiceRemoveWebAuthnDeviceHandler.ServeHTTP(w, r)
+		case UserServiceIncrementFailedLoginAttemptsProcedure:
+			userServiceIncrementFailedLoginAttemptsHandler.ServeHTTP(w, r)
+		case UserServiceResetFailedLoginAttemptsProcedure:
+			userServiceResetFailedLoginAttemptsHandler.ServeHTTP(w, r)
+		case UserServiceSetEmailAsVerifiedProcedure:
+			userServiceSetEmailAsVerifiedHandler.ServeHTTP(w, r)
+		case UserServiceStoreEmailVerificationTokenProcedure:
+			userServiceStoreEmailVerificationTokenHandler.ServeHTTP(w, r)
+		case UserServiceClearEmailVerificationTokenProcedure:
+			userServiceClearEmailVerificationTokenHandler.ServeHTTP(w, r)
+		case UserServiceGetUserByEmailVerificationTokenProcedure:
+			userServiceGetUserByEmailVerificationTokenHandler.ServeHTTP(w, r)
+		case UserServiceStorePasswordResetTokenProcedure:
+			userServiceStorePasswordResetTokenHandler.ServeHTTP(w, r)
+		case UserServiceGetUserByPasswordResetTokenProcedure:
+			userServiceGetUserByPasswordResetTokenHandler.ServeHTTP(w, r)
+		case UserServiceClearPasswordResetTokenProcedure:
+			userServiceClearPasswordResetTokenHandler.ServeHTTP(w, r)
+		case UserServiceUpdateUserPasswordProcedure:
+			userServiceUpdateUserPasswordHandler.ServeHTTP(w, r)
+		case UserServiceStoreLoginOtpProcedure:
+			userServiceStoreLoginOtpHandler.ServeHTTP(w, r)
+		case UserServiceClearLoginOtpProcedure:
+			userServiceClearLoginOtpHandler.ServeHTTP(w, r)
+		case UserServiceSetPhoneNumberProcedure:
+			userServiceSetPhoneNumberHandler.ServeHTTP(w, r)
+		case UserServiceStorePhoneVerificationOtpProcedure:
+			userServiceStorePhoneVerificationOtpHandler.ServeHTTP(w, r)
+		case UserServiceClearPhoneVerificationOtpProcedure:
+			userServiceClearPhoneVerificationOtpHandler.ServeHTTP(w, r)
+		case UserServiceSendPhoneVerificationOtpProcedure:
+			userServiceSendPhoneVerificationOtpHandler.ServeHTTP(w, r)
+		case UserServiceVerifyPhoneNumberProcedure:
+			userServiceVerifyPhoneNumberHandler.ServeHTTP(w, r)
+		case UserServiceSendEmailVerificationProcedure:
+			userServiceSendEmailVerificationHandler.ServeHTTP(w, r)
+		case UserServiceVerifyEmailProcedure:
+			userServiceVerifyEmailHandler.ServeHTTP(w, r)
+		case UserServiceRequestPasswordResetProcedure:
+			userServiceRequestPasswordResetHandler.ServeHTTP(w, r)
+		case UserServiceResetPasswordProcedure:
+			userServiceResetPasswordHandler.ServeHTTP(w, r)
+		case UserServiceSendSmsOtpProcedure:
+			userServiceSendSmsOtpHandler.ServeHTTP(w, r)
+		case UserServiceSendEmailOtpProcedure:
+			userServiceSendEmailOtpHandler.ServeHTTP(w, r)
+		case UserServiceVerifyLoginOtpProcedure:
+			userServiceVerifyLoginOtpHandler.ServeHTTP(w, r)
+		case UserServiceSetupTotpProcedure:
+			userServiceSetupTotpHandler.ServeHTTP(w, r)
+		case UserServiceVerifyTotpSetupProcedure:
+			userServiceVerifyTotpSetupHandler.ServeHTTP(w, r)
+		case UserServiceSetupWebAuthnRegistrationProcedure:
+			userServiceSetupWebAuthnRegistrationHandler.ServeHTTP(w, r)
+		case UserServiceVerifyWebAuthnRegistrationProcedure:
+			userServiceVerifyWebAuthnRegistrationHandler.ServeHTTP(w, r)
+		case UserServiceSetupWebAuthnAuthenticationProcedure:
+			userServiceSetupWebAuthnAuthenticationHandler.ServeHTTP(w, r)
+		case UserServiceVerifyWebAuthnAuthenticationProcedure:
+			userServiceVerifyWebAuthnAuthenticationHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -372,8 +1365,176 @@ func (UnimplementedUserServiceHandler) GetUser(context.Context, *connect.Request
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.GetUser is not implemented"))
 }
 
+func (UnimplementedUserServiceHandler) UpdateUser(context.Context, *connect.Request[v1.UpdateUserRequest]) (*connect.Response[v1.UpdateUserResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.UpdateUser is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) DeleteUser(context.Context, *connect.Request[v1.DeleteUserRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.DeleteUser is not implemented"))
+}
+
 func (UnimplementedUserServiceHandler) ChangePassword(context.Context, *connect.Request[v1.ChangePasswordRequest]) (*connect.Response[emptypb.Empty], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.ChangePassword is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) AddMfaMethod(context.Context, *connect.Request[v1.AddMfaMethodRequest]) (*connect.Response[v1.AddMfaMethodResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.AddMfaMethod is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) GetMfaMethod(context.Context, *connect.Request[v1.GetMfaMethodRequest]) (*connect.Response[v1.GetMfaMethodResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.GetMfaMethod is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) ListMfaMethods(context.Context, *connect.Request[v1.ListMfaMethodsRequest]) (*connect.Response[v1.ListMfaMethodsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.ListMfaMethods is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) VerifyMfaMethod(context.Context, *connect.Request[v1.VerifyMfaMethodRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.VerifyMfaMethod is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) RemoveMfaMethod(context.Context, *connect.Request[v1.RemoveMfaMethodRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.RemoveMfaMethod is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) AddWebAuthnDevice(context.Context, *connect.Request[v1.AddWebAuthnDeviceRequest]) (*connect.Response[v1.AddWebAuthnDeviceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.AddWebAuthnDevice is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) GetWebAuthnDevice(context.Context, *connect.Request[v1.GetWebAuthnDeviceRequest]) (*connect.Response[v1.GetWebAuthnDeviceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.GetWebAuthnDevice is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) ListWebAuthnDevices(context.Context, *connect.Request[v1.ListWebAuthnDevicesRequest]) (*connect.Response[v1.ListWebAuthnDevicesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.ListWebAuthnDevices is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) UpdateWebAuthnDeviceCounter(context.Context, *connect.Request[v1.UpdateWebAuthnDeviceCounterRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.UpdateWebAuthnDeviceCounter is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) RemoveWebAuthnDevice(context.Context, *connect.Request[v1.RemoveWebAuthnDeviceRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.RemoveWebAuthnDevice is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) IncrementFailedLoginAttempts(context.Context, *connect.Request[v1.IncrementFailedLoginAttemptsRequest]) (*connect.Response[v1.IncrementFailedLoginAttemptsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.IncrementFailedLoginAttempts is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) ResetFailedLoginAttempts(context.Context, *connect.Request[v1.ResetFailedLoginAttemptsRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.ResetFailedLoginAttempts is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) SetEmailAsVerified(context.Context, *connect.Request[v1.SetEmailAsVerifiedRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.SetEmailAsVerified is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) StoreEmailVerificationToken(context.Context, *connect.Request[v1.StoreEmailVerificationTokenRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.StoreEmailVerificationToken is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) ClearEmailVerificationToken(context.Context, *connect.Request[v1.ClearEmailVerificationTokenRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.ClearEmailVerificationToken is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) GetUserByEmailVerificationToken(context.Context, *connect.Request[v1.GetUserByEmailVerificationTokenRequest]) (*connect.Response[v1.GetUserByEmailVerificationTokenResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.GetUserByEmailVerificationToken is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) StorePasswordResetToken(context.Context, *connect.Request[v1.StorePasswordResetTokenRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.StorePasswordResetToken is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) GetUserByPasswordResetToken(context.Context, *connect.Request[v1.GetUserByPasswordResetTokenRequest]) (*connect.Response[v1.GetUserByPasswordResetTokenResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.GetUserByPasswordResetToken is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) ClearPasswordResetToken(context.Context, *connect.Request[v1.ClearPasswordResetTokenRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.ClearPasswordResetToken is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) UpdateUserPassword(context.Context, *connect.Request[v1.UpdateUserPasswordRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.UpdateUserPassword is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) StoreLoginOtp(context.Context, *connect.Request[v1.StoreLoginOtpRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.StoreLoginOtp is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) ClearLoginOtp(context.Context, *connect.Request[v1.ClearLoginOtpRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.ClearLoginOtp is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) SetPhoneNumber(context.Context, *connect.Request[v1.SetPhoneNumberRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.SetPhoneNumber is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) StorePhoneVerificationOtp(context.Context, *connect.Request[v1.StorePhoneVerificationOtpRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.StorePhoneVerificationOtp is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) ClearPhoneVerificationOtp(context.Context, *connect.Request[v1.ClearPhoneVerificationOtpRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.ClearPhoneVerificationOtp is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) SendPhoneVerificationOtp(context.Context, *connect.Request[v1.SendPhoneVerificationOtpRequest]) (*connect.Response[v1.SendPhoneVerificationOtpResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.SendPhoneVerificationOtp is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) VerifyPhoneNumber(context.Context, *connect.Request[v1.VerifyPhoneNumberRequest]) (*connect.Response[v1.VerifyPhoneNumberResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.VerifyPhoneNumber is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) SendEmailVerification(context.Context, *connect.Request[v1.SendEmailVerificationRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.SendEmailVerification is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) VerifyEmail(context.Context, *connect.Request[v1.VerifyEmailRequest]) (*connect.Response[v1.VerifyEmailResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.VerifyEmail is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) RequestPasswordReset(context.Context, *connect.Request[v1.RequestPasswordResetRequest]) (*connect.Response[v1.RequestPasswordResetResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.RequestPasswordReset is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) ResetPassword(context.Context, *connect.Request[v1.ResetPasswordRequest]) (*connect.Response[v1.ResetPasswordResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.ResetPassword is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) SendSmsOtp(context.Context, *connect.Request[v1.SendSmsOtpRequest]) (*connect.Response[v1.SendSmsOtpResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.SendSmsOtp is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) SendEmailOtp(context.Context, *connect.Request[v1.SendEmailOtpRequest]) (*connect.Response[v1.SendEmailOtpResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.SendEmailOtp is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) VerifyLoginOtp(context.Context, *connect.Request[v1.VerifyLoginOtpRequest]) (*connect.Response[v1.VerifyLoginOtpResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.VerifyLoginOtp is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) SetupTotp(context.Context, *connect.Request[v1.SetupTotpRequest]) (*connect.Response[v1.SetupTotpResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.SetupTotp is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) VerifyTotpSetup(context.Context, *connect.Request[v1.VerifyTotpSetupRequest]) (*connect.Response[v1.VerifyTotpSetupResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.VerifyTotpSetup is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) SetupWebAuthnRegistration(context.Context, *connect.Request[v1.SetupWebAuthnRegistrationRequest]) (*connect.Response[v1.SetupWebAuthnRegistrationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.SetupWebAuthnRegistration is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) VerifyWebAuthnRegistration(context.Context, *connect.Request[v1.VerifyWebAuthnRegistrationRequest]) (*connect.Response[v1.VerifyWebAuthnRegistrationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.VerifyWebAuthnRegistration is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) SetupWebAuthnAuthentication(context.Context, *connect.Request[v1.SetupWebAuthnAuthenticationRequest]) (*connect.Response[v1.SetupWebAuthnAuthenticationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.SetupWebAuthnAuthentication is not implemented"))
+}
+
+func (UnimplementedUserServiceHandler) VerifyWebAuthnAuthentication(context.Context, *connect.Request[v1.VerifyWebAuthnAuthenticationRequest]) (*connect.Response[v1.VerifyWebAuthnAuthenticationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.UserService.VerifyWebAuthnAuthentication is not implemented"))
 }
 
 // AuthServiceClient is a client for the sso.v1.AuthService service.
@@ -383,6 +1544,10 @@ type AuthServiceClient interface {
 	ListUserSessions(context.Context, *connect.Request[v1.ListUserSessionsRequest]) (*connect.Response[v1.ListUserSessionsResponse], error)
 	ClearUserSessions(context.Context, *connect.Request[v1.ClearUserSessionsRequest]) (*connect.Response[emptypb.Empty], error)
 	Verify2FA(context.Context, *connect.Request[v1.Verify2FARequest]) (*connect.Response[v1.LoginResponse], error)
+	// OAuth Consent Flow
+	GetConsentInfo(context.Context, *connect.Request[v1.GetConsentInfoRequest]) (*connect.Response[v1.GetConsentInfoResponse], error)
+	SubmitConsent(context.Context, *connect.Request[v1.SubmitConsentRequest]) (*connect.Response[v1.SubmitConsentResponse], error)
+	DenyConsent(context.Context, *connect.Request[v1.DenyConsentRequest]) (*connect.Response[v1.DenyConsentResponse], error)
 }
 
 // NewAuthServiceClient constructs a client for the sso.v1.AuthService service. By default, it uses
@@ -420,6 +1585,21 @@ func NewAuthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			baseURL+AuthServiceVerify2FAProcedure,
 			opts...,
 		),
+		getConsentInfo: connect.NewClient[v1.GetConsentInfoRequest, v1.GetConsentInfoResponse](
+			httpClient,
+			baseURL+AuthServiceGetConsentInfoProcedure,
+			opts...,
+		),
+		submitConsent: connect.NewClient[v1.SubmitConsentRequest, v1.SubmitConsentResponse](
+			httpClient,
+			baseURL+AuthServiceSubmitConsentProcedure,
+			opts...,
+		),
+		denyConsent: connect.NewClient[v1.DenyConsentRequest, v1.DenyConsentResponse](
+			httpClient,
+			baseURL+AuthServiceDenyConsentProcedure,
+			opts...,
+		),
 	}
 }
 
@@ -430,6 +1610,9 @@ type authServiceClient struct {
 	listUserSessions  *connect.Client[v1.ListUserSessionsRequest, v1.ListUserSessionsResponse]
 	clearUserSessions *connect.Client[v1.ClearUserSessionsRequest, emptypb.Empty]
 	verify2FA         *connect.Client[v1.Verify2FARequest, v1.LoginResponse]
+	getConsentInfo    *connect.Client[v1.GetConsentInfoRequest, v1.GetConsentInfoResponse]
+	submitConsent     *connect.Client[v1.SubmitConsentRequest, v1.SubmitConsentResponse]
+	denyConsent       *connect.Client[v1.DenyConsentRequest, v1.DenyConsentResponse]
 }
 
 // Login calls sso.v1.AuthService.Login.
@@ -457,6 +1640,21 @@ func (c *authServiceClient) Verify2FA(ctx context.Context, req *connect.Request[
 	return c.verify2FA.CallUnary(ctx, req)
 }
 
+// GetConsentInfo calls sso.v1.AuthService.GetConsentInfo.
+func (c *authServiceClient) GetConsentInfo(ctx context.Context, req *connect.Request[v1.GetConsentInfoRequest]) (*connect.Response[v1.GetConsentInfoResponse], error) {
+	return c.getConsentInfo.CallUnary(ctx, req)
+}
+
+// SubmitConsent calls sso.v1.AuthService.SubmitConsent.
+func (c *authServiceClient) SubmitConsent(ctx context.Context, req *connect.Request[v1.SubmitConsentRequest]) (*connect.Response[v1.SubmitConsentResponse], error) {
+	return c.submitConsent.CallUnary(ctx, req)
+}
+
+// DenyConsent calls sso.v1.AuthService.DenyConsent.
+func (c *authServiceClient) DenyConsent(ctx context.Context, req *connect.Request[v1.DenyConsentRequest]) (*connect.Response[v1.DenyConsentResponse], error) {
+	return c.denyConsent.CallUnary(ctx, req)
+}
+
 // AuthServiceHandler is an implementation of the sso.v1.AuthService service.
 type AuthServiceHandler interface {
 	Login(context.Context, *connect.Request[v1.LoginRequest]) (*connect.Response[v1.LoginResponse], error)
@@ -464,6 +1662,10 @@ type AuthServiceHandler interface {
 	ListUserSessions(context.Context, *connect.Request[v1.ListUserSessionsRequest]) (*connect.Response[v1.ListUserSessionsResponse], error)
 	ClearUserSessions(context.Context, *connect.Request[v1.ClearUserSessionsRequest]) (*connect.Response[emptypb.Empty], error)
 	Verify2FA(context.Context, *connect.Request[v1.Verify2FARequest]) (*connect.Response[v1.LoginResponse], error)
+	// OAuth Consent Flow
+	GetConsentInfo(context.Context, *connect.Request[v1.GetConsentInfoRequest]) (*connect.Response[v1.GetConsentInfoResponse], error)
+	SubmitConsent(context.Context, *connect.Request[v1.SubmitConsentRequest]) (*connect.Response[v1.SubmitConsentResponse], error)
+	DenyConsent(context.Context, *connect.Request[v1.DenyConsentRequest]) (*connect.Response[v1.DenyConsentResponse], error)
 }
 
 // NewAuthServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -497,6 +1699,21 @@ func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption
 		svc.Verify2FA,
 		opts...,
 	)
+	authServiceGetConsentInfoHandler := connect.NewUnaryHandler(
+		AuthServiceGetConsentInfoProcedure,
+		svc.GetConsentInfo,
+		opts...,
+	)
+	authServiceSubmitConsentHandler := connect.NewUnaryHandler(
+		AuthServiceSubmitConsentProcedure,
+		svc.SubmitConsent,
+		opts...,
+	)
+	authServiceDenyConsentHandler := connect.NewUnaryHandler(
+		AuthServiceDenyConsentProcedure,
+		svc.DenyConsent,
+		opts...,
+	)
 	return "/sso.v1.AuthService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AuthServiceLoginProcedure:
@@ -509,6 +1726,12 @@ func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption
 			authServiceClearUserSessionsHandler.ServeHTTP(w, r)
 		case AuthServiceVerify2FAProcedure:
 			authServiceVerify2FAHandler.ServeHTTP(w, r)
+		case AuthServiceGetConsentInfoProcedure:
+			authServiceGetConsentInfoHandler.ServeHTTP(w, r)
+		case AuthServiceSubmitConsentProcedure:
+			authServiceSubmitConsentHandler.ServeHTTP(w, r)
+		case AuthServiceDenyConsentProcedure:
+			authServiceDenyConsentHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -536,4 +1759,16 @@ func (UnimplementedAuthServiceHandler) ClearUserSessions(context.Context, *conne
 
 func (UnimplementedAuthServiceHandler) Verify2FA(context.Context, *connect.Request[v1.Verify2FARequest]) (*connect.Response[v1.LoginResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.AuthService.Verify2FA is not implemented"))
+}
+
+func (UnimplementedAuthServiceHandler) GetConsentInfo(context.Context, *connect.Request[v1.GetConsentInfoRequest]) (*connect.Response[v1.GetConsentInfoResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.AuthService.GetConsentInfo is not implemented"))
+}
+
+func (UnimplementedAuthServiceHandler) SubmitConsent(context.Context, *connect.Request[v1.SubmitConsentRequest]) (*connect.Response[v1.SubmitConsentResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.AuthService.SubmitConsent is not implemented"))
+}
+
+func (UnimplementedAuthServiceHandler) DenyConsent(context.Context, *connect.Request[v1.DenyConsentRequest]) (*connect.Response[v1.DenyConsentResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.AuthService.DenyConsent is not implemented"))
 }

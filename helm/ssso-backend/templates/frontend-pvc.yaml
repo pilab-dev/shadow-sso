@@ -1,0 +1,20 @@
+{{- if and .Values.frontend.enabled .Values.frontend.persistence.enabled -}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "ssso-backend.fullname" . }}-frontend-cache
+  labels:
+    {{- include "ssso-backend.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+spec:
+  accessModes:
+    {{- range .Values.frontend.persistence.accessModes }}
+    - {{ . | quote }}
+    {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.frontend.persistence.size | quote }}
+  {{- if .Values.frontend.persistence.storageClassName }}
+  storageClassName: {{ .Values.frontend.persistence.storageClassName | quote }}
+  {{- end }}
+{{- end }}

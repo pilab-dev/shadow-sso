@@ -9,7 +9,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/pilab-dev/shadow-sso/apps/ssso-dts/internal/storage"
-	dtsv1 "github.com/pilab-dev/shadow-sso/gen/proto/dts/v1" // Assuming buf generate worked
+	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1" // Assuming buf generate worked
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -46,7 +46,7 @@ func NewDTSService(store *storage.BBoltStore) *DTSService {
 // --- Generic Key-Value operations ---
 
 // Set stores a generic key-value pair.
-func (s *DTSService) Set(ctx context.Context, req *connect.Request[dtsv1.SetRequest]) (*connect.Response[emptypb.Empty], error) {
+func (s *DTSService) Set(ctx context.Context, req *connect.Request[ssov1.SetRequest]) (*connect.Response[emptypb.Empty], error) {
 	if req.Msg.Bucket == "" {
 		err := errors.New("bucket name cannot be empty")
 
@@ -77,7 +77,7 @@ func (s *DTSService) Set(ctx context.Context, req *connect.Request[dtsv1.SetRequ
 }
 
 // Get retrieves a generic key-value pair.
-func (s *DTSService) Get(ctx context.Context, req *connect.Request[dtsv1.GetRequest]) (*connect.Response[dtsv1.GetResponse], error) {
+func (s *DTSService) Get(ctx context.Context, req *connect.Request[ssov1.GetRequest]) (*connect.Response[ssov1.GetResponse], error) {
 	if req.Msg.Bucket == "" {
 		err := errors.New("bucket name cannot be empty")
 
@@ -99,10 +99,10 @@ func (s *DTSService) Get(ctx context.Context, req *connect.Request[dtsv1.GetRequ
 	}
 
 	if !found {
-		return connect.NewResponse(&dtsv1.GetResponse{Found: false}), nil
+		return connect.NewResponse(&ssov1.GetResponse{Found: false}), nil
 	}
 
-	return connect.NewResponse(&dtsv1.GetResponse{
+	return connect.NewResponse(&ssov1.GetResponse{
 		Value:     value,
 		Found:     true,
 		ExpiresAt: timestamppb.New(expiresAt),
@@ -110,7 +110,7 @@ func (s *DTSService) Get(ctx context.Context, req *connect.Request[dtsv1.GetRequ
 }
 
 // Delete removes a generic key-value pair.
-func (s *DTSService) Delete(ctx context.Context, req *connect.Request[dtsv1.DeleteRequest]) (*connect.Response[emptypb.Empty], error) {
+func (s *DTSService) Delete(ctx context.Context, req *connect.Request[ssov1.DeleteRequest]) (*connect.Response[emptypb.Empty], error) {
 	if req.Msg.Bucket == "" {
 		err := errors.New("bucket name cannot be empty")
 
@@ -191,7 +191,7 @@ func getProtoMessage[T proto.Message](s *storage.BBoltStore, bucket, key string,
 }
 
 // --- Authorization Codes ---
-func (s *DTSService) StoreAuthCode(ctx context.Context, req *connect.Request[dtsv1.StoreAuthCodeRequest]) (*connect.Response[emptypb.Empty], error) {
+func (s *DTSService) StoreAuthCode(ctx context.Context, req *connect.Request[ssov1.StoreAuthCodeRequest]) (*connect.Response[emptypb.Empty], error) {
 	if req.Msg.AuthCode == nil || req.Msg.AuthCode.Code == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, ErrMissingAuthCodeOrID)
 	}
@@ -205,14 +205,14 @@ func (s *DTSService) StoreAuthCode(ctx context.Context, req *connect.Request[dts
 	return connect.NewResponse(&emptypb.Empty{}), nil
 }
 
-func (s *DTSService) GetAuthCode(ctx context.Context, req *connect.Request[dtsv1.GetAuthCodeRequest]) (*connect.Response[dtsv1.AuthCode], error) {
+func (s *DTSService) GetAuthCode(ctx context.Context, req *connect.Request[ssov1.GetAuthCodeRequest]) (*connect.Response[ssov1.AuthCode], error) {
 	if req.Msg.Code == "" {
 		err := errors.New("auth code ID is missing")
 
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 
-	authCode := &dtsv1.AuthCode{}
+	authCode := &ssov1.AuthCode{}
 
 	res, found, err := getProtoMessage(s.store, authCodesBucket, req.Msg.Code, authCode)
 	if err != nil {
@@ -228,7 +228,7 @@ func (s *DTSService) GetAuthCode(ctx context.Context, req *connect.Request[dtsv1
 	return connect.NewResponse(res), nil
 }
 
-func (s *DTSService) DeleteAuthCode(ctx context.Context, req *connect.Request[dtsv1.DeleteAuthCodeRequest]) (*connect.Response[emptypb.Empty], error) {
+func (s *DTSService) DeleteAuthCode(ctx context.Context, req *connect.Request[ssov1.DeleteAuthCodeRequest]) (*connect.Response[emptypb.Empty], error) {
 	if req.Msg.Code == "" {
 		err := errors.New("auth code ID is missing")
 
@@ -247,7 +247,7 @@ func (s *DTSService) DeleteAuthCode(ctx context.Context, req *connect.Request[dt
 
 // --- Refresh Tokens ---
 func (s *DTSService) StoreRefreshToken(ctx context.Context,
-	req *connect.Request[dtsv1.StoreRefreshTokenRequest],
+	req *connect.Request[ssov1.StoreRefreshTokenRequest],
 ) (*connect.Response[emptypb.Empty], error) {
 	if req.Msg.RefreshToken == nil || req.Msg.RefreshToken.Token == "" {
 		err := errors.New("refresh token or its ID is missing")
@@ -265,15 +265,15 @@ func (s *DTSService) StoreRefreshToken(ctx context.Context,
 }
 
 func (s *DTSService) GetRefreshToken(ctx context.Context,
-	req *connect.Request[dtsv1.GetRefreshTokenRequest],
-) (*connect.Response[dtsv1.RefreshToken], error) {
+	req *connect.Request[ssov1.GetRefreshTokenRequest],
+) (*connect.Response[ssov1.RefreshToken], error) {
 	if req.Msg.Token == "" {
 		err := errors.New("refresh token ID is missing")
 
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 
-	refreshToken := &dtsv1.RefreshToken{}
+	refreshToken := &ssov1.RefreshToken{}
 
 	res, found, err := getProtoMessage(s.store, refreshTokensBucket, req.Msg.Token, refreshToken)
 	if err != nil {
@@ -290,7 +290,7 @@ func (s *DTSService) GetRefreshToken(ctx context.Context,
 }
 
 func (s *DTSService) DeleteRefreshToken(ctx context.Context,
-	req *connect.Request[dtsv1.DeleteRefreshTokenRequest],
+	req *connect.Request[ssov1.DeleteRefreshTokenRequest],
 ) (*connect.Response[emptypb.Empty], error) {
 	if req.Msg.Token == "" {
 		err := errors.New("refresh token ID is missing")
@@ -308,7 +308,7 @@ func (s *DTSService) DeleteRefreshToken(ctx context.Context,
 }
 
 // --- Access Token Metadata ---
-func (s *DTSService) StoreAccessTokenMetadata(ctx context.Context, req *connect.Request[dtsv1.StoreAccessTokenMetadataRequest]) (*connect.Response[emptypb.Empty], error) {
+func (s *DTSService) StoreAccessTokenMetadata(ctx context.Context, req *connect.Request[ssov1.StoreAccessTokenMetadataRequest]) (*connect.Response[emptypb.Empty], error) {
 	if req.Msg.AccessTokenMetadata == nil || req.Msg.AccessTokenMetadata.TokenHash == "" {
 		err := errors.New("access token metadata or its token hash is missing")
 
@@ -326,14 +326,14 @@ func (s *DTSService) StoreAccessTokenMetadata(ctx context.Context, req *connect.
 	return connect.NewResponse(&emptypb.Empty{}), nil
 }
 
-func (s *DTSService) GetAccessTokenMetadata(ctx context.Context, req *connect.Request[dtsv1.GetAccessTokenMetadataRequest]) (*connect.Response[dtsv1.AccessTokenMetadata], error) {
+func (s *DTSService) GetAccessTokenMetadata(ctx context.Context, req *connect.Request[ssov1.GetAccessTokenMetadataRequest]) (*connect.Response[ssov1.AccessTokenMetadata], error) {
 	if req.Msg.TokenHash == "" {
 		err := errors.New("access token metadata token hash is missing")
 
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 
-	atMeta := &dtsv1.AccessTokenMetadata{}
+	atMeta := &ssov1.AccessTokenMetadata{}
 	res, found, err := getProtoMessage(s.store, accessTokenMetadataBucket, req.Msg.TokenHash, atMeta)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
@@ -347,7 +347,7 @@ func (s *DTSService) GetAccessTokenMetadata(ctx context.Context, req *connect.Re
 	return connect.NewResponse(res), nil
 }
 
-func (s *DTSService) DeleteAccessTokenMetadata(ctx context.Context, req *connect.Request[dtsv1.DeleteAccessTokenMetadataRequest]) (*connect.Response[emptypb.Empty], error) {
+func (s *DTSService) DeleteAccessTokenMetadata(ctx context.Context, req *connect.Request[ssov1.DeleteAccessTokenMetadataRequest]) (*connect.Response[emptypb.Empty], error) {
 	if req.Msg.TokenHash == "" {
 		err := errors.New("access token metadata token hash is missing")
 
@@ -365,7 +365,7 @@ func (s *DTSService) DeleteAccessTokenMetadata(ctx context.Context, req *connect
 }
 
 // --- OIDC Flows ---
-func (s *DTSService) StoreOIDCFlw(ctx context.Context, req *connect.Request[dtsv1.StoreOIDCFlwRequest]) (*connect.Response[emptypb.Empty], error) {
+func (s *DTSService) StoreOIDCFlw(ctx context.Context, req *connect.Request[ssov1.StoreOIDCFlwRequest]) (*connect.Response[emptypb.Empty], error) {
 	if req.Msg.OidcFlow == nil || req.Msg.OidcFlow.FlowId == "" {
 		err := errors.New("OIDC flow or its ID is missing")
 
@@ -384,13 +384,13 @@ func (s *DTSService) StoreOIDCFlw(ctx context.Context, req *connect.Request[dtsv
 	return connect.NewResponse(&emptypb.Empty{}), nil
 }
 
-func (s *DTSService) GetOIDCFlw(ctx context.Context, req *connect.Request[dtsv1.GetOIDCFlwRequest]) (*connect.Response[dtsv1.OIDCFlw], error) {
+func (s *DTSService) GetOIDCFlw(ctx context.Context, req *connect.Request[ssov1.GetOIDCFlwRequest]) (*connect.Response[ssov1.OIDCFlw], error) {
 	if req.Msg.FlowId == "" {
 		err := errors.New("OIDC flow ID is missing")
 
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
-	flow := &dtsv1.OIDCFlw{}
+	flow := &ssov1.OIDCFlw{}
 
 	res, found, err := getProtoMessage(s.store, oidcFlowsBucket, req.Msg.FlowId, flow)
 	if err != nil {
@@ -406,7 +406,7 @@ func (s *DTSService) GetOIDCFlw(ctx context.Context, req *connect.Request[dtsv1.
 	return connect.NewResponse(res), nil
 }
 
-func (s *DTSService) DeleteOIDCFlw(ctx context.Context, req *connect.Request[dtsv1.DeleteOIDCFlwRequest]) (*connect.Response[emptypb.Empty], error) {
+func (s *DTSService) DeleteOIDCFlw(ctx context.Context, req *connect.Request[ssov1.DeleteOIDCFlwRequest]) (*connect.Response[emptypb.Empty], error) {
 	if req.Msg.FlowId == "" {
 		err := errors.New("OIDC flow ID is missing")
 
@@ -423,7 +423,7 @@ func (s *DTSService) DeleteOIDCFlw(ctx context.Context, req *connect.Request[dts
 	return connect.NewResponse(&emptypb.Empty{}), nil
 }
 
-func (s *DTSService) UpdateOIDCFlw(ctx context.Context, req *connect.Request[dtsv1.UpdateOIDCFlwRequest]) (*connect.Response[emptypb.Empty], error) {
+func (s *DTSService) UpdateOIDCFlw(ctx context.Context, req *connect.Request[ssov1.UpdateOIDCFlwRequest]) (*connect.Response[emptypb.Empty], error) {
 	if req.Msg.OidcFlow == nil || req.Msg.OidcFlow.FlowId == "" {
 		err := errors.New("OIDC flow or its ID is missing for update")
 
@@ -445,7 +445,7 @@ func (s *DTSService) UpdateOIDCFlw(ctx context.Context, req *connect.Request[dts
 }
 
 // --- OIDC User Sessions ---
-func (s *DTSService) StoreUserSession(ctx context.Context, req *connect.Request[dtsv1.StoreUserSessionRequest]) (*connect.Response[emptypb.Empty], error) {
+func (s *DTSService) StoreUserSession(ctx context.Context, req *connect.Request[ssov1.StoreUserSessionRequest]) (*connect.Response[emptypb.Empty], error) {
 	if req.Msg.UserSession == nil || req.Msg.UserSession.SessionId == "" {
 		err := errors.New("user session or its ID is missing")
 
@@ -464,14 +464,14 @@ func (s *DTSService) StoreUserSession(ctx context.Context, req *connect.Request[
 	return connect.NewResponse(&emptypb.Empty{}), nil
 }
 
-func (s *DTSService) GetUserSession(ctx context.Context, req *connect.Request[dtsv1.GetUserSessionRequest]) (*connect.Response[dtsv1.UserSession], error) {
+func (s *DTSService) GetUserSession(ctx context.Context, req *connect.Request[ssov1.GetUserSessionRequest]) (*connect.Response[ssov1.UserSession], error) {
 	if req.Msg.SessionId == "" {
 		err := errors.New("user session ID is missing")
 
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 
-	session := &dtsv1.UserSession{}
+	session := &ssov1.UserSession{}
 	res, found, err := getProtoMessage(s.store, userSessionsBucket,
 		req.Msg.SessionId,
 		session,
@@ -490,7 +490,7 @@ func (s *DTSService) GetUserSession(ctx context.Context, req *connect.Request[dt
 }
 
 func (s *DTSService) DeleteUserSession(ctx context.Context,
-	req *connect.Request[dtsv1.DeleteUserSessionRequest],
+	req *connect.Request[ssov1.DeleteUserSessionRequest],
 ) (*connect.Response[emptypb.Empty], error) {
 	if req.Msg.SessionId == "" {
 		err := errors.New("user session ID is missing")
@@ -510,7 +510,7 @@ func (s *DTSService) DeleteUserSession(ctx context.Context,
 
 // --- Device Authorization Grants & Codes ---
 func (s *DTSService) StoreDeviceAuth(ctx context.Context,
-	req *connect.Request[dtsv1.StoreDeviceAuthRequest],
+	req *connect.Request[ssov1.StoreDeviceAuthRequest],
 ) (*connect.Response[emptypb.Empty], error) {
 	da := req.Msg.DeviceAuth
 	if da == nil || da.DeviceCode == "" || da.UserCode == "" {
@@ -561,14 +561,14 @@ func (s *DTSService) StoreDeviceAuth(ctx context.Context,
 }
 
 func (s *DTSService) GetDeviceAuthByDeviceCode(ctx context.Context,
-	req *connect.Request[dtsv1.GetDeviceAuthByDeviceCodeRequest],
-) (*connect.Response[dtsv1.DeviceAuth], error) {
+	req *connect.Request[ssov1.GetDeviceAuthByDeviceCodeRequest],
+) (*connect.Response[ssov1.DeviceAuth], error) {
 	if req.Msg.DeviceCode == "" {
 		err := errors.New("device code is missing")
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 
-	da := &dtsv1.DeviceAuth{}
+	da := &ssov1.DeviceAuth{}
 	res, found, err := getProtoMessage(s.store, deviceAuthGrantsBucket,
 		req.Msg.DeviceCode,
 		da,
@@ -586,8 +586,8 @@ func (s *DTSService) GetDeviceAuthByDeviceCode(ctx context.Context,
 }
 
 func (s *DTSService) GetDeviceAuthByUserCode(ctx context.Context,
-	req *connect.Request[dtsv1.GetDeviceAuthByUserCodeRequest],
-) (*connect.Response[dtsv1.DeviceAuth], error) {
+	req *connect.Request[ssov1.GetDeviceAuthByUserCodeRequest],
+) (*connect.Response[ssov1.DeviceAuth], error) {
 	if req.Msg.UserCode == "" {
 		err := errors.New("user code is missing")
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
@@ -607,7 +607,7 @@ func (s *DTSService) GetDeviceAuthByUserCode(ctx context.Context,
 	deviceCode := string(deviceCodeBytes)
 
 	// 2. Look up the actual grant using the device_code
-	da := &dtsv1.DeviceAuth{}
+	da := &ssov1.DeviceAuth{}
 	res, found, err := getProtoMessage(s.store, deviceAuthGrantsBucket, deviceCode, da)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
@@ -625,7 +625,7 @@ func (s *DTSService) GetDeviceAuthByUserCode(ctx context.Context,
 	return connect.NewResponse(res), nil
 }
 
-func (s *DTSService) UpdateDeviceAuth(ctx context.Context, req *connect.Request[dtsv1.UpdateDeviceAuthRequest]) (*connect.Response[emptypb.Empty], error) {
+func (s *DTSService) UpdateDeviceAuth(ctx context.Context, req *connect.Request[ssov1.UpdateDeviceAuthRequest]) (*connect.Response[emptypb.Empty], error) {
 	da := req.Msg.DeviceAuth
 	if da == nil || da.DeviceCode == "" {
 		err := errors.New("device auth grant or its device code is missing for update")
@@ -657,7 +657,7 @@ func (s *DTSService) UpdateDeviceAuth(ctx context.Context, req *connect.Request[
 	return connect.NewResponse(&emptypb.Empty{}), nil
 }
 
-func (s *DTSService) DeleteDeviceAuth(ctx context.Context, req *connect.Request[dtsv1.DeleteDeviceAuthRequest]) (*connect.Response[emptypb.Empty], error) {
+func (s *DTSService) DeleteDeviceAuth(ctx context.Context, req *connect.Request[ssov1.DeleteDeviceAuthRequest]) (*connect.Response[emptypb.Empty], error) {
 	if req.Msg.DeviceCode == "" {
 		err := errors.New("device code is missing for deletion")
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
@@ -695,7 +695,7 @@ func (s *DTSService) DeleteDeviceAuth(ctx context.Context, req *connect.Request[
 }
 
 // --- PKCE States ---
-func (s *DTSService) StorePKCEState(ctx context.Context, req *connect.Request[dtsv1.StorePKCEStateRequest]) (*connect.Response[emptypb.Empty], error) {
+func (s *DTSService) StorePKCEState(ctx context.Context, req *connect.Request[ssov1.StorePKCEStateRequest]) (*connect.Response[emptypb.Empty], error) {
 	if req.Msg.PkceState == nil || req.Msg.PkceState.CodeHash == "" {
 		err := errors.New("PKCE state or its code hash is missing")
 
@@ -713,13 +713,13 @@ func (s *DTSService) StorePKCEState(ctx context.Context, req *connect.Request[dt
 	return connect.NewResponse(&emptypb.Empty{}), nil
 }
 
-func (s *DTSService) GetPKCEState(ctx context.Context, req *connect.Request[dtsv1.GetPKCEStateRequest]) (*connect.Response[dtsv1.PKCEState], error) {
+func (s *DTSService) GetPKCEState(ctx context.Context, req *connect.Request[ssov1.GetPKCEStateRequest]) (*connect.Response[ssov1.PKCEState], error) {
 	if req.Msg.CodeHash == "" {
 		err := errors.New("PKCE code hash is missing")
 
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
-	pkce := &dtsv1.PKCEState{}
+	pkce := &ssov1.PKCEState{}
 
 	res, found, err := getProtoMessage(s.store, pkceStatesBucket, req.Msg.CodeHash, pkce)
 	if err != nil {
@@ -735,7 +735,7 @@ func (s *DTSService) GetPKCEState(ctx context.Context, req *connect.Request[dtsv
 	return connect.NewResponse(res), nil
 }
 
-func (s *DTSService) DeletePKCEState(ctx context.Context, req *connect.Request[dtsv1.DeletePKCEStateRequest]) (*connect.Response[emptypb.Empty], error) {
+func (s *DTSService) DeletePKCEState(ctx context.Context, req *connect.Request[ssov1.DeletePKCEStateRequest]) (*connect.Response[emptypb.Empty], error) {
 	if req.Msg.CodeHash == "" {
 		err := errors.New("PKCE code hash is missing")
 

@@ -18,8 +18,8 @@ import (
 	"github.com/gin-gonic/gin"
 	sssogin "github.com/pilab-dev/shadow-sso/api/openidv2_1" // Ensure domain is imported
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
-	"github.com/pilab-dev/shadow-sso/pkg/auth"
 	"github.com/pilab-dev/shadow-sso/middleware"
+	pkgauth "github.com/pilab-dev/shadow-sso/pkg/auth"
 	"github.com/pilab-dev/shadow-sso/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -95,8 +95,20 @@ func Start(cfg ServerConfig, repoProvider services.RepositoryProvider) error {
 		repoProvider.ServiceAccountRepository(ctx),
 		repoProvider.PublicKeyRepository(ctx),
 	)
-	userServer := services.NewUserServer(repoProvider.UserRepository(ctx), passwordHasher)
-	authServer := services.NewAuthServer(repoProvider.UserRepository(ctx), repoProvider.SessionRepository(ctx), tokenService, passwordHasher)
+	userServer := services.NewUserServer(
+		repoProvider.UserRepository(ctx),
+		passwordHasher,
+		sp.PhoneVerificationService(),
+	)
+	authServer := services.NewAuthServer(
+		repoProvider.UserRepository(ctx),
+		repoProvider.SessionRepository(ctx),
+		tokenService,
+		passwordHasher,
+		sp.FlowStore(),
+		sp.OAuthService(),
+		sp.ClientService(),
+	)
 
 	// *
 	// * Create mux and register handlers

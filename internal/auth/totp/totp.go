@@ -15,6 +15,7 @@ import (
 	"os" // For VerifyRecoveryCode error logging
 
 	"github.com/pquerna/otp"
+	"github.com/pquerna/otp/hotp"
 	"github.com/pquerna/otp/totp"
 	"golang.org/x/crypto/bcrypt" // For hashing recovery codes
 )
@@ -72,6 +73,58 @@ func ValidateTOTPCode(secret, passcode string) (bool, error) {
 	// For this function, 'secret' is assumed to be the raw base32 secret string.
 	valid := totp.Validate(passcode, strings.TrimSpace(secret))
 	return valid, nil // totp.Validate does not return an error for invalid codes, only for bad inputs (e.g. malformed secret)
+}
+
+// GenerateHOTPSecret generates a new HOTP secret key.
+// It returns the key and the otpauth:// URI for QR code generation.
+func GenerateHOTPSecret(issuer, accountName string) (*otp.Key, string, error) {
+	key, err := hotp.Generate(hotp.GenerateOpts{
+		Issuer:      issuer,
+		AccountName: accountName,
+		SecretSize:  20, // Standard 20 bytes for base32 secret (produces 32 char base32 string)
+		Digits:      otp.DigitsSix,
+		Algorithm:   otp.AlgorithmSHA1,
+	})
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to generate HOTP key: %w", err)
+	}
+	return key, key.URL(), nil
+}
+
+// ValidateHOTPCode validates an HOTP code against the stored secret and counter.
+// Returns whether validation succeeded.
+// The secret should be the base32 encoded string from key.Secret().
+func ValidateHOTPCode(secret, passcode string, counter uint64) (bool, error) {
+	// Validate the HOTP code
+	valid, err := hotp.ValidateCustom(
+		passcode,
+		counter,
+		strings.TrimSpace(secret),
+		hotp.ValidateOpts{
+			Digits:    otp.DigitsSix,
+			Algorithm: otp.AlgorithmSHA1,
+		},
+	)
+
+	return valid, err
+}
+
+// GenerateHOTPQRCodeBytes generates a PNG QR code image for the otpauth:// URI.
+// Returns PNG image bytes.
+func GenerateHOTPQRCodeBytes(otpAuthURI string) ([]byte, error) {
+	key, err := otp.NewKeyFromURL(otpAuthURI)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse otpauth uri for QR code: %w", err)
+	}
+	img, err := key.Image(256, 256) // Generate a 256x256 QR code
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate QR code image: %w", err)
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		return nil, fmt.Errorf("failed to encode QR code image to PNG: %w", err)
+	}
+	return buf.Bytes(), nil
 }
 
 // GenerateRecoveryCodes generates a set of unique recovery codes.

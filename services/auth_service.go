@@ -2,12 +2,15 @@ package services
 
 import (
 	"context"
+	goerrors "errors"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings" // For Verify2FA token check
 	"time" // Needed for GenerateTokenPair TTL and session expiry
 
 	"connectrpc.com/connect"
+	"github.com/pilab-dev/shadow-sso/client"
 	"github.com/pilab-dev/shadow-sso/domain"
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
@@ -24,24 +27,33 @@ import (
 // AuthServer implements the ssov1connect.AuthServiceHandler interface.
 type AuthServer struct {
 	ssov1connect.UnimplementedAuthServiceHandler // Embed for forward compatibility
-	userRepo                                     domain.UserRepository
-	sessionRepo                                  domain.SessionRepository
-	tokenService                                 *TokenService
-	passwordHasher                               domain.PasswordHasher
+	userRepo                                      domain.UserRepository
+	sessionRepo                                   domain.SessionRepository
+	tokenService                                  *TokenService
+	passwordHasher                                domain.PasswordHasher
+	flowStore                                     domain.FlowStore
+	oauthService                                  *OAuthService
+	clientService                                 *client.ClientService
 }
 
 // NewAuthServer creates a new AuthServer.
 func NewAuthServer(
 	userRepo domain.UserRepository,
-	sessionRepo domain.SessionRepository, // Added sessionRepo to signature
+	sessionRepo domain.SessionRepository,
 	tokenService *TokenService,
 	passwordHasher domain.PasswordHasher,
+	flowStore domain.FlowStore,
+	oauthService *OAuthService,
+	clientService *client.ClientService,
 ) *AuthServer {
 	return &AuthServer{
 		userRepo:       userRepo,
-		sessionRepo:    sessionRepo, // Store sessionRepo
+		sessionRepo:    sessionRepo,
 		tokenService:   tokenService,
 		passwordHasher: passwordHasher,
+		flowStore:      flowStore,
+		oauthService:   oauthService,
+		clientService:  clientService,
 	}
 }
 
@@ -402,6 +414,200 @@ func (s *AuthServer) ClearUserSessions(ctx context.Context, req *connect.Request
 	}
 
 	return connect.NewResponse(&emptypb.Empty{}), nil
+}
+
+// GetConsentInfo retrieves consent information for an OAuth flow
+func (s *AuthServer) GetConsentInfo(ctx context.Context, req *connect.Request[ssov1.GetConsentInfoRequest]) (*connect.Response[ssov1.GetConsentInfoResponse], error) {
+	flowID := req.Msg.FlowId
+	log.Info().Str("flowId", flowID).Msg("GetConsentInfo called")
+
+	// Get flow state
+	flowState, err := s.flowStore.GetFlow(flowID)
+	if err != nil {
+		if goerrors.Is(err, domain.ErrFlowNotFound) || goerrors.Is(err, domain.ErrFlowExpired) {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("consent flow not found or expired"))
+		}
+		log.Error().Err(err).Str("flowId", flowID).Msg("Error retrieving flow state for consent")
+		return nil, connect.NewError(connect.CodeInternal, errors.New("could not retrieve flow details"))
+	}
+
+	// Get client information
+	client, err := s.clientService.GetClient(ctx, flowState.ClientID)
+	if err != nil {
+		log.Error().Err(err).Str("clientID", flowState.ClientID).Msg("Failed to get client for consent")
+		return nil, connect.NewError(connect.CodeInternal, errors.New("could not retrieve client information"))
+	}
+
+	// Parse scopes and create consent data
+	requestedScopes := strings.Split(flowState.Scope, " ")
+	scopes := make([]*ssov1.ConsentScope, 0, len(requestedScopes))
+
+	for _, scope := range requestedScopes {
+		// Basic scope descriptions - in a real implementation, this could be configurable
+		var description string
+		var required bool
+
+		switch scope {
+		case "openid":
+			description = "Allow this application to identify you"
+			required = true
+		case "profile":
+			description = "Access your basic profile information (name, picture, etc.)"
+			required = false
+		case "email":
+			description = "Access your email address"
+			required = false
+		default:
+			description = fmt.Sprintf("Access to %s scope", scope)
+			required = false
+		}
+
+		scopes = append(scopes, &ssov1.ConsentScope{
+			Name:        scope,
+			Description: description,
+			Required:    required,
+		})
+	}
+
+	response := &ssov1.GetConsentInfoResponse{
+		ClientName:    client.Name,
+		ClientLogoUri: client.LogoURI,
+		Scopes:        scopes,
+	}
+
+	return connect.NewResponse(response), nil
+}
+
+// SubmitConsent handles user consent approval for OAuth scopes
+func (s *AuthServer) SubmitConsent(ctx context.Context, req *connect.Request[ssov1.SubmitConsentRequest]) (*connect.Response[ssov1.SubmitConsentResponse], error) {
+	flowID := req.Msg.FlowId
+	acceptedScopes := req.Msg.AcceptedScopes
+	rememberConsent := req.Msg.RememberConsent
+
+	log.Info().
+		Str("flowId", flowID).
+		Strs("acceptedScopes", acceptedScopes).
+		Bool("rememberConsent", rememberConsent).
+		Msg("SubmitConsent called")
+
+	// Get flow state
+	flowState, err := s.flowStore.GetFlow(flowID)
+	if err != nil {
+		if goerrors.Is(err, domain.ErrFlowNotFound) || goerrors.Is(err, domain.ErrFlowExpired) {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("consent flow not found or expired"))
+		}
+		log.Error().Err(err).Str("flowId", flowID).Msg("Error retrieving flow state for consent submission")
+		return nil, connect.NewError(connect.CodeInternal, errors.New("could not retrieve flow details"))
+	}
+
+	// Validate that all required scopes are accepted
+	requestedScopes := strings.Split(flowState.Scope, " ")
+	requiredScopes := make([]string, 0)
+	for _, scope := range requestedScopes {
+		// Basic logic - openid is always required
+		if scope == "openid" {
+			requiredScopes = append(requiredScopes, scope)
+		}
+	}
+
+	// Check if all required scopes are in accepted scopes
+	for _, required := range requiredScopes {
+		found := false
+		for _, accepted := range acceptedScopes {
+			if accepted == required {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("required scopes must be accepted"))
+		}
+	}
+
+	// Filter scope to only include accepted scopes
+	acceptedScopeString := strings.Join(acceptedScopes, " ")
+
+	// Generate authorization code with accepted scopes
+	authCode, err := s.oauthService.GenerateAuthCode(
+		ctx,
+		flowState.ClientID,
+		flowState.UserID,
+		flowState.RedirectURI,
+		acceptedScopeString, // Use only accepted scopes
+		flowState.CodeChallenge,
+		flowState.CodeChallengeMethod,
+	)
+	if err != nil {
+		log.Error().Err(err).Str("flowId", flowID).Msg("Failed to generate authorization code after consent")
+		return nil, connect.NewError(connect.CodeInternal, errors.New("could not complete authorization"))
+	}
+
+	// Delete the flow state as it's now been used
+	_ = s.flowStore.DeleteFlow(flowID)
+
+	// Build redirect URL back to the client application
+	redirectURL := flowState.RedirectURI
+	params := url.Values{}
+	params.Set("code", authCode)
+	if flowState.State != "" {
+		params.Set("state", flowState.State)
+	}
+
+	if strings.Contains(redirectURL, "?") {
+		redirectURL += "&" + params.Encode()
+	} else {
+		redirectURL += "?" + params.Encode()
+	}
+
+	log.Info().Str("flowId", flowID).Str("userID", flowState.UserID).Str("redirectURL", redirectURL).Msg("User consented, redirecting to client with auth code")
+
+	response := &ssov1.SubmitConsentResponse{
+		RedirectUrl: redirectURL,
+	}
+
+	return connect.NewResponse(response), nil
+}
+
+// DenyConsent handles user consent denial for OAuth scopes
+func (s *AuthServer) DenyConsent(ctx context.Context, req *connect.Request[ssov1.DenyConsentRequest]) (*connect.Response[ssov1.DenyConsentResponse], error) {
+	flowID := req.Msg.FlowId
+	log.Info().Str("flowId", flowID).Msg("DenyConsent called")
+
+	// Get flow state
+	flowState, err := s.flowStore.GetFlow(flowID)
+	if err != nil {
+		if goerrors.Is(err, domain.ErrFlowNotFound) || goerrors.Is(err, domain.ErrFlowExpired) {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("consent flow not found or expired"))
+		}
+		log.Error().Err(err).Str("flowId", flowID).Msg("Error retrieving flow state for consent denial")
+		return nil, connect.NewError(connect.CodeInternal, errors.New("could not retrieve flow details"))
+	}
+
+	// Delete the flow state
+	_ = s.flowStore.DeleteFlow(flowID)
+
+	// Build error redirect URL back to the client application
+	redirectURL := flowState.RedirectURI
+	params := url.Values{}
+	params.Set("error", "access_denied")
+	params.Set("error_description", "User denied consent")
+	if flowState.State != "" {
+		params.Set("state", flowState.State)
+	}
+
+	if strings.Contains(redirectURL, "?") {
+		redirectURL += "&" + params.Encode()
+	} else {
+		redirectURL += "?" + params.Encode()
+	}
+
+	log.Info().Str("flowId", flowID).Str("userID", flowState.UserID).Str("redirectURL", redirectURL).Msg("User denied consent, redirecting to client with error")
+
+	response := &ssov1.DenyConsentResponse{
+		RedirectUrl: redirectURL,
+	}
+
+	return connect.NewResponse(response), nil
 }
 
 // Ensure AuthServer implements ssov1connect.AuthServiceHandler

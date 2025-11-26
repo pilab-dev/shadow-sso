@@ -232,5 +232,308 @@ func (r *UserRepository) ListUsers(ctx context.Context, pageToken string, pageSi
 	return users, nextPageToken, nil
 }
 
+// StorePhoneVerificationOtp stores a phone verification OTP for a user
+func (r *UserRepository) StorePhoneVerificationOtp(ctx context.Context, userID, otp string, expiresAt time.Time) error {
+	filter := bson.M{"_id": userID}
+	update := bson.M{
+		"$set": bson.M{
+			"phone_verification_otp":           otp,
+			"phone_verification_otp_expires_at": expiresAt,
+			"updated_at":                       time.Now(),
+		},
+	}
+
+	result, err := r.users.UpdateOne(ctx, filter, update)
+	if err != nil {
+		log.Error().Err(err).Str("userID", userID).Msg("Failed to store phone verification OTP")
+		return fmt.Errorf("failed to store phone verification OTP: %w", err)
+	}
+
+	if result.MatchedCount == 0 {
+		return domain.ErrUserNotFound
+	}
+
+	return nil
+}
+
+// ClearPhoneVerificationOtp clears the phone verification OTP for a user
+func (r *UserRepository) ClearPhoneVerificationOtp(ctx context.Context, userID string) error {
+	filter := bson.M{"_id": userID}
+	update := bson.M{
+		"$unset": bson.M{
+			"phone_verification_otp":            "",
+			"phone_verification_otp_expires_at": "",
+			"phone_verification_attempts":       "",
+			"phone_verification_last_attempt_at": "",
+		},
+		"$set": bson.M{
+			"updated_at": time.Now(),
+		},
+	}
+
+	result, err := r.users.UpdateOne(ctx, filter, update)
+	if err != nil {
+		log.Error().Err(err).Str("userID", userID).Msg("Failed to clear phone verification OTP")
+		return fmt.Errorf("failed to clear phone verification OTP: %w", err)
+	}
+
+	if result.MatchedCount == 0 {
+		return domain.ErrUserNotFound
+	}
+
+	return nil
+}
+
+// StoreEmailMFAOtp stores an email MFA OTP for a user
+func (r *UserRepository) StoreEmailMFAOtp(ctx context.Context, userID, otp string, expiresAt time.Time) error {
+	filter := bson.M{"_id": userID}
+	now := time.Now()
+	update := bson.M{
+		"$set": bson.M{
+			"email_mfa_otp":           otp,
+			"email_mfa_otp_expires_at": expiresAt,
+			"email_mfa_last_sent_at":   &now,
+			"updated_at":              now,
+		},
+	}
+
+	result, err := r.users.UpdateOne(ctx, filter, update)
+	if err != nil {
+		log.Error().Err(err).Str("userID", userID).Msg("Failed to store email MFA OTP")
+		return fmt.Errorf("failed to store email MFA OTP: %w", err)
+	}
+
+	if result.MatchedCount == 0 {
+		return domain.ErrUserNotFound
+	}
+
+	return nil
+}
+
+// ClearEmailMFAOtp clears the email MFA OTP for a user
+func (r *UserRepository) ClearEmailMFAOtp(ctx context.Context, userID string) error {
+	filter := bson.M{"_id": userID}
+	update := bson.M{
+		"$unset": bson.M{
+			"email_mfa_otp":            "",
+			"email_mfa_otp_expires_at": "",
+			"email_mfa_last_sent_at":   "",
+		},
+		"$set": bson.M{
+			"updated_at": time.Now(),
+		},
+	}
+
+	result, err := r.users.UpdateOne(ctx, filter, update)
+	if err != nil {
+		log.Error().Err(err).Str("userID", userID).Msg("Failed to clear email MFA OTP")
+		return fmt.Errorf("failed to clear email MFA OTP: %w", err)
+	}
+
+	if result.MatchedCount == 0 {
+		return domain.ErrUserNotFound
+	}
+
+	return nil
+}
+
+// UpdateEmailMFACounter updates the email MFA OTP counter for a user
+func (r *UserRepository) UpdateEmailMFACounter(ctx context.Context, userID string, counter uint64) error {
+	filter := bson.M{"_id": userID}
+	update := bson.M{
+		"$set": bson.M{
+			"email_mfa_otp_counter": counter,
+			"updated_at":            time.Now(),
+		},
+	}
+
+	result, err := r.users.UpdateOne(ctx, filter, update)
+	if err != nil {
+		log.Error().Err(err).Str("userID", userID).Msg("Failed to update email MFA counter")
+		return fmt.Errorf("failed to update email MFA counter: %w", err)
+	}
+
+	if result.MatchedCount == 0 {
+		return domain.ErrUserNotFound
+	}
+
+	return nil
+}
+
+// EnableEmailMFA enables email MFA for a user
+func (r *UserRepository) EnableEmailMFA(ctx context.Context, userID string) error {
+	filter := bson.M{"_id": userID}
+	update := bson.M{
+		"$set": bson.M{
+			"email_mfa_enabled": true,
+			"updated_at":        time.Now(),
+		},
+	}
+
+	result, err := r.users.UpdateOne(ctx, filter, update)
+	if err != nil {
+		log.Error().Err(err).Str("userID", userID).Msg("Failed to enable email MFA")
+		return fmt.Errorf("failed to enable email MFA: %w", err)
+	}
+
+	if result.MatchedCount == 0 {
+		return domain.ErrUserNotFound
+	}
+
+	return nil
+}
+
+// DisableEmailMFA disables email MFA for a user
+func (r *UserRepository) DisableEmailMFA(ctx context.Context, userID string) error {
+	filter := bson.M{"_id": userID}
+	update := bson.M{
+		"$unset": bson.M{
+			"email_mfa_enabled":       "",
+			"email_mfa_otp":           "",
+			"email_mfa_otp_expires_at": "",
+			"email_mfa_otp_counter":   "",
+			"email_mfa_last_sent_at":  "",
+		},
+		"$set": bson.M{
+			"updated_at": time.Now(),
+		},
+	}
+
+	result, err := r.users.UpdateOne(ctx, filter, update)
+	if err != nil {
+		log.Error().Err(err).Str("userID", userID).Msg("Failed to disable email MFA")
+		return fmt.Errorf("failed to disable email MFA: %w", err)
+	}
+
+	if result.MatchedCount == 0 {
+		return domain.ErrUserNotFound
+	}
+
+	return nil
+}
+
+// RegisterPushMFADevice registers a device token for push MFA
+func (r *UserRepository) RegisterPushMFADevice(ctx context.Context, userID, deviceToken string) error {
+	filter := bson.M{"_id": userID}
+	update := bson.M{
+		"$addToSet": bson.M{
+			"push_mfa_device_tokens": deviceToken,
+		},
+		"$set": bson.M{
+			"updated_at": time.Now(),
+		},
+	}
+
+	result, err := r.users.UpdateOne(ctx, filter, update)
+	if err != nil {
+		log.Error().Err(err).Str("userID", userID).Msg("Failed to register push MFA device")
+		return fmt.Errorf("failed to register push MFA device: %w", err)
+	}
+
+	if result.MatchedCount == 0 {
+		return domain.ErrUserNotFound
+	}
+
+	return nil
+}
+
+// UnregisterPushMFADevice removes a device token for push MFA
+func (r *UserRepository) UnregisterPushMFADevice(ctx context.Context, userID, deviceToken string) error {
+	filter := bson.M{"_id": userID}
+	update := bson.M{
+		"$pull": bson.M{
+			"push_mfa_device_tokens": deviceToken,
+		},
+		"$set": bson.M{
+			"updated_at": time.Now(),
+		},
+	}
+
+	result, err := r.users.UpdateOne(ctx, filter, update)
+	if err != nil {
+		log.Error().Err(err).Str("userID", userID).Msg("Failed to unregister push MFA device")
+		return fmt.Errorf("failed to unregister push MFA device: %w", err)
+	}
+
+	if result.MatchedCount == 0 {
+		return domain.ErrUserNotFound
+	}
+
+	return nil
+}
+
+// UpdatePushMFAChallenges updates the push MFA challenges for a user
+func (r *UserRepository) UpdatePushMFAChallenges(ctx context.Context, userID string, challenges []domain.PushMFAChallenge) error {
+	filter := bson.M{"_id": userID}
+	update := bson.M{
+		"$set": bson.M{
+			"push_mfa_challenges": challenges,
+			"updated_at":           time.Now(),
+		},
+	}
+
+	result, err := r.users.UpdateOne(ctx, filter, update)
+	if err != nil {
+		log.Error().Err(err).Str("userID", userID).Msg("Failed to update push MFA challenges")
+		return fmt.Errorf("failed to update push MFA challenges: %w", err)
+	}
+
+	if result.MatchedCount == 0 {
+		return domain.ErrUserNotFound
+	}
+
+	return nil
+}
+
+// EnablePushMFA enables push MFA for a user
+func (r *UserRepository) EnablePushMFA(ctx context.Context, userID string) error {
+	filter := bson.M{"_id": userID}
+	update := bson.M{
+		"$set": bson.M{
+			"push_mfa_enabled": true,
+			"updated_at":        time.Now(),
+		},
+	}
+
+	result, err := r.users.UpdateOne(ctx, filter, update)
+	if err != nil {
+		log.Error().Err(err).Str("userID", userID).Msg("Failed to enable push MFA")
+		return fmt.Errorf("failed to enable push MFA: %w", err)
+	}
+
+	if result.MatchedCount == 0 {
+		return domain.ErrUserNotFound
+	}
+
+	return nil
+}
+
+// DisablePushMFA disables push MFA for a user
+func (r *UserRepository) DisablePushMFA(ctx context.Context, userID string) error {
+	filter := bson.M{"_id": userID}
+	update := bson.M{
+		"$unset": bson.M{
+			"push_mfa_enabled":       "",
+			"push_mfa_device_tokens": "",
+			"push_mfa_challenges":    "",
+		},
+		"$set": bson.M{
+			"updated_at": time.Now(),
+		},
+	}
+
+	result, err := r.users.UpdateOne(ctx, filter, update)
+	if err != nil {
+		log.Error().Err(err).Str("userID", userID).Msg("Failed to disable push MFA")
+		return fmt.Errorf("failed to disable push MFA: %w", err)
+	}
+
+	if result.MatchedCount == 0 {
+		return domain.ErrUserNotFound
+	}
+
+	return nil
+}
+
 // Ensure interface compliance
 var _ domain.UserRepository = (*UserRepository)(nil)

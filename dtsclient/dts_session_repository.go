@@ -8,7 +8,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/pilab-dev/shadow-sso/domain"
-	dtsv1 "github.com/pilab-dev/shadow-sso/gen/proto/dts/v1"
+	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -31,15 +31,15 @@ func NewDTSSessionRepository(client *Client) domain.SessionRepository {
 
 // --- Helper functions for conversion ---
 
-func domainSessionToProtoUserSession(session *domain.Session) *dtsv1.UserSession {
+func domainSessionToProtoUserSession(session *domain.Session) *ssov1.UserSession {
 	if session == nil {
 		return nil
 	}
-	// domain.Session.TokenID is not stored in dtsv1.UserSession.
+	// domain.Session.TokenID is not stored in ssov1.UserSession.
 	// domain.Session.IsRevoked: if true, conceptually the session wouldn't be in DTS or would be deleted.
-	// domain.Session.ACR and AMR are not directly in domain.Session but are in dtsv1.UserSession.
+	// domain.Session.ACR and AMR are not directly in domain.Session but are in ssov1.UserSession.
 	// For now, we map available fields.
-	return &dtsv1.UserSession{
+	return &ssov1.UserSession{
 		SessionId:       session.ID,
 		UserId:          session.UserID,
 		AuthenticatedAt: timestamppb.New(session.CreatedAt), // Mapping CreatedAt to AuthenticatedAt
@@ -51,7 +51,7 @@ func domainSessionToProtoUserSession(session *domain.Session) *dtsv1.UserSession
 	}
 }
 
-func protoUserSessionToDomainSession(protoUS *dtsv1.UserSession) *domain.Session {
+func protoUserSessionToDomainSession(protoUS *ssov1.UserSession) *domain.Session {
 	if protoUS == nil {
 		return nil
 	}
@@ -63,8 +63,8 @@ func protoUserSessionToDomainSession(protoUS *dtsv1.UserSession) *domain.Session
 		UserAgent: protoUS.UserAgent,
 		IPAddress: protoUS.IpAddress,
 		IsRevoked: false, // If retrieved from DTS, it's considered not revoked
-		// UpdatedAt: // Not in dtsv1.UserSession, could use AuthenticatedAt or leave as zero
-		// TokenID: // Not in dtsv1.UserSession
+		// UpdatedAt: // Not in ssov1.UserSession, could use AuthenticatedAt or leave as zero
+		// TokenID: // Not in ssov1.UserSession
 		// ACR/AMR could be mapped if domain.Session is extended
 	}
 }
@@ -86,7 +86,7 @@ func (r *dtsSessionRepository) StoreSession(ctx context.Context, session *domain
 	}
 
 	protoUS := domainSessionToProtoUserSession(session)
-	req := connect.NewRequest(&dtsv1.StoreUserSessionRequest{
+	req := connect.NewRequest(&ssov1.StoreUserSessionRequest{
 		UserSession: protoUS,
 	})
 
@@ -105,7 +105,7 @@ func (r *dtsSessionRepository) GetSessionByID(ctx context.Context, id string) (*
 		return nil, errors.New("session ID cannot be empty")
 	}
 
-	req := connect.NewRequest(&dtsv1.GetUserSessionRequest{
+	req := connect.NewRequest(&ssov1.GetUserSessionRequest{
 		SessionId: id,
 	})
 
@@ -165,7 +165,7 @@ func (r *dtsSessionRepository) DeleteSession(ctx context.Context, id string) err
 		return errors.New("session ID cannot be empty for deletion")
 	}
 
-	req := connect.NewRequest(&dtsv1.DeleteUserSessionRequest{
+	req := connect.NewRequest(&ssov1.DeleteUserSessionRequest{
 		SessionId: id,
 	})
 

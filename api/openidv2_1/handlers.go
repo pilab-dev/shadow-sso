@@ -482,8 +482,57 @@ func (oa *OAuth2API) tryHandleWithExistingSession(c *gin.Context, data *authoriz
 	if sessionErr == nil {
 		// User is logged in.
 		// TODO: Handle 'prompt=login' - if present, must re-authenticate even if session exists. (This would return false from here)
-		// TODO: Handle consent - if not previously given for this client/scopes, may need a consent step. (This might redirect to consent or return false)
 
+		// Check if client requires consent
+		client, clientErr := oa.clientService.GetClient(ctx, data.clientID)
+		if clientErr != nil {
+			log.Error().Err(clientErr).Str("clientID", data.clientID).Msg("AuthorizeHandler: Failed to get client for consent check")
+			oa.sendJSONError(c, http.StatusInternalServerError, domain.NewServerError("failed to retrieve client information"))
+			return true, clientErr
+		}
+
+		if client.RequireConsent {
+			// Create flow state for consent
+			flowID := uuid.NewString()
+			flowState := domain.LoginFlowState{
+				FlowID:              flowID,
+				ClientID:            data.clientID,
+				RedirectURI:         data.redirectURI,
+				Scope:               data.scopeQuery,
+				State:               data.state,
+				Nonce:               data.nonce,
+				CodeChallenge:       data.codeChallenge,
+				CodeChallengeMethod: data.codeChallengeMethod,
+				UserID:              userSession.UserID,
+				UserAuthenticatedAt: time.Now(),
+				ExpiresAt:           time.Now().Add(10 * time.Minute),
+			}
+
+			if storeErr := oa.flowStore.StoreFlow(flowID, flowState); storeErr != nil {
+				log.Error().Err(storeErr).Msg("AuthorizeHandler: Failed to store flow state for consent")
+				oa.sendJSONError(c, http.StatusInternalServerError, domain.NewServerError("failed to initiate consent flow"))
+				return true, storeErr
+			}
+
+			// Set flow ID cookie
+			http.SetCookie(c.Writer, &http.Cookie{
+				Name:     "sso_oidc_flow_id",
+				Value:    flowID,
+				Path:     "/",
+				MaxAge:   int((10 * time.Minute).Seconds()),
+				HttpOnly: true,
+				Secure:   c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https"),
+				SameSite: http.SameSiteLaxMode,
+			})
+
+			// Redirect to consent screen
+			consentURL := oa.config.NextJSLoginURL + "/consent?flow_id=" + url.QueryEscape(flowID)
+			log.Info().Str("userID", userSession.UserID).Str("clientID", data.clientID).Str("consentURL", consentURL).Msg("AuthorizeHandler: User authenticated but consent required, redirecting to consent screen.")
+			c.Redirect(http.StatusFound, consentURL)
+			return true, nil
+		}
+
+		// No consent required, proceed with auth code generation
 		log.Info().Str("userID", userSession.UserID).Str("clientID", data.clientID).Msg("AuthorizeHandler: User already authenticated. Proceeding to auth code generation.")
 		authCode, errGen := oa.service.GenerateAuthCode(
 			ctx,
@@ -1443,6 +1492,8 @@ func (oa *OAuth2API) AuthenticateUserHandler(c *gin.Context) {
 	// TODO: Handle 2FA if enabled for the user. This would involve another step/redirect or different API call.
 	// For this iteration, we assume 2FA is handled separately or not in scope for this specific handler.
 
+	// Client information was already retrieved and validated earlier in the function
+
 	// Authentication successful, create OIDC Provider session for the user.
 	sessionID := uuid.NewString()
 	opSessionExpiry := time.Now().Add(24 * time.Hour) // Example: 24-hour session for the OP
@@ -1480,9 +1531,23 @@ func (oa *OAuth2API) AuthenticateUserHandler(c *gin.Context) {
 		// For now, log and proceed. Consider cleanup or more robust error handling.
 	}
 
-	// Generate authorization code.
-	// The GenerateAuthCode method in OAuthService will need to be updated to accept UserID,
-	// CodeChallenge, and CodeChallengeMethod from the flowState.
+	// Check if consent is required for this client
+	client, err := oa.clientService.GetClient(ctx, flowState.ClientID)
+	if err != nil {
+		log.Error().Err(err).Str("clientID", flowState.ClientID).Msg("Failed to get client for consent check")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error", "error_description": "Could not retrieve client information."})
+		return
+	}
+
+	if client.RequireConsent {
+		// Redirect to consent screen instead of generating auth code
+		consentURL := oa.config.NextJSLoginURL + "/consent?flow_id=" + url.QueryEscape(req.FlowID)
+		log.Info().Str("flowId", req.FlowID).Str("userID", user.ID).Str("consentURL", consentURL).Msg("User authenticated, redirecting to consent screen.")
+		c.Redirect(http.StatusFound, consentURL)
+		return
+	}
+
+	// No consent required, proceed with authorization code generation
 	authCode, err := oa.service.GenerateAuthCode(
 		ctx,
 		flowState.ClientID,
@@ -1519,3 +1584,4 @@ func (oa *OAuth2API) AuthenticateUserHandler(c *gin.Context) {
 	log.Info().Str("flowId", req.FlowID).Str("userID", user.ID).Str("redirectURL", redirectURL).Msg("User authenticated via UI, redirecting to client with auth code.")
 	c.Redirect(http.StatusFound, redirectURL)
 }
+

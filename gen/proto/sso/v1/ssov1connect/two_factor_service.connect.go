@@ -37,9 +37,45 @@ const (
 	// TwoFactorServiceInitiateTOTPSetupProcedure is the fully-qualified name of the TwoFactorService's
 	// InitiateTOTPSetup RPC.
 	TwoFactorServiceInitiateTOTPSetupProcedure = "/sso.v1.TwoFactorService/InitiateTOTPSetup"
+	// TwoFactorServiceInitiateHOTPSetupProcedure is the fully-qualified name of the TwoFactorService's
+	// InitiateHOTPSetup RPC.
+	TwoFactorServiceInitiateHOTPSetupProcedure = "/sso.v1.TwoFactorService/InitiateHOTPSetup"
 	// TwoFactorServiceVerifyAndEnableTOTPProcedure is the fully-qualified name of the
 	// TwoFactorService's VerifyAndEnableTOTP RPC.
 	TwoFactorServiceVerifyAndEnableTOTPProcedure = "/sso.v1.TwoFactorService/VerifyAndEnableTOTP"
+	// TwoFactorServiceVerifyAndEnableHOTPProcedure is the fully-qualified name of the
+	// TwoFactorService's VerifyAndEnableHOTP RPC.
+	TwoFactorServiceVerifyAndEnableHOTPProcedure = "/sso.v1.TwoFactorService/VerifyAndEnableHOTP"
+	// TwoFactorServiceInitiateEmailMFASetupProcedure is the fully-qualified name of the
+	// TwoFactorService's InitiateEmailMFASetup RPC.
+	TwoFactorServiceInitiateEmailMFASetupProcedure = "/sso.v1.TwoFactorService/InitiateEmailMFASetup"
+	// TwoFactorServiceVerifyAndEnableEmailMFAProcedure is the fully-qualified name of the
+	// TwoFactorService's VerifyAndEnableEmailMFA RPC.
+	TwoFactorServiceVerifyAndEnableEmailMFAProcedure = "/sso.v1.TwoFactorService/VerifyAndEnableEmailMFA"
+	// TwoFactorServiceInitiatePushMFASetupProcedure is the fully-qualified name of the
+	// TwoFactorService's InitiatePushMFASetup RPC.
+	TwoFactorServiceInitiatePushMFASetupProcedure = "/sso.v1.TwoFactorService/InitiatePushMFASetup"
+	// TwoFactorServiceVerifyAndEnablePushMFAProcedure is the fully-qualified name of the
+	// TwoFactorService's VerifyAndEnablePushMFA RPC.
+	TwoFactorServiceVerifyAndEnablePushMFAProcedure = "/sso.v1.TwoFactorService/VerifyAndEnablePushMFA"
+	// TwoFactorServiceRegisterPushDeviceProcedure is the fully-qualified name of the TwoFactorService's
+	// RegisterPushDevice RPC.
+	TwoFactorServiceRegisterPushDeviceProcedure = "/sso.v1.TwoFactorService/RegisterPushDevice"
+	// TwoFactorServiceUnregisterPushDeviceProcedure is the fully-qualified name of the
+	// TwoFactorService's UnregisterPushDevice RPC.
+	TwoFactorServiceUnregisterPushDeviceProcedure = "/sso.v1.TwoFactorService/UnregisterPushDevice"
+	// TwoFactorServiceRespondToPushChallengeProcedure is the fully-qualified name of the
+	// TwoFactorService's RespondToPushChallenge RPC.
+	TwoFactorServiceRespondToPushChallengeProcedure = "/sso.v1.TwoFactorService/RespondToPushChallenge"
+	// TwoFactorServiceGetPushChallengeStatusProcedure is the fully-qualified name of the
+	// TwoFactorService's GetPushChallengeStatus RPC.
+	TwoFactorServiceGetPushChallengeStatusProcedure = "/sso.v1.TwoFactorService/GetPushChallengeStatus"
+	// TwoFactorServiceSendMFAChallengeProcedure is the fully-qualified name of the TwoFactorService's
+	// SendMFAChallenge RPC.
+	TwoFactorServiceSendMFAChallengeProcedure = "/sso.v1.TwoFactorService/SendMFAChallenge"
+	// TwoFactorServiceVerifyMFAChallengeProcedure is the fully-qualified name of the TwoFactorService's
+	// VerifyMFAChallenge RPC.
+	TwoFactorServiceVerifyMFAChallengeProcedure = "/sso.v1.TwoFactorService/VerifyMFAChallenge"
 	// TwoFactorServiceDisable2FAProcedure is the fully-qualified name of the TwoFactorService's
 	// Disable2FA RPC.
 	TwoFactorServiceDisable2FAProcedure = "/sso.v1.TwoFactorService/Disable2FA"
@@ -54,10 +90,36 @@ type TwoFactorServiceClient interface {
 	// Generates a new TOTP secret and a corresponding QR code URI for the authenticated user.
 	// The user must verify with a TOTP code from their authenticator app to enable 2FA.
 	InitiateTOTPSetup(context.Context, *connect.Request[v1.InitiateTOTPSetupRequest]) (*connect.Response[v1.InitiateTOTPSetupResponse], error)
+	// Initiates the setup process for HOTP.
+	// Generates a new HOTP secret and a corresponding QR code URI for the authenticated user.
+	InitiateHOTPSetup(context.Context, *connect.Request[v1.InitiateHOTPSetupRequest]) (*connect.Response[v1.InitiateHOTPSetupResponse], error)
 	// Verifies a TOTP code provided by the user during setup and enables 2FA if the code is valid.
 	// This should be called after InitiateTOTPSetup.
 	// Returns a list of recovery codes upon successful enablement.
 	VerifyAndEnableTOTP(context.Context, *connect.Request[v1.VerifyAndEnableTOTPRequest]) (*connect.Response[v1.VerifyAndEnableTOTPResponse], error)
+	// Verifies an HOTP code provided by the user during setup and enables 2FA if the code is valid.
+	// This should be called after InitiateHOTPSetup.
+	VerifyAndEnableHOTP(context.Context, *connect.Request[v1.VerifyAndEnableHOTPRequest]) (*connect.Response[v1.VerifyAndEnableHOTPResponse], error)
+	// Initiates email-based MFA setup by sending an OTP to the user's email.
+	InitiateEmailMFASetup(context.Context, *connect.Request[v1.InitiateEmailMFASetupRequest]) (*connect.Response[v1.InitiateEmailMFASetupResponse], error)
+	// Verifies the email OTP and enables email-based MFA.
+	VerifyAndEnableEmailMFA(context.Context, *connect.Request[v1.VerifyAndEnableEmailMFARequest]) (*connect.Response[v1.VerifyAndEnableEmailMFAResponse], error)
+	// Initiates push MFA setup by registering a device token.
+	InitiatePushMFASetup(context.Context, *connect.Request[v1.InitiatePushMFASetupRequest]) (*connect.Response[v1.InitiatePushMFASetupResponse], error)
+	// Enables push MFA for the user.
+	VerifyAndEnablePushMFA(context.Context, *connect.Request[v1.VerifyAndEnablePushMFARequest]) (*connect.Response[v1.VerifyAndEnablePushMFAResponse], error)
+	// Registers a device token for push notifications.
+	RegisterPushDevice(context.Context, *connect.Request[v1.RegisterPushDeviceRequest]) (*connect.Response[v1.RegisterPushDeviceResponse], error)
+	// Unregisters a device token.
+	UnregisterPushDevice(context.Context, *connect.Request[v1.UnregisterPushDeviceRequest]) (*connect.Response[v1.UnregisterPushDeviceResponse], error)
+	// Allows users to respond to push MFA challenges.
+	RespondToPushChallenge(context.Context, *connect.Request[v1.RespondToPushChallengeRequest]) (*connect.Response[v1.RespondToPushChallengeResponse], error)
+	// Gets the status of a push MFA challenge.
+	GetPushChallengeStatus(context.Context, *connect.Request[v1.GetPushChallengeStatusRequest]) (*connect.Response[v1.GetPushChallengeStatusResponse], error)
+	// Sends an MFA code via the user's configured method (TOTP/HOTP/Email/Push).
+	SendMFAChallenge(context.Context, *connect.Request[v1.SendMFAChallengeRequest]) (*connect.Response[v1.SendMFAChallengeResponse], error)
+	// Verifies an MFA code against the user's configured method.
+	VerifyMFAChallenge(context.Context, *connect.Request[v1.VerifyMFAChallengeRequest]) (*connect.Response[v1.VerifyMFAChallengeResponse], error)
 	// Disables 2FA for the authenticated user.
 	// May require current password or a 2FA code (if already enabled) for verification.
 	Disable2FA(context.Context, *connect.Request[v1.Disable2FARequest]) (*connect.Response[emptypb.Empty], error)
@@ -82,9 +144,69 @@ func NewTwoFactorServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			baseURL+TwoFactorServiceInitiateTOTPSetupProcedure,
 			opts...,
 		),
+		initiateHOTPSetup: connect.NewClient[v1.InitiateHOTPSetupRequest, v1.InitiateHOTPSetupResponse](
+			httpClient,
+			baseURL+TwoFactorServiceInitiateHOTPSetupProcedure,
+			opts...,
+		),
 		verifyAndEnableTOTP: connect.NewClient[v1.VerifyAndEnableTOTPRequest, v1.VerifyAndEnableTOTPResponse](
 			httpClient,
 			baseURL+TwoFactorServiceVerifyAndEnableTOTPProcedure,
+			opts...,
+		),
+		verifyAndEnableHOTP: connect.NewClient[v1.VerifyAndEnableHOTPRequest, v1.VerifyAndEnableHOTPResponse](
+			httpClient,
+			baseURL+TwoFactorServiceVerifyAndEnableHOTPProcedure,
+			opts...,
+		),
+		initiateEmailMFASetup: connect.NewClient[v1.InitiateEmailMFASetupRequest, v1.InitiateEmailMFASetupResponse](
+			httpClient,
+			baseURL+TwoFactorServiceInitiateEmailMFASetupProcedure,
+			opts...,
+		),
+		verifyAndEnableEmailMFA: connect.NewClient[v1.VerifyAndEnableEmailMFARequest, v1.VerifyAndEnableEmailMFAResponse](
+			httpClient,
+			baseURL+TwoFactorServiceVerifyAndEnableEmailMFAProcedure,
+			opts...,
+		),
+		initiatePushMFASetup: connect.NewClient[v1.InitiatePushMFASetupRequest, v1.InitiatePushMFASetupResponse](
+			httpClient,
+			baseURL+TwoFactorServiceInitiatePushMFASetupProcedure,
+			opts...,
+		),
+		verifyAndEnablePushMFA: connect.NewClient[v1.VerifyAndEnablePushMFARequest, v1.VerifyAndEnablePushMFAResponse](
+			httpClient,
+			baseURL+TwoFactorServiceVerifyAndEnablePushMFAProcedure,
+			opts...,
+		),
+		registerPushDevice: connect.NewClient[v1.RegisterPushDeviceRequest, v1.RegisterPushDeviceResponse](
+			httpClient,
+			baseURL+TwoFactorServiceRegisterPushDeviceProcedure,
+			opts...,
+		),
+		unregisterPushDevice: connect.NewClient[v1.UnregisterPushDeviceRequest, v1.UnregisterPushDeviceResponse](
+			httpClient,
+			baseURL+TwoFactorServiceUnregisterPushDeviceProcedure,
+			opts...,
+		),
+		respondToPushChallenge: connect.NewClient[v1.RespondToPushChallengeRequest, v1.RespondToPushChallengeResponse](
+			httpClient,
+			baseURL+TwoFactorServiceRespondToPushChallengeProcedure,
+			opts...,
+		),
+		getPushChallengeStatus: connect.NewClient[v1.GetPushChallengeStatusRequest, v1.GetPushChallengeStatusResponse](
+			httpClient,
+			baseURL+TwoFactorServiceGetPushChallengeStatusProcedure,
+			opts...,
+		),
+		sendMFAChallenge: connect.NewClient[v1.SendMFAChallengeRequest, v1.SendMFAChallengeResponse](
+			httpClient,
+			baseURL+TwoFactorServiceSendMFAChallengeProcedure,
+			opts...,
+		),
+		verifyMFAChallenge: connect.NewClient[v1.VerifyMFAChallengeRequest, v1.VerifyMFAChallengeResponse](
+			httpClient,
+			baseURL+TwoFactorServiceVerifyMFAChallengeProcedure,
 			opts...,
 		),
 		disable2FA: connect.NewClient[v1.Disable2FARequest, emptypb.Empty](
@@ -102,10 +224,22 @@ func NewTwoFactorServiceClient(httpClient connect.HTTPClient, baseURL string, op
 
 // twoFactorServiceClient implements TwoFactorServiceClient.
 type twoFactorServiceClient struct {
-	initiateTOTPSetup     *connect.Client[v1.InitiateTOTPSetupRequest, v1.InitiateTOTPSetupResponse]
-	verifyAndEnableTOTP   *connect.Client[v1.VerifyAndEnableTOTPRequest, v1.VerifyAndEnableTOTPResponse]
-	disable2FA            *connect.Client[v1.Disable2FARequest, emptypb.Empty]
-	generateRecoveryCodes *connect.Client[v1.GenerateRecoveryCodesRequest, v1.GenerateRecoveryCodesResponse]
+	initiateTOTPSetup       *connect.Client[v1.InitiateTOTPSetupRequest, v1.InitiateTOTPSetupResponse]
+	initiateHOTPSetup       *connect.Client[v1.InitiateHOTPSetupRequest, v1.InitiateHOTPSetupResponse]
+	verifyAndEnableTOTP     *connect.Client[v1.VerifyAndEnableTOTPRequest, v1.VerifyAndEnableTOTPResponse]
+	verifyAndEnableHOTP     *connect.Client[v1.VerifyAndEnableHOTPRequest, v1.VerifyAndEnableHOTPResponse]
+	initiateEmailMFASetup   *connect.Client[v1.InitiateEmailMFASetupRequest, v1.InitiateEmailMFASetupResponse]
+	verifyAndEnableEmailMFA *connect.Client[v1.VerifyAndEnableEmailMFARequest, v1.VerifyAndEnableEmailMFAResponse]
+	initiatePushMFASetup    *connect.Client[v1.InitiatePushMFASetupRequest, v1.InitiatePushMFASetupResponse]
+	verifyAndEnablePushMFA  *connect.Client[v1.VerifyAndEnablePushMFARequest, v1.VerifyAndEnablePushMFAResponse]
+	registerPushDevice      *connect.Client[v1.RegisterPushDeviceRequest, v1.RegisterPushDeviceResponse]
+	unregisterPushDevice    *connect.Client[v1.UnregisterPushDeviceRequest, v1.UnregisterPushDeviceResponse]
+	respondToPushChallenge  *connect.Client[v1.RespondToPushChallengeRequest, v1.RespondToPushChallengeResponse]
+	getPushChallengeStatus  *connect.Client[v1.GetPushChallengeStatusRequest, v1.GetPushChallengeStatusResponse]
+	sendMFAChallenge        *connect.Client[v1.SendMFAChallengeRequest, v1.SendMFAChallengeResponse]
+	verifyMFAChallenge      *connect.Client[v1.VerifyMFAChallengeRequest, v1.VerifyMFAChallengeResponse]
+	disable2FA              *connect.Client[v1.Disable2FARequest, emptypb.Empty]
+	generateRecoveryCodes   *connect.Client[v1.GenerateRecoveryCodesRequest, v1.GenerateRecoveryCodesResponse]
 }
 
 // InitiateTOTPSetup calls sso.v1.TwoFactorService.InitiateTOTPSetup.
@@ -113,9 +247,69 @@ func (c *twoFactorServiceClient) InitiateTOTPSetup(ctx context.Context, req *con
 	return c.initiateTOTPSetup.CallUnary(ctx, req)
 }
 
+// InitiateHOTPSetup calls sso.v1.TwoFactorService.InitiateHOTPSetup.
+func (c *twoFactorServiceClient) InitiateHOTPSetup(ctx context.Context, req *connect.Request[v1.InitiateHOTPSetupRequest]) (*connect.Response[v1.InitiateHOTPSetupResponse], error) {
+	return c.initiateHOTPSetup.CallUnary(ctx, req)
+}
+
 // VerifyAndEnableTOTP calls sso.v1.TwoFactorService.VerifyAndEnableTOTP.
 func (c *twoFactorServiceClient) VerifyAndEnableTOTP(ctx context.Context, req *connect.Request[v1.VerifyAndEnableTOTPRequest]) (*connect.Response[v1.VerifyAndEnableTOTPResponse], error) {
 	return c.verifyAndEnableTOTP.CallUnary(ctx, req)
+}
+
+// VerifyAndEnableHOTP calls sso.v1.TwoFactorService.VerifyAndEnableHOTP.
+func (c *twoFactorServiceClient) VerifyAndEnableHOTP(ctx context.Context, req *connect.Request[v1.VerifyAndEnableHOTPRequest]) (*connect.Response[v1.VerifyAndEnableHOTPResponse], error) {
+	return c.verifyAndEnableHOTP.CallUnary(ctx, req)
+}
+
+// InitiateEmailMFASetup calls sso.v1.TwoFactorService.InitiateEmailMFASetup.
+func (c *twoFactorServiceClient) InitiateEmailMFASetup(ctx context.Context, req *connect.Request[v1.InitiateEmailMFASetupRequest]) (*connect.Response[v1.InitiateEmailMFASetupResponse], error) {
+	return c.initiateEmailMFASetup.CallUnary(ctx, req)
+}
+
+// VerifyAndEnableEmailMFA calls sso.v1.TwoFactorService.VerifyAndEnableEmailMFA.
+func (c *twoFactorServiceClient) VerifyAndEnableEmailMFA(ctx context.Context, req *connect.Request[v1.VerifyAndEnableEmailMFARequest]) (*connect.Response[v1.VerifyAndEnableEmailMFAResponse], error) {
+	return c.verifyAndEnableEmailMFA.CallUnary(ctx, req)
+}
+
+// InitiatePushMFASetup calls sso.v1.TwoFactorService.InitiatePushMFASetup.
+func (c *twoFactorServiceClient) InitiatePushMFASetup(ctx context.Context, req *connect.Request[v1.InitiatePushMFASetupRequest]) (*connect.Response[v1.InitiatePushMFASetupResponse], error) {
+	return c.initiatePushMFASetup.CallUnary(ctx, req)
+}
+
+// VerifyAndEnablePushMFA calls sso.v1.TwoFactorService.VerifyAndEnablePushMFA.
+func (c *twoFactorServiceClient) VerifyAndEnablePushMFA(ctx context.Context, req *connect.Request[v1.VerifyAndEnablePushMFARequest]) (*connect.Response[v1.VerifyAndEnablePushMFAResponse], error) {
+	return c.verifyAndEnablePushMFA.CallUnary(ctx, req)
+}
+
+// RegisterPushDevice calls sso.v1.TwoFactorService.RegisterPushDevice.
+func (c *twoFactorServiceClient) RegisterPushDevice(ctx context.Context, req *connect.Request[v1.RegisterPushDeviceRequest]) (*connect.Response[v1.RegisterPushDeviceResponse], error) {
+	return c.registerPushDevice.CallUnary(ctx, req)
+}
+
+// UnregisterPushDevice calls sso.v1.TwoFactorService.UnregisterPushDevice.
+func (c *twoFactorServiceClient) UnregisterPushDevice(ctx context.Context, req *connect.Request[v1.UnregisterPushDeviceRequest]) (*connect.Response[v1.UnregisterPushDeviceResponse], error) {
+	return c.unregisterPushDevice.CallUnary(ctx, req)
+}
+
+// RespondToPushChallenge calls sso.v1.TwoFactorService.RespondToPushChallenge.
+func (c *twoFactorServiceClient) RespondToPushChallenge(ctx context.Context, req *connect.Request[v1.RespondToPushChallengeRequest]) (*connect.Response[v1.RespondToPushChallengeResponse], error) {
+	return c.respondToPushChallenge.CallUnary(ctx, req)
+}
+
+// GetPushChallengeStatus calls sso.v1.TwoFactorService.GetPushChallengeStatus.
+func (c *twoFactorServiceClient) GetPushChallengeStatus(ctx context.Context, req *connect.Request[v1.GetPushChallengeStatusRequest]) (*connect.Response[v1.GetPushChallengeStatusResponse], error) {
+	return c.getPushChallengeStatus.CallUnary(ctx, req)
+}
+
+// SendMFAChallenge calls sso.v1.TwoFactorService.SendMFAChallenge.
+func (c *twoFactorServiceClient) SendMFAChallenge(ctx context.Context, req *connect.Request[v1.SendMFAChallengeRequest]) (*connect.Response[v1.SendMFAChallengeResponse], error) {
+	return c.sendMFAChallenge.CallUnary(ctx, req)
+}
+
+// VerifyMFAChallenge calls sso.v1.TwoFactorService.VerifyMFAChallenge.
+func (c *twoFactorServiceClient) VerifyMFAChallenge(ctx context.Context, req *connect.Request[v1.VerifyMFAChallengeRequest]) (*connect.Response[v1.VerifyMFAChallengeResponse], error) {
+	return c.verifyMFAChallenge.CallUnary(ctx, req)
 }
 
 // Disable2FA calls sso.v1.TwoFactorService.Disable2FA.
@@ -134,10 +328,36 @@ type TwoFactorServiceHandler interface {
 	// Generates a new TOTP secret and a corresponding QR code URI for the authenticated user.
 	// The user must verify with a TOTP code from their authenticator app to enable 2FA.
 	InitiateTOTPSetup(context.Context, *connect.Request[v1.InitiateTOTPSetupRequest]) (*connect.Response[v1.InitiateTOTPSetupResponse], error)
+	// Initiates the setup process for HOTP.
+	// Generates a new HOTP secret and a corresponding QR code URI for the authenticated user.
+	InitiateHOTPSetup(context.Context, *connect.Request[v1.InitiateHOTPSetupRequest]) (*connect.Response[v1.InitiateHOTPSetupResponse], error)
 	// Verifies a TOTP code provided by the user during setup and enables 2FA if the code is valid.
 	// This should be called after InitiateTOTPSetup.
 	// Returns a list of recovery codes upon successful enablement.
 	VerifyAndEnableTOTP(context.Context, *connect.Request[v1.VerifyAndEnableTOTPRequest]) (*connect.Response[v1.VerifyAndEnableTOTPResponse], error)
+	// Verifies an HOTP code provided by the user during setup and enables 2FA if the code is valid.
+	// This should be called after InitiateHOTPSetup.
+	VerifyAndEnableHOTP(context.Context, *connect.Request[v1.VerifyAndEnableHOTPRequest]) (*connect.Response[v1.VerifyAndEnableHOTPResponse], error)
+	// Initiates email-based MFA setup by sending an OTP to the user's email.
+	InitiateEmailMFASetup(context.Context, *connect.Request[v1.InitiateEmailMFASetupRequest]) (*connect.Response[v1.InitiateEmailMFASetupResponse], error)
+	// Verifies the email OTP and enables email-based MFA.
+	VerifyAndEnableEmailMFA(context.Context, *connect.Request[v1.VerifyAndEnableEmailMFARequest]) (*connect.Response[v1.VerifyAndEnableEmailMFAResponse], error)
+	// Initiates push MFA setup by registering a device token.
+	InitiatePushMFASetup(context.Context, *connect.Request[v1.InitiatePushMFASetupRequest]) (*connect.Response[v1.InitiatePushMFASetupResponse], error)
+	// Enables push MFA for the user.
+	VerifyAndEnablePushMFA(context.Context, *connect.Request[v1.VerifyAndEnablePushMFARequest]) (*connect.Response[v1.VerifyAndEnablePushMFAResponse], error)
+	// Registers a device token for push notifications.
+	RegisterPushDevice(context.Context, *connect.Request[v1.RegisterPushDeviceRequest]) (*connect.Response[v1.RegisterPushDeviceResponse], error)
+	// Unregisters a device token.
+	UnregisterPushDevice(context.Context, *connect.Request[v1.UnregisterPushDeviceRequest]) (*connect.Response[v1.UnregisterPushDeviceResponse], error)
+	// Allows users to respond to push MFA challenges.
+	RespondToPushChallenge(context.Context, *connect.Request[v1.RespondToPushChallengeRequest]) (*connect.Response[v1.RespondToPushChallengeResponse], error)
+	// Gets the status of a push MFA challenge.
+	GetPushChallengeStatus(context.Context, *connect.Request[v1.GetPushChallengeStatusRequest]) (*connect.Response[v1.GetPushChallengeStatusResponse], error)
+	// Sends an MFA code via the user's configured method (TOTP/HOTP/Email/Push).
+	SendMFAChallenge(context.Context, *connect.Request[v1.SendMFAChallengeRequest]) (*connect.Response[v1.SendMFAChallengeResponse], error)
+	// Verifies an MFA code against the user's configured method.
+	VerifyMFAChallenge(context.Context, *connect.Request[v1.VerifyMFAChallengeRequest]) (*connect.Response[v1.VerifyMFAChallengeResponse], error)
 	// Disables 2FA for the authenticated user.
 	// May require current password or a 2FA code (if already enabled) for verification.
 	Disable2FA(context.Context, *connect.Request[v1.Disable2FARequest]) (*connect.Response[emptypb.Empty], error)
@@ -158,9 +378,69 @@ func NewTwoFactorServiceHandler(svc TwoFactorServiceHandler, opts ...connect.Han
 		svc.InitiateTOTPSetup,
 		opts...,
 	)
+	twoFactorServiceInitiateHOTPSetupHandler := connect.NewUnaryHandler(
+		TwoFactorServiceInitiateHOTPSetupProcedure,
+		svc.InitiateHOTPSetup,
+		opts...,
+	)
 	twoFactorServiceVerifyAndEnableTOTPHandler := connect.NewUnaryHandler(
 		TwoFactorServiceVerifyAndEnableTOTPProcedure,
 		svc.VerifyAndEnableTOTP,
+		opts...,
+	)
+	twoFactorServiceVerifyAndEnableHOTPHandler := connect.NewUnaryHandler(
+		TwoFactorServiceVerifyAndEnableHOTPProcedure,
+		svc.VerifyAndEnableHOTP,
+		opts...,
+	)
+	twoFactorServiceInitiateEmailMFASetupHandler := connect.NewUnaryHandler(
+		TwoFactorServiceInitiateEmailMFASetupProcedure,
+		svc.InitiateEmailMFASetup,
+		opts...,
+	)
+	twoFactorServiceVerifyAndEnableEmailMFAHandler := connect.NewUnaryHandler(
+		TwoFactorServiceVerifyAndEnableEmailMFAProcedure,
+		svc.VerifyAndEnableEmailMFA,
+		opts...,
+	)
+	twoFactorServiceInitiatePushMFASetupHandler := connect.NewUnaryHandler(
+		TwoFactorServiceInitiatePushMFASetupProcedure,
+		svc.InitiatePushMFASetup,
+		opts...,
+	)
+	twoFactorServiceVerifyAndEnablePushMFAHandler := connect.NewUnaryHandler(
+		TwoFactorServiceVerifyAndEnablePushMFAProcedure,
+		svc.VerifyAndEnablePushMFA,
+		opts...,
+	)
+	twoFactorServiceRegisterPushDeviceHandler := connect.NewUnaryHandler(
+		TwoFactorServiceRegisterPushDeviceProcedure,
+		svc.RegisterPushDevice,
+		opts...,
+	)
+	twoFactorServiceUnregisterPushDeviceHandler := connect.NewUnaryHandler(
+		TwoFactorServiceUnregisterPushDeviceProcedure,
+		svc.UnregisterPushDevice,
+		opts...,
+	)
+	twoFactorServiceRespondToPushChallengeHandler := connect.NewUnaryHandler(
+		TwoFactorServiceRespondToPushChallengeProcedure,
+		svc.RespondToPushChallenge,
+		opts...,
+	)
+	twoFactorServiceGetPushChallengeStatusHandler := connect.NewUnaryHandler(
+		TwoFactorServiceGetPushChallengeStatusProcedure,
+		svc.GetPushChallengeStatus,
+		opts...,
+	)
+	twoFactorServiceSendMFAChallengeHandler := connect.NewUnaryHandler(
+		TwoFactorServiceSendMFAChallengeProcedure,
+		svc.SendMFAChallenge,
+		opts...,
+	)
+	twoFactorServiceVerifyMFAChallengeHandler := connect.NewUnaryHandler(
+		TwoFactorServiceVerifyMFAChallengeProcedure,
+		svc.VerifyMFAChallenge,
 		opts...,
 	)
 	twoFactorServiceDisable2FAHandler := connect.NewUnaryHandler(
@@ -177,8 +457,32 @@ func NewTwoFactorServiceHandler(svc TwoFactorServiceHandler, opts ...connect.Han
 		switch r.URL.Path {
 		case TwoFactorServiceInitiateTOTPSetupProcedure:
 			twoFactorServiceInitiateTOTPSetupHandler.ServeHTTP(w, r)
+		case TwoFactorServiceInitiateHOTPSetupProcedure:
+			twoFactorServiceInitiateHOTPSetupHandler.ServeHTTP(w, r)
 		case TwoFactorServiceVerifyAndEnableTOTPProcedure:
 			twoFactorServiceVerifyAndEnableTOTPHandler.ServeHTTP(w, r)
+		case TwoFactorServiceVerifyAndEnableHOTPProcedure:
+			twoFactorServiceVerifyAndEnableHOTPHandler.ServeHTTP(w, r)
+		case TwoFactorServiceInitiateEmailMFASetupProcedure:
+			twoFactorServiceInitiateEmailMFASetupHandler.ServeHTTP(w, r)
+		case TwoFactorServiceVerifyAndEnableEmailMFAProcedure:
+			twoFactorServiceVerifyAndEnableEmailMFAHandler.ServeHTTP(w, r)
+		case TwoFactorServiceInitiatePushMFASetupProcedure:
+			twoFactorServiceInitiatePushMFASetupHandler.ServeHTTP(w, r)
+		case TwoFactorServiceVerifyAndEnablePushMFAProcedure:
+			twoFactorServiceVerifyAndEnablePushMFAHandler.ServeHTTP(w, r)
+		case TwoFactorServiceRegisterPushDeviceProcedure:
+			twoFactorServiceRegisterPushDeviceHandler.ServeHTTP(w, r)
+		case TwoFactorServiceUnregisterPushDeviceProcedure:
+			twoFactorServiceUnregisterPushDeviceHandler.ServeHTTP(w, r)
+		case TwoFactorServiceRespondToPushChallengeProcedure:
+			twoFactorServiceRespondToPushChallengeHandler.ServeHTTP(w, r)
+		case TwoFactorServiceGetPushChallengeStatusProcedure:
+			twoFactorServiceGetPushChallengeStatusHandler.ServeHTTP(w, r)
+		case TwoFactorServiceSendMFAChallengeProcedure:
+			twoFactorServiceSendMFAChallengeHandler.ServeHTTP(w, r)
+		case TwoFactorServiceVerifyMFAChallengeProcedure:
+			twoFactorServiceVerifyMFAChallengeHandler.ServeHTTP(w, r)
 		case TwoFactorServiceDisable2FAProcedure:
 			twoFactorServiceDisable2FAHandler.ServeHTTP(w, r)
 		case TwoFactorServiceGenerateRecoveryCodesProcedure:
@@ -196,8 +500,56 @@ func (UnimplementedTwoFactorServiceHandler) InitiateTOTPSetup(context.Context, *
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.TwoFactorService.InitiateTOTPSetup is not implemented"))
 }
 
+func (UnimplementedTwoFactorServiceHandler) InitiateHOTPSetup(context.Context, *connect.Request[v1.InitiateHOTPSetupRequest]) (*connect.Response[v1.InitiateHOTPSetupResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.TwoFactorService.InitiateHOTPSetup is not implemented"))
+}
+
 func (UnimplementedTwoFactorServiceHandler) VerifyAndEnableTOTP(context.Context, *connect.Request[v1.VerifyAndEnableTOTPRequest]) (*connect.Response[v1.VerifyAndEnableTOTPResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.TwoFactorService.VerifyAndEnableTOTP is not implemented"))
+}
+
+func (UnimplementedTwoFactorServiceHandler) VerifyAndEnableHOTP(context.Context, *connect.Request[v1.VerifyAndEnableHOTPRequest]) (*connect.Response[v1.VerifyAndEnableHOTPResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.TwoFactorService.VerifyAndEnableHOTP is not implemented"))
+}
+
+func (UnimplementedTwoFactorServiceHandler) InitiateEmailMFASetup(context.Context, *connect.Request[v1.InitiateEmailMFASetupRequest]) (*connect.Response[v1.InitiateEmailMFASetupResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.TwoFactorService.InitiateEmailMFASetup is not implemented"))
+}
+
+func (UnimplementedTwoFactorServiceHandler) VerifyAndEnableEmailMFA(context.Context, *connect.Request[v1.VerifyAndEnableEmailMFARequest]) (*connect.Response[v1.VerifyAndEnableEmailMFAResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.TwoFactorService.VerifyAndEnableEmailMFA is not implemented"))
+}
+
+func (UnimplementedTwoFactorServiceHandler) InitiatePushMFASetup(context.Context, *connect.Request[v1.InitiatePushMFASetupRequest]) (*connect.Response[v1.InitiatePushMFASetupResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.TwoFactorService.InitiatePushMFASetup is not implemented"))
+}
+
+func (UnimplementedTwoFactorServiceHandler) VerifyAndEnablePushMFA(context.Context, *connect.Request[v1.VerifyAndEnablePushMFARequest]) (*connect.Response[v1.VerifyAndEnablePushMFAResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.TwoFactorService.VerifyAndEnablePushMFA is not implemented"))
+}
+
+func (UnimplementedTwoFactorServiceHandler) RegisterPushDevice(context.Context, *connect.Request[v1.RegisterPushDeviceRequest]) (*connect.Response[v1.RegisterPushDeviceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.TwoFactorService.RegisterPushDevice is not implemented"))
+}
+
+func (UnimplementedTwoFactorServiceHandler) UnregisterPushDevice(context.Context, *connect.Request[v1.UnregisterPushDeviceRequest]) (*connect.Response[v1.UnregisterPushDeviceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.TwoFactorService.UnregisterPushDevice is not implemented"))
+}
+
+func (UnimplementedTwoFactorServiceHandler) RespondToPushChallenge(context.Context, *connect.Request[v1.RespondToPushChallengeRequest]) (*connect.Response[v1.RespondToPushChallengeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.TwoFactorService.RespondToPushChallenge is not implemented"))
+}
+
+func (UnimplementedTwoFactorServiceHandler) GetPushChallengeStatus(context.Context, *connect.Request[v1.GetPushChallengeStatusRequest]) (*connect.Response[v1.GetPushChallengeStatusResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.TwoFactorService.GetPushChallengeStatus is not implemented"))
+}
+
+func (UnimplementedTwoFactorServiceHandler) SendMFAChallenge(context.Context, *connect.Request[v1.SendMFAChallengeRequest]) (*connect.Response[v1.SendMFAChallengeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.TwoFactorService.SendMFAChallenge is not implemented"))
+}
+
+func (UnimplementedTwoFactorServiceHandler) VerifyMFAChallenge(context.Context, *connect.Request[v1.VerifyMFAChallengeRequest]) (*connect.Response[v1.VerifyMFAChallengeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.TwoFactorService.VerifyMFAChallenge is not implemented"))
 }
 
 func (UnimplementedTwoFactorServiceHandler) Disable2FA(context.Context, *connect.Request[v1.Disable2FARequest]) (*connect.Response[emptypb.Empty], error) {

@@ -1,10 +1,15 @@
-version: v1
+version: v2
 plugins:
   # Go type definitions
-  - plugin: buf.build/protocolbuffers/go:v1.31.0 # Use a recent version
+  - remote: buf.build/protocolbuffers/go:v1.31.0 # Use a recent version
     out: gen
     opt: paths=source_relative
   # Connect RPC service definitions
-  - plugin: buf.build/connectrpc/go:v1.11.1 # Use a recent version of connect-go generator
+  - remote: buf.build/connectrpc/go:v1.11.1 # Use a recent version of connect-go generator
     out: gen
     opt: paths=source_relative
+  # TypeScript type definitions (includes Connect support)
+  - remote: buf.build/bufbuild/es
+    out: ../shadow-sso-ui2/src/lib/backend/gen
+    include_imports: true
+    opt: target=ts

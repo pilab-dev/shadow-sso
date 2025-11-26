@@ -19,17 +19,18 @@ type MongoRepositoryProvider struct {
 	cfgDbName   string
 
 	// Cached repository instances
-	userRepo       domain.UserRepository
-	sessionRepo    domain.SessionRepository
-	fedIDRepo      domain.UserFederatedIdentityRepository
-	tokenRepo      domain.TokenRepository
-	authCodeRepo   domain.AuthorizationCodeRepository
-	pkceRepo       domain.PkceRepository // See PkceRepository method for discussion
-	deviceAuthRepo domain.DeviceAuthorizationRepository
-	pubKeyRepo     domain.PublicKeyRepository
-	saRepo         domain.ServiceAccountRepository
-	idpRepo        domain.IdPRepository
-	clientRepo     *ClientRepository
+	userRepo        domain.UserRepository
+	sessionRepo     domain.SessionRepository
+	fedIDRepo       domain.UserFederatedIdentityRepository
+	tokenRepo       domain.TokenRepository
+	authCodeRepo    domain.AuthorizationCodeRepository
+	pkceRepo        domain.PkceRepository // See PkceRepository method for discussion
+	deviceAuthRepo  domain.DeviceAuthorizationRepository
+	pubKeyRepo      domain.PublicKeyRepository
+	saRepo          domain.ServiceAccountRepository
+	idpRepo         domain.IdPRepository
+	configRepo      domain.ConfigurationRepository
+	clientRepo      *ClientRepository
 }
 
 // NewMongoRepositoryProvider creates a new instance of MongoRepositoryProvider.
@@ -155,4 +156,12 @@ func (p *MongoRepositoryProvider) IdPRepository(ctx context.Context) domain.IdPR
 
 func (p *MongoRepositoryProvider) ClientRepository(ctx context.Context) domain.ClientRepository {
 	return p.clientRepo
+}
+
+// ConfigurationRepository returns a MongoDB-backed ConfigurationRepository.
+func (p *MongoRepositoryProvider) ConfigurationRepository(ctx context.Context) domain.ConfigurationRepository {
+	if p.configRepo == nil {
+		p.configRepo = NewConfigurationRepository(p.db)
+	}
+	return p.configRepo
 }

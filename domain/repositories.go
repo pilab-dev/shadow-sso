@@ -1,4 +1,4 @@
-//go:generate go run go.uber.org/mock/mockgen@latest -source=$GOFILE -destination=mocks/mock_repositories.go -package=mock_domain PublicKeyRepository,ServiceAccountRepository,UserRepository,SessionRepository,TokenRepository,AuthorizationCodeRepository,PkceRepository,DeviceAuthorizationRepository,ClientRepository,IdPRepository,UserFederatedIdentityRepository
+//go:generate go run go.uber.org/mock/mockgen@latest -source=$GOFILE -destination=mocks/mock_repositories.go -package=mock_domain PublicKeyRepository,ServiceAccountRepository,UserRepository,SessionRepository,TokenRepository,AuthorizationCodeRepository,PkceRepository,DeviceAuthorizationRepository,ClientRepository,IdPRepository,UserFederatedIdentityRepository,ConfigurationRepository
 package domain
 
 import (
@@ -40,6 +40,26 @@ type PublicKeyRepository interface {
 	ListPublicKeysForServiceAccount(ctx context.Context, serviceAccountID string, onlyActive bool) ([]*PublicKeyInfo, error)
 }
 
+// SMSService defines the interface for sending SMS messages
+type SMSService interface {
+	SendOTP(phoneNumber, otp string) error
+}
+
+// EmailService defines the interface for sending emails
+type EmailService interface {
+	SendVerificationEmail(to, name, verificationLink string) error
+	SendPasswordResetEmail(to, name, resetLink string) error
+	SendOTPEmail(to, otp string) error
+	SendMFAEmail(to, name, otp, method string) error
+}
+
+// PushNotificationService defines the interface for sending push notifications
+type PushNotificationService interface {
+	SendPushNotification(deviceToken, title, body string, data map[string]interface{}) error
+	SendPushNotificationToUser(userID, title, body string, data map[string]interface{}) error
+	SendMFAPushChallenge(deviceToken, challengeID, ipAddress, userAgent string) error
+}
+
 type ServiceAccountRepository interface {
 	GetServiceAccount(ctx context.Context, id string) (*ServiceAccount, error)
 	GetServiceAccountByClientEmail(ctx context.Context, clientEmail string) (*ServiceAccount, error)
@@ -58,6 +78,24 @@ type UserRepository interface {
 	ListUsers(ctx context.Context, pageToken string, pageSize int) ([]*User, string, error) // Returns users, next page token, error
 	CountUsers(ctx context.Context) (int64, error)                                         // Method to count all users
 	CountUsersByRole(ctx context.Context, role string) (int64, error)                      // New method to count users by role
+
+	// Phone verification methods
+	StorePhoneVerificationOtp(ctx context.Context, userID, otp string, expiresAt time.Time) error
+	ClearPhoneVerificationOtp(ctx context.Context, userID string) error
+
+	// Email MFA methods
+	StoreEmailMFAOtp(ctx context.Context, userID, otp string, expiresAt time.Time) error
+	ClearEmailMFAOtp(ctx context.Context, userID string) error
+	UpdateEmailMFACounter(ctx context.Context, userID string, counter uint64) error
+	EnableEmailMFA(ctx context.Context, userID string) error
+	DisableEmailMFA(ctx context.Context, userID string) error
+
+	// Push MFA methods
+	RegisterPushMFADevice(ctx context.Context, userID, deviceToken string) error
+	UnregisterPushMFADevice(ctx context.Context, userID, deviceToken string) error
+	UpdatePushMFAChallenges(ctx context.Context, userID string, challenges []PushMFAChallenge) error
+	EnablePushMFA(ctx context.Context, userID string) error
+	DisablePushMFA(ctx context.Context, userID string) error
 }
 
 // SessionRepository defines methods for user session persistence.
@@ -141,4 +179,47 @@ type UserFederatedIdentityRepository interface {
 	DeleteByUserIDAndProvider(ctx context.Context, userID, providerName string) error
 	// FindByEmail (Optional): May be useful during account linking/merging user discovery.
 	// FindByProviderEmail(ctx context.Context, providerName, email string) (*UserFederatedIdentity, error)
+}
+
+// ConfigurationType represents different types of operational configuration
+type ConfigurationType string
+
+const (
+	ConfigTypeEmail      ConfigurationType = "email"
+	ConfigTypeSMS        ConfigurationType = "sms"
+	ConfigTypePush       ConfigurationType = "push"
+	ConfigTypeFederation ConfigurationType = "federation"
+	ConfigTypeSecurity   ConfigurationType = "security"
+	ConfigTypeGeneral    ConfigurationType = "general"
+)
+
+// Configuration represents a configurable operational setting stored in the database
+type Configuration struct {
+	ID          string            `bson:"_id,omitempty" json:"id"`
+	Type        ConfigurationType `bson:"type" json:"type"`
+	Key         string            `bson:"key" json:"key"`
+	Value       string            `bson:"value" json:"value"`       // Encrypted for sensitive data
+	IsEncrypted bool              `bson:"is_encrypted" json:"is_encrypted"`
+	Description string            `bson:"description" json:"description"`
+	IsActive    bool              `bson:"is_active" json:"is_active"`
+	CreatedAt   time.Time         `bson:"created_at" json:"created_at"`
+	UpdatedAt   time.Time         `bson:"updated_at" json:"updated_at"`
+	UpdatedBy   string            `bson:"updated_by" json:"updated_by"` // User ID who last updated
+}
+
+// ConfigurationRepository defines methods for managing operational configuration
+type ConfigurationRepository interface {
+	// Core CRUD operations
+	Create(ctx context.Context, config *Configuration) error
+	GetByKey(ctx context.Context, configType ConfigurationType, key string) (*Configuration, error)
+	GetByType(ctx context.Context, configType ConfigurationType) ([]*Configuration, error)
+	Update(ctx context.Context, config *Configuration) error
+	Delete(ctx context.Context, configType ConfigurationType, key string) error
+
+	// Bulk operations
+	GetAllActive(ctx context.Context) ([]*Configuration, error)
+	GetByTypeActive(ctx context.Context, configType ConfigurationType) ([]*Configuration, error)
+
+	// Bootstrap/initialization
+	CreateDefaultConfigs(ctx context.Context) error
 }

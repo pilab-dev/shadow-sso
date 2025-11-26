@@ -1,86 +1,228 @@
 # Shadow SSO API Documentation
 
-This document outlines the gRPC API services provided by Shadow SSO.
+This document outlines the comprehensive gRPC API services provided by Shadow SSO, covering authentication, user management, MFA, and administrative operations.
 
 ## Services Overview
 
--   **AuthService**: Handles user authentication (login, logout, 2FA verification) and session management.
--   **UserService**: Manages user lifecycle operations (registration, profile updates, status changes).
--   **ServiceAccountService**: Manages service accounts and their downloadable JSON keys.
--   **TwoFactorService**: Provides methods for users to manage their Two-Factor Authentication (2FA) settings, primarily TOTP.
--   **ClientManagementService**: Manages OAuth2 client configurations (registration, updates, etc.).
--   **IdPManagementService**: Manages external Identity Provider (IdP) configurations.
+### 🔐 Core Authentication Services
+-   **AuthService**: User authentication, session management, and OAuth2 flows
+-   **TwoFactorService**: Multi-factor authentication (TOTP, HOTP, Email, Push MFA)
+
+### 👤 User Management Services
+-   **UserService**: Complete user lifecycle management (registration, profiles, password reset)
+-   **ClientManagementService**: OAuth2 client configuration and management
+-   **IdPManagementService**: External identity provider integration
+-   **ServiceAccountService**: Machine identity and service account management
+
+### 📱 Advanced Features
+-   **FederationService**: Cross-domain identity federation
+-   **PhoneVerificationService**: SMS-based phone number verification
+-   **MFAService**: Email-based multi-factor authentication
+-   **PushMFAService**: Firebase-powered push notification MFA
 
 ---
 
 ## AuthService
 
-Handles user authentication, 2FA verification, and session management.
+Handles user authentication, session management, and OAuth2/OIDC flows with comprehensive MFA support.
 
-### Methods
+### Authentication Methods
 
 #### `Login(LoginRequest) returns (LoginResponse)`
-Authenticates a user with email and password. If 2FA is enabled for the user, this response will indicate that a second factor is required.
--   **Request**: `LoginRequest` (contains email, password)
--   **Response**: `LoginResponse` (may contain access/refresh tokens and user info if 2FA is not required, OR `two_factor_required=true` and a `two_factor_session_token` if 2FA is the next step).
+Primary user authentication with automatic MFA detection.
+-   **Request**: `LoginRequest` (email, password)
+-   **Response**:
+  - If MFA disabled: Complete authentication with tokens
+  - If MFA enabled: `two_factor_required=true` with session token for MFA verification
+-   **Features**: Account lockout protection, failed attempt tracking, audit logging
 
 #### `Verify2FA(Verify2FARequest) returns (LoginResponse)`
-Verifies a Two-Factor Authentication code (TOTP or recovery code) after a successful primary authentication (e.g., password login) that indicated 2FA was required.
--   **Request**: `Verify2FARequest` (contains `user_id`, `totp_code`, and `two_factor_session_token` from the initial login step)
--   **Response**: `LoginResponse` (contains access token, refresh token, user info upon successful 2FA verification)
+Completes MFA authentication after successful password verification.
+-   **Request**: `Verify2FARequest` (user_id, totp_code/recovery_code, two_factor_session_token)
+-   **Response**: Complete authentication tokens and user info
+-   **Supported Methods**: TOTP, HOTP, Recovery Codes
 
 #### `Logout(LogoutRequest) returns (google.protobuf.Empty)`
-Logs out the currently authenticated user by invalidating their session/token.
--   **Request**: `LogoutRequest` (empty, token from context is used)
--   **Response**: `google.protobuf.Empty`
+Secure logout with comprehensive session cleanup.
+-   **Process**:
+  1. Revoke JWT token from denylist
+  2. Mark session as revoked in database
+  3. Update session expiry
+  4. Decrement active session counters
+-   **Security**: Prevents token replay attacks
+
+### Session Management
 
 #### `ListUserSessions(ListUserSessionsRequest) returns (ListUserSessionsResponse)`
-Lists active sessions for a user. Defaults to the current authenticated user if `user_id` in request is empty. Admin can specify a `user_id`.
--   **Request**: `ListUserSessionsRequest` (contains optional `user_id`)
--   **Response**: `ListUserSessionsResponse` (contains a list of `SessionInfo`)
+Retrieve active sessions for monitoring and security.
+-   **Request**: `ListUserSessionsRequest` (optional user_id, pagination)
+-   **Response**: `ListUserSessionsResponse` (session list with metadata)
+-   **Permissions**: Self or admin access
 
 #### `ClearUserSessions(ClearUserSessionsRequest) returns (google.protobuf.Empty)`
-Clears (revokes) sessions for a user.
--   **Request**: `ClearUserSessionsRequest` (contains optional `user_id` and `session_ids` to clear specific ones; if `session_ids` is empty, clears all for the target user, or all *other* sessions if target is self)
--   **Response**: `google.protobuf.Empty`
+Revoke specific or all user sessions for security.
+-   **Request**: `ClearUserSessionsRequest` (user_id, optional session_ids)
+-   **Behavior**:
+  - Specific sessions: Revoke only listed sessions
+  - All sessions: Revoke all sessions for user
+  - Self-cleanup: Optionally preserve current session
+
+### OAuth2/OIDC Flow Methods
+
+#### `GetConsentInfo(GetConsentInfoRequest) returns (GetConsentInfoResponse)`
+Retrieve consent information for OAuth2 authorization flows.
+-   **Request**: `GetConsentInfoRequest` (flow_id)
+-   **Response**: Client info, requested scopes with descriptions
+
+#### `SubmitConsent(SubmitConsentRequest) returns (SubmitConsentResponse)`
+User consent approval for OAuth2 scopes.
+-   **Request**: `SubmitConsentRequest` (flow_id, accepted_scopes, remember_consent)
+-   **Response**: Authorization code redirect URL
+
+#### `DenyConsent(DenyConsentRequest) returns (DenyConsentResponse)`
+User consent denial for OAuth2 scopes.
+-   **Request**: `DenyConsentRequest` (flow_id)
+-   **Response**: Error redirect URL to client
 
 ---
 
 ## UserService
 
-Manages user lifecycle operations.
+Comprehensive user lifecycle management including registration, profiles, security, and verification.
 
-### Methods
+### User Lifecycle Management
 
 #### `RegisterUser(RegisterUserRequest) returns (RegisterUserResponse)`
-Registers a new user. This operation may require admin privileges.
--   **Request**: `RegisterUserRequest` (contains email, password, first name, last name)
--   **Response**: `RegisterUserResponse` (contains the created `User` object)
+Create new user accounts with initial security setup.
+-   **Request**: `RegisterUserRequest` (email, password, first_name, last_name)
+-   **Process**:
+  1. Email uniqueness validation
+  2. Password hashing with bcrypt
+  3. User creation with "pending" status
+  4. Audit logging
+-   **Security**: Duplicate prevention, secure password storage
 
 #### `ActivateUser(ActivateUserRequest) returns (google.protobuf.Empty)`
-Activates a user account (e.g., after email verification or admin approval).
--   **Request**: `ActivateUserRequest` (contains `user_id`)
--   **Response**: `google.protobuf.Empty`
+Activate pending user accounts after verification.
+-   **Request**: `ActivateUserRequest` (user_id)
+-   **Process**: Status change from "pending" to "active"
 
 #### `LockUser(LockUserRequest) returns (google.protobuf.Empty)`
-Locks a user account, preventing login.
--   **Request**: `LockUserRequest` (contains `user_id`)
--   **Response**: `google.protobuf.Empty`
+Temporarily disable user access for security.
+-   **Request**: `LockUserRequest` (user_id)
+-   **Use Cases**: Security incidents, account recovery
+
+### User Information & Administration
 
 #### `ListUsers(ListUsersRequest) returns (ListUsersResponse)`
-Lists users with pagination. Requires admin privileges.
--   **Request**: `ListUsersRequest` (contains `page_size`, `page_token`)
--   **Response**: `ListUsersResponse` (contains a list of `User` objects and `next_page_token`)
+Administrative user listing with pagination.
+-   **Request**: `ListUsersRequest` (page_size, page_token)
+-   **Response**: Paginated user list with metadata
+-   **Permissions**: Admin access required
 
 #### `GetUser(GetUserRequest) returns (GetUserResponse)`
-Retrieves details for a specific user by ID or email. Requires admin privileges or user accessing their own data.
--   **Request**: `GetUserRequest` (contains `user_id` which can be an ID or email)
--   **Response**: `GetUserResponse` (contains the `User` object)
+Retrieve detailed user information.
+-   **Request**: `GetUserRequest` (user_id or email)
+-   **Permissions**: Self access or admin privileges
+
+#### `UpdateUser(UpdateUserRequest) returns (UpdateUserResponse)`
+Modify user profile information.
+-   **Request**: `UpdateUserRequest` (user_id, fields to update)
+-   **Fields**: Email, names, profile data, preferences
+
+#### `DeleteUser(DeleteUserRequest) returns (google.protobuf.Empty)`
+Permanently remove user accounts.
+-   **Request**: `DeleteUserRequest` (user_id)
+-   **Process**: Complete data cleanup and audit logging
+
+### Security & Password Management
 
 #### `ChangePassword(ChangePasswordRequest) returns (google.protobuf.Empty)`
-Changes a user's password. Can be self-service (requires old password) or admin-initiated.
--   **Request**: `ChangePasswordRequest` (contains `user_id`, optional `old_password`, `new_password`)
--   **Response**: `google.protobuf.Empty`
+Secure password updates with validation.
+-   **Request**: `ChangePasswordRequest` (user_id, old_password, new_password)
+-   **Modes**:
+  - **Self-service**: Requires current password verification
+  - **Admin reset**: Admin can change without old password
+-   **Security**: Password strength validation, audit logging
+
+### Password Reset Flow
+
+#### `RequestPasswordReset(RequestPasswordResetRequest) returns (RequestPasswordResetResponse)`
+Initiate password reset process.
+-   **Request**: `RequestPasswordResetRequest` (email)
+-   **Process**:
+  1. Generate secure reset token
+  2. Store token with expiry
+  3. Send reset email
+-   **Security**: Time-limited tokens, rate limiting
+
+#### `ResetPassword(ResetPasswordRequest) returns (ResetPasswordResponse)`
+Complete password reset with token validation.
+-   **Request**: `ResetPasswordRequest` (token, new_password)
+-   **Process**:
+  1. Validate token expiry and authenticity
+  2. Update password hash
+  3. Clear reset token
+-   **Security**: Single-use tokens, secure password hashing
+
+### Phone Number Management
+
+#### `SetPhoneNumber(SetPhoneNumberRequest) returns (google.protobuf.Empty)`
+Associate phone number with user account.
+-   **Request**: `SetPhoneNumberRequest` (user_id, phone_number)
+
+#### `SendPhoneVerificationOtp(SendPhoneVerificationOtpRequest) returns (SendPhoneVerificationOtpResponse)`
+Send SMS verification code to phone number.
+-   **Request**: `SendPhoneVerificationOtpRequest` (user_id)
+-   **Process**: Generate and send OTP via SMS service
+
+#### `VerifyPhoneNumber(VerifyPhoneNumberRequest) returns (VerifyPhoneNumberResponse)`
+Confirm phone number ownership with OTP.
+-   **Request**: `VerifyPhoneNumberRequest` (user_id, otp)
+-   **Process**: Validate OTP and mark phone as verified
+
+### Email Verification
+
+#### `SendEmailVerification(SendEmailVerificationRequest) returns (google.protobuf.Empty)`
+Send email verification link.
+-   **Process**: Generate verification token and send email
+
+#### `VerifyEmail(VerifyEmailRequest) returns (VerifyEmailResponse)`
+Confirm email ownership with verification token.
+
+### Account Security Features
+
+#### `IncrementFailedLoginAttempts(IncrementFailedLoginAttemptsRequest) returns (IncrementFailedLoginAttemptsResponse)`
+Track failed login attempts for security monitoring.
+
+#### `ResetFailedLoginAttempts(ResetFailedLoginAttemptsRequest) returns (google.protobuf.Empty)`
+Reset failed attempt counter after successful login.
+
+#### `SetEmailAsVerified(SetEmailAsVerifiedRequest) returns (google.protobuf.Empty)`
+Mark email as verified (admin function).
+
+### Token Management
+
+#### `StoreEmailVerificationToken(StoreEmailVerificationTokenRequest) returns (google.protobuf.Empty)`
+Store email verification token with expiry.
+
+#### `GetUserByEmailVerificationToken(GetUserByEmailVerificationTokenRequest) returns (GetUserByEmailVerificationTokenResponse)`
+Validate email verification token.
+
+#### `ClearEmailVerificationToken(ClearEmailVerificationTokenRequest) returns (google.protobuf.Empty)`
+Remove used or expired verification tokens.
+
+#### `StorePasswordResetToken(StorePasswordResetTokenRequest) returns (google.protobuf.Empty)`
+Store password reset token securely.
+
+#### `GetUserByPasswordResetToken(GetUserByPasswordResetTokenRequest) returns (GetUserByPasswordResetTokenResponse)`
+Validate password reset token.
+
+#### `ClearPasswordResetToken(ClearPasswordResetTokenRequest) returns (google.protobuf.Empty)`
+Clean up used password reset tokens.
+
+#### `UpdateUserPassword(UpdateUserPasswordRequest) returns (google.protobuf.Empty)`
+Direct password update (admin function).
 
 ---
 
@@ -109,29 +251,92 @@ Deletes (revokes) a specific service account key.
 
 ## TwoFactorService
 
-Provides methods for users to manage their Two-Factor Authentication (2FA) settings, primarily TOTP. These are typically self-service operations.
+Comprehensive multi-factor authentication management supporting multiple MFA methods and advanced security features.
 
-### Methods
+### TOTP (Time-based One-Time Password)
 
 #### `InitiateTOTPSetup(InitiateTOTPSetupRequest) returns (InitiateTOTPSetupResponse)`
-Initiates TOTP setup for the authenticated user. Generates a new secret and QR code URI.
--   **Request**: `InitiateTOTPSetupRequest` (empty)
--   **Response**: `InitiateTOTPSetupResponse` (contains `secret`, `qr_code_uri`)
+Initialize TOTP authenticator setup.
+-   **Process**:
+  1. Generate cryptographically secure secret
+  2. Create QR code URI for authenticator apps
+  3. Store temporary secret (not yet enabled)
+-   **Response**: Base32 secret and otpauth:// URI
 
 #### `VerifyAndEnableTOTP(VerifyAndEnableTOTPRequest) returns (VerifyAndEnableTOTPResponse)`
-Verifies a TOTP code and enables 2FA for the user. Returns recovery codes.
--   **Request**: `VerifyAndEnableTOTPRequest` (contains `totp_code`)
--   **Response**: `VerifyAndEnableTOTPResponse` (contains `recovery_codes`)
+Complete TOTP setup and enable 2FA.
+-   **Request**: TOTP code from authenticator app
+-   **Process**:
+  1. Validate TOTP code against stored secret
+  2. Enable 2FA for user account
+  3. Generate and return recovery codes
+-   **Security**: Single-use verification, secure code validation
 
-#### `Disable2FA(Disable2FARequest) returns (google.protobuf.Empty)`
-Disables 2FA for the authenticated user. Requires re-authentication (password or 2FA code).
--   **Request**: `Disable2FARequest` (contains `password_or_2fa_code`)
--   **Response**: `google.protobuf.Empty`
+### HOTP (HMAC-based One-Time Password)
+
+#### `InitiateHOTPSetup(InitiateHOTPSetupRequest) returns (InitiateHOTPSetupResponse)`
+Initialize HOTP hardware token setup.
+-   **Process**: Generate secret and QR code for HOTP devices
+-   **Response**: Secret, QR URI, initial counter value
+
+#### `VerifyAndEnableHOTP(VerifyAndEnableHOTPRequest) returns (VerifyAndEnableHOTPResponse)`
+Complete HOTP setup with counter validation.
+
+### Email-Based MFA
+
+#### `InitiateEmailMFASetup(InitiateEmailMFASetupRequest) returns (InitiateEmailMFASetupResponse)`
+Start email MFA configuration.
+-   **Process**: Send verification OTP to user's email
+-   **Response**: Setup confirmation message
+
+#### `VerifyAndEnableEmailMFA(VerifyAndEnableEmailMFARequest) returns (VerifyAndEnableEmailMFAResponse)`
+Complete email MFA setup.
+-   **Request**: OTP received via email
+-   **Process**: Validate OTP and enable email MFA
+
+### Push Notification MFA (Firebase)
+
+#### `InitiatePushMFASetup(InitiatePushMFASetupRequest) returns (InitiatePushMFASetupResponse)`
+Register device token for push notifications.
+-   **Request**: Firebase device token
+-   **Process**: Store device token for push notifications
+
+#### `VerifyAndEnablePushMFA(VerifyAndEnablePushMFARequest) returns (VerifyAndEnablePushMFAResponse)`
+Enable push MFA after device registration.
+
+#### `RegisterPushDevice(RegisterPushDeviceRequest) returns (RegisterPushDeviceResponse)`
+Register additional device tokens.
+
+#### `UnregisterPushDevice(UnregisterPushDeviceRequest) returns (UnregisterPushDeviceResponse)`
+Remove device tokens.
+
+#### `RespondToPushChallenge(RespondToPushChallengeRequest) returns (RespondToPushChallengeResponse)`
+Handle push MFA challenge responses (approve/deny).
+
+#### `GetPushChallengeStatus(GetPushChallengeStatusRequest) returns (GetPushChallengeStatusResponse)`
+Check status of pending push challenges.
+
+### MFA Challenge Management
+
+#### `SendMFAChallenge(SendMFAChallengeRequest) returns (SendMFAChallengeResponse)`
+Trigger MFA challenge based on user's configured method.
+-   **Methods**: TOTP, HOTP, Email, Push
+-   **Response**: Challenge details and user guidance
+
+#### `VerifyMFAChallenge(VerifyMFAChallengeRequest) returns (VerifyMFAChallengeResponse)`
+Validate MFA challenge response.
+
+### Recovery & Security Management
 
 #### `GenerateRecoveryCodes(GenerateRecoveryCodesRequest) returns (GenerateRecoveryCodesResponse)`
-Generates new recovery codes for a 2FA-enabled user, invalidating old ones. May require re-authentication.
--   **Request**: `GenerateRecoveryCodesRequest` (contains optional `password_or_2fa_code`)
--   **Response**: `GenerateRecoveryCodesResponse` (contains new `recovery_codes`)
+Generate new backup recovery codes.
+-   **Security**: Requires re-authentication
+-   **Process**: Invalidate old codes, generate new ones
+
+#### `Disable2FA(Disable2FARequest) returns (google.protobuf.Empty)`
+Disable all MFA for the account.
+-   **Security**: Requires password or current MFA verification
+-   **Process**: Clear all MFA settings and recovery codes
 
 ---
 
@@ -199,6 +404,99 @@ Deletes an IdP configuration by its ID.
 -   **Request**: `DeleteIdPRequest` (contains `id`)
 -   **Response**: `google.protobuf.Empty`
 
+## Additional Services
+
+### PhoneVerificationService
+
+SMS-based phone number verification for enhanced security.
+
+#### `SendVerificationOTP(SendVerificationOTPRequest) returns (SendVerificationOTPResponse)`
+Send SMS OTP for phone verification.
+
+#### `VerifyPhoneNumber(VerifyPhoneNumberRequest) returns (VerifyPhoneNumberResponse)`
+Validate phone number with OTP code.
+
+### MFAService (Email MFA)
+
+Email-based multi-factor authentication.
+
+#### `InitiateEmailMFASetup(InitiateEmailMFASetupRequest) returns (InitiateEmailMFASetupResponse)`
+Start email MFA configuration.
+
+#### `VerifyAndEnableEmailMFA(VerifyAndEnableEmailMFARequest) returns (VerifyAndEnableEmailMFAResponse)`
+Complete email MFA setup.
+
+#### `SendMFAChallenge(SendMFAChallengeRequest) returns (SendMFAChallengeResponse)`
+Send email-based MFA challenge.
+
+#### `VerifyMFAChallenge(VerifyMFAChallengeRequest) returns (VerifyMFAChallengeResponse)`
+Verify email MFA response.
+
+### PushMFAService
+
+Firebase-powered push notification MFA management.
+
+#### `RegisterDeviceToken(RegisterDeviceTokenRequest) returns (RegisterDeviceTokenResponse)`
+Register device for push notifications.
+
+#### `CreatePushMFAChallenge(CreatePushMFAChallengeRequest) returns (CreatePushMFAChallengeResponse)`
+Create push MFA challenge.
+
+#### `VerifyPushMFAChallenge(VerifyPushMFAChallengeRequest) returns (VerifyPushMFAChallengeResponse)`
+Verify push challenge response.
+
+#### `EnablePushMFA(EnablePushMFARequest) returns (EnablePushMFAResponse)`
+Enable push MFA for user.
+
+#### `DisablePushMFA(DisablePushMFARequest) returns (DisablePushMFAResponse)`
+Disable push MFA.
+
+### FederationService
+
+Cross-domain identity federation and external provider integration.
+
+#### `AddIdentityProvider(AddIdentityProviderRequest) returns (AddIdentityProviderResponse)`
+Configure external identity provider.
+
+#### `ListIdentityProviders(ListIdentityProvidersRequest) returns (ListIdentityProvidersResponse)`
+List configured identity providers.
+
+#### `UpdateIdentityProvider(UpdateIdentityProviderRequest) returns (UpdateIdentityProviderResponse)`
+Modify identity provider configuration.
+
+#### `DeleteIdentityProvider(DeleteIdentityProviderRequest) returns (DeleteIdentityProviderResponse)`
+Remove identity provider.
+
 ---
 
-*Further details on message structures can be found in the respective `.proto` files in `proto/sso/v1/`.*
+## API Patterns & Best Practices
+
+### Authentication Flow
+1. **Primary Auth**: `Login` → returns tokens or MFA requirement
+2. **MFA Verification**: `Verify2FA` → complete authentication
+3. **Session Management**: `ListUserSessions`, `ClearUserSessions`
+
+### User Registration Flow
+1. **Registration**: `RegisterUser` → creates pending account
+2. **Email Verification**: `SendEmailVerification` → `VerifyEmail`
+3. **Account Activation**: `ActivateUser` → enables account
+
+### Password Reset Flow
+1. **Request Reset**: `RequestPasswordReset` → sends email
+2. **Reset Password**: `ResetPassword` → validates token and updates
+
+### MFA Setup Flow
+1. **Initiate Setup**: Method-specific setup (TOTP, Email, Push)
+2. **Verify Setup**: Complete verification and enable
+3. **Generate Recovery**: Backup codes for account recovery
+
+### Security Considerations
+- All sensitive operations require authentication
+- Password changes require current password verification
+- MFA operations include rate limiting
+- Audit logging on all security-relevant actions
+- Token expiration and automatic cleanup
+
+---
+
+*Complete message structures and detailed field descriptions are available in the `.proto` files located in `proto/sso/v1/`.*

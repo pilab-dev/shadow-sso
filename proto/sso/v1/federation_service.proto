@@ -4,6 +4,7 @@ package sso.v1;
 
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/empty.proto";
+import "buf/validate/validate.proto";
 import "proto/sso/v1/services.proto"; // For User message if needed, or define a simpler one
 
 option go_package = "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1;ssov1";
@@ -43,7 +44,7 @@ service FederationService {
 
 // --- InitiateFederatedLogin Messages ---
 message InitiateFederatedLoginRequest {
-  string provider_name = 1; // e.g., "google", "facebook"
+  string provider_name = 1 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 250]; // e.g., "google", "facebook"
   // string redirect_uri_override = 2; // Optional: If a specific redirect URI for this initiation is needed, otherwise server default is used.
   // map<string, string> additional_params = 3; // Optional: any additional parameters to pass to the provider's auth URL
 }
@@ -56,9 +57,9 @@ message InitiateFederatedLoginResponse {
 
 // --- HandleFederatedCallback Messages ---
 message HandleFederatedCallbackRequest {
-  string provider_name = 1; // e.g., "google", "facebook"
-  string state = 2;         // State received from the provider in the callback query.
-  string code = 3;          // Authorization code received from the provider.
+  string provider_name = 1 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 250]; // e.g., "google", "facebook"
+  string state = 2 [(buf.validate.field).string.min_len = 1];         // State received from the provider in the callback query.
+  string code = 3 [(buf.validate.field).string.min_len = 1];          // Authorization code received from the provider.
   // string stored_state = 4;  // State that was stored by the client (e.g., from cookie) to be verified against the received state.
                             // This verification might happen in the HTTP handler before calling this RPC.
                             // Or, this RPC can do it if stored_state is passed.
@@ -122,14 +123,14 @@ message ListUserFederatedIdentitiesResponse {
 // --- RemoveUserFederatedIdentity Messages ---
 message RemoveUserFederatedIdentityRequest {
   // User ID is implicitly taken from the authenticated user context.
-  string provider_user_id_to_remove = 1; // The ProviderUserID of the link to remove (e.g. the Google sub)
-  string provider_name = 2;              // The name of the provider for this identity (e.g. "google")
+  string provider_user_id_to_remove = 1 [(buf.validate.field).string.min_len = 1]; // The ProviderUserID of the link to remove (e.g. the Google sub)
+  string provider_name = 2 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 250];              // The name of the provider for this identity (e.g. "google")
                                          // Alternatively, the internal 'id' of the link record could be used if known to client.
 }
 
 // --- PromptMergeFederatedAccount Messages ---
 message PromptMergeFederatedAccountRequest {
-  string continuation_token = 1; // Token received from HandleFederatedCallbackResponse when MERGE_REQUIRED_EMAIL_EXISTS
+  string continuation_token = 1 [(buf.validate.field).string.min_len = 1]; // Token received from HandleFederatedCallbackResponse when MERGE_REQUIRED_EMAIL_EXISTS
 }
 
 message PromptMergeFederatedAccountResponse {
@@ -141,7 +142,7 @@ message PromptMergeFederatedAccountResponse {
 
 // --- ConfirmMergeFederatedAccount Messages ---
 message ConfirmMergeFederatedAccountRequest {
-  string continuation_token = 1; // Token received from HandleFederatedCallbackResponse
+  string continuation_token = 1 [(buf.validate.field).string.min_len = 1]; // Token received from HandleFederatedCallbackResponse
   // bool user_consent = 2; // Implicitly true by calling this endpoint.
   // string verification_code = 3; // If email verification of local account is required before merging.
 }
