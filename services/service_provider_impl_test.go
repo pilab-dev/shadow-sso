@@ -4,8 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pilab-dev/shadow-sso/api"
 	ssso "github.com/pilab-dev/shadow-sso"
+	"github.com/pilab-dev/shadow-sso/api"
+	"github.com/pilab-dev/shadow-sso/apps/ssso/config"
 	mock_cache "github.com/pilab-dev/shadow-sso/cache/mocks"
 	mock_domain "github.com/pilab-dev/shadow-sso/domain/mocks"
 	"github.com/pilab-dev/shadow-sso/services"
@@ -24,12 +25,14 @@ func TestNewDefaultServiceProvider_Success(t *testing.T) {
 	mockTokenCache := mock_cache.NewMockTokenStore(ctrl)
 	mockPkceRepo := mock_domain.NewMockPkceRepository(ctrl)
 	appConfig := &api.OpenIDProviderConfig{Issuer: "http://issuer.com"}
+	mockAppConfig := &config.Config{} // Simple empty config for testing
 
 	setupMockRepoProviderForServiceGetters(mockRepoProvider, ctrl)
 
 	opts := services.DefaultServiceProviderOptions{
 		RepositoryProvider: mockRepoProvider,
 		Config:             appConfig,
+		AppConfig:          mockAppConfig,
 		TokenSigner:        mockTokenSigner,
 		TokenCache:         mockTokenCache,
 		PkceRepository:     mockPkceRepo,
@@ -45,6 +48,7 @@ func TestNewDefaultServiceProvider_Success(t *testing.T) {
 	optsNoStores := services.DefaultServiceProviderOptions{
 		RepositoryProvider: mockRepoProvider,
 		Config:             appConfig,
+		AppConfig:          mockAppConfig,
 		TokenSigner:        mockTokenSigner,
 		TokenCache:         mockTokenCache,
 		PkceRepository:     mockPkceRepo,
@@ -66,12 +70,14 @@ func TestNewDefaultServiceProvider_Error_MissingPkceRepository(t *testing.T) {
 	mockTokenCache := mock_cache.NewMockTokenStore(ctrl)
 	// mockPkceRepo is deliberately omitted / nil
 	appConfig := &api.OpenIDProviderConfig{}
+	mockAppConfig := &config.Config{}
 
 	setupMockRepoProviderForServiceGetters(mockRepoProvider, ctrl)
 
 	opts := services.DefaultServiceProviderOptions{
 		RepositoryProvider: mockRepoProvider,
 		Config:             appConfig,
+		AppConfig:          mockAppConfig,
 		TokenSigner:        mockTokenSigner,
 		TokenCache:         mockTokenCache,
 		PkceRepository:     nil, // Explicitly nil
@@ -101,6 +107,7 @@ func setupMockRepoProviderForServiceGetters(mockRepoProvider *mock_services.Mock
 	mockRepoProvider.EXPECT().PublicKeyRepository(gomock.Any()).Return(mock_domain.NewMockPublicKeyRepository(ctrl)).AnyTimes()
 	mockRepoProvider.EXPECT().ServiceAccountRepository(gomock.Any()).Return(mock_domain.NewMockServiceAccountRepository(ctrl)).AnyTimes()
 	mockRepoProvider.EXPECT().IdPRepository(gomock.Any()).Return(mock_domain.NewMockIdPRepository(ctrl)).AnyTimes()
+	mockRepoProvider.EXPECT().ConfigurationRepository(gomock.Any()).Return(mock_domain.NewMockConfigurationRepository(ctrl)).AnyTimes()
 }
 
 func TestDefaultServiceProvider_Getters(t *testing.T) {
@@ -117,12 +124,14 @@ func TestDefaultServiceProvider_Getters(t *testing.T) {
 		SecurityConfig:    api.SecurityConfig{PasswordHashingCost: 10},
 		// TOTPIssuerName:    "TestSSO",
 	}
+	mockAppConfig := &config.Config{}
 
 	setupMockRepoProviderForServiceGetters(mockRepoProvider, ctrl)
 
 	opts := services.DefaultServiceProviderOptions{
 		RepositoryProvider: mockRepoProvider,
 		Config:             appConfig,
+		AppConfig:          mockAppConfig,
 		TokenSigner:        mockTokenSigner,
 		TokenCache:         mockTokenCache,
 		PkceRepository:     mockPkceRepo,

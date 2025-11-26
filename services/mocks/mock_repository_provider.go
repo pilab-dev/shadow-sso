@@ -69,6 +69,20 @@ func (mr *MockRepositoryProviderMockRecorder) ClientRepository(ctx any) *gomock.
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClientRepository", reflect.TypeOf((*MockRepositoryProvider)(nil).ClientRepository), ctx)
 }
 
+// ConfigurationRepository mocks base method.
+func (m *MockRepositoryProvider) ConfigurationRepository(ctx context.Context) domain.ConfigurationRepository {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ConfigurationRepository", ctx)
+	ret0, _ := ret[0].(domain.ConfigurationRepository)
+	return ret0
+}
+
+// ConfigurationRepository indicates an expected call of ConfigurationRepository.
+func (mr *MockRepositoryProviderMockRecorder) ConfigurationRepository(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ConfigurationRepository", reflect.TypeOf((*MockRepositoryProvider)(nil).ConfigurationRepository), ctx)
+}
+
 // DeviceAuthorizationRepository mocks base method.
 func (m *MockRepositoryProvider) DeviceAuthorizationRepository(ctx context.Context) domain.DeviceAuthorizationRepository {
 	m.ctrl.T.Helper()

@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin" // For *gin.Engine
 	"github.com/pilab-dev/shadow-sso/api" // For api.OpenIDProviderConfig
 	"github.com/pilab-dev/shadow-sso/api/openidv2_1" // For api.NewOAuth2API
+	"github.com/pilab-dev/shadow-sso/apps/ssso/config" // For config.Config
 	"github.com/pilab-dev/shadow-sso/cache" // For cache.NewMemoryTokenStore
 	"github.com/pilab-dev/shadow-sso/domain"
 	"github.com/pilab-dev/shadow-sso/internal/oidcflow" // Still needed for concrete in-memory store instantiation
@@ -83,12 +84,14 @@ func (r *InMemoryPkceRepository) DeleteCodeChallenge(ctx context.Context, code s
 // SSOServerOptions provides options for configuring the NewSSOServer function.
 type SSOServerOptions struct {
 	Config             *api.OpenIDProviderConfig
+	AppConfig          *config.Config            // Viper configuration
 	RepositoryProvider services.RepositoryProvider
 	TokenSigner        *services.TokenSigner
 	TokenCache         cache.TokenStore
 	PkceRepository     domain.PkceRepository
 	FlowStore          domain.FlowStore
 	UserSessionStore   domain.UserSessionStore
+	EncryptionKey      string // For configuration service encryption
 }
 
 // NewSSOServer initializes and returns a configured Gin engine for the SSO server.
@@ -151,11 +154,13 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 	spOpts := services.DefaultServiceProviderOptions{
 		RepositoryProvider: repoProvider,
 		Config:             opts.Config,
+		AppConfig:          opts.AppConfig,
 		TokenSigner:        tokenSigner,
 		TokenCache:         tokenCache,
 		PkceRepository:     pkceRepo,
 		FlowStore:          flowStore,
 		UserSessionStore:   userSessionStore,
+		EncryptionKey:      opts.EncryptionKey,
 	}
 
 	serviceProvider, err := services.NewDefaultServiceProvider(spOpts)
