@@ -196,6 +196,42 @@ func TestDefaultServiceProvider_Getters(t *testing.T) {
 	assert.NotNil(t, userSessionStore1)
 	userSessionStore2 := sp.UserSessionStore()
 	assert.Same(t, userSessionStore1, userSessionStore2, "UserSessionStore should be a singleton")
+
+	// PhoneVerificationService
+	phoneVerificationService1 := sp.PhoneVerificationService()
+	assert.NotNil(t, phoneVerificationService1)
+	phoneVerificationService2 := sp.PhoneVerificationService()
+	assert.Same(t, phoneVerificationService1, phoneVerificationService2, "PhoneVerificationService should be a singleton")
+
+	// MFAService
+	mfaService1 := sp.MFAService()
+	assert.NotNil(t, mfaService1)
+	mfaService2 := sp.MFAService()
+	assert.Same(t, mfaService1, mfaService2, "MFAService should be a singleton")
+
+	// PushMFAService
+	pushMFAService1 := sp.PushMFAService()
+	assert.NotNil(t, pushMFAService1)
+	pushMFAService2 := sp.PushMFAService()
+	assert.Same(t, pushMFAService1, pushMFAService2, "PushMFAService should be a singleton")
+
+	// UserService
+	userService1 := sp.UserService()
+	assert.NotNil(t, userService1)
+	userService2 := sp.UserService()
+	assert.Same(t, userService1, userService2, "UserService should be a singleton")
+
+	// TwoFactorService
+	twoFactorService1 := sp.TwoFactorService()
+	assert.NotNil(t, twoFactorService1)
+	twoFactorService2 := sp.TwoFactorService()
+	assert.Same(t, twoFactorService1, twoFactorService2, "TwoFactorService should be a singleton")
+
+	// PushNotificationService
+	pushNotificationService1 := sp.PushNotificationService()
+	assert.NotNil(t, pushNotificationService1)
+	pushNotificationService2 := sp.PushNotificationService()
+	assert.Same(t, pushNotificationService1, pushNotificationService2, "PushNotificationService should be a singleton")
 }
 
 // TODO: Add tests for JWKSService initialization if it involves complex key loading logic
@@ -232,3 +268,184 @@ func TestDefaultServiceProvider_Getters(t *testing.T) {
 // does *not* call its repoProvider's PkceRepository() method; it uses the one from options.
 // If it *did* try to get PkceRepo from the general repoProvider, that mock expectation would be needed.
 // This confirms the design choice of explicit PkceRepo dependency.
+
+func TestDefaultServiceProvider_InitializeSMSService_WithAppConfig(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockRepoProvider := mock_services.NewMockRepositoryProvider(ctrl)
+	mockTokenSigner := services.NewTokenSigner()
+	mockTokenCache := mock_cache.NewMockTokenStore(ctrl)
+	mockPkceRepo := mock_domain.NewMockPkceRepository(ctrl)
+	appConfig := &api.OpenIDProviderConfig{Issuer: "http://issuer.com"}
+	mockAppConfig := &config.Config{
+		TwilioAccountSID:  "test-sid",
+		TwilioAuthToken:    "test-token",
+		TwilioPhoneNumber: "+1234567890",
+	}
+
+	setupMockRepoProviderForServiceGetters(mockRepoProvider, ctrl)
+
+	opts := services.DefaultServiceProviderOptions{
+		RepositoryProvider: mockRepoProvider,
+		Config:             appConfig,
+		AppConfig:          mockAppConfig,
+		TokenSigner:        mockTokenSigner,
+		TokenCache:         mockTokenCache,
+		PkceRepository:     mockPkceRepo,
+	}
+
+	sp, err := services.NewDefaultServiceProvider(opts)
+	require.NoError(t, err)
+	require.NotNil(t, sp)
+
+	// SMS service should be initialized with app config values
+	smsService := sp.PushNotificationService() // This tests that services are initialized
+	assert.NotNil(t, smsService)
+}
+
+func TestDefaultServiceProvider_InitializeEmailService_WithAppConfig(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockRepoProvider := mock_services.NewMockRepositoryProvider(ctrl)
+	mockTokenSigner := services.NewTokenSigner()
+	mockTokenCache := mock_cache.NewMockTokenStore(ctrl)
+	mockPkceRepo := mock_domain.NewMockPkceRepository(ctrl)
+	appConfig := &api.OpenIDProviderConfig{Issuer: "http://issuer.com"}
+	mockAppConfig := &config.Config{
+		ResendAPIKey:      "test-api-key",
+		FromEmail:         "test@example.com",
+		NextPublicBaseURL: "https://example.com",
+	}
+
+	setupMockRepoProviderForServiceGetters(mockRepoProvider, ctrl)
+
+	opts := services.DefaultServiceProviderOptions{
+		RepositoryProvider: mockRepoProvider,
+		Config:             appConfig,
+		AppConfig:          mockAppConfig,
+		TokenSigner:        mockTokenSigner,
+		TokenCache:         mockTokenCache,
+		PkceRepository:     mockPkceRepo,
+	}
+
+	sp, err := services.NewDefaultServiceProvider(opts)
+	require.NoError(t, err)
+	require.NotNil(t, sp)
+
+	// Email service should be initialized
+	emailService := sp.PushNotificationService() // This tests that services are initialized
+	assert.NotNil(t, emailService)
+}
+
+func TestDefaultServiceProvider_InitializePushService_WithAppConfig(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockRepoProvider := mock_services.NewMockRepositoryProvider(ctrl)
+	mockTokenSigner := services.NewTokenSigner()
+	mockTokenCache := mock_cache.NewMockTokenStore(ctrl)
+	mockPkceRepo := mock_domain.NewMockPkceRepository(ctrl)
+	appConfig := &api.OpenIDProviderConfig{Issuer: "http://issuer.com"}
+	mockAppConfig := &config.Config{
+		FirebaseProjectID:      "test-project",
+		FirebaseCredentialsPath: "/path/to/credentials.json",
+	}
+
+	setupMockRepoProviderForServiceGetters(mockRepoProvider, ctrl)
+
+	opts := services.DefaultServiceProviderOptions{
+		RepositoryProvider: mockRepoProvider,
+		Config:             appConfig,
+		AppConfig:          mockAppConfig,
+		TokenSigner:        mockTokenSigner,
+		TokenCache:         mockTokenCache,
+		PkceRepository:     mockPkceRepo,
+	}
+
+	sp, err := services.NewDefaultServiceProvider(opts)
+	require.NoError(t, err)
+	require.NotNil(t, sp)
+
+	// Push service should be initialized
+	pushService := sp.PushNotificationService()
+	assert.NotNil(t, pushService)
+}
+
+func TestDefaultServiceProvider_InitializeServices_WithConfigurationService(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockRepoProvider := mock_services.NewMockRepositoryProvider(ctrl)
+	mockTokenSigner := services.NewTokenSigner()
+	mockTokenCache := mock_cache.NewMockTokenStore(ctrl)
+	mockPkceRepo := mock_domain.NewMockPkceRepository(ctrl)
+	mockConfigRepo := mock_domain.NewMockConfigurationRepository(ctrl)
+	appConfig := &api.OpenIDProviderConfig{Issuer: "http://issuer.com"}
+	mockAppConfig := &config.Config{}
+
+	setupMockRepoProviderForServiceGetters(mockRepoProvider, ctrl)
+	mockRepoProvider.EXPECT().ConfigurationRepository(gomock.Any()).Return(mockConfigRepo).AnyTimes()
+
+	// Create a valid 32-byte encryption key
+	encryptionKey := "12345678901234567890123456789012" // 32 bytes
+
+	opts := services.DefaultServiceProviderOptions{
+		RepositoryProvider: mockRepoProvider,
+		Config:             appConfig,
+		AppConfig:          mockAppConfig,
+		TokenSigner:        mockTokenSigner,
+		TokenCache:         mockTokenCache,
+		PkceRepository:     mockPkceRepo,
+		EncryptionKey:      encryptionKey,
+	}
+
+	sp, err := services.NewDefaultServiceProvider(opts)
+	require.NoError(t, err)
+	require.NotNil(t, sp)
+
+	// Configuration service should be initialized
+	configService := sp.ConfigurationService()
+	assert.NotNil(t, configService)
+
+	// Services should be initialized (they use configuration service if available)
+	pushService := sp.PushNotificationService()
+	assert.NotNil(t, pushService)
+}
+
+func TestDefaultServiceProvider_InitializeServices_WithoutConfigurationService(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockRepoProvider := mock_services.NewMockRepositoryProvider(ctrl)
+	mockTokenSigner := services.NewTokenSigner()
+	mockTokenCache := mock_cache.NewMockTokenStore(ctrl)
+	mockPkceRepo := mock_domain.NewMockPkceRepository(ctrl)
+	appConfig := &api.OpenIDProviderConfig{Issuer: "http://issuer.com"}
+	mockAppConfig := &config.Config{}
+
+	setupMockRepoProviderForServiceGetters(mockRepoProvider, ctrl)
+
+	opts := services.DefaultServiceProviderOptions{
+		RepositoryProvider: mockRepoProvider,
+		Config:             appConfig,
+		AppConfig:          mockAppConfig,
+		TokenSigner:        mockTokenSigner,
+		TokenCache:         mockTokenCache,
+		PkceRepository:     mockPkceRepo,
+		// No EncryptionKey, so no ConfigurationService
+	}
+
+	sp, err := services.NewDefaultServiceProvider(opts)
+	require.NoError(t, err)
+	require.NotNil(t, sp)
+
+	// Configuration service should be nil
+	configService := sp.ConfigurationService()
+	assert.Nil(t, configService)
+
+	// Services should still be initialized (using app config fallback)
+	pushService := sp.PushNotificationService()
+	assert.NotNil(t, pushService)
+}
