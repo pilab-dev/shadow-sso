@@ -214,6 +214,20 @@ func (mr *MockUserSessionStoreMockRecorder) DeleteUserSession(sessionID any) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteUserSession", reflect.TypeOf((*MockUserSessionStore)(nil).DeleteUserSession), sessionID)
 }
 
+// DeleteUserSessionsByUserID mocks base method.
+func (m *MockUserSessionStore) DeleteUserSessionsByUserID(userID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteUserSessionsByUserID", userID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteUserSessionsByUserID indicates an expected call of DeleteUserSessionsByUserID.
+func (mr *MockUserSessionStoreMockRecorder) DeleteUserSessionsByUserID(userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteUserSessionsByUserID", reflect.TypeOf((*MockUserSessionStore)(nil).DeleteUserSessionsByUserID), userID)
+}
+
 // GetUserSession mocks base method.
 func (m *MockUserSessionStore) GetUserSession(sessionID string) (*domain.UserSession, error) {
 	m.ctrl.T.Helper()
@@ -1185,6 +1199,20 @@ func (m *MockTokenRepository) RevokeToken(ctx context.Context, tokenValue string
 func (mr *MockTokenRepositoryMockRecorder) RevokeToken(ctx, tokenValue any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RevokeToken", reflect.TypeOf((*MockTokenRepository)(nil).RevokeToken), ctx, tokenValue)
+}
+
+// RevokeTokenFamily mocks base method.
+func (m *MockTokenRepository) RevokeTokenFamily(ctx context.Context, family string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RevokeTokenFamily", ctx, family)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RevokeTokenFamily indicates an expected call of RevokeTokenFamily.
+func (mr *MockTokenRepositoryMockRecorder) RevokeTokenFamily(ctx, family any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RevokeTokenFamily", reflect.TypeOf((*MockTokenRepository)(nil).RevokeTokenFamily), ctx, family)
 }
 
 // StoreToken mocks base method.

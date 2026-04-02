@@ -2,6 +2,7 @@ package services
 
 import (
 	"context" // Generally useful for service initialization context if needed
+	"crypto/rsa"
 	"errors"
 	"fmt"
 
@@ -141,13 +142,12 @@ func (p *DefaultServiceProvider) OAuthService() *OAuthService {
 
 func (p *DefaultServiceProvider) TokenService() *TokenService {
 	if p.tokenService == nil {
-		// TokenService dependencies:
-		// repo, cache, issuer, signer, pubKeyRepo, saRepo, userRepo
 		p.tokenService = NewTokenService(
 			p.repoProvider.TokenRepository(initCtx),
-			p.tokenCache, // Direct from options
+			p.tokenCache,
 			p.config.Issuer,
-			p.tokenSigner, // Direct from options
+			p.tokenSigner,
+			p.JWKSService(),
 			p.repoProvider.PublicKeyRepository(initCtx),
 			p.repoProvider.ServiceAccountRepository(initCtx),
 			p.repoProvider.UserRepository(initCtx),
@@ -168,20 +168,13 @@ func (p *DefaultServiceProvider) PKCEService() *PKCEService {
 
 func (p *DefaultServiceProvider) JWKSService() *JWKSService {
 	if p.jwksService == nil {
-		// JWKSService dependency: privateKey (from config or key management)
-		// Assuming TokenSigner holds the key or can provide it.
-		// This might need adjustment based on how JWKS keys are sourced.
-		// For now, assuming NewJWKSService can be initialized, possibly using keys from TokenSigner.
-		// The current NewJWKSService takes a rotationInterval and generates keys.
-		// It doesn't directly take external keys for serving but manages its own.
 		var err error
-		p.jwksService, err = NewJWKSService(p.config.KeyRotationPeriod) // Default from config
+		p.jwksService, err = NewJWKSServiceWithGrace(p.config.KeyRotationPeriod, p.config.KeyRotationPeriod, func(keyID string, privateKey *rsa.PrivateKey) {
+			p.tokenSigner.AddRSASigner(keyID, privateKey)
+		})
 		if err != nil {
 			panic("failed to initialize JWKSService: " + err.Error())
 		}
-		// If JWKSService needs to reflect keys from TokenSigner, it needs a way to access them.
-		// e.g., p.jwksService.AddKeyProvider(p.tokenSigner.GetKeyProvider())
-		// For now, the existing NewJWKSService creates its own keys.
 	}
 	return p.jwksService
 }

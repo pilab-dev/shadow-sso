@@ -123,6 +123,18 @@ func (s *InMemoryUserSessionStore) DeleteUserSession(sessionID string) error {
 	return nil
 }
 
+// DeleteUserSessionsByUserID removes all sessions for a given user ID.
+func (s *InMemoryUserSessionStore) DeleteUserSessionsByUserID(userID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id, session := range s.sessions {
+		if session.UserID == userID {
+			delete(s.sessions, id)
+		}
+	}
+	return nil
+}
+
 // CleanupExpiredFlows iterates through flows and removes expired ones.
 // This should be called periodically by a background goroutine.
 func (s *InMemoryFlowStore) CleanupExpiredFlows() {
