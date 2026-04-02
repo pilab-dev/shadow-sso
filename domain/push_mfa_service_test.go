@@ -56,7 +56,7 @@ func TestPushMFAService_RegisterDeviceToken_Success(t *testing.T) {
 	userID := "user123"
 	deviceToken := "device-token-123"
 	user := &domain.User{
-		ID:            userID,
+		ID:                  userID,
 		PushMFADeviceTokens: []string{},
 	}
 
@@ -80,7 +80,7 @@ func TestPushMFAService_RegisterDeviceToken_AlreadyRegistered(t *testing.T) {
 	userID := "user123"
 	deviceToken := "device-token-123"
 	user := &domain.User{
-		ID:            userID,
+		ID:                  userID,
 		PushMFADeviceTokens: []string{deviceToken},
 	}
 
@@ -103,7 +103,7 @@ func TestPushMFAService_UnregisterDeviceToken_Success(t *testing.T) {
 	userID := "user123"
 	deviceToken := "device-token-123"
 	user := &domain.User{
-		ID:            userID,
+		ID:                  userID,
 		PushMFADeviceTokens: []string{deviceToken, "other-token"},
 	}
 
@@ -128,10 +128,10 @@ func TestPushMFAService_CreatePushMFAChallenge_Success(t *testing.T) {
 	ipAddress := "192.168.1.1"
 	userAgent := "Mozilla/5.0"
 	user := &domain.User{
-		ID:            userID,
-		PushMFAEnabled: true,
+		ID:                  userID,
+		PushMFAEnabled:      true,
 		PushMFADeviceTokens: []string{"device-token-1"},
-		PushMFAChallenges: []domain.PushMFAChallenge{},
+		PushMFAChallenges:   []domain.PushMFAChallenge{},
 	}
 
 	mockUserRepo.EXPECT().GetUserByID(ctx, userID).Return(user, nil)
@@ -155,7 +155,7 @@ func TestPushMFAService_CreatePushMFAChallenge_NotEnabled(t *testing.T) {
 	ctx := context.Background()
 	userID := "user123"
 	user := &domain.User{
-		ID:            userID,
+		ID:             userID,
 		PushMFAEnabled: false,
 	}
 
@@ -179,8 +179,8 @@ func TestPushMFAService_CreatePushMFAChallenge_NoDeviceTokens(t *testing.T) {
 	ctx := context.Background()
 	userID := "user123"
 	user := &domain.User{
-		ID:            userID,
-		PushMFAEnabled: true,
+		ID:                  userID,
+		PushMFAEnabled:      true,
 		PushMFADeviceTokens: []string{},
 	}
 
@@ -203,18 +203,20 @@ func TestPushMFAService_CreatePushMFAChallenge_TooManyActiveChallenges(t *testin
 
 	ctx := context.Background()
 	userID := "user123"
+	futureTime := time.Now().Add(5 * time.Minute)
 	challenges := make([]domain.PushMFAChallenge, 5)
 	for i := range challenges {
 		challenges[i] = domain.PushMFAChallenge{
 			ChallengeID: "challenge-" + string(rune(i)),
 			Status:      "pending",
+			ExpiresAt:   futureTime,
 		}
 	}
 	user := &domain.User{
-		ID:            userID,
-		PushMFAEnabled: true,
+		ID:                  userID,
+		PushMFAEnabled:      true,
 		PushMFADeviceTokens: []string{"device-token-1"},
-		PushMFAChallenges: challenges,
+		PushMFAChallenges:   challenges,
 	}
 
 	mockUserRepo.EXPECT().GetUserByID(ctx, userID).Return(user, nil)
@@ -244,8 +246,8 @@ func TestPushMFAService_VerifyPushMFAChallenge_Success_Approved(t *testing.T) {
 		ExpiresAt:   expiresAt,
 	}
 	user := &domain.User{
-		ID:            userID,
-		PushMFAEnabled: true,
+		ID:                userID,
+		PushMFAEnabled:    true,
 		PushMFAChallenges: []domain.PushMFAChallenge{challenge},
 	}
 
@@ -275,8 +277,8 @@ func TestPushMFAService_VerifyPushMFAChallenge_Success_Denied(t *testing.T) {
 		ExpiresAt:   expiresAt,
 	}
 	user := &domain.User{
-		ID:            userID,
-		PushMFAEnabled: true,
+		ID:                userID,
+		PushMFAEnabled:    true,
 		PushMFAChallenges: []domain.PushMFAChallenge{challenge},
 	}
 
@@ -299,8 +301,8 @@ func TestPushMFAService_VerifyPushMFAChallenge_NotFound(t *testing.T) {
 	ctx := context.Background()
 	userID := "user123"
 	user := &domain.User{
-		ID:            userID,
-		PushMFAEnabled: true,
+		ID:                userID,
+		PushMFAEnabled:    true,
 		PushMFAChallenges: []domain.PushMFAChallenge{},
 	}
 
@@ -330,8 +332,8 @@ func TestPushMFAService_VerifyPushMFAChallenge_Expired(t *testing.T) {
 		ExpiresAt:   expiredTime,
 	}
 	user := &domain.User{
-		ID:            userID,
-		PushMFAEnabled: true,
+		ID:                userID,
+		PushMFAEnabled:    true,
 		PushMFAChallenges: []domain.PushMFAChallenge{challenge},
 	}
 
@@ -362,8 +364,8 @@ func TestPushMFAService_VerifyPushMFAChallenge_AlreadyUsed(t *testing.T) {
 		ExpiresAt:   expiresAt,
 	}
 	user := &domain.User{
-		ID:            userID,
-		PushMFAEnabled: true,
+		ID:                userID,
+		PushMFAEnabled:    true,
 		PushMFAChallenges: []domain.PushMFAChallenge{challenge},
 	}
 
@@ -393,7 +395,7 @@ func TestPushMFAService_GetPushMFAChallengeStatus_Success(t *testing.T) {
 		ExpiresAt:   expiresAt,
 	}
 	user := &domain.User{
-		ID:            userID,
+		ID:                userID,
 		PushMFAChallenges: []domain.PushMFAChallenge{challenge},
 	}
 
@@ -416,7 +418,7 @@ func TestPushMFAService_GetPushMFAChallengeStatus_NotFound(t *testing.T) {
 	ctx := context.Background()
 	userID := "user123"
 	user := &domain.User{
-		ID:            userID,
+		ID:                userID,
 		PushMFAChallenges: []domain.PushMFAChallenge{},
 	}
 
@@ -440,7 +442,7 @@ func TestPushMFAService_EnablePushMFA_Success(t *testing.T) {
 	ctx := context.Background()
 	userID := "user123"
 	user := &domain.User{
-		ID:            userID,
+		ID:             userID,
 		PushMFAEnabled: false,
 	}
 
@@ -463,10 +465,10 @@ func TestPushMFAService_DisablePushMFA_Success(t *testing.T) {
 	ctx := context.Background()
 	userID := "user123"
 	user := &domain.User{
-		ID:            userID,
-		PushMFAEnabled: true,
+		ID:                  userID,
+		PushMFAEnabled:      true,
 		PushMFADeviceTokens: []string{"token1"},
-		PushMFAChallenges: []domain.PushMFAChallenge{{ChallengeID: "ch1"}},
+		PushMFAChallenges:   []domain.PushMFAChallenge{{ChallengeID: "ch1"}},
 	}
 
 	mockUserRepo.EXPECT().GetUserByID(ctx, userID).Return(user, nil)
@@ -485,9 +487,14 @@ func TestPushMFAService_CleanupExpiredChallenges(t *testing.T) {
 
 	service := domain.NewPushMFAService(mockUserRepo, mockPushService)
 
+	ctx := context.Background()
+	userID := "user123"
 	expiredTime := time.Now().Add(-10 * time.Minute)
 	futureTime := time.Now().Add(10 * time.Minute)
 	user := &domain.User{
+		ID:                  userID,
+		PushMFAEnabled:      true,
+		PushMFADeviceTokens: []string{"device-token-1"},
 		PushMFAChallenges: []domain.PushMFAChallenge{
 			{ChallengeID: "expired", Status: "pending", ExpiresAt: expiredTime},
 			{ChallengeID: "active", Status: "pending", ExpiresAt: futureTime},
@@ -495,14 +502,17 @@ func TestPushMFAService_CleanupExpiredChallenges(t *testing.T) {
 		},
 	}
 
-	// cleanupExpiredChallenges is unexported, test through public methods
-	// This is tested indirectly through CreatePushMFAChallenge
-	_ = service
-	_ = user
+	mockUserRepo.EXPECT().GetUserByID(ctx, userID).Return(user, nil)
+	mockPushService.EXPECT().SendMFAPushChallenge(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	mockUserRepo.EXPECT().UpdateUser(ctx, gomock.Any()).Return(nil)
 
-	// Should keep active and approved, remove expired pending
-	assert.Len(t, user.PushMFAChallenges, 2)
+	// Call CreatePushMFAChallenge which internally calls cleanupExpiredChallenges
+	challengeID, err := service.CreatePushMFAChallenge(ctx, userID, "192.168.1.1", "Mozilla/5.0")
+	assert.NoError(t, err)
+	assert.NotEmpty(t, challengeID)
+
+	// After cleanup, the user should have 2 challenges (active and approved) plus the new one
+	assert.Len(t, user.PushMFAChallenges, 3)
 	assert.Equal(t, "active", user.PushMFAChallenges[0].ChallengeID)
 	assert.Equal(t, "approved", user.PushMFAChallenges[1].ChallengeID)
 }
-
