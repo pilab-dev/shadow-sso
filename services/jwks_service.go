@@ -15,10 +15,13 @@ import (
 )
 
 type JWKSService struct {
-	mu           sync.RWMutex
-	keys         map[string]*rsa.PrivateKey
-	currentKeyID string
-	keyRotation  time.Duration
+	mu            sync.RWMutex
+	keys          map[string]*rsa.PrivateKey
+	currentKeyID  string
+	previousKeyID string
+	keyRotation   time.Duration
+	gracePeriod   time.Duration
+	keyCreatedAt  map[string]time.Time
 }
 
 type JSONWebKey struct {
@@ -34,25 +37,27 @@ type JSONWebKeySet struct {
 	Keys []JSONWebKey `json:"keys"`
 }
 
-// NewJWKSService creates a new JWKS service with key rotation.
 func NewJWKSService(keyRotation time.Duration) (*JWKSService, error) {
+	return NewJWKSServiceWithGrace(keyRotation, keyRotation)
+}
+
+func NewJWKSServiceWithGrace(keyRotation, gracePeriod time.Duration) (*JWKSService, error) {
 	service := &JWKSService{
-		keys:        make(map[string]*rsa.PrivateKey),
-		keyRotation: keyRotation,
+		keys:         make(map[string]*rsa.PrivateKey),
+		keyRotation:  keyRotation,
+		gracePeriod:  gracePeriod,
+		keyCreatedAt: make(map[string]time.Time),
 	}
 
-	// Kezdeti kulcs generálása
 	if err := service.rotateKeys(); err != nil {
 		return nil, err
 	}
 
-	// Kulcs rotáció időzítő indítása
 	go service.startKeyRotation()
 
 	return service, nil
 }
 
-// GetPublicJWKS retrieves the public JSON Web Key Set.
 func (s *JWKSService) GetPublicJWKS(ctx context.Context) (*JSONWebKeySet, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -65,7 +70,6 @@ func (s *JWKSService) GetPublicJWKS(ctx context.Context) (*JSONWebKeySet, error)
 	for kid, privateKey := range s.keys {
 		publicKey := privateKey.Public().(*rsa.PublicKey)
 
-		// RSA kulcs komponensek kódolása
 		n := base64.RawURLEncoding.EncodeToString(publicKey.N.Bytes())
 		e := base64.RawURLEncoding.EncodeToString(big.NewInt(int64(publicKey.E)).Bytes())
 
@@ -82,7 +86,6 @@ func (s *JWKSService) GetPublicJWKS(ctx context.Context) (*JSONWebKeySet, error)
 	return &JSONWebKeySet{Keys: keys}, nil
 }
 
-// GetJWKS retrieves the JSON Web Key Set.
 func (s *JWKSService) GetJWKS() JSONWebKeySet {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -91,7 +94,6 @@ func (s *JWKSService) GetJWKS() JSONWebKeySet {
 	for kid, privateKey := range s.keys {
 		publicKey := privateKey.Public().(*rsa.PublicKey)
 
-		// RSA kulcs komponensek kódolása
 		n := base64.RawURLEncoding.EncodeToString(publicKey.N.Bytes())
 		e := base64.RawURLEncoding.EncodeToString(big.NewInt(int64(publicKey.E)).Bytes())
 
@@ -108,34 +110,54 @@ func (s *JWKSService) GetJWKS() JSONWebKeySet {
 	return JSONWebKeySet{Keys: keys}
 }
 
-// GetSigningKey retrieves the current signing key.
 func (s *JWKSService) GetSigningKey() (string, *rsa.PrivateKey) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.currentKeyID, s.keys[s.currentKeyID]
 }
 
+func (s *JWKSService) GetPublicKeyByID(kid string) *rsa.PublicKey {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	privKey, ok := s.keys[kid]
+	if !ok {
+		return nil
+	}
+	return privKey.Public().(*rsa.PublicKey)
+}
+
 func (s *JWKSService) rotateKeys() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Új RSA kulcspár generálása
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return fmt.Errorf("failed to generate RSA key: %w", err)
 	}
 
-	// Új kulcs ID generálása
 	newKeyID := uuid.NewString()
 
-	// Régi kulcs megtartása egy ideig az érvényes tokenek miatt
 	if s.currentKeyID != "" {
-		// Csak az utolsó kulcsot tartjuk meg
-		delete(s.keys, s.currentKeyID)
+		s.previousKeyID = s.currentKeyID
 	}
 
 	s.keys[newKeyID] = privateKey
+	s.keyCreatedAt[newKeyID] = time.Now()
 	s.currentKeyID = newKeyID
+
+	now := time.Now()
+	for kid, createdAt := range s.keyCreatedAt {
+		if kid != s.currentKeyID && kid != s.previousKeyID {
+			delete(s.keys, kid)
+			delete(s.keyCreatedAt, kid)
+			continue
+		}
+		if kid == s.previousKeyID && now.Sub(createdAt) > s.gracePeriod {
+			delete(s.keys, kid)
+			delete(s.keyCreatedAt, kid)
+			s.previousKeyID = ""
+		}
+	}
 
 	return nil
 }

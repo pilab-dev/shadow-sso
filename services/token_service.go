@@ -4,9 +4,12 @@ import (
 	"context"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -18,44 +21,44 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-var errMissingKidSAValidation = errors.New("missing kid header, not a service account token, try other validation")
+var _ = jwt.SigningMethodRS256 // ensure jwt import is used
 
 // TokenService handles token generation and validation
 type TokenService struct {
-	repo   domain.TokenRepository // Changed to domain.TokenRepository
+	repo   domain.TokenRepository
 	cache  cache.TokenStore
 	issuer string
 
 	signer *TokenSigner
+	jwks   *JWKSService
 
-	// Added for SA token validation
 	pubKeyRepo domain.PublicKeyRepository
 	saRepo     domain.ServiceAccountRepository
-	userRepo   domain.UserRepository // New dependency
+	userRepo   domain.UserRepository
 }
 
 // NewTokenService creates a new TokenService instance
 func NewTokenService(
-	repo domain.TokenRepository, // Changed to domain.TokenRepository
+	repo domain.TokenRepository,
 	tokenCache cache.TokenStore,
-	issuer string, // Issuer for user tokens
+	issuer string,
 	signer *TokenSigner,
+	jwks *JWKSService,
 	pubKeyRepo domain.PublicKeyRepository,
 	saRepo domain.ServiceAccountRepository,
-	userRepo domain.UserRepository, // New
+	userRepo domain.UserRepository,
 ) *TokenService {
 	return &TokenService{
 		repo:       repo,
 		cache:      tokenCache,
 		issuer:     issuer,
 		signer:     signer,
+		jwks:       jwks,
 		pubKeyRepo: pubKeyRepo,
 		saRepo:     saRepo,
-		userRepo:   userRepo, // New
+		userRepo:   userRepo,
 	}
 }
-
-// Removed local Token struct definition, will use domain.Token
 
 // ToEntry converts a domain.Token to a cache.TokenEntry.
 func toCacheEntry(t *domain.Token) *cache.TokenEntry { // Ensure cache pkg is imported
@@ -87,20 +90,14 @@ func fromCacheEntry(entry *cache.TokenEntry, tokenValue string) *domain.Token { 
 }
 
 type CreateTokenOptions struct {
-	// TokenID is the unique ID for the token (UUID)
-	TokenID string
-	// Scope is the scope for the token (if its an access token)
-	Scope string
-	// ClientID is the client ID for the token
-	ClientID string
-	// UserID is the user ID for the token
-	UserID string
-	// TokenType is either "access_token", "refresh_token", "id_token"
-	TokenType string
-	// ExpireIn is the expiration time for the token, in duration (e.g. 24h)
-	ExpireIn time.Duration
-	// SigningKeyID is the ID of the signing key in the TokenSigner. When empty, the default key will be used.
-	SigningKeyID string
+	TokenID            string
+	Scope              string
+	ClientID           string
+	UserID             string
+	TokenType          string
+	ExpireIn           time.Duration
+	SigningKeyID       string
+	RefreshTokenFamily string
 }
 
 // CreateToken creates a new token with the given options and claims.
@@ -134,24 +131,28 @@ func (s *TokenService) CreateToken(ctx context.Context, opts CreateTokenOptions,
 	}
 
 	// Generate access token with the signer
-	// s.signer.Sign now accepts jwt.Claims (which jwt.MapClaims implements)
-	signedToken, err := s.signer.Sign(tokenClaimsMap, opts.SigningKeyID)
+	signingKeyID := opts.SigningKeyID
+	if signingKeyID == "" && s.jwks != nil {
+		signingKeyID, _ = s.jwks.GetSigningKey()
+	}
+	signedToken, err := s.signer.Sign(tokenClaimsMap, signingKeyID)
 	if err != nil {
 		return nil, err
 	}
 
 	// Store token in repository
-	token := &domain.Token{ // Changed to domain.Token
-		ID:         opts.TokenID,
-		TokenType:  opts.TokenType,
-		TokenValue: signedToken,
-		ClientID:   opts.ClientID,
-		UserID:     opts.UserID,
-		Scope:      opts.Scope,
-		ExpiresAt:  expiresAt,
-		CreatedAt:  time.Now(),
-		LastUsedAt: time.Now(),
-		Roles:      userRoles, // Store roles in the token struct
+	token := &domain.Token{
+		ID:                 opts.TokenID,
+		TokenType:          opts.TokenType,
+		TokenValue:         signedToken,
+		ClientID:           opts.ClientID,
+		UserID:             opts.UserID,
+		Scope:              opts.Scope,
+		ExpiresAt:          expiresAt,
+		CreatedAt:          time.Now(),
+		LastUsedAt:         time.Now(),
+		Roles:              userRoles,
+		RefreshTokenFamily: opts.RefreshTokenFamily,
 	}
 	if err := s.repo.StoreToken(ctx, token); err != nil {
 		return nil, err
@@ -288,6 +289,13 @@ func (s *TokenService) BuildToken(token *domain.Token) error { // Changed to dom
 func (s *TokenService) GenerateTokenPair(ctx context.Context,
 	clientID, userID, scope string, tokenTTL time.Duration,
 ) (*api.TokenResponse, error) {
+	return s.GenerateTokenPairWithFamily(ctx, clientID, userID, scope, tokenTTL, "")
+}
+
+// GenerateTokenPairWithFamily creates a new access and refresh token pair with an optional refresh token family.
+func (s *TokenService) GenerateTokenPairWithFamily(ctx context.Context,
+	clientID, userID, scope string, tokenTTL time.Duration, family string,
+) (*api.TokenResponse, error) {
 	// Generate access token
 	accessTokenID := uuid.NewString()
 	accessToken, err := s.CreateToken(ctx, CreateTokenOptions{
@@ -297,60 +305,144 @@ func (s *TokenService) GenerateTokenPair(ctx context.Context,
 		UserID:       userID,
 		TokenType:    api.TokenTypeAccessToken,
 		ExpireIn:     tokenTTL,
-		SigningKeyID: "", // Use default key
-	}, nil) // claims can be nil, CreateToken will make its own MapClaims
+		SigningKeyID: "",
+	}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create access token: %w", err)
 	}
 
 	// Generate refresh token
 	refreshTokenID := uuid.NewString()
-	refreshTokenTTL := tokenTTL * 24 // Example: Refresh token lives 24x longer
+	refreshTokenTTL := tokenTTL * 24
+	if family == "" {
+		family = uuid.NewString()
+	}
 	refreshToken, err := s.CreateToken(ctx, CreateTokenOptions{
-		TokenID:      refreshTokenID,
-		Scope:        scope,
-		ClientID:     clientID,
-		UserID:       userID,
-		TokenType:    api.TokenTypeRefreshToken,
-		ExpireIn:     refreshTokenTTL,
-		SigningKeyID: "", // Use default key
+		TokenID:            refreshTokenID,
+		Scope:              scope,
+		ClientID:           clientID,
+		UserID:             userID,
+		TokenType:          api.TokenTypeRefreshToken,
+		ExpireIn:           refreshTokenTTL,
+		SigningKeyID:       "",
+		RefreshTokenFamily: family,
 	}, nil)
 	if err != nil {
-		// Consider cleanup if access token was stored but refresh token failed
-		// For now, just return the error.
 		return nil, fmt.Errorf("failed to create refresh token: %w", err)
 	}
 
-	// CreateToken already handles storing in repo and caching for access tokens.
-	// The metrics.TokensCreatedTotal.Inc() is also called within CreateToken.
+	// Generate ID token if openid scope is requested
+	idToken := ""
+	if s.containsScope(scope, "openid") {
+		user, userErr := s.userRepo.GetUserByID(ctx, userID)
+		if userErr != nil {
+			log.Warn().Err(userErr).Str("userID", userID).Msg("GenerateTokenPairWithFamily: failed to fetch user for ID token claims")
+		}
+		idToken, err = s.GenerateIDToken(ctx, userID, clientID, "", time.Now(), user)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create ID token: %w", err)
+		}
+	}
 
 	return &api.TokenResponse{
-		IDToken:      "", // ID Token generation is a separate concern if needed
+		IDToken:      idToken,
 		AccessToken:  accessToken.TokenValue,
-		TokenType:    "Bearer", // Standard token type for responses
+		TokenType:    "Bearer",
 		ExpiresIn:    int(tokenTTL.Seconds()),
 		RefreshToken: refreshToken.TokenValue,
 	}, nil
 }
 
-// ValidateToken validates an access token and returns its information. If the token is revoked or expired,
-// it returns ErrTokenExpiredOrRevoked.
-// This version handles both Service Account JWTs and regular user tokens.
-func (s *TokenService) ValidateAccessToken(ctx context.Context, tokenValue string) (*domain.Token, error) { // Changed return type
-	// This line needs to be at the package level of token_service.go, or passed in.
-	// var errMissingKidSAValidation = errors.New("missing kid header, not a service account token, try other validation")
-
-	parsedSAJWT, err := jwt.ParseWithClaims(tokenValue, &jwt.MapClaims{}, func(token *jwt.Token) (interface{}, error) {
-		kid, ok := token.Header["kid"].(string)
-		if !ok || kid == "" {
-			return nil, errMissingKidSAValidation // Use the package-level var
+func (s *TokenService) containsScope(scope, target string) bool {
+	if scope == "" {
+		return false
+	}
+	for _, s := range scope {
+		if string(s) == target {
+			return true
 		}
+	}
+	return false
+}
+
+// GenerateIDToken creates a signed JWT ID token per OIDC Core spec.
+func (s *TokenService) GenerateIDToken(ctx context.Context, userID, clientID, nonce string, authTime time.Time, user *domain.User) (string, error) {
+	keyID, _ := s.jwks.GetSigningKey()
+	if keyID == "" {
+		return "", fmt.Errorf("no signing key available for ID token")
+	}
+
+	now := time.Now()
+	claims := jwt.MapClaims{
+		"iss":       s.issuer,
+		"sub":       userID,
+		"aud":       clientID,
+		"exp":       jwt.NewNumericDate(now.Add(time.Hour)).Unix(),
+		"iat":       jwt.NewNumericDate(now).Unix(),
+		"auth_time": authTime.Unix(),
+	}
+
+	if nonce != "" {
+		claims["nonce"] = nonce
+	}
+
+	if user != nil {
+		claims["name"] = user.FirstName + " " + user.LastName
+		if user.Email != "" {
+			claims["email"] = user.Email
+		}
+		if len(user.Roles) > 0 {
+			claims["roles"] = user.Roles
+		}
+	}
+
+	signingKeyID, _ := s.jwks.GetSigningKey()
+	signedToken, err := s.signer.Sign(claims, signingKeyID)
+	if err != nil {
+		return "", fmt.Errorf("failed to sign ID token: %w", err)
+	}
+
+	return signedToken, nil
+}
+
+// ValidateAccessToken validates an access token and returns its information.
+// It inspects the JWT header to determine token type before routing to the appropriate validator.
+func (s *TokenService) ValidateAccessToken(ctx context.Context, tokenValue string) (*domain.Token, error) {
+	parts := strings.Split(tokenValue, ".")
+	if len(parts) != 3 {
+		return s.validateUserToken(ctx, tokenValue)
+	}
+
+	headerJSON, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return s.validateUserToken(ctx, tokenValue)
+	}
+
+	var header map[string]interface{}
+	if err := json.Unmarshal(headerJSON, &header); err != nil {
+		return s.validateUserToken(ctx, tokenValue)
+	}
+
+	kid, hasKid := header["kid"].(string)
+	alg, _ := header["alg"].(string)
+
+	isSARSA := hasKid && kid != "" && (alg == "RS256" || alg == "RS384" || alg == "RS512")
+
+	if isSARSA {
+		return s.validateSAJWT(ctx, tokenValue, kid)
+	}
+
+	return s.validateUserToken(ctx, tokenValue)
+}
+
+func (s *TokenService) validateSAJWT(ctx context.Context, tokenValue, kid string) (*domain.Token, error) {
+	parsedSAJWT, err := jwt.ParseWithClaims(tokenValue, &jwt.MapClaims{}, func(token *jwt.Token) (interface{}, error) {
 		publicKeyInfo, errDb := s.pubKeyRepo.GetPublicKey(ctx, kid)
 		if errDb != nil {
 			log.Warn().Err(errDb).Str("kid", kid).Msg("Failed to get public key for SA JWT")
 			return nil, fmt.Errorf("SA key retrieval failed for kid %s: %w", kid, errDb)
 		}
-		if publicKeyInfo.Status != "ACTIVE" { // Assuming "ACTIVE" is status string
+		if publicKeyInfo.Status != "ACTIVE" {
 			return nil, fmt.Errorf("public key %s is not active", kid)
 		}
 		block, _ := pem.Decode([]byte(publicKeyInfo.PublicKey))
@@ -367,106 +459,85 @@ func (s *TokenService) ValidateAccessToken(ctx context.Context, tokenValue strin
 		return nil, errors.New("public key is not RSA type")
 	})
 
-	if err == nil { // Implies parsedSAJWT is not nil
-		if parsedSAJWT.Valid {
-			claims, ok := parsedSAJWT.Claims.(*jwt.MapClaims)
-			if !ok {
-				return nil, errors.New("invalid claims type in SA JWT")
-			}
-			issuerClaim, _ := (*claims)["iss"].(string)
-			if issuerClaim == "" {
-				return nil, errors.New("SA JWT missing 'iss' claim")
-			}
-			var expiresAt time.Time
-			if exp, okClaim := (*claims)["exp"].(float64); okClaim {
-				expiresAt = time.Unix(int64(exp), 0)
-			} else {
-				return nil, errors.New("SA JWT missing 'exp' claim")
-			}
-			if time.Now().After(expiresAt) {
-				return nil, domain.ErrTokenExpiredOrRevoked // Use domain
-			}
-			var issuedAt time.Time
-			if iat, okClaim := (*claims)["iat"].(float64); okClaim {
-				issuedAt = time.Unix(int64(iat), 0)
-			} else {
-				return nil, errors.New("SA JWT missing 'iat' claim")
-			}
-			var tokenScope string
-			if scope, okClaim := (*claims)["scope"].(string); okClaim {
-				tokenScope = scope
-			}
-			jtiClaim, _ := (*claims)["jti"].(string) // JTI is optional for some SA JWTs, use if present for ID
-			return &domain.Token{                    // Changed to domain.Token
-				ID:         jtiClaim,
-				TokenType:  "service_account_jwt",
-				TokenValue: tokenValue,
-				UserID:     issuerClaim,
-				Scope:      tokenScope,
-				ExpiresAt:  expiresAt,
-				CreatedAt:  issuedAt,
-				IsRevoked:  false,
-				Issuer:     issuerClaim,
-				Roles:      []string{}, // Service Accounts do not have user roles in this model
-			}, nil
-		} else {
-			// This case should ideally not be reached if jwt-go behaves as expected:
-			// if err is nil, token should be valid.
-			return nil, fmt.Errorf("SA JWT parsed (err is nil) but token.Valid is false, unexpected state")
+	if err != nil {
+		if errors.Is(err, jwt.ErrTokenExpired) {
+			return nil, domain.ErrTokenExpiredOrRevoked
 		}
-	} // end if err == nil
+		return nil, fmt.Errorf("SA JWT validation failed: %w", err)
+	}
 
-	// At this point, err != nil. Check if it's the signal to fallback.
-	if errors.Is(err, errMissingKidSAValidation) {
-		log.Debug().Msg("Attempting user token validation (SA token 'kid' missing or error explicitly requesting fallback).")
-		// Fallback to user token validation (original logic from existing ValidateAccessToken)
-		// Ensure s.repo, s.cache, ErrTokenExpiredOrRevoked are accessible and correctly used
-		if entry, cacheErr := s.cache.Get(ctx, tokenValue); cacheErr == nil {
-			if !entry.IsRevoked && time.Now().Before(entry.ExpiresAt) {
-				userToken := fromCacheEntry(entry, tokenValue) // Use fromCacheEntry
-				// Populate missing fields for user token from repo if necessary, or ensure FromEntry is sufficient
-				// For user tokens, Issuer might be s.issuer if it's consistent
-				userToken.Issuer = s.issuer // Default issuer for user tokens
-				return userToken, nil
-			}
-			_ = s.cache.Delete(ctx, tokenValue)         // Delete expired/revoked from cache
-			return nil, domain.ErrTokenExpiredOrRevoked // Use domain
-		}
-		// Check repository (for user tokens)
-		userTokenDB, repoErr := s.repo.GetAccessToken(ctx, tokenValue) // Assumes s.repo is TokenRepository, returns *domain.Token
-		if repoErr != nil {
-			// If user token not found, and it wasn't an SA token, then it's truly not found or invalid.
-			return nil, fmt.Errorf("token not found or invalid: %w", repoErr)
-		}
-		if userTokenDB.IsRevoked || time.Now().After(userTokenDB.ExpiresAt) {
-			return nil, domain.ErrTokenExpiredOrRevoked // Use domain
-		}
-		// Ensure Issuer is set for user tokens from repo
-		if userTokenDB.Issuer == "" { // If not already set by repo (e.g. older tokens)
-			userTokenDB.Issuer = s.issuer
-		}
+	if !parsedSAJWT.Valid {
+		return nil, errors.New("SA JWT parsed but is not valid")
+	}
 
-		// Cache valid user token
-		if cacheSetErr := s.cache.Set(ctx, toCacheEntry(userTokenDB)); cacheSetErr != nil { // Use toCacheEntry
-			log.Warn().Err(cacheSetErr).Msg("failed to cache user token")
+	claims, ok := parsedSAJWT.Claims.(*jwt.MapClaims)
+	if !ok {
+		return nil, errors.New("invalid claims type in SA JWT")
+	}
+	issuerClaim, _ := (*claims)["iss"].(string)
+	if issuerClaim == "" {
+		return nil, errors.New("SA JWT missing 'iss' claim")
+	}
+	var expiresAt time.Time
+	if exp, okClaim := (*claims)["exp"].(float64); okClaim {
+		expiresAt = time.Unix(int64(exp), 0)
+	} else {
+		return nil, errors.New("SA JWT missing 'exp' claim")
+	}
+	if time.Now().After(expiresAt) {
+		return nil, domain.ErrTokenExpiredOrRevoked
+	}
+	var issuedAt time.Time
+	if iat, okClaim := (*claims)["iat"].(float64); okClaim {
+		issuedAt = time.Unix(int64(iat), 0)
+	} else {
+		return nil, errors.New("SA JWT missing 'iat' claim")
+	}
+	var tokenScope string
+	if scope, okClaim := (*claims)["scope"].(string); okClaim {
+		tokenScope = scope
+	}
+	jtiClaim, _ := (*claims)["jti"].(string)
+	return &domain.Token{
+		ID:         jtiClaim,
+		TokenType:  "service_account_jwt",
+		TokenValue: tokenValue,
+		UserID:     issuerClaim,
+		Scope:      tokenScope,
+		ExpiresAt:  expiresAt,
+		CreatedAt:  issuedAt,
+		IsRevoked:  false,
+		Issuer:     issuerClaim,
+		Roles:      []string{},
+	}, nil
+}
+
+func (s *TokenService) validateUserToken(ctx context.Context, tokenValue string) (*domain.Token, error) {
+	if entry, cacheErr := s.cache.Get(ctx, tokenValue); cacheErr == nil {
+		if !entry.IsRevoked && time.Now().Before(entry.ExpiresAt) {
+			userToken := fromCacheEntry(entry, tokenValue)
+			userToken.Issuer = s.issuer
+			return userToken, nil
 		}
-		return userTokenDB, nil
-	} // end if errors.Is(err, errMissingKidSAValidation)
+		_ = s.cache.Delete(ctx, tokenValue)
+		return nil, domain.ErrTokenExpiredOrRevoked
+	}
 
-	// If error is not errMissingKidSAValidation, it's a genuine SA JWT processing/validation error
-	// or other jwt.ValidationError that occurred during ParseWithClaims.
+	userTokenDB, repoErr := s.repo.GetAccessToken(ctx, tokenValue)
+	if repoErr != nil {
+		return nil, fmt.Errorf("token not found or invalid: %w", repoErr)
+	}
+	if userTokenDB.IsRevoked || time.Now().After(userTokenDB.ExpiresAt) {
+		return nil, domain.ErrTokenExpiredOrRevoked
+	}
+	if userTokenDB.Issuer == "" {
+		userTokenDB.Issuer = s.issuer
+	}
 
-	// FIXME: fix this error check case
-	// var validationError *jwt.ValidationError
-	// if errors.As(err, &validationError) { // Check if it's a standard JWT validation error
-	// 	if validationError.Is(jwt.ErrTokenExpired) {
-	// 		return nil, ErrTokenExpiredOrRevoked // Map to our existing error
-	// 	}
-	// 	// Could map other validationError types like ErrTokenNotValidYet, ErrTokenSignatureInvalid
-	// 	return nil, fmt.Errorf("SA JWT validation failed: %w", err) // General SA JWT error
-	// }
-	// Other errors (e.g. from Keyfunc like DB error, PEM error, non-JWT error from ParseWithClaims)
-	return nil, fmt.Errorf("SA JWT processing error: %w", err)
+	if cacheSetErr := s.cache.Set(ctx, toCacheEntry(userTokenDB)); cacheSetErr != nil {
+		log.Warn().Err(cacheSetErr).Msg("failed to cache user token")
+	}
+	return userTokenDB, nil
 }
 
 // RevokeToken revokes an access token. This will invalidate the token and remove it from cache

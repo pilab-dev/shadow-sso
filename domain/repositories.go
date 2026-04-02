@@ -29,7 +29,6 @@ type UserSessionStore interface {
 
 // PublicKeyInfo, ServiceAccount, User, Session are defined in their respective domain files.
 
-
 type PublicKeyRepository interface {
 	GetPublicKey(ctx context.Context, keyID string) (*PublicKeyInfo, error)
 	// Add CreatePublicKey, UpdatePublicKeyStatus etc. if they should be part of the interface
@@ -76,8 +75,8 @@ type UserRepository interface {
 	UpdateUser(ctx context.Context, user *User) error                                       // Could also be UpdateUser(id, updates map[string]interface{})
 	DeleteUser(ctx context.Context, id string) error                                        // Optional, consider soft delete by status
 	ListUsers(ctx context.Context, pageToken string, pageSize int) ([]*User, string, error) // Returns users, next page token, error
-	CountUsers(ctx context.Context) (int64, error)                                         // Method to count all users
-	CountUsersByRole(ctx context.Context, role string) (int64, error)                      // New method to count users by role
+	CountUsers(ctx context.Context) (int64, error)                                          // Method to count all users
+	CountUsersByRole(ctx context.Context, role string) (int64, error)                       // New method to count users by role
 
 	// Phone verification methods
 	StorePhoneVerificationOtp(ctx context.Context, userID, otp string, expiresAt time.Time) error
@@ -125,12 +124,11 @@ type TokenRepository interface {
 	GetRefreshToken(ctx context.Context, tokenValue string) (*Token, error)
 	GetRefreshTokenInfo(ctx context.Context, tokenValue string) (*TokenInfo, error)
 	GetAccessTokenInfo(ctx context.Context, tokenValue string) (*TokenInfo, error)
-	RevokeToken(ctx context.Context, tokenValue string) error // Typically for access tokens
+	RevokeToken(ctx context.Context, tokenValue string) error
 	RevokeRefreshToken(ctx context.Context, tokenValue string) error
-	// RevokeAllUserTokens(ctx context.Context, userID string) error // These might be better handled by iterating in service layer
-	// RevokeAllClientTokens(ctx context.Context, clientID string) error // or having specific bulk operations if performance critical
+	RevokeTokenFamily(ctx context.Context, family string) error
 	DeleteExpiredTokens(ctx context.Context) error
-	GetTokenInfo(ctx context.Context, tokenValue string) (*Token, error) // General token info for introspection
+	GetTokenInfo(ctx context.Context, tokenValue string) (*Token, error)
 }
 
 // AuthorizationCodeRepository defines the interface for OAuth 2.0 authorization code operations.
@@ -198,7 +196,7 @@ type Configuration struct {
 	ID          string            `bson:"_id,omitempty" json:"id"`
 	Type        ConfigurationType `bson:"type" json:"type"`
 	Key         string            `bson:"key" json:"key"`
-	Value       string            `bson:"value" json:"value"`       // Encrypted for sensitive data
+	Value       string            `bson:"value" json:"value"` // Encrypted for sensitive data
 	IsEncrypted bool              `bson:"is_encrypted" json:"is_encrypted"`
 	Description string            `bson:"description" json:"description"`
 	IsActive    bool              `bson:"is_active" json:"is_active"`

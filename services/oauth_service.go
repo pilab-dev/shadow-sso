@@ -152,10 +152,28 @@ func (s *OAuthService) RefreshToken(ctx context.Context, refreshTokenValue strin
 	if err != nil {
 		return nil, domain.NewInvalidGrant("invalid refresh token")
 	}
-	if tokenInfo.IsRevoked || time.Now().After(tokenInfo.ExpiresAt) {
-		return nil, domain.NewInvalidGrant("refresh token expired or revoked")
+
+	if time.Now().After(tokenInfo.ExpiresAt) {
+		return nil, domain.NewInvalidGrant("refresh token expired")
 	}
-	return s.tokenService.GenerateTokenPair(ctx, clientID, tokenInfo.UserID, tokenInfo.Scope, time.Hour)
+
+	if tokenInfo.IsRevoked {
+		family := tokenInfo.RefreshTokenFamily
+		if family != "" {
+			_ = s.tokenRepo.RevokeTokenFamily(ctx, family)
+		}
+		return nil, domain.NewInvalidGrant("refresh token reused; entire token family revoked")
+	}
+
+	if err := s.tokenRepo.RevokeToken(ctx, refreshTokenValue); err != nil {
+		log.Warn().Err(err).Msg("Failed to revoke old refresh token during rotation")
+	}
+
+	tokenPair, err := s.tokenService.GenerateTokenPairWithFamily(ctx, clientID, tokenInfo.UserID, tokenInfo.Scope, time.Hour, tokenInfo.RefreshTokenFamily)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate rotated token pair: %w", err)
+	}
+	return tokenPair, nil
 }
 
 func (s *OAuthService) GetJWKS() *JSONWebKeySet {
@@ -527,6 +545,46 @@ func (s *OAuthService) IssueTokenForDeviceFlow(ctx context.Context, deviceCode s
 	default:
 		return nil, domain.NewServerError("unexpected device authorization status")
 	}
+}
+
+// TokenExchange implements RFC 8693 Token Exchange.
+// It validates a subject token and issues a new token with potentially different scope/audience.
+func (s *OAuthService) TokenExchange(ctx context.Context, subjectToken, subjectTokenType, requestedTokenType, resource, scope, clientID string) (*api.TokenResponse, error) {
+	if subjectTokenType != "urn:ietf:params:oauth:token-type:access_token" && subjectTokenType != "urn:ietf:params:oauth:token-type:refresh_token" {
+		return nil, domain.NewInvalidRequest("unsupported subject_token_type: " + subjectTokenType)
+	}
+
+	subjectTokenInfo, err := s.tokenService.ValidateAccessToken(ctx, subjectToken)
+	if err != nil {
+		return nil, domain.NewInvalidGrant("invalid subject token: " + err.Error())
+	}
+
+	if subjectTokenInfo.ClientID != clientID {
+		return nil, domain.NewInvalidGrant("subject token was not issued to this client")
+	}
+
+	if time.Now().After(subjectTokenInfo.ExpiresAt) {
+		return nil, domain.NewInvalidGrant("subject token expired")
+	}
+
+	exchangeScope := scope
+	if exchangeScope == "" {
+		exchangeScope = subjectTokenInfo.Scope
+	}
+
+	tokenTTL := time.Hour
+	if requestedTokenType == "urn:ietf:params:oauth:token-type:refresh_token" {
+		tokenTTL = 24 * time.Hour
+	}
+
+	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, subjectTokenInfo.UserID, exchangeScope, tokenTTL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate exchanged token: %w", err)
+	}
+
+	tokenPair.TokenType = "N_A"
+
+	return tokenPair, nil
 }
 
 // GenerateTokens was a duplicate of ExchangeAuthorizationCode, removed it.

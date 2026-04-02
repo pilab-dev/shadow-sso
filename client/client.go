@@ -95,6 +95,11 @@ func (s *ClientService) CreatePublicClient(ctx context.Context,
 	return client, nil
 }
 
+// CreateClient creates a client with the given properties.
+func (s *ClientService) CreateClient(ctx context.Context, client *domain.Client) error {
+	return s.store.CreateClient(ctx, client)
+}
+
 // ValidateRedirectURI checks if a redirect URI is valid for a client
 func (s *ClientService) ValidateRedirectURI(ctx context.Context, clientID, redirectURI string) error {
 	client, err := s.store.GetClient(ctx, clientID)
