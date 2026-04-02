@@ -1187,6 +1187,20 @@ func (mr *MockTokenRepositoryMockRecorder) RevokeToken(ctx, tokenValue any) *gom
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RevokeToken", reflect.TypeOf((*MockTokenRepository)(nil).RevokeToken), ctx, tokenValue)
 }
 
+// RevokeTokenFamily mocks base method.
+func (m *MockTokenRepository) RevokeTokenFamily(ctx context.Context, family string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RevokeTokenFamily", ctx, family)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RevokeTokenFamily indicates an expected call of RevokeTokenFamily.
+func (mr *MockTokenRepositoryMockRecorder) RevokeTokenFamily(ctx, family any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RevokeTokenFamily", reflect.TypeOf((*MockTokenRepository)(nil).RevokeTokenFamily), ctx, family)
+}
+
 // StoreToken mocks base method.
 func (m *MockTokenRepository) StoreToken(ctx context.Context, token *domain.Token) error {
 	m.ctrl.T.Helper()
