@@ -421,7 +421,10 @@ func (s *TokenService) ValidateAccessToken(ctx context.Context, tokenValue strin
 	isSARSA := hasKid && kid != "" && (alg == "RS256" || alg == "RS384" || alg == "RS512")
 
 	if isSARSA {
-		return s.validateSAJWT(ctx, tokenValue, kid)
+		if _, err := s.pubKeyRepo.GetPublicKey(ctx, kid); err == nil {
+			return s.validateSAJWT(ctx, tokenValue, kid)
+		}
+		log.Debug().Str("kid", kid).Msg("kid not found in pubKeyRepo, falling back to validateUserToken")
 	}
 
 	return s.validateUserToken(ctx, tokenValue)
