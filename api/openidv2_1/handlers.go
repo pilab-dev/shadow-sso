@@ -885,8 +885,7 @@ func (oa *OAuth2API) UserInfoHandler(c *gin.Context) {
 			userInfo.FamilyName = &user.LastName
 		}
 		if len(user.Roles) > 0 {
-			roles := strings.Join(user.Roles, " ")
-			userInfo.PreferredUsername = &roles
+			userInfo.Roles = user.Roles
 		}
 	}
 
