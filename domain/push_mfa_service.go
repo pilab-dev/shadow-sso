@@ -103,11 +103,7 @@ func (s *PushMFAService) UnregisterDeviceToken(ctx context.Context, userID, devi
 }
 
 // CreatePushMFAChallenge creates a new push MFA challenge
-func (s *PushMFAService) CreatePushMFAChallenge(ctx context.Context, userID, ipAddress, userAgent string) (string, error) {
-	user, err := s.userRepo.GetUserByID(ctx, userID)
-	if err != nil {
-		return "", fmt.Errorf("failed to get user: %w", err)
-	}
+func (s *PushMFAService) CreatePushMFAChallenge(ctx context.Context, user *User, ipAddress, userAgent string) (string, error) {
 
 	if !user.PushMFAEnabled {
 		return "", ErrPushMFANotEnabled
@@ -152,14 +148,14 @@ func (s *PushMFAService) CreatePushMFAChallenge(ctx context.Context, userID, ipA
 		user.PushMFAChallenges = append(user.PushMFAChallenges, challenge)
 
 		// Send push notification
-		err = s.sendPushChallengeNotification(deviceToken, challengeID, ipAddress, userAgent)
+		err := s.sendPushChallengeNotification(deviceToken, challengeID, ipAddress, userAgent)
 		if err != nil {
 			// Log error but continue with other tokens
 			fmt.Printf("Failed to send push notification to device %s: %v\n", deviceToken, err)
 		}
 	}
 
-	err = s.userRepo.UpdateUser(ctx, user)
+	err := s.userRepo.UpdateUser(ctx, user)
 	if err != nil {
 		return "", fmt.Errorf("failed to save push MFA challenge: %w", err)
 	}
@@ -293,8 +289,8 @@ func (s *PushMFAService) cleanupExpiredChallenges(user *User) {
 	activeChallenges := make([]PushMFAChallenge, 0, len(user.PushMFAChallenges))
 
 	for _, challenge := range user.PushMFAChallenges {
-		if now.After(challenge.ExpiresAt) && challenge.Status == "pending" {
-			// Mark as expired (don't keep expired challenges)
+		if now.After(challenge.ExpiresAt) {
+			// Remove all expired challenges regardless of status
 			continue
 		}
 		activeChallenges = append(activeChallenges, challenge)

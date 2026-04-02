@@ -134,11 +134,10 @@ func TestPushMFAService_CreatePushMFAChallenge_Success(t *testing.T) {
 		PushMFAChallenges:   []domain.PushMFAChallenge{},
 	}
 
-	mockUserRepo.EXPECT().GetUserByID(ctx, userID).Return(user, nil)
 	mockPushService.EXPECT().SendMFAPushChallenge("device-token-1", gomock.Any(), ipAddress, userAgent).Return(nil)
 	mockUserRepo.EXPECT().UpdateUser(ctx, gomock.Any()).Return(nil)
 
-	challengeID, err := service.CreatePushMFAChallenge(ctx, userID, ipAddress, userAgent)
+	challengeID, err := service.CreatePushMFAChallenge(ctx, user, ipAddress, userAgent)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, challengeID)
 }
@@ -159,9 +158,7 @@ func TestPushMFAService_CreatePushMFAChallenge_NotEnabled(t *testing.T) {
 		PushMFAEnabled: false,
 	}
 
-	mockUserRepo.EXPECT().GetUserByID(ctx, userID).Return(user, nil)
-
-	challengeID, err := service.CreatePushMFAChallenge(ctx, userID, "192.168.1.1", "Mozilla/5.0")
+	challengeID, err := service.CreatePushMFAChallenge(ctx, user, "192.168.1.1", "Mozilla/5.0")
 	assert.Error(t, err)
 	assert.Equal(t, domain.ErrPushMFANotEnabled, err)
 	assert.Empty(t, challengeID)
@@ -184,9 +181,7 @@ func TestPushMFAService_CreatePushMFAChallenge_NoDeviceTokens(t *testing.T) {
 		PushMFADeviceTokens: []string{},
 	}
 
-	mockUserRepo.EXPECT().GetUserByID(ctx, userID).Return(user, nil)
-
-	challengeID, err := service.CreatePushMFAChallenge(ctx, userID, "192.168.1.1", "Mozilla/5.0")
+	challengeID, err := service.CreatePushMFAChallenge(ctx, user, "192.168.1.1", "Mozilla/5.0")
 	assert.Error(t, err)
 	assert.Equal(t, domain.ErrNoDeviceTokens, err)
 	assert.Empty(t, challengeID)
@@ -219,9 +214,7 @@ func TestPushMFAService_CreatePushMFAChallenge_TooManyActiveChallenges(t *testin
 		PushMFAChallenges:   challenges,
 	}
 
-	mockUserRepo.EXPECT().GetUserByID(ctx, userID).Return(user, nil)
-
-	challengeID, err := service.CreatePushMFAChallenge(ctx, userID, "192.168.1.1", "Mozilla/5.0")
+	challengeID, err := service.CreatePushMFAChallenge(ctx, user, "192.168.1.1", "Mozilla/5.0")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "too many active push MFA challenges")
 	assert.Empty(t, challengeID)
@@ -502,19 +495,17 @@ func TestPushMFAService_CleanupExpiredChallenges(t *testing.T) {
 		},
 	}
 
-	mockUserRepo.EXPECT().GetUserByID(ctx, userID).Return(user, nil)
 	mockPushService.EXPECT().SendMFAPushChallenge(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 	mockUserRepo.EXPECT().UpdateUser(ctx, gomock.Any()).Return(nil)
 
 	// Call CreatePushMFAChallenge which internally calls cleanupExpiredChallenges
-	challengeID, err := service.CreatePushMFAChallenge(ctx, userID, "192.168.1.1", "Mozilla/5.0")
+	challengeID, err := service.CreatePushMFAChallenge(ctx, user, "192.168.1.1", "Mozilla/5.0")
 	assert.NoError(t, err)
 	assert.NotEmpty(t, challengeID)
 
-	// After cleanup, the user should have 2 challenges (active and approved) plus the new one
-	assert.Len(t, user.PushMFAChallenges, 3)
+	// After cleanup, the user should have 1 active challenge plus the new one (expired approved was also removed)
+	assert.Len(t, user.PushMFAChallenges, 2)
 	assert.Equal(t, "active", user.PushMFAChallenges[0].ChallengeID)
-	assert.Equal(t, "approved", user.PushMFAChallenges[1].ChallengeID)
 }
 
 func TestPushMFAService_CreatePushMFAChallenge_MultipleDevices_RespectsMaxActiveChallenges(t *testing.T) {
@@ -546,14 +537,12 @@ func TestPushMFAService_CreatePushMFAChallenge_MultipleDevices_RespectsMaxActive
 		PushMFAChallenges:   challenges,
 	}
 
-	mockUserRepo.EXPECT().GetUserByID(ctx, userID).Return(user, nil)
-
 	// Should succeed since 3 existing + 2 new = 5, which equals maxActiveChallenges
 	mockPushService.EXPECT().SendMFAPushChallenge("device-token-1", gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 	mockPushService.EXPECT().SendMFAPushChallenge("device-token-2", gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 	mockUserRepo.EXPECT().UpdateUser(ctx, gomock.Any()).Return(nil)
 
-	challengeID, err := service.CreatePushMFAChallenge(ctx, userID, "192.168.1.1", "Mozilla/5.0")
+	challengeID, err := service.CreatePushMFAChallenge(ctx, user, "192.168.1.1", "Mozilla/5.0")
 	assert.NoError(t, err)
 	assert.NotEmpty(t, challengeID)
 

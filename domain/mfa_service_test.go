@@ -294,7 +294,7 @@ func TestMFAService_SendMFAChallenge_Push(t *testing.T) {
 		PushMFAChallenges:   []domain.PushMFAChallenge{},
 	}
 
-	mockUserRepo.EXPECT().GetUserByID(ctx, userID).Return(user, nil).Times(2)
+	mockUserRepo.EXPECT().GetUserByID(ctx, userID).Return(user, nil)
 	mockPushService.EXPECT().SendMFAPushChallenge("device-token-1", gomock.Any(), "unknown", "unknown").Return(nil)
 	mockUserRepo.EXPECT().UpdateUser(ctx, gomock.Any()).Return(nil)
 
