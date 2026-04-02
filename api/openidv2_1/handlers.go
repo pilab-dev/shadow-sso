@@ -999,9 +999,11 @@ func (oa *OAuth2API) LogoutHandler(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
+	var clientID string
 	if idTokenHint != "" {
 		token, err := oa.tokenService.ValidateAccessToken(ctx, idTokenHint)
 		if err == nil && token.UserID != "" {
+			clientID = token.ClientID
 			_ = oa.userSessionStore.DeleteUserSession(token.UserID)
 		}
 	}
@@ -1025,6 +1027,24 @@ func (oa *OAuth2API) LogoutHandler(c *gin.Context) {
 		log.Warn().Err(err).Str("uri", postLogoutRedirectURI).Msg("LogoutHandler: invalid post_logout_redirect_uri")
 		c.JSON(http.StatusBadRequest, domain.NewInvalidRequest("invalid post_logout_redirect_uri"))
 		return
+	}
+
+	if clientID != "" {
+		client, err := oa.clientService.GetClient(ctx, clientID)
+		if err == nil && client != nil && len(client.PostLogoutURIs) > 0 {
+			valid := false
+			for _, uri := range client.PostLogoutURIs {
+				if uri == postLogoutRedirectURI {
+					valid = true
+					break
+				}
+			}
+			if !valid {
+				log.Warn().Str("uri", postLogoutRedirectURI).Str("clientID", clientID).Msg("LogoutHandler: post_logout_redirect_uri not registered")
+				c.JSON(http.StatusBadRequest, domain.NewInvalidRequest("post_logout_redirect_uri not registered for this client"))
+				return
+			}
+		}
 	}
 
 	if state != "" {
@@ -1054,7 +1074,7 @@ type RegisterClientRequest struct {
 	SubjectType              string   `json:"subject_type"`
 	IDTokenSignedResponseAlg string   `json:"id_token_signed_response_alg"`
 	RequireConsent           bool     `json:"require_consent"`
-	IsConfidential           bool     `json:"client_secret_expires_at"`
+	IsConfidential           bool     `json:"is_confidential"`
 }
 
 // RegisterClientResponse represents the response from dynamic client registration.
@@ -1089,6 +1109,34 @@ func (oa *OAuth2API) RegisterClientHandler(c *gin.Context) {
 	if len(req.RedirectURIs) == 0 {
 		c.JSON(http.StatusBadRequest, domain.NewInvalidRequest("redirect_uris is required"))
 		return
+	}
+
+	for _, uri := range req.RedirectURIs {
+		parsed, err := url.Parse(uri)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, domain.NewInvalidRequest("invalid redirect_uri: "+uri))
+			return
+		}
+		host := parsed.Hostname()
+		isLocalhost := host == "localhost" || host == "127.0.0.1" || host == "::1"
+		if parsed.Scheme != "https" && !isLocalhost {
+			c.JSON(http.StatusBadRequest, domain.NewInvalidRequest("redirect_uri must use HTTPS (except localhost)"))
+			return
+		}
+	}
+
+	validGrantTypes := map[string]bool{
+		"authorization_code": true,
+		"implicit":           true,
+		"refresh_token":      true,
+		"client_credentials": true,
+		"password":           true,
+	}
+	for _, gt := range req.GrantTypes {
+		if !validGrantTypes[gt] {
+			c.JSON(http.StatusBadRequest, domain.NewInvalidRequest("invalid grant_type: "+gt))
+			return
+		}
 	}
 
 	ctx := c.Request.Context()
@@ -1385,8 +1433,6 @@ func (oa *OAuth2API) DirectGrantHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, domain.NewInvalidRequest("Missing required parameters"))
 		return
 	}
-
-	log.Warn().Msg("DEPRECATED: Resource Owner Password Credentials (ROPC) grant is deprecated per OAuth 2.1. Migrate to authorization code flow with PKCE.")
 
 	ctx := c.Request.Context()
 

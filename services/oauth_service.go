@@ -577,12 +577,16 @@ func (s *OAuthService) TokenExchange(ctx context.Context, subjectToken, subjectT
 		tokenTTL = 24 * time.Hour
 	}
 
+	tokenType := "access_token"
+	if requestedTokenType == "urn:ietf:params:oauth:token-type:refresh_token" {
+		tokenType = "refresh_token"
+	}
 	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, subjectTokenInfo.UserID, exchangeScope, tokenTTL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate exchanged token: %w", err)
 	}
 
-	tokenPair.TokenType = "N_A"
+	tokenPair.TokenType = tokenType
 
 	return tokenPair, nil
 }
