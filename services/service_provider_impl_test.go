@@ -1,6 +1,7 @@
 package services_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -8,6 +9,7 @@ import (
 	"github.com/pilab-dev/shadow-sso/api"
 	"github.com/pilab-dev/shadow-sso/apps/ssso/config"
 	mock_cache "github.com/pilab-dev/shadow-sso/cache/mocks"
+	"github.com/pilab-dev/shadow-sso/domain"
 	mock_domain "github.com/pilab-dev/shadow-sso/domain/mocks"
 	"github.com/pilab-dev/shadow-sso/services"
 	mock_services "github.com/pilab-dev/shadow-sso/services/mocks"
@@ -107,7 +109,7 @@ func setupMockRepoProviderForServiceGetters(mockRepoProvider *mock_services.Mock
 	mockRepoProvider.EXPECT().PublicKeyRepository(gomock.Any()).Return(mock_domain.NewMockPublicKeyRepository(ctrl)).AnyTimes()
 	mockRepoProvider.EXPECT().ServiceAccountRepository(gomock.Any()).Return(mock_domain.NewMockServiceAccountRepository(ctrl)).AnyTimes()
 	mockRepoProvider.EXPECT().IdPRepository(gomock.Any()).Return(mock_domain.NewMockIdPRepository(ctrl)).AnyTimes()
-	mockRepoProvider.EXPECT().ConfigurationRepository(gomock.Any()).Return(mock_domain.NewMockConfigurationRepository(ctrl)).AnyTimes()
+	// mockRepoProvider.EXPECT().ConfigurationRepository(gomock.Any()).Return(mock_domain.NewMockConfigurationRepository(ctrl)).AnyTimes() // Commented out for tests that need specific config repo
 }
 
 func TestDefaultServiceProvider_Getters(t *testing.T) {
@@ -280,7 +282,7 @@ func TestDefaultServiceProvider_InitializeSMSService_WithAppConfig(t *testing.T)
 	appConfig := &api.OpenIDProviderConfig{Issuer: "http://issuer.com"}
 	mockAppConfig := &config.Config{
 		TwilioAccountSID:  "test-sid",
-		TwilioAuthToken:    "test-token",
+		TwilioAuthToken:   "test-token",
 		TwilioPhoneNumber: "+1234567890",
 	}
 
@@ -349,7 +351,7 @@ func TestDefaultServiceProvider_InitializePushService_WithAppConfig(t *testing.T
 	mockPkceRepo := mock_domain.NewMockPkceRepository(ctrl)
 	appConfig := &api.OpenIDProviderConfig{Issuer: "http://issuer.com"}
 	mockAppConfig := &config.Config{
-		FirebaseProjectID:      "test-project",
+		FirebaseProjectID:       "test-project",
 		FirebaseCredentialsPath: "/path/to/credentials.json",
 	}
 
@@ -384,6 +386,19 @@ func TestDefaultServiceProvider_InitializeServices_WithConfigurationService(t *t
 	mockConfigRepo := mock_domain.NewMockConfigurationRepository(ctrl)
 	appConfig := &api.OpenIDProviderConfig{Issuer: "http://issuer.com"}
 	mockAppConfig := &config.Config{}
+
+	// Setup expectations for configuration service calls during service initialization
+	// SMS configuration
+	mockConfigRepo.EXPECT().GetByKey(context.Background(), domain.ConfigTypeSMS, "account_sid").Return(nil, domain.ErrConfigurationNotFound).AnyTimes()
+	mockConfigRepo.EXPECT().GetByKey(context.Background(), domain.ConfigTypeSMS, "auth_token").Return(nil, domain.ErrConfigurationNotFound).AnyTimes()
+	mockConfigRepo.EXPECT().GetByKey(context.Background(), domain.ConfigTypeSMS, "phone_number").Return(nil, domain.ErrConfigurationNotFound).AnyTimes()
+	// Email configuration
+	mockConfigRepo.EXPECT().GetByKey(context.Background(), domain.ConfigTypeEmail, "api_key").Return(nil, domain.ErrConfigurationNotFound).AnyTimes()
+	mockConfigRepo.EXPECT().GetByKey(context.Background(), domain.ConfigTypeEmail, "from_email").Return(nil, domain.ErrConfigurationNotFound).AnyTimes()
+	mockConfigRepo.EXPECT().GetByKey(context.Background(), domain.ConfigTypeEmail, "base_url").Return(nil, domain.ErrConfigurationNotFound).AnyTimes()
+	// Push configuration
+	mockConfigRepo.EXPECT().GetByKey(context.Background(), domain.ConfigTypePush, "project_id").Return(nil, domain.ErrConfigurationNotFound).AnyTimes()
+	mockConfigRepo.EXPECT().GetByKey(context.Background(), domain.ConfigTypePush, "credentials_path").Return(nil, domain.ErrConfigurationNotFound).AnyTimes()
 
 	setupMockRepoProviderForServiceGetters(mockRepoProvider, ctrl)
 	mockRepoProvider.EXPECT().ConfigurationRepository(gomock.Any()).Return(mockConfigRepo).AnyTimes()

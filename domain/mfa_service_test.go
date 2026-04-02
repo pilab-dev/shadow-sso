@@ -60,10 +60,10 @@ func TestMFAService_InitiateEmailMFASetup_Success(t *testing.T) {
 	ctx := context.Background()
 	userID := "user123"
 	user := &domain.User{
-		ID:            userID,
-		Email:         "test@example.com",
-		FirstName:     "Test",
-		LastName:      "User",
+		ID:              userID,
+		Email:           "test@example.com",
+		FirstName:       "Test",
+		LastName:        "User",
 		EmailMFAEnabled: false,
 	}
 
@@ -88,7 +88,7 @@ func TestMFAService_InitiateEmailMFASetup_AlreadyEnabled(t *testing.T) {
 	ctx := context.Background()
 	userID := "user123"
 	user := &domain.User{
-		ID:            userID,
+		ID:              userID,
 		EmailMFAEnabled: true,
 	}
 
@@ -114,8 +114,8 @@ func TestMFAService_InitiateEmailMFASetup_RateLimit(t *testing.T) {
 	now := time.Now()
 	recentTime := now.Add(-30 * time.Second)
 	user := &domain.User{
-		ID:            userID,
-		EmailMFAEnabled: false,
+		ID:                 userID,
+		EmailMFAEnabled:    false,
 		EmailMFALastSentAt: &recentTime,
 	}
 
@@ -141,9 +141,9 @@ func TestMFAService_VerifyAndEnableEmailMFA_Success(t *testing.T) {
 	otp := "123456"
 	expiresAt := time.Now().Add(5 * time.Minute)
 	user := &domain.User{
-		ID:            userID,
-		EmailMFAEnabled: false,
-		EmailMFAOTP:    otp,
+		ID:                   userID,
+		EmailMFAEnabled:      false,
+		EmailMFAOTP:          otp,
 		EmailMFAOTPExpiresAt: &expiresAt,
 	}
 
@@ -170,9 +170,9 @@ func TestMFAService_VerifyAndEnableEmailMFA_InvalidOTP(t *testing.T) {
 	userID := "user123"
 	expiresAt := time.Now().Add(5 * time.Minute)
 	user := &domain.User{
-		ID:            userID,
-		EmailMFAEnabled: false,
-		EmailMFAOTP:    "123456",
+		ID:                   userID,
+		EmailMFAEnabled:      false,
+		EmailMFAOTP:          "123456",
 		EmailMFAOTPExpiresAt: &expiresAt,
 	}
 
@@ -197,9 +197,9 @@ func TestMFAService_VerifyAndEnableEmailMFA_ExpiredOTP(t *testing.T) {
 	userID := "user123"
 	expiredTime := time.Now().Add(-10 * time.Minute)
 	user := &domain.User{
-		ID:            userID,
-		EmailMFAEnabled: false,
-		EmailMFAOTP:    "123456",
+		ID:                   userID,
+		EmailMFAEnabled:      false,
+		EmailMFAOTP:          "123456",
 		EmailMFAOTPExpiresAt: &expiredTime,
 	}
 
@@ -224,13 +224,13 @@ func TestMFAService_SendMFAChallenge_Email(t *testing.T) {
 	ctx := context.Background()
 	userID := "user123"
 	user := &domain.User{
-		ID:            userID,
-		Email:         "test@example.com",
-		FirstName:     "Test",
-		LastName:      "User",
+		ID:                 userID,
+		Email:              "test@example.com",
+		FirstName:          "Test",
+		LastName:           "User",
 		IsTwoFactorEnabled: true,
-		TwoFactorMethod: "EMAIL",
-		EmailMFAEnabled: true,
+		TwoFactorMethod:    "EMAIL",
+		EmailMFAEnabled:    true,
 	}
 
 	mockUserRepo.EXPECT().GetUserByID(ctx, userID).Return(user, nil)
@@ -257,9 +257,9 @@ func TestMFAService_SendMFAChallenge_TOTP(t *testing.T) {
 	ctx := context.Background()
 	userID := "user123"
 	user := &domain.User{
-		ID:            userID,
+		ID:                 userID,
 		IsTwoFactorEnabled: true,
-		TwoFactorMethod: "TOTP",
+		TwoFactorMethod:    "TOTP",
 	}
 
 	mockUserRepo.EXPECT().GetUserByID(ctx, userID).Return(user, nil)
@@ -286,12 +286,12 @@ func TestMFAService_SendMFAChallenge_Push(t *testing.T) {
 	ctx := context.Background()
 	userID := "user123"
 	user := &domain.User{
-		ID:            userID,
-		IsTwoFactorEnabled: true,
-		TwoFactorMethod: "PUSH",
-		PushMFAEnabled: true,
+		ID:                  userID,
+		IsTwoFactorEnabled:  true,
+		TwoFactorMethod:     "PUSH",
+		PushMFAEnabled:      true,
 		PushMFADeviceTokens: []string{"device-token-1"},
-		PushMFAChallenges: []domain.PushMFAChallenge{},
+		PushMFAChallenges:   []domain.PushMFAChallenge{},
 	}
 
 	mockUserRepo.EXPECT().GetUserByID(ctx, userID).Return(user, nil)
@@ -320,11 +320,11 @@ func TestMFAService_VerifyMFAChallenge_Email_Success(t *testing.T) {
 	otp := "123456"
 	expiresAt := time.Now().Add(5 * time.Minute)
 	user := &domain.User{
-		ID:            userID,
-		IsTwoFactorEnabled: true,
-		TwoFactorMethod: "EMAIL",
-		EmailMFAEnabled: true,
-		EmailMFAOTP:    otp,
+		ID:                   userID,
+		IsTwoFactorEnabled:   true,
+		TwoFactorMethod:      "EMAIL",
+		EmailMFAEnabled:      true,
+		EmailMFAOTP:          otp,
 		EmailMFAOTPExpiresAt: &expiresAt,
 	}
 
@@ -350,11 +350,11 @@ func TestMFAService_VerifyMFAChallenge_Email_Invalid(t *testing.T) {
 	userID := "user123"
 	expiresAt := time.Now().Add(5 * time.Minute)
 	user := &domain.User{
-		ID:            userID,
-		IsTwoFactorEnabled: true,
-		TwoFactorMethod: "EMAIL",
-		EmailMFAEnabled: true,
-		EmailMFAOTP:    "123456",
+		ID:                   userID,
+		IsTwoFactorEnabled:   true,
+		TwoFactorMethod:      "EMAIL",
+		EmailMFAEnabled:      true,
+		EmailMFAOTP:          "123456",
 		EmailMFAOTPExpiresAt: &expiresAt,
 	}
 
@@ -378,10 +378,10 @@ func TestMFAService_DisableEmailMFA_Success(t *testing.T) {
 	ctx := context.Background()
 	userID := "user123"
 	user := &domain.User{
-		ID:            userID,
-		EmailMFAEnabled: true,
+		ID:                 userID,
+		EmailMFAEnabled:    true,
 		IsTwoFactorEnabled: true,
-		TwoFactorMethod: "EMAIL",
+		TwoFactorMethod:    "EMAIL",
 	}
 
 	mockUserRepo.EXPECT().GetUserByID(ctx, userID).Return(user, nil)
@@ -405,7 +405,7 @@ func TestMFAService_DisableEmailMFA_NotEnabled(t *testing.T) {
 	ctx := context.Background()
 	userID := "user123"
 	user := &domain.User{
-		ID:            userID,
+		ID:              userID,
 		EmailMFAEnabled: false,
 	}
 
@@ -444,7 +444,7 @@ func TestMFAService_VerifyMFAChallenge_2FANotEnabled(t *testing.T) {
 	ctx := context.Background()
 	userID := "user123"
 	user := &domain.User{
-		ID:            userID,
+		ID:                 userID,
 		IsTwoFactorEnabled: false,
 	}
 
@@ -469,7 +469,7 @@ func TestMFAService_SendMFAChallenge_2FANotEnabled(t *testing.T) {
 	ctx := context.Background()
 	userID := "user123"
 	user := &domain.User{
-		ID:            userID,
+		ID:                 userID,
 		IsTwoFactorEnabled: false,
 	}
 
@@ -496,9 +496,9 @@ func TestMFAService_VerifyMFAChallenge_UnsupportedMethod(t *testing.T) {
 	ctx := context.Background()
 	userID := "user123"
 	user := &domain.User{
-		ID:            userID,
+		ID:                 userID,
 		IsTwoFactorEnabled: true,
-		TwoFactorMethod: "UNSUPPORTED",
+		TwoFactorMethod:    "UNSUPPORTED",
 	}
 
 	mockUserRepo.EXPECT().GetUserByID(ctx, userID).Return(user, nil)
@@ -508,4 +508,3 @@ func TestMFAService_VerifyMFAChallenge_UnsupportedMethod(t *testing.T) {
 	assert.Contains(t, err.Error(), "unsupported MFA method")
 	assert.False(t, valid)
 }
-

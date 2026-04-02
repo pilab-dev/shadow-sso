@@ -48,6 +48,7 @@ func NewUserServer(userRepo domain.UserRepository, hasher domain.PasswordHasher,
 	}
 }
 
+// RegisterUser registers a new user with the provided details.
 func (s *UserServer) RegisterUser(ctx context.Context, req *connect.Request[ssov1.RegisterUserRequest]) (*connect.Response[ssov1.RegisterUserResponse], error) {
 	// Get acting user from context (could be a service account acting on behalf of a user)
 	actingUserID, err := domain.GetAuthenticatedUserIDFromContext(ctx)
@@ -114,6 +115,7 @@ func (s *UserServer) RegisterUser(ctx context.Context, req *connect.Request[ssov
 	return connect.NewResponse(&ssov1.RegisterUserResponse{User: userProto}), nil
 }
 
+// ActivateUser activates a user account.
 func (s *UserServer) ActivateUser(ctx context.Context, req *connect.Request[ssov1.ActivateUserRequest]) (*connect.Response[emptypb.Empty], error) {
 	// Get acting user from context
 	actingUserID, err := domain.GetAuthenticatedUserIDFromContext(ctx)
@@ -162,6 +164,7 @@ func (s *UserServer) ActivateUser(ctx context.Context, req *connect.Request[ssov
 	return connect.NewResponse(&emptypb.Empty{}), nil
 }
 
+// LockUser locks a user account.
 func (s *UserServer) LockUser(ctx context.Context, req *connect.Request[ssov1.LockUserRequest]) (*connect.Response[emptypb.Empty], error) {
 	// Get acting user from context
 	actingUserID, err := domain.GetAuthenticatedUserIDFromContext(ctx)
@@ -210,6 +213,7 @@ func (s *UserServer) LockUser(ctx context.Context, req *connect.Request[ssov1.Lo
 	return connect.NewResponse(&emptypb.Empty{}), nil
 }
 
+// ListUsers lists users with pagination.
 func (s *UserServer) ListUsers(ctx context.Context, req *connect.Request[ssov1.ListUsersRequest]) (*connect.Response[ssov1.ListUsersResponse], error) {
 	// Get acting user from context
 	actingUserID, err := domain.GetAuthenticatedUserIDFromContext(ctx)
@@ -256,6 +260,7 @@ func (s *UserServer) ListUsers(ctx context.Context, req *connect.Request[ssov1.L
 	}), nil
 }
 
+// GetUser retrieves a user by ID.
 func (s *UserServer) GetUser(ctx context.Context, req *connect.Request[ssov1.GetUserRequest]) (*connect.Response[ssov1.GetUserResponse], error) {
 	// Get acting user from context
 	actingUserID, err := domain.GetAuthenticatedUserIDFromContext(ctx)
@@ -297,6 +302,7 @@ func (s *UserServer) GetUser(ctx context.Context, req *connect.Request[ssov1.Get
 	return connect.NewResponse(&ssov1.GetUserResponse{User: userProto}), nil
 }
 
+// ChangePassword changes a user's password.
 func (s *UserServer) ChangePassword(ctx context.Context, req *connect.Request[ssov1.ChangePasswordRequest]) (*connect.Response[emptypb.Empty], error) {
 	// Get acting user from context
 	actingUserID, err := domain.GetAuthenticatedUserIDFromContext(ctx)
