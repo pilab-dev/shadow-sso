@@ -1004,7 +1004,7 @@ func (oa *OAuth2API) LogoutHandler(c *gin.Context) {
 		token, err := oa.tokenService.ValidateAccessToken(ctx, idTokenHint)
 		if err == nil && token.UserID != "" {
 			clientID = token.ClientID
-			_ = oa.userSessionStore.DeleteUserSession(token.UserID)
+			_ = oa.userSessionStore.DeleteUserSessionsByUserID(token.UserID)
 		}
 	}
 

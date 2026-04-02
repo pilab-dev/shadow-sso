@@ -138,6 +138,18 @@ func (s *DTSUserSessionStore) DeleteUserSession(ctx context.Context, sessionID s
 	return nil
 }
 
+// DeleteUserSessionsByUserID removes all sessions for a given user ID from DTS.
+// Note: DTS currently only supports session ID based deletion. This is a placeholder.
+func (s *DTSUserSessionStore) DeleteUserSessionsByUserID(ctx context.Context, userID string) error {
+	if userID == "" {
+		return status.Error(codes.InvalidArgument, "user ID cannot be empty")
+	}
+
+	log.Printf("DeleteUserSessionsByUserID not fully implemented in DTS - clearing cookie instead for user %s", userID)
+
+	return nil
+}
+
 // CleanupExpiredSessions is a no-op for DTSUserSessionStore as DTS handles TTL internally.
 func (s *DTSUserSessionStore) CleanupExpiredSessions() {
 	log.Println("CleanupExpiredSessions is a no-op for DTSUserSessionStore; DTS handles TTL cleanup automatically.")

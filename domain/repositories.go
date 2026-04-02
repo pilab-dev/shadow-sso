@@ -24,6 +24,7 @@ type UserSessionStore interface {
 	StoreUserSession(session *UserSession) error
 	GetUserSession(sessionID string) (*UserSession, error)
 	DeleteUserSession(sessionID string) error
+	DeleteUserSessionsByUserID(userID string) error
 	CleanupExpiredSessions()
 }
 
