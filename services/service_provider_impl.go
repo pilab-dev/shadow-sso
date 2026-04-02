@@ -2,6 +2,7 @@ package services
 
 import (
 	"context" // Generally useful for service initialization context if needed
+	"crypto/rsa"
 	"errors"
 	"fmt"
 
@@ -168,23 +169,14 @@ func (p *DefaultServiceProvider) PKCEService() *PKCEService {
 func (p *DefaultServiceProvider) JWKSService() *JWKSService {
 	if p.jwksService == nil {
 		var err error
-		p.jwksService, err = NewJWKSServiceWithGrace(p.config.KeyRotationPeriod, p.config.KeyRotationPeriod)
+		p.jwksService, err = NewJWKSServiceWithGrace(p.config.KeyRotationPeriod, p.config.KeyRotationPeriod, func(keyID string, privateKey *rsa.PrivateKey) {
+			p.tokenSigner.AddRSASigner(keyID, privateKey)
+		})
 		if err != nil {
 			panic("failed to initialize JWKSService: " + err.Error())
 		}
-		p.syncJWKSKeysToTokenSigner()
 	}
 	return p.jwksService
-}
-
-func (p *DefaultServiceProvider) syncJWKSKeysToTokenSigner() {
-	if p.jwksService == nil || p.tokenSigner == nil {
-		return
-	}
-	keyID, privateKey := p.jwksService.GetSigningKey()
-	if keyID != "" && privateKey != nil {
-		p.tokenSigner.AddRSASigner(keyID, privateKey)
-	}
 }
 
 func (p *DefaultServiceProvider) ClientService() *client.ClientService {

@@ -22,6 +22,7 @@ type JWKSService struct {
 	keyRotation   time.Duration
 	gracePeriod   time.Duration
 	keyCreatedAt  map[string]time.Time
+	onRotation    func(keyID string, privateKey *rsa.PrivateKey)
 }
 
 type JSONWebKey struct {
@@ -41,12 +42,16 @@ func NewJWKSService(keyRotation time.Duration) (*JWKSService, error) {
 	return NewJWKSServiceWithGrace(keyRotation, keyRotation)
 }
 
-func NewJWKSServiceWithGrace(keyRotation, gracePeriod time.Duration) (*JWKSService, error) {
+func NewJWKSServiceWithGrace(keyRotation, gracePeriod time.Duration, onRotation ...func(keyID string, privateKey *rsa.PrivateKey)) (*JWKSService, error) {
 	service := &JWKSService{
 		keys:         make(map[string]*rsa.PrivateKey),
 		keyRotation:  keyRotation,
 		gracePeriod:  gracePeriod,
 		keyCreatedAt: make(map[string]time.Time),
+	}
+
+	if len(onRotation) > 0 {
+		service.onRotation = onRotation[0]
 	}
 
 	if err := service.rotateKeys(); err != nil {
@@ -116,6 +121,12 @@ func (s *JWKSService) GetSigningKey() (string, *rsa.PrivateKey) {
 	return s.currentKeyID, s.keys[s.currentKeyID]
 }
 
+func (s *JWKSService) OnRotation(callback func(keyID string, privateKey *rsa.PrivateKey)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onRotation = callback
+}
+
 func (s *JWKSService) GetPublicKeyByID(kid string) *rsa.PublicKey {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -157,6 +168,10 @@ func (s *JWKSService) rotateKeys() error {
 			delete(s.keyCreatedAt, kid)
 			s.previousKeyID = ""
 		}
+	}
+
+	if s.onRotation != nil {
+		go s.onRotation(newKeyID, privateKey)
 	}
 
 	return nil

@@ -13,12 +13,14 @@ var ErrInvalidKeyID = errors.New("invalid key id")
 type TokenSignerFunc func(claims jwt.Claims) (string, error)
 
 type TokenSigner struct {
-	keys map[string]TokenSignerFunc
+	keys       map[string]TokenSignerFunc
+	defaultKey string
 }
 
 func NewTokenSigner() *TokenSigner {
 	return &TokenSigner{
-		keys: make(map[string]TokenSignerFunc),
+		keys:       make(map[string]TokenSignerFunc),
+		defaultKey: "",
 	}
 }
 
@@ -43,16 +45,23 @@ func (s *TokenSigner) AddRSASigner(keyID string, privateKey *rsa.PrivateKey) {
 		}
 		return tokenString, nil
 	}
+	if s.defaultKey == "" {
+		s.defaultKey = keyID
+	}
 }
 
 func (s *TokenSigner) Sign(claims jwt.Claims, keyID string) (string, error) {
 	if keyID == "" {
-		for _, val := range s.keys {
-			if val != nil {
-				return val(claims)
+		if s.defaultKey != "" {
+			keyID = s.defaultKey
+		} else if len(s.keys) > 0 {
+			for k := range s.keys {
+				keyID = k
+				break
 			}
+		} else {
+			return "", ErrInvalidKeyID
 		}
-		return "", ErrInvalidKeyID
 	}
 
 	if signer, ok := s.keys[keyID]; ok {

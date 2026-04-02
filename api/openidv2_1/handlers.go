@@ -1030,22 +1030,30 @@ func (oa *OAuth2API) LogoutHandler(c *gin.Context) {
 		return
 	}
 
-	if clientID != "" {
-		client, err := oa.clientService.GetClient(ctx, clientID)
-		if err == nil && client != nil && len(client.PostLogoutURIs) > 0 {
-			valid := false
-			for _, uri := range client.PostLogoutURIs {
-				if uri == postLogoutRedirectURI {
-					valid = true
-					break
-				}
-			}
-			if !valid {
-				log.Warn().Str("uri", postLogoutRedirectURI).Str("clientID", clientID).Msg("LogoutHandler: post_logout_redirect_uri not registered")
-				c.JSON(http.StatusBadRequest, domain.NewInvalidRequest("post_logout_redirect_uri not registered for this client"))
-				return
-			}
+	if clientID == "" {
+		log.Warn().Str("uri", postLogoutRedirectURI).Msg("LogoutHandler: post_logout_redirect_uri requires bound client")
+		c.JSON(http.StatusBadRequest, domain.NewInvalidRequest("post_logout_redirect_uri requires a valid client"))
+		return
+	}
+
+	client, err := oa.clientService.GetClient(ctx, clientID)
+	if err != nil || client == nil || len(client.PostLogoutURIs) == 0 {
+		log.Warn().Str("clientID", clientID).Str("uri", postLogoutRedirectURI).Msg("LogoutHandler: post_logout_redirect_uri not allowed for client")
+		c.JSON(http.StatusBadRequest, domain.NewInvalidRequest("post_logout_redirect_uri not registered for this client"))
+		return
+	}
+
+	valid := false
+	for _, uri := range client.PostLogoutURIs {
+		if uri == postLogoutRedirectURI {
+			valid = true
+			break
 		}
+	}
+	if !valid {
+		log.Warn().Str("uri", postLogoutRedirectURI).Str("clientID", clientID).Msg("LogoutHandler: post_logout_redirect_uri not registered")
+		c.JSON(http.StatusBadRequest, domain.NewInvalidRequest("post_logout_redirect_uri not registered for this client"))
+		return
 	}
 
 	if state != "" {
@@ -1156,6 +1164,21 @@ func (oa *OAuth2API) RegisterClientHandler(c *gin.Context) {
 	grantTypes := req.GrantTypes
 	if len(grantTypes) == 0 {
 		grantTypes = []string{"authorization_code"}
+	}
+
+	if clientSecret == "" {
+		var filtered []string
+		for _, gt := range grantTypes {
+			if gt == "client_credentials" {
+				log.Warn().Str("client_id", clientID).Msg("rejecting client_credentials grant for non-confidential client")
+				continue
+			}
+			filtered = append(filtered, gt)
+		}
+		grantTypes = filtered
+		if len(grantTypes) == 0 {
+			grantTypes = []string{"authorization_code"}
+		}
 	}
 
 	newClient := &domain.Client{

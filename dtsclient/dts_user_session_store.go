@@ -145,9 +145,9 @@ func (s *DTSUserSessionStore) DeleteUserSessionsByUserID(ctx context.Context, us
 		return status.Error(codes.InvalidArgument, "user ID cannot be empty")
 	}
 
-	log.Printf("DeleteUserSessionsByUserID not fully implemented in DTS - clearing cookie instead for user %s", userID)
+	log.Printf("DeleteUserSessionsByUserID is not supported in DTS; user-based session revocation requires alternative implementation")
 
-	return nil
+	return status.Error(codes.Unimplemented, "user session deletion by user ID is not supported in DTS, use DeleteUserSession with session ID instead")
 }
 
 // CleanupExpiredSessions is a no-op for DTSUserSessionStore as DTS handles TTL internally.

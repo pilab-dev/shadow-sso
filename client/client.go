@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"time"
 
@@ -97,6 +98,40 @@ func (s *ClientService) CreatePublicClient(ctx context.Context,
 
 // CreateClient creates a client with the given properties.
 func (s *ClientService) CreateClient(ctx context.Context, client *domain.Client) error {
+	if client.ID == "" {
+		client.ID = uuid.NewString()
+	}
+
+	if client.TokenEndpointAuth == "client_secret_basic" || client.TokenEndpointAuth == "client_secret_post" || client.IsConfidential {
+		secretBytes := make([]byte, 32)
+		if _, err := rand.Read(secretBytes); err != nil {
+			return fmt.Errorf("failed to generate client secret: %w", err)
+		}
+		client.Secret = base64.RawURLEncoding.EncodeToString(secretBytes)
+		client.IsConfidential = true
+	}
+
+	if client.TokenEndpointAuth == "" {
+		client.TokenEndpointAuth = "none"
+	}
+
+	client.IsActive = true
+
+	hasAuthCode := false
+	for _, gt := range client.AllowedGrantTypes {
+		if gt == "authorization_code" {
+			hasAuthCode = true
+			break
+		}
+	}
+	if hasAuthCode {
+		client.RequirePKCE = true
+	}
+
+	now := time.Now()
+	client.CreatedAt = now
+	client.UpdatedAt = now
+
 	return s.store.CreateClient(ctx, client)
 }
 
