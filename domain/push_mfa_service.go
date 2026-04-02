@@ -20,10 +20,10 @@ var (
 
 // PushMFAService handles push-based MFA challenges
 type PushMFAService struct {
-	userRepo              UserRepository
-	pushService           PushNotificationService
-	challengeExpiryTime   time.Duration
-	maxActiveChallenges   int
+	userRepo            UserRepository
+	pushService         PushNotificationService
+	challengeExpiryTime time.Duration
+	maxActiveChallenges int
 }
 
 // PushMFAConfig holds configuration for push MFA
@@ -127,7 +127,7 @@ func (s *PushMFAService) CreatePushMFAChallenge(ctx context.Context, userID, ipA
 			activeChallenges++
 		}
 	}
-	if activeChallenges >= s.maxActiveChallenges {
+	if activeChallenges+len(user.PushMFADeviceTokens) > s.maxActiveChallenges {
 		return "", errors.New("too many active push MFA challenges")
 	}
 
@@ -178,42 +178,44 @@ func (s *PushMFAService) VerifyPushMFAChallenge(ctx context.Context, userID, cha
 		return ErrPushMFANotEnabled
 	}
 
-	// Find the challenge
-	challengeIndex := -1
+	// Find all challenges with the same ChallengeID
+	challengeIndices := make([]int, 0)
 	for i, challenge := range user.PushMFAChallenges {
 		if challenge.ChallengeID == challengeID {
-			challengeIndex = i
-			break
+			challengeIndices = append(challengeIndices, i)
 		}
 	}
 
-	if challengeIndex == -1 {
+	if len(challengeIndices) == 0 {
 		return ErrChallengeNotFound
 	}
 
-	challenge := user.PushMFAChallenges[challengeIndex]
+	// Check the first challenge for expiration and status
+	firstChallenge := user.PushMFAChallenges[challengeIndices[0]]
 
 	// Check if challenge is expired
-	if time.Now().After(challenge.ExpiresAt) {
-		challenge.Status = "expired"
-		user.PushMFAChallenges[challengeIndex] = challenge
+	if time.Now().After(firstChallenge.ExpiresAt) {
+		// Mark all challenges with this ID as expired
+		for _, idx := range challengeIndices {
+			user.PushMFAChallenges[idx].Status = "expired"
+		}
 		_ = s.userRepo.UpdateUser(ctx, user)
 		return ErrChallengeExpired
 	}
 
 	// Check if challenge is already used
-	if challenge.Status != "pending" {
+	if firstChallenge.Status != "pending" {
 		return ErrChallengeAlreadyUsed
 	}
 
-	// Update challenge status
-	if approved {
-		challenge.Status = "approved"
-	} else {
-		challenge.Status = "denied"
+	// Update all challenges with this ChallengeID
+	status := "approved"
+	if !approved {
+		status = "denied"
 	}
-
-	user.PushMFAChallenges[challengeIndex] = challenge
+	for _, idx := range challengeIndices {
+		user.PushMFAChallenges[idx].Status = status
+	}
 
 	err = s.userRepo.UpdateUser(ctx, user)
 	if err != nil {
