@@ -1885,7 +1885,7 @@ func (oa *OAuth2API) ConsentHandler(c *gin.Context) {
 
 	csrfCookie, csrfErr := c.Cookie(CSRFCookieName)
 	if csrfErr != nil || csrfCookie == "" || csrfCookie != req.CSRFToken {
-		c.JSON(http.StatusForbidden, gin.H{"error": "invalid_csrf", "error_description": "CSRF token mismatch or missing."})
+c.JSON(http.StatusForbidden, domain.NewInvalidRequest("CSRF token mismatch or missing."))
 		return
 	}
 
