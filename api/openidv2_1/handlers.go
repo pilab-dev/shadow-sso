@@ -1002,18 +1002,40 @@ func (oa *OAuth2API) LogoutHandler(c *gin.Context) {
 
 	var clientID string
 	if idTokenHint != "" {
-		token, err := oa.tokenService.ValidateAccessToken(ctx, idTokenHint)
-		if err == nil && token.UserID != "" {
-			clientID = token.ClientID
-			_ = oa.userSessionStore.DeleteUserSessionsByUserID(token.UserID)
+		idTokenClaims, err := oa.tokenService.ValidateIDToken(ctx, idTokenHint)
+		if err == nil && idTokenClaims != nil {
+			if sub, ok := (*idTokenClaims)["sub"].(string); ok && sub != "" {
+				if aud, ok := (*idTokenClaims)["aud"].(string); ok && aud != "" {
+					clientID = aud
+					if err := oa.userSessionStore.DeleteUserSessionsByUserID(sub); err != nil {
+						log.Error().Err(err).Str("userID", sub).Msg("Failed to delete user sessions during logout")
+						c.JSON(http.StatusInternalServerError, domain.NewServerError("Failed to complete logout"))
+						return
+					}
+				}
+			}
 		}
 	}
 
 	sessionCookie, cookieErr := c.Cookie(SessionCookieName)
+	if cookieErr != nil && cookieErr != http.ErrNoCookie {
+		log.Error().Err(cookieErr).Msg("Failed to retrieve session cookie during logout")
+		c.JSON(http.StatusInternalServerError, domain.NewServerError("Failed to complete logout"))
+		return
+	}
 	if cookieErr == nil && sessionCookie != "" {
 		userSession, sessionErr := oa.userSessionStore.GetUserSession(sessionCookie)
-		if sessionErr == nil && userSession != nil {
-			_ = oa.userSessionStore.DeleteUserSession(userSession.SessionID)
+		if sessionErr != nil {
+			log.Error().Err(sessionErr).Str("sessionCookie", sessionCookie).Msg("Failed to get user session during logout")
+			c.JSON(http.StatusInternalServerError, domain.NewServerError("Failed to complete logout"))
+			return
+		}
+		if userSession != nil {
+			if err := oa.userSessionStore.DeleteUserSession(userSession.SessionID); err != nil {
+				log.Error().Err(err).Str("sessionID", userSession.SessionID).Msg("Failed to delete user session during logout")
+				c.JSON(http.StatusInternalServerError, domain.NewServerError("Failed to complete logout"))
+				return
+			}
 		}
 		oa.clearUserSessionCookie(c)
 	}
@@ -1202,35 +1224,32 @@ func (oa *OAuth2API) RegisterClientHandler(c *gin.Context) {
 		UpdatedAt:         time.Now(),
 	}
 
-	if clientSecret != "" {
-		newClient.Type = domain.ClientTypeConfidential
-	}
-
-	if err := oa.clientService.CreateClient(ctx, newClient); err != nil {
+	savedClient, err := oa.clientService.CreateClient(ctx, newClient)
+	if err != nil {
 		log.Error().Err(err).Msg("Failed to create client via dynamic registration")
 		c.JSON(http.StatusInternalServerError, domain.NewServerError("Failed to register client"))
 		return
 	}
 
 	resp := RegisterClientResponse{
-		ClientID:          clientID,
-		ClientSecret:      clientSecret,
-		ClientIDIssuedAt:  time.Now().Unix(),
-		RedirectURIs:      req.RedirectURIs,
-		ClientName:        req.ClientName,
+		ClientID:          savedClient.ID,
+		ClientSecret:      savedClient.Secret,
+		ClientIDIssuedAt:  savedClient.CreatedAt.Unix(),
+		RedirectURIs:      savedClient.RedirectURIs,
+		ClientName:        savedClient.Name,
 		ClientURI:         req.ClientURI,
-		LogoURI:           req.LogoURI,
-		Contacts:          req.Contacts,
-		PolicyURI:         req.PolicyURI,
-		TermsOfServiceURI: req.TermsOfServiceURI,
-		JWKSURI:           req.JWKSURI,
-		Scope:             req.Scope,
-		GrantTypes:        grantTypes,
+		LogoURI:           savedClient.LogoURI,
+		Contacts:          savedClient.Contacts,
+		PolicyURI:         savedClient.PolicyURI,
+		TermsOfServiceURI: savedClient.TermsURI,
+		JWKSURI:           savedClient.JWKSUri,
+		Scope:             strings.Join(savedClient.AllowedScopes, " "),
+		GrantTypes:        savedClient.AllowedGrantTypes,
 		ResponseTypes:     req.ResponseTypes,
-		TokenEndpointAuth: req.TokenEndpointAuth,
-		RequireConsent:    req.RequireConsent,
+		TokenEndpointAuth: savedClient.TokenEndpointAuth,
+		RequireConsent:    savedClient.RequireConsent,
 	}
-	if clientSecret != "" {
+	if savedClient.Secret != "" {
 		resp.ClientSecretExpiresAt = 0
 	}
 

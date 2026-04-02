@@ -334,11 +334,7 @@ func (s *TokenService) GenerateTokenPairWithFamily(ctx context.Context,
 	// Generate ID token if openid scope is requested
 	idToken := ""
 	if s.containsScope(scope, "openid") {
-		user, userErr := s.userRepo.GetUserByID(ctx, userID)
-		if userErr != nil {
-			log.Warn().Err(userErr).Str("userID", userID).Msg("GenerateTokenPairWithFamily: failed to fetch user for ID token claims")
-		}
-		idToken, err = s.GenerateIDToken(ctx, userID, clientID, nonce, authTime, user)
+		idToken, err = s.GenerateIDToken(ctx, userID, clientID, nonce, authTime, scope)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create ID token: %w", err)
 		}
@@ -358,7 +354,7 @@ func (s *TokenService) containsScope(scope, target string) bool {
 }
 
 // GenerateIDToken creates a signed JWT ID token per OIDC Core spec.
-func (s *TokenService) GenerateIDToken(ctx context.Context, userID, clientID, nonce string, authTime time.Time, user *domain.User) (string, error) {
+func (s *TokenService) GenerateIDToken(ctx context.Context, userID, clientID, nonce string, authTime time.Time, scope string) (string, error) {
 	keyID, _ := s.jwks.GetSigningKey()
 	if keyID == "" {
 		return "", fmt.Errorf("no signing key available for ID token")
@@ -366,25 +362,41 @@ func (s *TokenService) GenerateIDToken(ctx context.Context, userID, clientID, no
 
 	now := time.Now()
 	claims := jwt.MapClaims{
-		"iss":       s.issuer,
-		"sub":       userID,
-		"aud":       clientID,
-		"exp":       jwt.NewNumericDate(now.Add(time.Hour)).Unix(),
-		"iat":       jwt.NewNumericDate(now).Unix(),
-		"auth_time": authTime.Unix(),
+		"iss": s.issuer,
+		"sub": userID,
+		"aud": clientID,
+		"exp": jwt.NewNumericDate(now.Add(time.Hour)).Unix(),
+		"iat": jwt.NewNumericDate(now).Unix(),
+	}
+
+	if !authTime.IsZero() {
+		claims["auth_time"] = authTime.Unix()
 	}
 
 	if nonce != "" {
 		claims["nonce"] = nonce
 	}
 
-	if user != nil {
-		claims["name"] = user.FirstName + " " + user.LastName
-		if user.Email != "" {
-			claims["email"] = user.Email
-		}
-		if len(user.Roles) > 0 {
-			claims["roles"] = user.Roles
+	// Fetch user only if additional scopes require claims
+	needsUser := s.containsScope(scope, "profile") || s.containsScope(scope, "email") || s.containsScope(scope, "roles")
+	if needsUser {
+		user, userErr := s.userRepo.GetUserByID(ctx, userID)
+		if userErr != nil {
+			log.Warn().Err(userErr).Str("userID", userID).Msg("GenerateIDToken: failed to fetch user for optional claims")
+		} else if user != nil {
+			if s.containsScope(scope, "profile") {
+				claims["name"] = user.FirstName + " " + user.LastName
+			}
+			if s.containsScope(scope, "email") {
+				if user.Email != "" {
+					claims["email"] = user.Email
+				}
+			}
+			if s.containsScope(scope, "roles") {
+				if len(user.Roles) > 0 {
+					claims["roles"] = user.Roles
+				}
+			}
 		}
 	}
 
@@ -553,6 +565,49 @@ func (s *TokenService) GetRefreshTokenInfo(ctx context.Context, tokenValue strin
 
 // GetAccessTokenInfo retrieves metadata about an access token. Returns the token info if found,
 // or an error if not found or database error.
-func (s *TokenService) GetAccessTokenInfo(ctx context.Context, tokenValue string) (*domain.TokenInfo, error) { // Changed to domain.TokenInfo
+func (s *TokenService) GetAccessTokenInfo(ctx context.Context, tokenValue string) (*domain.TokenInfo, error) {
 	return s.repo.GetAccessTokenInfo(ctx, tokenValue)
+}
+
+// ValidateIDToken validates an ID token JWT and returns the claims.
+func (s *TokenService) ValidateIDToken(ctx context.Context, tokenValue string) (*jwt.MapClaims, error) {
+	parsedToken, err := jwt.ParseWithClaims(tokenValue, &jwt.MapClaims{}, func(token *jwt.Token) (interface{}, error) {
+		kid, ok := token.Header["kid"].(string)
+		if !ok || kid == "" {
+			return nil, errors.New("ID token missing kid")
+		}
+		publicKey := s.jwks.GetPublicKeyByID(kid)
+		if publicKey == nil {
+			return nil, fmt.Errorf("failed to get public key for kid %s", kid)
+		}
+		return publicKey, nil
+	})
+
+	if err != nil {
+		if errors.Is(err, jwt.ErrTokenExpired) {
+			return nil, domain.ErrTokenExpiredOrRevoked
+		}
+		return nil, fmt.Errorf("ID token validation failed: %w", err)
+	}
+
+	if !parsedToken.Valid {
+		return nil, errors.New("ID token is not valid")
+	}
+
+	claims, ok := parsedToken.Claims.(*jwt.MapClaims)
+	if !ok {
+		return nil, errors.New("invalid claims type in ID token")
+	}
+
+	// Verify issuer
+	if iss, ok := (*claims)["iss"].(string); !ok || iss != s.issuer {
+		return nil, errors.New("invalid issuer in ID token")
+	}
+
+	// Verify audience
+	if aud, ok := (*claims)["aud"].(string); !ok || aud == "" {
+		return nil, errors.New("invalid audience in ID token")
+	}
+
+	return claims, nil
 }

@@ -154,6 +154,11 @@ func (s *JWKSService) rotateKeys() error {
 
 	s.keys[newKeyID] = privateKey
 	s.keyCreatedAt[newKeyID] = time.Now()
+
+	if s.onRotation != nil {
+		s.onRotation(newKeyID, privateKey)
+	}
+
 	s.currentKeyID = newKeyID
 
 	now := time.Now()
@@ -168,10 +173,6 @@ func (s *JWKSService) rotateKeys() error {
 			delete(s.keyCreatedAt, kid)
 			s.previousKeyID = ""
 		}
-	}
-
-	if s.onRotation != nil {
-		go s.onRotation(newKeyID, privateKey)
 	}
 
 	return nil

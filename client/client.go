@@ -97,21 +97,30 @@ func (s *ClientService) CreatePublicClient(ctx context.Context,
 }
 
 // CreateClient creates a client with the given properties.
-func (s *ClientService) CreateClient(ctx context.Context, client *domain.Client) error {
+func (s *ClientService) CreateClient(ctx context.Context, client *domain.Client) (*domain.Client, error) {
 	if client.ID == "" {
 		client.ID = uuid.NewString()
 	}
 
-	if client.TokenEndpointAuth == "client_secret_basic" || client.TokenEndpointAuth == "client_secret_post" || client.IsConfidential {
-		secretBytes := make([]byte, 32)
-		if _, err := rand.Read(secretBytes); err != nil {
-			return fmt.Errorf("failed to generate client secret: %w", err)
-		}
-		client.Secret = base64.RawURLEncoding.EncodeToString(secretBytes)
-		client.IsConfidential = true
-	}
+	// Determine if the client should be confidential
+	isConfidential := client.IsConfidential || client.TokenEndpointAuth == "client_secret_basic" || client.TokenEndpointAuth == "client_secret_post"
 
-	if client.TokenEndpointAuth == "" {
+	if isConfidential {
+		// Generate secret if not already set
+		if client.Secret == "" {
+			secretBytes := make([]byte, 32)
+			if _, err := rand.Read(secretBytes); err != nil {
+				return nil, fmt.Errorf("failed to generate client secret: %w", err)
+			}
+			client.Secret = base64.RawURLEncoding.EncodeToString(secretBytes)
+		}
+		client.IsConfidential = true
+		// Set TokenEndpointAuth to a confidential method if not already set to one
+		if client.TokenEndpointAuth != "client_secret_basic" && client.TokenEndpointAuth != "client_secret_post" {
+			client.TokenEndpointAuth = "client_secret_basic"
+		}
+	} else {
+		client.IsConfidential = false
 		client.TokenEndpointAuth = "none"
 	}
 
@@ -132,7 +141,11 @@ func (s *ClientService) CreateClient(ctx context.Context, client *domain.Client)
 	client.CreatedAt = now
 	client.UpdatedAt = now
 
-	return s.store.CreateClient(ctx, client)
+	if err := s.store.CreateClient(ctx, client); err != nil {
+		return nil, err
+	}
+
+	return client, nil
 }
 
 // ValidateRedirectURI checks if a redirect URI is valid for a client
