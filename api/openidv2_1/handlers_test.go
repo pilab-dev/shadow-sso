@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -21,9 +22,9 @@ import (
 	"github.com/pilab-dev/shadow-sso/client"
 	"github.com/pilab-dev/shadow-sso/domain"
 	mock_domain "github.com/pilab-dev/shadow-sso/domain/mocks"
-	pkgauth "github.com/pilab-dev/shadow-sso/pkg/auth"
 	"github.com/pilab-dev/shadow-sso/internal/metrics"
 	"github.com/pilab-dev/shadow-sso/internal/oidcflow"
+	pkgauth "github.com/pilab-dev/shadow-sso/pkg/auth"
 	"github.com/pilab-dev/shadow-sso/services"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -31,6 +32,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	"golang.org/x/crypto/bcrypt"
+)
+
+var (
+	cachedJWKS   *services.JWKSService
+	cachedSigner *services.TokenSigner
+	once         sync.Once
 )
 
 func TestMain(m *testing.M) {
@@ -67,6 +74,17 @@ func setupTokenHandlerTest(t *testing.T) (
 ) {
 	ctrl := gomock.NewController(t)
 
+	// Initialize cached JWKS and signer once
+	once.Do(func() {
+		var err error
+		cachedJWKS, err = services.NewJWKSService(time.Hour * 24 * 365)
+		require.NoError(t, err)
+		cachedSigner = services.NewTokenSigner()
+		cachedSigner.AddKeySigner("test-secret-for-hs256-handlers-test")
+		keyID, privateKey := cachedJWKS.GetSigningKey()
+		cachedSigner.AddRSASigner(keyID, privateKey)
+	})
+
 	// * initialize Repositories (All mock!)
 	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
 	mockAuthCodeRepo := mock_domain.NewMockAuthorizationCodeRepository(ctrl)
@@ -80,13 +98,8 @@ func setupTokenHandlerTest(t *testing.T) (
 	mockServiceAccountRepo := mock_domain.NewMockServiceAccountRepository(ctrl)
 
 	// * Initialize Services
-	actualSigner := services.NewTokenSigner()
-	actualSigner.AddKeySigner("test-secret-for-hs256-handlers-test")
 	tokenService := services.NewTokenService(
-		mockTokenRepo, mockTokenCache, "issuer", actualSigner, mockPubKeyRepo, mockServiceAccountRepo, mockUserRepo)
-
-	jwksService, err := services.NewJWKSService(time.Hour * 24 * 365)
-	require.NoError(t, err)
+		mockTokenRepo, mockTokenCache, "issuer", cachedSigner, cachedJWKS, mockPubKeyRepo, mockServiceAccountRepo, mockUserRepo)
 
 	mockClientService := client.NewClientService(mockClientRepo)
 
@@ -106,7 +119,7 @@ func setupTokenHandlerTest(t *testing.T) (
 	api := sssogin.NewOAuth2API(
 		&sssogin.OAuth2APIOptions{
 			OAuthService:  oauthService,
-			JSKSService:   jwksService,
+			JSKSService:   cachedJWKS,
 			ClientService: mockClientService,
 			PkceService:   pkceService,
 			Config: &sssoapi.OpenIDProviderConfig{
@@ -385,8 +398,8 @@ func TestTokenHandler_AuthorizationCodeGrant_PKCERequired_MissingVerifier(t *tes
 
 	mockReturnedClient := &domain.Client{ID: clientID, Secret: clientSecret, AllowedGrantTypes: []string{"authorization_code"}, RedirectURIs: []string{redirectURI}, RequirePKCE: true}
 
-	mockClientStore.EXPECT().ValidateClient(context.Background(), clientID, clientSecret).Return(mockReturnedClient, nil)
-	mockClientStore.EXPECT().GetClient(context.Background(), clientID).Times(2).Return(mockReturnedClient, nil)
+	mockClientStore.EXPECT().ValidateClient(gomock.Any(), clientID, clientSecret).Return(mockReturnedClient, nil)
+	mockClientStore.EXPECT().GetClient(gomock.Any(), clientID).Times(1).Return(mockReturnedClient, nil)
 
 	data := url.Values{}
 	data.Set("grant_type", "authorization_code")
@@ -426,9 +439,9 @@ func TestTokenHandler_AuthorizationCodeGrant_PKCEInvalidVerifier(t *testing.T) {
 
 	mockReturnedClient := &domain.Client{ID: clientID, Secret: clientSecret, AllowedGrantTypes: []string{"authorization_code"}, RedirectURIs: []string{redirectURI}, RequirePKCE: true}
 
-	mockClientStore.EXPECT().ValidateClient(context.Background(), clientID, clientSecret).Return(mockReturnedClient, nil)
-	mockClientStore.EXPECT().GetClient(context.Background(), clientID).Times(2).Return(mockReturnedClient, nil)
-	mockPkceRepo.EXPECT().GetCodeChallenge(context.Background(), authCodeVal).Return("a-different-challenge", nil)
+	mockClientStore.EXPECT().ValidateClient(gomock.Any(), clientID, clientSecret).Return(mockReturnedClient, nil)
+	mockClientStore.EXPECT().GetClient(gomock.Any(), clientID).Times(1).Return(mockReturnedClient, nil)
+	mockPkceRepo.EXPECT().GetCodeChallenge(gomock.Any(), authCodeVal).Return("a-different-challenge", nil)
 
 	data := url.Values{}
 	data.Set("grant_type", "authorization_code")
@@ -475,6 +488,7 @@ func TestTokenHandler_RefreshTokenGrant_Success(t *testing.T) {
 	mockClientStore.EXPECT().ValidateClient(gomock.Any(), clientID, clientSecret).Return(mockReturnedClient, nil)
 	mockClientStore.EXPECT().GetClient(gomock.Any(), clientID).Return(mockReturnedClient, nil)
 	mockTokenRepo.EXPECT().GetRefreshTokenInfo(gomock.Any(), refreshTokenVal).Return(refreshTokenInfo, nil)
+	mockTokenRepo.EXPECT().RevokeRefreshToken(gomock.Any(), refreshTokenVal).Return(nil)
 	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), userID).AnyTimes().Return(&domain.User{ID: userID, Email: "user@example.com", Roles: []string{"user"}}, nil)
 	// mockSessionRepo.EXPECT().StoreSession(context.Background(), gomock.Any()).Return(nil) // This is not called by RefreshToken path in OAuthService -> TokenService
 	mockTokenRepo.EXPECT().StoreToken(gomock.Any(), gomock.Any()).Times(2).Return(nil)
@@ -743,7 +757,7 @@ func TestTokenHandler_DeviceCodeGrant_AuthorizationPending(t *testing.T) {
 }
 
 func TestTokenHandler_AuthorizationCodeGrant_ExchangeError(t *testing.T) {
-	router, ctrl, _, mockAuthCodeRepo, _, mockClientStore, _, _, _, _, _, _ := setupTokenHandlerTest(t)
+	router, ctrl, _, mockAuthCodeRepo, _, mockClientStore, _, _, mockPkceRepo, _, _, _ := setupTokenHandlerTest(t)
 	defer ctrl.Finish()
 
 	clientID := "test-client-exchange-err"
@@ -753,10 +767,13 @@ func TestTokenHandler_AuthorizationCodeGrant_ExchangeError(t *testing.T) {
 
 	mockReturnedClient := &domain.Client{ID: clientID, Secret: clientSecret, AllowedGrantTypes: []string{"authorization_code"}, RedirectURIs: []string{redirectURI}, RequirePKCE: false}
 
-	mockClientStore.EXPECT().ValidateClient(context.Background(), clientID, clientSecret).Return(mockReturnedClient, nil)
-	mockClientStore.EXPECT().GetClient(context.Background(), clientID).Times(2).Return(mockReturnedClient, nil)
-	mockClientStore.EXPECT().GetClient(context.Background(), clientID).Return(mockReturnedClient, nil)
-	mockAuthCodeRepo.EXPECT().GetAuthCode(context.Background(), authCodeVal).Return(nil, domain.NewInvalidGrant("exchange failed"))
+	mockClientStore.EXPECT().ValidateClient(gomock.Any(), clientID, clientSecret).Return(mockReturnedClient, nil)
+	mockClientStore.EXPECT().GetClient(gomock.Any(), clientID).Times(2).Return(mockReturnedClient, nil)
+	challenge := CalculateS256Challenge("valid-code-verifier")
+	mockPkceRepo.EXPECT().GetCodeChallenge(gomock.Any(), authCodeVal).Return(challenge, nil)
+	mockPkceRepo.EXPECT().DeleteCodeChallenge(gomock.Any(), authCodeVal).Return(nil)
+
+	mockAuthCodeRepo.EXPECT().GetAuthCode(gomock.Any(), authCodeVal).Return(nil, errors.New("simulated internal db error"))
 
 	data := url.Values{}
 	data.Set("grant_type", "authorization_code")
@@ -764,6 +781,7 @@ func TestTokenHandler_AuthorizationCodeGrant_ExchangeError(t *testing.T) {
 	data.Set("client_secret", clientSecret)
 	data.Set("code", authCodeVal)
 	data.Set("redirect_uri", redirectURI)
+	data.Set("code_verifier", "valid-code-verifier") // Required for OAuth 2.1
 
 	req, _ := http.NewRequest(http.MethodPost, "/oauth2/token", strings.NewReader(data.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -863,7 +881,7 @@ func TestTokenHandler_ConfidentialClient_SecretNotProvided_CorrectedLogic(t *tes
 }
 
 func TestTokenHandler_InternalServerError(t *testing.T) {
-	router, ctrl, _, mockAuthCodeRepo, _, mockClientStore, _, _, _, _, _, _ := setupTokenHandlerTest(t)
+	router, ctrl, _, mockAuthCodeRepo, _, mockClientStore, _, _, mockPkceRepo, _, _, _ := setupTokenHandlerTest(t)
 	defer ctrl.Finish()
 
 	_ = mockAuthCodeRepo
@@ -875,10 +893,13 @@ func TestTokenHandler_InternalServerError(t *testing.T) {
 
 	mockReturnedClient := &domain.Client{ID: clientID, Secret: clientSecret, AllowedGrantTypes: []string{"authorization_code"}, RedirectURIs: []string{redirectURI}, RequirePKCE: false}
 
-	mockClientStore.EXPECT().GetClient(gomock.Any(), clientID).AnyTimes().Return(mockReturnedClient, nil)
+	mockClientStore.EXPECT().ValidateClient(gomock.Any(), clientID, clientSecret).Return(mockReturnedClient, nil)
+	mockClientStore.EXPECT().GetClient(gomock.Any(), clientID).Times(2).Return(mockReturnedClient, nil)
 
-	mockClientStore.EXPECT().ValidateClient(context.Background(), clientID, clientSecret).Return(mockReturnedClient, nil)
-	// mockClientStore.EXPECT().GetClient(context.Background(), clientID).Return(mockReturnedClient, nil)
+	challenge := CalculateS256Challenge("valid-code-verifier")
+	mockPkceRepo.EXPECT().GetCodeChallenge(gomock.Any(), authCodeVal).Return(challenge, nil)
+	mockPkceRepo.EXPECT().DeleteCodeChallenge(gomock.Any(), authCodeVal).Return(nil)
+
 	mockAuthCodeRepo.EXPECT().GetAuthCode(gomock.Any(), authCodeVal).AnyTimes().Return(nil, errors.New("simulated internal db error"))
 
 	data := url.Values{}
@@ -887,6 +908,7 @@ func TestTokenHandler_InternalServerError(t *testing.T) {
 	data.Set("client_secret", clientSecret)
 	data.Set("code", authCodeVal)
 	data.Set("redirect_uri", redirectURI)
+	data.Set("code_verifier", "valid-code-verifier")
 
 	req, _ := http.NewRequest(http.MethodPost, "/oauth2/token", strings.NewReader(data.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -924,3 +946,245 @@ func CalculateS256Challenge(verifier string) string {
 }
 
 // [end of api/gin/handlers_test.go]
+
+func TestRegisterClientHandler_RedirectURIHTTPSValidation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("invalid HTTP redirect URI", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockClientRepo := mock_domain.NewMockClientRepository(ctrl)
+		mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+
+		actualSigner := services.NewTokenSigner()
+		actualSigner.AddKeySigner("test-secret-for-hs256-handlers-test")
+		jwksService, err := services.NewJWKSService(time.Hour * 24 * 365)
+		require.NoError(t, err)
+		mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
+		mockTokenCache := mock_cache.NewMockTokenStore(ctrl)
+		mockPubKeyRepo := mock_domain.NewMockPublicKeyRepository(ctrl)
+		mockServiceAccountRepo := mock_domain.NewMockServiceAccountRepository(ctrl)
+		tokenService := services.NewTokenService(
+			mockTokenRepo, mockTokenCache, "issuer", actualSigner, jwksService, mockPubKeyRepo, mockServiceAccountRepo, mockUserRepo)
+
+		mockClientService := client.NewClientService(mockClientRepo)
+		pkceService := services.NewPKCEService(mock_domain.NewMockPkceRepository(ctrl))
+		flowStore := oidcflow.NewInMemoryFlowStore()
+		userSessionStore := oidcflow.NewInMemoryUserSessionStore()
+
+		oauthService := services.NewOAuthService(
+			mockTokenRepo, mock_domain.NewMockAuthorizationCodeRepository(ctrl), mock_domain.NewMockDeviceAuthorizationRepository(ctrl),
+			mockClientRepo, mockUserRepo, mock_domain.NewMockSessionRepository(ctrl), tokenService, "http://localhost:8080")
+
+		api := sssogin.NewOAuth2API(&sssogin.OAuth2APIOptions{
+			OAuthService:      oauthService,
+			JSKSService:       jwksService,
+			ClientService:     mockClientService,
+			PkceService:       pkceService,
+			Config:            &sssoapi.OpenIDProviderConfig{NextJSLoginURL: "http://localhost:3000/login"},
+			FlowStore:         flowStore,
+			UserSessionStore:  userSessionStore,
+			UserRepo:          mockUserRepo,
+			PasswordHasher:    nil,
+			FederationService: nil,
+			TokenService:      tokenService,
+		})
+
+		router := setupRouter(t, api)
+
+		body := map[string]interface{}{
+			"redirect_uris": []string{"http://example.com/callback"},
+			"client_name":   "Test Client",
+		}
+
+		req, _ := http.NewRequest(http.MethodPost, "/oauth2/register", bytes.NewBufferString(jsonBody(body).String()))
+		req.Header.Set("Content-Type", "application/json")
+
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("valid HTTPS redirect URI", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockClientRepo := mock_domain.NewMockClientRepository(ctrl)
+		mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+
+		actualSigner := services.NewTokenSigner()
+		actualSigner.AddKeySigner("test-secret-for-hs256-handlers-test")
+		jwksService, err := services.NewJWKSService(time.Hour * 24 * 365)
+		require.NoError(t, err)
+		mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
+		mockTokenCache := mock_cache.NewMockTokenStore(ctrl)
+		mockPubKeyRepo := mock_domain.NewMockPublicKeyRepository(ctrl)
+		mockServiceAccountRepo := mock_domain.NewMockServiceAccountRepository(ctrl)
+		tokenService := services.NewTokenService(
+			mockTokenRepo, mockTokenCache, "issuer", actualSigner, jwksService, mockPubKeyRepo, mockServiceAccountRepo, mockUserRepo)
+
+		mockClientService := client.NewClientService(mockClientRepo)
+		pkceService := services.NewPKCEService(mock_domain.NewMockPkceRepository(ctrl))
+		flowStore := oidcflow.NewInMemoryFlowStore()
+		userSessionStore := oidcflow.NewInMemoryUserSessionStore()
+
+		oauthService := services.NewOAuthService(
+			mockTokenRepo, mock_domain.NewMockAuthorizationCodeRepository(ctrl), mock_domain.NewMockDeviceAuthorizationRepository(ctrl),
+			mockClientRepo, mockUserRepo, mock_domain.NewMockSessionRepository(ctrl), tokenService, "http://localhost:8080")
+
+		api := sssogin.NewOAuth2API(&sssogin.OAuth2APIOptions{
+			OAuthService:      oauthService,
+			JSKSService:       jwksService,
+			ClientService:     mockClientService,
+			PkceService:       pkceService,
+			Config:            &sssoapi.OpenIDProviderConfig{NextJSLoginURL: "http://localhost:3000/login"},
+			FlowStore:         flowStore,
+			UserSessionStore:  userSessionStore,
+			UserRepo:          mockUserRepo,
+			PasswordHasher:    nil,
+			FederationService: nil,
+			TokenService:      tokenService,
+		})
+
+		router := setupRouter(t, api)
+
+		mockClientRepo.EXPECT().CreateClient(gomock.Any(), gomock.Any()).Return(nil)
+
+		body := map[string]interface{}{
+			"redirect_uris": []string{"https://example.com/callback"},
+			"client_name":   "Test Client",
+		}
+
+		req, _ := http.NewRequest(http.MethodPost, "/oauth2/register", bytes.NewBufferString(jsonBody(body).String()))
+		req.Header.Set("Content-Type", "application/json")
+
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusCreated, w.Code)
+	})
+}
+
+func TestRegisterClientHandler_GrantTypesValidation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("invalid grant type", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockClientRepo := mock_domain.NewMockClientRepository(ctrl)
+		mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+
+		actualSigner := services.NewTokenSigner()
+		actualSigner.AddKeySigner("test-secret-for-hs256-handlers-test")
+		jwksService, err := services.NewJWKSService(time.Hour * 24 * 365)
+		require.NoError(t, err)
+		mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
+		mockTokenCache := mock_cache.NewMockTokenStore(ctrl)
+		mockPubKeyRepo := mock_domain.NewMockPublicKeyRepository(ctrl)
+		mockServiceAccountRepo := mock_domain.NewMockServiceAccountRepository(ctrl)
+		tokenService := services.NewTokenService(
+			mockTokenRepo, mockTokenCache, "issuer", actualSigner, jwksService, mockPubKeyRepo, mockServiceAccountRepo, mockUserRepo)
+
+		mockClientService := client.NewClientService(mockClientRepo)
+		pkceService := services.NewPKCEService(mock_domain.NewMockPkceRepository(ctrl))
+		flowStore := oidcflow.NewInMemoryFlowStore()
+		userSessionStore := oidcflow.NewInMemoryUserSessionStore()
+
+		oauthService := services.NewOAuthService(
+			mockTokenRepo, mock_domain.NewMockAuthorizationCodeRepository(ctrl), mock_domain.NewMockDeviceAuthorizationRepository(ctrl),
+			mockClientRepo, mockUserRepo, mock_domain.NewMockSessionRepository(ctrl), tokenService, "http://localhost:8080")
+
+		api := sssogin.NewOAuth2API(&sssogin.OAuth2APIOptions{
+			OAuthService:      oauthService,
+			JSKSService:       jwksService,
+			ClientService:     mockClientService,
+			PkceService:       pkceService,
+			Config:            &sssoapi.OpenIDProviderConfig{NextJSLoginURL: "http://localhost:3000/login"},
+			FlowStore:         flowStore,
+			UserSessionStore:  userSessionStore,
+			UserRepo:          mockUserRepo,
+			PasswordHasher:    nil,
+			FederationService: nil,
+			TokenService:      tokenService,
+		})
+
+		router := setupRouter(t, api)
+
+		body := map[string]interface{}{
+			"redirect_uris": []string{"https://example.com/callback"},
+			"grant_types":   []string{"authorization_code", "jwt-bearer"},
+			"client_name":   "Test Client",
+		}
+
+		req, _ := http.NewRequest(http.MethodPost, "/oauth2/register", bytes.NewBufferString(jsonBody(body).String()))
+		req.Header.Set("Content-Type", "application/json")
+
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("valid grant types", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockClientRepo := mock_domain.NewMockClientRepository(ctrl)
+		mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+
+		actualSigner := services.NewTokenSigner()
+		actualSigner.AddKeySigner("test-secret-for-hs256-handlers-test")
+		jwksService, err := services.NewJWKSService(time.Hour * 24 * 365)
+		require.NoError(t, err)
+		mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
+		mockTokenCache := mock_cache.NewMockTokenStore(ctrl)
+		mockPubKeyRepo := mock_domain.NewMockPublicKeyRepository(ctrl)
+		mockServiceAccountRepo := mock_domain.NewMockServiceAccountRepository(ctrl)
+		tokenService := services.NewTokenService(
+			mockTokenRepo, mockTokenCache, "issuer", actualSigner, jwksService, mockPubKeyRepo, mockServiceAccountRepo, mockUserRepo)
+
+		mockClientService := client.NewClientService(mockClientRepo)
+		pkceService := services.NewPKCEService(mock_domain.NewMockPkceRepository(ctrl))
+		flowStore := oidcflow.NewInMemoryFlowStore()
+		userSessionStore := oidcflow.NewInMemoryUserSessionStore()
+
+		oauthService := services.NewOAuthService(
+			mockTokenRepo, mock_domain.NewMockAuthorizationCodeRepository(ctrl), mock_domain.NewMockDeviceAuthorizationRepository(ctrl),
+			mockClientRepo, mockUserRepo, mock_domain.NewMockSessionRepository(ctrl), tokenService, "http://localhost:8080")
+
+		api := sssogin.NewOAuth2API(&sssogin.OAuth2APIOptions{
+			OAuthService:      oauthService,
+			JSKSService:       jwksService,
+			ClientService:     mockClientService,
+			PkceService:       pkceService,
+			Config:            &sssoapi.OpenIDProviderConfig{NextJSLoginURL: "http://localhost:3000/login"},
+			FlowStore:         flowStore,
+			UserSessionStore:  userSessionStore,
+			UserRepo:          mockUserRepo,
+			PasswordHasher:    nil,
+			FederationService: nil,
+			TokenService:      tokenService,
+		})
+
+		router := setupRouter(t, api)
+
+		mockClientRepo.EXPECT().CreateClient(gomock.Any(), gomock.Any()).Return(nil)
+
+		body := map[string]interface{}{
+			"redirect_uris": []string{"https://example.com/callback"},
+			"grant_types":   []string{"authorization_code", "refresh_token"},
+			"client_name":   "Test Client",
+		}
+
+		req, _ := http.NewRequest(http.MethodPost, "/oauth2/register", bytes.NewBufferString(jsonBody(body).String()))
+		req.Header.Set("Content-Type", "application/json")
+
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusCreated, w.Code)
+	})
+}

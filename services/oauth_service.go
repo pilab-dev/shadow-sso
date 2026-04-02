@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -152,10 +153,34 @@ func (s *OAuthService) RefreshToken(ctx context.Context, refreshTokenValue strin
 	if err != nil {
 		return nil, domain.NewInvalidGrant("invalid refresh token")
 	}
-	if tokenInfo.IsRevoked || time.Now().After(tokenInfo.ExpiresAt) {
-		return nil, domain.NewInvalidGrant("refresh token expired or revoked")
+
+	if tokenInfo.ClientID != clientID {
+		return nil, domain.NewInvalidGrant("refresh token does not belong to this client")
 	}
-	return s.tokenService.GenerateTokenPair(ctx, clientID, tokenInfo.UserID, tokenInfo.Scope, time.Hour)
+
+	if time.Now().After(tokenInfo.ExpiresAt) {
+		return nil, domain.NewInvalidGrant("refresh token expired")
+	}
+
+	if tokenInfo.IsRevoked {
+		family := tokenInfo.RefreshTokenFamily
+		if family != "" {
+			if err := s.tokenRepo.RevokeTokenFamily(ctx, family); err != nil {
+				return nil, fmt.Errorf("failed to revoke token family: %w", err)
+			}
+		}
+		return nil, domain.NewInvalidGrant("refresh token reused; entire token family revoked")
+	}
+
+	if err := s.tokenRepo.RevokeRefreshToken(ctx, refreshTokenValue); err != nil {
+		return nil, fmt.Errorf("failed to revoke old refresh token: %w", err)
+	}
+
+	tokenPair, err := s.tokenService.GenerateTokenPairWithFamily(ctx, clientID, tokenInfo.UserID, tokenInfo.Scope, time.Hour, tokenInfo.RefreshTokenFamily, "", time.Now())
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate rotated token pair: %w", err)
+	}
+	return tokenPair, nil
 }
 
 func (s *OAuthService) GetJWKS() *JSONWebKeySet {
@@ -305,6 +330,9 @@ func (s *OAuthService) PasswordGrant(ctx context.Context,
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
 		return nil, domain.ErrInvalidCredentials
 	}
+	if !s.validateScope(scope, cli.AllowedScopes) {
+		return nil, domain.NewInvalidScope("requested scope not allowed for client")
+	}
 	return s.tokenService.GenerateTokenPair(ctx, cli.ID, user.ID, scope, time.Hour)
 }
 
@@ -328,7 +356,17 @@ func (s *OAuthService) ExchangeAuthorizationCode(ctx context.Context,
 	if err := s.authCodeRepo.MarkAuthCodeAsUsed(ctx, code); err != nil {
 		return nil, fmt.Errorf("failed to mark auth code as used: %w", err)
 	}
-	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, authCodeDomain.UserID, authCodeDomain.Scope, time.Hour)
+	nonce := ""
+	authTime := time.Time{}
+	if authCodeDomain.AuthCodeData.Nonce != "" {
+		nonce = authCodeDomain.AuthCodeData.Nonce
+	}
+	if authCodeDomain.AuthCodeData.AuthTimeIat != "" {
+		if iat, err := strconv.ParseInt(authCodeDomain.AuthCodeData.AuthTimeIat, 10, 64); err == nil {
+			authTime = time.Unix(iat, 0)
+		}
+	}
+	tokenPair, err := s.tokenService.GenerateTokenPairWithFamily(ctx, clientID, authCodeDomain.UserID, authCodeDomain.Scope, time.Hour, "", nonce, authTime)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate token pair: %w", err)
 	}
@@ -399,7 +437,17 @@ func (s *OAuthService) RevokeToken(ctx context.Context, tokenToRevoke, tokenType
 func (s *OAuthService) GenerateAuthCode(
 	ctx context.Context, clientID string, userID string,
 	redirectURI string, scope string, codeChallenge string, codeChallengeMethod string,
+	nonce string, authTime time.Time,
 ) (string, error) {
+	// Validate client and scope
+	cli, err := s.clientRepo.GetClient(ctx, clientID)
+	if err != nil {
+		return "", fmt.Errorf("client not found: %w", err)
+	}
+	if !s.validateScope(scope, cli.AllowedScopes) {
+		return "", domain.NewInvalidScope("requested scope not allowed for client")
+	}
+
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		log.Error().Err(err).Msg("Failed to generate random bytes for auth code")
@@ -417,6 +465,10 @@ func (s *OAuthService) GenerateAuthCode(
 		Used:                false,
 		CodeChallenge:       codeChallenge,
 		CodeChallengeMethod: codeChallengeMethod,
+		AuthCodeData: domain.AuthCodeData{
+			Nonce:       nonce,
+			AuthTimeIat: fmt.Sprintf("%d", authTime.Unix()),
+		},
 	}
 	if err := s.authCodeRepo.SaveAuthCode(ctx, authCode); err != nil {
 		log.Error().Err(err).Str("clientID", clientID).Str("userID", userID).Msg("Failed to save authorization code")
@@ -432,7 +484,10 @@ func (s *OAuthService) InitiateDeviceAuthorization(ctx context.Context, clientID
 	if err != nil {
 		return nil, domain.NewInvalidClient("client not found or invalid")
 	}
-	_ = cli
+	if !s.validateScope(scope, cli.AllowedScopes) {
+		return nil, domain.NewInvalidScope("requested scope not allowed for client")
+	}
+
 	deviceCodeVal, err := generateRandomString(deviceCodeLength)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate device_code: %w", err)
@@ -527,6 +582,83 @@ func (s *OAuthService) IssueTokenForDeviceFlow(ctx context.Context, deviceCode s
 	default:
 		return nil, domain.NewServerError("unexpected device authorization status")
 	}
+}
+
+// TokenExchange implements RFC 8693 Token Exchange.
+// It validates a subject token and issues a new token with potentially different scope/audience.
+func (s *OAuthService) TokenExchange(ctx context.Context, subjectToken, subjectTokenType, requestedTokenType, resource, scope, clientID string) (*api.TokenResponse, error) {
+	if subjectTokenType != "urn:ietf:params:oauth:token-type:access_token" && subjectTokenType != "urn:ietf:params:oauth:token-type:refresh_token" {
+		return nil, domain.NewInvalidRequest("unsupported subject_token_type: " + subjectTokenType)
+	}
+
+	var subjectTokenInfo *domain.TokenInfo
+	var err error
+	if subjectTokenType == "urn:ietf:params:oauth:token-type:refresh_token" {
+		subjectTokenInfo, err = s.tokenService.GetRefreshTokenInfo(ctx, subjectToken)
+		if err != nil {
+			return nil, domain.NewInvalidGrant("invalid subject token: " + err.Error())
+		}
+		if subjectTokenInfo.IsRevoked {
+			return nil, domain.NewInvalidGrant("subject token revoked")
+		}
+	} else {
+		token, err := s.tokenService.ValidateAccessToken(ctx, subjectToken)
+		if err != nil {
+			return nil, domain.NewInvalidGrant("invalid subject token: " + err.Error())
+		}
+		subjectTokenInfo = &domain.TokenInfo{
+			ID:                 token.ID,
+			TokenType:          token.TokenType,
+			ClientID:           token.ClientID,
+			UserID:             token.UserID,
+			Scope:              token.Scope,
+			IssuedAt:           token.CreatedAt,
+			ExpiresAt:          token.ExpiresAt,
+			IsRevoked:          token.IsRevoked,
+			Roles:              token.Roles,
+			RefreshTokenFamily: token.RefreshTokenFamily,
+		}
+	}
+
+	if subjectTokenInfo.ClientID != clientID {
+		return nil, domain.NewInvalidGrant("subject token was not issued to this client")
+	}
+
+	if time.Now().After(subjectTokenInfo.ExpiresAt) {
+		return nil, domain.NewInvalidGrant("subject token expired")
+	}
+
+	exchangeScope := scope
+	if exchangeScope == "" {
+		exchangeScope = subjectTokenInfo.Scope
+	}
+
+	// Validate exchange scope against client allowed scopes
+	cli, err := s.clientRepo.GetClient(ctx, clientID)
+	if err != nil {
+		return nil, fmt.Errorf("client not found: %w", err)
+	}
+	if !s.validateScope(exchangeScope, cli.AllowedScopes) {
+		return nil, domain.NewInvalidScope("requested scope not allowed for client")
+	}
+
+	tokenTTL := time.Hour
+	if requestedTokenType == "urn:ietf:params:oauth:token-type:refresh_token" {
+		tokenTTL = 24 * time.Hour
+	}
+
+	tokenType := "access_token"
+	if requestedTokenType == "urn:ietf:params:oauth:token-type:refresh_token" {
+		tokenType = "refresh_token"
+	}
+	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, subjectTokenInfo.UserID, exchangeScope, tokenTTL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate exchanged token: %w", err)
+	}
+
+	tokenPair.TokenType = tokenType
+
+	return tokenPair, nil
 }
 
 // GenerateTokens was a duplicate of ExchangeAuthorizationCode, removed it.

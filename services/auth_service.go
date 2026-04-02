@@ -2,12 +2,12 @@ package services
 
 import (
 	"context"
-	goerrors "errors"
 	"errors"
+	goerrors "errors"
 	"fmt"
 	"net/url"
 	"strings" // For Verify2FA token check
-	"time" // Needed for GenerateTokenPair TTL and session expiry
+	"time"    // Needed for GenerateTokenPair TTL and session expiry
 
 	"connectrpc.com/connect"
 	"github.com/pilab-dev/shadow-sso/client"
@@ -27,13 +27,13 @@ import (
 // AuthServer implements the ssov1connect.AuthServiceHandler interface.
 type AuthServer struct {
 	ssov1connect.UnimplementedAuthServiceHandler // Embed for forward compatibility
-	userRepo                                      domain.UserRepository
-	sessionRepo                                   domain.SessionRepository
-	tokenService                                  *TokenService
-	passwordHasher                                domain.PasswordHasher
-	flowStore                                     domain.FlowStore
-	oauthService                                  *OAuthService
-	clientService                                 *client.ClientService
+	userRepo                                     domain.UserRepository
+	sessionRepo                                  domain.SessionRepository
+	tokenService                                 *TokenService
+	passwordHasher                               domain.PasswordHasher
+	flowStore                                    domain.FlowStore
+	oauthService                                 *OAuthService
+	clientService                                *client.ClientService
 }
 
 // NewAuthServer creates a new AuthServer.
@@ -536,6 +536,8 @@ func (s *AuthServer) SubmitConsent(ctx context.Context, req *connect.Request[sso
 		acceptedScopeString, // Use only accepted scopes
 		flowState.CodeChallenge,
 		flowState.CodeChallengeMethod,
+		flowState.Nonce,
+		flowState.UserAuthenticatedAt,
 	)
 	if err != nil {
 		log.Error().Err(err).Str("flowId", flowID).Msg("Failed to generate authorization code after consent")
