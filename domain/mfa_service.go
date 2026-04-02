@@ -22,9 +22,9 @@ var (
 
 // MFAService handles Multi-Factor Authentication business logic
 type MFAService struct {
-	userRepo        UserRepository
-	emailService    EmailService
-	pushMFAService  *PushMFAService
+	userRepo       UserRepository
+	emailService   EmailService
+	pushMFAService *PushMFAService
 	// Configuration
 	maxOTPRequestsPerHour int
 	maxOTPAttemptsPerHour int
@@ -259,7 +259,7 @@ func (s *MFAService) sendPushMFAChallenge(ctx context.Context, user *User) (stri
 	ipAddress := "unknown"
 	userAgent := "unknown"
 
-	challengeID, err := s.pushMFAService.CreatePushMFAChallenge(ctx, user.ID, ipAddress, userAgent)
+	challengeID, err := s.pushMFAService.CreatePushMFAChallenge(ctx, user, ipAddress, userAgent)
 	if err != nil {
 		return "", 0, "", err
 	}

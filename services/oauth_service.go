@@ -67,6 +67,7 @@ type OAuthService struct {
 	issuer         string
 }
 
+// NewOAuthService creates a new OAuth service.
 func NewOAuthService(
 	tokenRepo domain.TokenRepository,
 	authCodeRepo domain.AuthorizationCodeRepository,

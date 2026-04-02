@@ -103,6 +103,7 @@ type CreateTokenOptions struct {
 	SigningKeyID string
 }
 
+// CreateToken creates a new token with the given options and claims.
 func (s *TokenService) CreateToken(ctx context.Context, opts CreateTokenOptions, claims jwt.Claims) (*domain.Token, error) { // Changed return type
 	expiresAt := time.Now().Add(opts.ExpireIn)
 
@@ -167,6 +168,7 @@ func (s *TokenService) CreateToken(ctx context.Context, opts CreateTokenOptions,
 	return token, nil
 }
 
+// BuildToken builds the token value for an existing token struct.
 func (s *TokenService) BuildToken(token *domain.Token) error { // Changed to domain.Token
 	// ? This is a default claim object, it can be used for both access and refresh tokens.
 	// ? Later it should be changed to a specific one for access_token, and id_token
@@ -427,7 +429,7 @@ func (s *TokenService) ValidateAccessToken(ctx context.Context, tokenValue strin
 				userToken.Issuer = s.issuer // Default issuer for user tokens
 				return userToken, nil
 			}
-			_ = s.cache.Delete(ctx, tokenValue)          // Delete expired/revoked from cache
+			_ = s.cache.Delete(ctx, tokenValue)         // Delete expired/revoked from cache
 			return nil, domain.ErrTokenExpiredOrRevoked // Use domain
 		}
 		// Check repository (for user tokens)

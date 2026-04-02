@@ -22,6 +22,7 @@ func NewTokenSigner() *TokenSigner {
 	}
 }
 
+// AddKeySigner adds a key signer with the given secret key.
 func (s *TokenSigner) AddKeySigner(secretKey string) {
 	s.keys["default"] = func(claims jwt.Claims) (string, error) {
 		// Create a new token object, specifying signing method and the claims
@@ -37,6 +38,7 @@ func (s *TokenSigner) AddKeySigner(secretKey string) {
 	}
 }
 
+// Sign signs the given claims with the specified key ID.
 func (s *TokenSigner) Sign(claims jwt.Claims, keyID string) (string, error) {
 	if keyID == "" { // using default signer
 		for _, val := range s.keys {

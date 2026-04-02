@@ -58,8 +58,8 @@ func TestPhoneVerificationService_SendVerificationOTP_Success(t *testing.T) {
 	ctx := context.Background()
 	userID := "user123"
 	user := &domain.User{
-		ID:            userID,
-		PhoneNumber:   "+1234567890",
+		ID:                    userID,
+		PhoneNumber:           "+1234567890",
 		IsPhoneNumberVerified: false,
 	}
 
@@ -83,8 +83,8 @@ func TestPhoneVerificationService_SendVerificationOTP_NoPhoneNumber(t *testing.T
 	ctx := context.Background()
 	userID := "user123"
 	user := &domain.User{
-		ID:            userID,
-		PhoneNumber:   "",
+		ID:          userID,
+		PhoneNumber: "",
 	}
 
 	mockUserRepo.EXPECT().GetUserByID(ctx, userID).Return(user, nil)
@@ -106,8 +106,8 @@ func TestPhoneVerificationService_SendVerificationOTP_AlreadyVerified(t *testing
 	ctx := context.Background()
 	userID := "user123"
 	user := &domain.User{
-		ID:            userID,
-		PhoneNumber:   "+1234567890",
+		ID:                    userID,
+		PhoneNumber:           "+1234567890",
 		IsPhoneNumberVerified: true,
 	}
 
@@ -131,9 +131,9 @@ func TestPhoneVerificationService_SendVerificationOTP_RateLimit(t *testing.T) {
 	userID := "user123"
 	expiresAt := time.Now().Add(5 * time.Minute)
 	user := &domain.User{
-		ID:            userID,
-		PhoneNumber:   "+1234567890",
-		IsPhoneNumberVerified: false,
+		ID:                            userID,
+		PhoneNumber:                   "+1234567890",
+		IsPhoneNumberVerified:         false,
 		PhoneVerificationOtpExpiresAt: &expiresAt,
 	}
 
@@ -156,8 +156,8 @@ func TestPhoneVerificationService_SendVerificationOTP_SMSError(t *testing.T) {
 	ctx := context.Background()
 	userID := "user123"
 	user := &domain.User{
-		ID:            userID,
-		PhoneNumber:   "+1234567890",
+		ID:                    userID,
+		PhoneNumber:           "+1234567890",
 		IsPhoneNumberVerified: false,
 	}
 
@@ -185,10 +185,10 @@ func TestPhoneVerificationService_VerifyPhoneNumber_Success(t *testing.T) {
 	otp := "123456"
 	expiresAt := time.Now().Add(10 * time.Minute)
 	user := &domain.User{
-		ID:            userID,
-		PhoneNumber:   "+1234567890",
-		IsPhoneNumberVerified: false,
-		PhoneVerificationOtp: otp,
+		ID:                            userID,
+		PhoneNumber:                   "+1234567890",
+		IsPhoneNumberVerified:         false,
+		PhoneVerificationOtp:          otp,
 		PhoneVerificationOtpExpiresAt: &expiresAt,
 	}
 
@@ -211,8 +211,8 @@ func TestPhoneVerificationService_VerifyPhoneNumber_AlreadyVerified(t *testing.T
 	ctx := context.Background()
 	userID := "user123"
 	user := &domain.User{
-		ID:            userID,
-		PhoneNumber:   "+1234567890",
+		ID:                    userID,
+		PhoneNumber:           "+1234567890",
 		IsPhoneNumberVerified: true,
 	}
 
@@ -234,10 +234,10 @@ func TestPhoneVerificationService_VerifyPhoneNumber_NoOTP(t *testing.T) {
 	ctx := context.Background()
 	userID := "user123"
 	user := &domain.User{
-		ID:            userID,
-		PhoneNumber:   "+1234567890",
+		ID:                    userID,
+		PhoneNumber:           "+1234567890",
 		IsPhoneNumberVerified: false,
-		PhoneVerificationOtp: "",
+		PhoneVerificationOtp:  "",
 	}
 
 	mockUserRepo.EXPECT().GetUserByID(ctx, userID).Return(user, nil)
@@ -261,10 +261,10 @@ func TestPhoneVerificationService_VerifyPhoneNumber_ExpiredOTP(t *testing.T) {
 	userID := "user123"
 	expiredTime := time.Now().Add(-10 * time.Minute)
 	user := &domain.User{
-		ID:            userID,
-		PhoneNumber:   "+1234567890",
-		IsPhoneNumberVerified: false,
-		PhoneVerificationOtp: "123456",
+		ID:                            userID,
+		PhoneNumber:                   "+1234567890",
+		IsPhoneNumberVerified:         false,
+		PhoneVerificationOtp:          "123456",
 		PhoneVerificationOtpExpiresAt: &expiredTime,
 	}
 
@@ -290,10 +290,10 @@ func TestPhoneVerificationService_VerifyPhoneNumber_InvalidOTP(t *testing.T) {
 	userID := "user123"
 	expiresAt := time.Now().Add(10 * time.Minute)
 	user := &domain.User{
-		ID:            userID,
-		PhoneNumber:   "+1234567890",
-		IsPhoneNumberVerified: false,
-		PhoneVerificationOtp: "123456",
+		ID:                            userID,
+		PhoneNumber:                   "+1234567890",
+		IsPhoneNumberVerified:         false,
+		PhoneVerificationOtp:          "123456",
 		PhoneVerificationOtpExpiresAt: &expiresAt,
 	}
 
@@ -320,17 +320,16 @@ func TestPhoneVerificationService_VerifyPhoneNumber_RateLimit(t *testing.T) {
 	recentTime := now.Add(-30 * time.Minute)
 	expiresAt := time.Now().Add(10 * time.Minute)
 	user := &domain.User{
-		ID:            userID,
-		PhoneNumber:   "+1234567890",
-		IsPhoneNumberVerified: false,
-		PhoneVerificationOtp: "123456",
-		PhoneVerificationOtpExpiresAt: &expiresAt,
-		PhoneVerificationAttempts: 10,
+		ID:                             userID,
+		PhoneNumber:                    "+1234567890",
+		IsPhoneNumberVerified:          false,
+		PhoneVerificationOtp:           "123456",
+		PhoneVerificationOtpExpiresAt:  &expiresAt,
+		PhoneVerificationAttempts:      10,
 		PhoneVerificationLastAttemptAt: &recentTime,
 	}
 
 	mockUserRepo.EXPECT().GetUserByID(ctx, userID).Return(user, nil)
-	mockUserRepo.EXPECT().UpdateUser(ctx, user).Return(nil)
 
 	err := service.VerifyPhoneNumber(ctx, userID, "123456")
 	assert.Error(t, err)
@@ -349,8 +348,8 @@ func TestPhoneVerificationService_VerifyPhoneNumber_NoPhoneNumber(t *testing.T) 
 	ctx := context.Background()
 	userID := "user123"
 	user := &domain.User{
-		ID:            userID,
-		PhoneNumber:   "",
+		ID:          userID,
+		PhoneNumber: "",
 	}
 
 	mockUserRepo.EXPECT().GetUserByID(ctx, userID).Return(user, nil)
@@ -373,4 +372,3 @@ func TestPhoneVerificationService_GenerateOTP(t *testing.T) {
 	// This is tested indirectly through SendVerificationOTP
 	_ = service
 }
-

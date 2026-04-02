@@ -34,6 +34,7 @@ type JSONWebKeySet struct {
 	Keys []JSONWebKey `json:"keys"`
 }
 
+// NewJWKSService creates a new JWKS service with key rotation.
 func NewJWKSService(keyRotation time.Duration) (*JWKSService, error) {
 	service := &JWKSService{
 		keys:        make(map[string]*rsa.PrivateKey),
@@ -51,6 +52,7 @@ func NewJWKSService(keyRotation time.Duration) (*JWKSService, error) {
 	return service, nil
 }
 
+// GetPublicJWKS retrieves the public JSON Web Key Set.
 func (s *JWKSService) GetPublicJWKS(ctx context.Context) (*JSONWebKeySet, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -80,6 +82,7 @@ func (s *JWKSService) GetPublicJWKS(ctx context.Context) (*JSONWebKeySet, error)
 	return &JSONWebKeySet{Keys: keys}, nil
 }
 
+// GetJWKS retrieves the JSON Web Key Set.
 func (s *JWKSService) GetJWKS() JSONWebKeySet {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -105,6 +108,7 @@ func (s *JWKSService) GetJWKS() JSONWebKeySet {
 	return JSONWebKeySet{Keys: keys}
 }
 
+// GetSigningKey retrieves the current signing key.
 func (s *JWKSService) GetSigningKey() (string, *rsa.PrivateKey) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
