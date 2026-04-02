@@ -354,15 +354,7 @@ func (s *TokenService) GenerateTokenPairWithFamily(ctx context.Context,
 }
 
 func (s *TokenService) containsScope(scope, target string) bool {
-	if scope == "" {
-		return false
-	}
-	for _, s := range scope {
-		if string(s) == target {
-			return true
-		}
-	}
-	return false
+	return strings.Contains(" "+scope+" ", " "+target+" ")
 }
 
 // GenerateIDToken creates a signed JWT ID token per OIDC Core spec.

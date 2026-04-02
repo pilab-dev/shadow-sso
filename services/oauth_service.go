@@ -165,7 +165,7 @@ func (s *OAuthService) RefreshToken(ctx context.Context, refreshTokenValue strin
 		return nil, domain.NewInvalidGrant("refresh token reused; entire token family revoked")
 	}
 
-	if err := s.tokenRepo.RevokeToken(ctx, refreshTokenValue); err != nil {
+	if err := s.tokenRepo.RevokeRefreshToken(ctx, refreshTokenValue); err != nil {
 		log.Warn().Err(err).Msg("Failed to revoke old refresh token during rotation")
 	}
 
