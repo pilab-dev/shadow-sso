@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -31,6 +32,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	"golang.org/x/crypto/bcrypt"
+)
+
+var (
+	cachedJWKS   *services.JWKSService
+	cachedSigner *services.TokenSigner
+	once         sync.Once
 )
 
 func TestMain(m *testing.M) {
@@ -67,6 +74,17 @@ func setupTokenHandlerTest(t *testing.T) (
 ) {
 	ctrl := gomock.NewController(t)
 
+	// Initialize cached JWKS and signer once
+	once.Do(func() {
+		var err error
+		cachedJWKS, err = services.NewJWKSService(time.Hour * 24 * 365)
+		require.NoError(t, err)
+		cachedSigner = services.NewTokenSigner()
+		cachedSigner.AddKeySigner("test-secret-for-hs256-handlers-test")
+		keyID, privateKey := cachedJWKS.GetSigningKey()
+		cachedSigner.AddRSASigner(keyID, privateKey)
+	})
+
 	// * initialize Repositories (All mock!)
 	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
 	mockAuthCodeRepo := mock_domain.NewMockAuthorizationCodeRepository(ctrl)
@@ -80,15 +98,8 @@ func setupTokenHandlerTest(t *testing.T) (
 	mockServiceAccountRepo := mock_domain.NewMockServiceAccountRepository(ctrl)
 
 	// * Initialize Services
-	actualSigner := services.NewTokenSigner()
-	actualSigner.AddKeySigner("test-secret-for-hs256-handlers-test")
-	jwksService, err := services.NewJWKSService(time.Hour * 24 * 365)
-	require.NoError(t, err)
-	// Add the RSA key from JWKS to the signer for RS256 token signing
-	keyID, privateKey := jwksService.GetSigningKey()
-	actualSigner.AddRSASigner(keyID, privateKey)
 	tokenService := services.NewTokenService(
-		mockTokenRepo, mockTokenCache, "issuer", actualSigner, jwksService, mockPubKeyRepo, mockServiceAccountRepo, mockUserRepo)
+		mockTokenRepo, mockTokenCache, "issuer", cachedSigner, cachedJWKS, mockPubKeyRepo, mockServiceAccountRepo, mockUserRepo)
 
 	mockClientService := client.NewClientService(mockClientRepo)
 
@@ -108,7 +119,7 @@ func setupTokenHandlerTest(t *testing.T) (
 	api := sssogin.NewOAuth2API(
 		&sssogin.OAuth2APIOptions{
 			OAuthService:  oauthService,
-			JSKSService:   jwksService,
+			JSKSService:   cachedJWKS,
 			ClientService: mockClientService,
 			PkceService:   pkceService,
 			Config: &sssoapi.OpenIDProviderConfig{
