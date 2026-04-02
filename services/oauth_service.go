@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -169,7 +170,7 @@ func (s *OAuthService) RefreshToken(ctx context.Context, refreshTokenValue strin
 		log.Warn().Err(err).Msg("Failed to revoke old refresh token during rotation")
 	}
 
-	tokenPair, err := s.tokenService.GenerateTokenPairWithFamily(ctx, clientID, tokenInfo.UserID, tokenInfo.Scope, time.Hour, tokenInfo.RefreshTokenFamily)
+	tokenPair, err := s.tokenService.GenerateTokenPairWithFamily(ctx, clientID, tokenInfo.UserID, tokenInfo.Scope, time.Hour, tokenInfo.RefreshTokenFamily, "", time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate rotated token pair: %w", err)
 	}
@@ -346,7 +347,17 @@ func (s *OAuthService) ExchangeAuthorizationCode(ctx context.Context,
 	if err := s.authCodeRepo.MarkAuthCodeAsUsed(ctx, code); err != nil {
 		return nil, fmt.Errorf("failed to mark auth code as used: %w", err)
 	}
-	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, authCodeDomain.UserID, authCodeDomain.Scope, time.Hour)
+	nonce := ""
+	authTime := time.Time{}
+	if authCodeDomain.AuthCodeData.Nonce != "" {
+		nonce = authCodeDomain.AuthCodeData.Nonce
+	}
+	if authCodeDomain.AuthCodeData.AuthTimeIat != "" {
+		if iat, err := strconv.ParseInt(authCodeDomain.AuthCodeData.AuthTimeIat, 10, 64); err == nil {
+			authTime = time.Unix(iat, 0)
+		}
+	}
+	tokenPair, err := s.tokenService.GenerateTokenPairWithFamily(ctx, clientID, authCodeDomain.UserID, authCodeDomain.Scope, time.Hour, "", nonce, authTime)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate token pair: %w", err)
 	}
@@ -417,6 +428,7 @@ func (s *OAuthService) RevokeToken(ctx context.Context, tokenToRevoke, tokenType
 func (s *OAuthService) GenerateAuthCode(
 	ctx context.Context, clientID string, userID string,
 	redirectURI string, scope string, codeChallenge string, codeChallengeMethod string,
+	nonce string, authTime time.Time,
 ) (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
@@ -435,6 +447,10 @@ func (s *OAuthService) GenerateAuthCode(
 		Used:                false,
 		CodeChallenge:       codeChallenge,
 		CodeChallengeMethod: codeChallengeMethod,
+		AuthCodeData: domain.AuthCodeData{
+			Nonce:       nonce,
+			AuthTimeIat: fmt.Sprintf("%d", authTime.Unix()),
+		},
 	}
 	if err := s.authCodeRepo.SaveAuthCode(ctx, authCode); err != nil {
 		log.Error().Err(err).Str("clientID", clientID).Str("userID", userID).Msg("Failed to save authorization code")

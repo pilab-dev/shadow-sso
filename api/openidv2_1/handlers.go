@@ -540,6 +540,8 @@ func (oa *OAuth2API) tryHandleWithExistingSession(c *gin.Context, data *authoriz
 			data.scopeQuery,
 			data.codeChallenge,
 			data.codeChallengeMethod,
+			data.nonce,
+			userSession.AuthenticatedAt,
 		)
 		if errGen != nil {
 			log.Error().Err(errGen).Msg("AuthorizeHandler: Failed to generate authorization code for authenticated user")
@@ -1836,6 +1838,8 @@ func (oa *OAuth2API) AuthenticateUserHandler(c *gin.Context) {
 		flowState.Scope,
 		flowState.CodeChallenge,       // Pass stored code challenge
 		flowState.CodeChallengeMethod, // Pass stored code challenge method
+		flowState.Nonce,
+		flowState.UserAuthenticatedAt,
 	)
 	if err != nil {
 		log.Error().Err(err).Str("flowId", req.FlowID).Msg("Failed to generate authorization code after UI authentication")
@@ -1884,7 +1888,7 @@ func (oa *OAuth2API) ConsentHandler(c *gin.Context) {
 
 	csrfCookie, csrfErr := c.Cookie(CSRFCookieName)
 	if csrfErr != nil || csrfCookie == "" || csrfCookie != req.CSRFToken {
-c.JSON(http.StatusForbidden, domain.NewInvalidRequest("CSRF token mismatch or missing."))
+		c.JSON(http.StatusForbidden, domain.NewInvalidRequest("CSRF token mismatch or missing."))
 		return
 	}
 
@@ -1933,6 +1937,8 @@ c.JSON(http.StatusForbidden, domain.NewInvalidRequest("CSRF token mismatch or mi
 		flowState.Scope,
 		flowState.CodeChallenge,
 		flowState.CodeChallengeMethod,
+		flowState.Nonce,
+		flowState.UserAuthenticatedAt,
 	)
 	if err != nil {
 		log.Error().Err(err).Str("flowId", req.FlowID).Msg("Failed to generate authorization code after consent")

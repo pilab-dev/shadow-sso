@@ -289,12 +289,12 @@ func (s *TokenService) BuildToken(token *domain.Token) error { // Changed to dom
 func (s *TokenService) GenerateTokenPair(ctx context.Context,
 	clientID, userID, scope string, tokenTTL time.Duration,
 ) (*api.TokenResponse, error) {
-	return s.GenerateTokenPairWithFamily(ctx, clientID, userID, scope, tokenTTL, "")
+	return s.GenerateTokenPairWithFamily(ctx, clientID, userID, scope, tokenTTL, "", "", time.Time{})
 }
 
 // GenerateTokenPairWithFamily creates a new access and refresh token pair with an optional refresh token family.
 func (s *TokenService) GenerateTokenPairWithFamily(ctx context.Context,
-	clientID, userID, scope string, tokenTTL time.Duration, family string,
+	clientID, userID, scope string, tokenTTL time.Duration, family string, nonce string, authTime time.Time,
 ) (*api.TokenResponse, error) {
 	// Generate access token
 	accessTokenID := uuid.NewString()
@@ -338,7 +338,7 @@ func (s *TokenService) GenerateTokenPairWithFamily(ctx context.Context,
 		if userErr != nil {
 			log.Warn().Err(userErr).Str("userID", userID).Msg("GenerateTokenPairWithFamily: failed to fetch user for ID token claims")
 		}
-		idToken, err = s.GenerateIDToken(ctx, userID, clientID, "", time.Now(), user)
+		idToken, err = s.GenerateIDToken(ctx, userID, clientID, nonce, authTime, user)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create ID token: %w", err)
 		}
