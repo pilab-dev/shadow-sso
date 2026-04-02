@@ -214,6 +214,20 @@ func (mr *MockUserSessionStoreMockRecorder) DeleteUserSession(sessionID any) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteUserSession", reflect.TypeOf((*MockUserSessionStore)(nil).DeleteUserSession), sessionID)
 }
 
+// DeleteUserSessionsByUserID mocks base method.
+func (m *MockUserSessionStore) DeleteUserSessionsByUserID(userID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteUserSessionsByUserID", userID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteUserSessionsByUserID indicates an expected call of DeleteUserSessionsByUserID.
+func (mr *MockUserSessionStoreMockRecorder) DeleteUserSessionsByUserID(userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteUserSessionsByUserID", reflect.TypeOf((*MockUserSessionStore)(nil).DeleteUserSessionsByUserID), userID)
+}
+
 // GetUserSession mocks base method.
 func (m *MockUserSessionStore) GetUserSession(sessionID string) (*domain.UserSession, error) {
 	m.ctrl.T.Helper()
