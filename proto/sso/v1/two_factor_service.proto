@@ -70,8 +70,8 @@ service TwoFactorService {
 
 // --- InitiateTOTPSetup ---
 message InitiateTOTPSetupRequest {
-  // No fields needed; operates on the currently authenticated user.
-  // string user_id = 1; // Could be added for admin use cases later.
+  // Optional user_id for admin use cases. If empty, uses authenticated user context.
+  string user_id = 1;
 }
 
 message InitiateTOTPSetupResponse {
@@ -84,8 +84,8 @@ message InitiateTOTPSetupResponse {
 // --- VerifyAndEnableTOTP ---
 message VerifyAndEnableTOTPRequest {
   string totp_code = 1 [(buf.validate.field).string.min_len = 1]; // The TOTP code from the user's authenticator app.
-  // string user_id = 2; // For admin use cases. For self-service, uses authenticated user.
-  // The server will use the secret generated during InitiateTOTPSetup for this user.
+  // Optional user_id for admin use cases. If empty, uses authenticated user context.
+  string user_id = 2;
 }
 
 message VerifyAndEnableTOTPResponse {
