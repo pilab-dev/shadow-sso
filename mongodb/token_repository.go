@@ -120,12 +120,3 @@ func (r *TokenRepository) GetTokenInfo(ctx context.Context, tokenValue string) (
 	}
 	return &token, err
 }
-
-func (r *TokenRepository) RevokeTokenFamily(ctx context.Context, family string) error {
-	_, err := r.coll.UpdateMany(
-		ctx,
-		bson.M{"refresh_token_family": family},
-		bson.M{"$set": bson.M{"is_revoked": true}},
-	)
-	return err
-}

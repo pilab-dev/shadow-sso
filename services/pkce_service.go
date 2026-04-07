@@ -11,19 +11,26 @@ import (
 )
 
 // PKCEService handles PKCE validation
-type PKCEService struct {
+type defaultPKCEService struct {
 	pkceRepo domain.PkceRepository
 }
 
-// NewPKCEService creates a new PKCE service instance
-func NewPKCEService(pkceRepo domain.PkceRepository) *PKCEService {
-	return &PKCEService{
+// newDefaultPKCEService creates a new PKCE service instance (internal constructor).
+func newDefaultPKCEService(pkceRepo domain.PkceRepository) PKCEService {
+	return &defaultPKCEService{
+		pkceRepo: pkceRepo,
+	}
+}
+
+// NewPKCEService creates a new PKCE service instance (public constructor for backward compatibility).
+func NewPKCEService(pkceRepo domain.PkceRepository) *defaultPKCEService {
+	return &defaultPKCEService{
 		pkceRepo: pkceRepo,
 	}
 }
 
 // ValidateCodeVerifier validates the PKCE code verifier against the stored challenge
-func (s *PKCEService) ValidateCodeVerifier(ctx context.Context, code, verifier string) error {
+func (s *defaultPKCEService) ValidateCodeVerifier(ctx context.Context, code, verifier string) error {
 	challenge, err := s.pkceRepo.GetCodeChallenge(ctx, code)
 	if err != nil {
 		return fmt.Errorf("failed to get code challenge: %w", err)
@@ -60,6 +67,6 @@ func ValidatePKCEChallenge(challenge, verifier string) bool {
 	return challenge == calculatedChallenge
 }
 
-func (s *PKCEService) SavePKCEChallenge(ctx context.Context, code, challenge string) error {
+func (s *defaultPKCEService) SavePKCEChallenge(ctx context.Context, code, challenge string) error {
 	return s.pkceRepo.SaveCodeChallenge(ctx, code, challenge)
 }

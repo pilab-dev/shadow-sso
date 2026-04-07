@@ -1,75 +1,70 @@
 package services
 
 import (
-	"context" // Generally useful for service initialization context if needed
-	"crypto/rsa"
+	"context"
 	"errors"
 	"fmt"
 
 	"github.com/pilab-dev/shadow-sso/api"
 	"github.com/pilab-dev/shadow-sso/apps/ssso/config"
 	"github.com/pilab-dev/shadow-sso/cache"
-	"github.com/pilab-dev/shadow-sso/client"
-	"github.com/pilab-dev/shadow-sso/domain" // Corrected: Single import of domain
-	"github.com/pilab-dev/shadow-sso/internal/federation"
+	"github.com/pilab-dev/shadow-sso/domain"
 	"github.com/pilab-dev/shadow-sso/internal/notifications"
 	"github.com/pilab-dev/shadow-sso/internal/oidcflow"
 	pkgauth "github.com/pilab-dev/shadow-sso/pkg/auth"
-	"golang.org/x/crypto/bcrypt" // For bcrypt.DefaultCost
+	"golang.org/x/crypto/bcrypt"
 )
 
 // DefaultServiceProvider implements the ServiceProvider interface.
 type DefaultServiceProvider struct {
-	repoProvider RepositoryProvider
-	config       *api.OpenIDProviderConfig // General app/OIDC config
-	appConfig    *config.Config            // Viper configuration
-	tokenSigner  *TokenSigner
-	tokenCache   cache.TokenStore
-	// For OIDC flows, these are now interface-based.
+	repoProvider     RepositoryProvider
+	config           *api.OpenIDProviderConfig
+	appConfig        *config.Config
+	tokenSigner      *TokenSigner
+	tokenCache       cache.TokenStore
 	flowStore        domain.FlowStore
 	userSessionStore domain.UserSessionStore
 
-	// Cached services to ensure singletons where appropriate
-	oauthService      *OAuthService
-	tokenService      *TokenService
-	pkceService       *PKCEService
-	jwksService       *JWKSService
-	clientService     *client.ClientService
-	federationService *federation.Service
-	userService       *UserServer
-	twoFactorService  *TwoFactorServer
-	passwordHasher    domain.PasswordHasher // Corrected: use domain.PasswordHasher
+	oauthService      OAuthService
+	tokenService      TokenService
+	pkceService       PKCEService
+	jwksService       JWKSService
+	clientService     ClientService
+	federationService FederationService
+	userService       UserService
+	twoFactorService  TwoFactorService
+	passwordHasher    domain.PasswordHasher
 
-	// Infrastructure services
 	smsService   domain.SMSService
 	emailService domain.EmailService
 	pushService  domain.PushNotificationService
 
-	// Configuration service for operational settings
-	configurationService *ConfigurationService
+	configurationService ConfigurationService
 
-	// Domain services
-	phoneVerificationService *domain.PhoneVerificationService
-	mfaService               *domain.MFAService
-	pushMFAService           *domain.PushMFAService
+	phoneVerificationService PhoneVerificationService
+	mfaService               MFAService
+	pushMFAService           PushMFAService
+
+	idpManagementService    IDPManagementService
+	clientManagementService ClientManagementService
+	serviceAccountService   ServiceAccountService
 }
 
 // DefaultServiceProviderOptions holds all necessary dependencies to create a DefaultServiceProvider.
 type DefaultServiceProviderOptions struct {
 	RepositoryProvider RepositoryProvider
 	Config             *api.OpenIDProviderConfig
-	AppConfig          *config.Config // Viper configuration
+	AppConfig          *config.Config
 	TokenSigner        *TokenSigner
 	TokenCache         cache.TokenStore
-	PkceRepository     domain.PkceRepository   // Explicit PKCE repository
-	FlowStore          domain.FlowStore        // Optional: if not provided, can be initialized internally
-	UserSessionStore   domain.UserSessionStore // Optional: if not provided, can be initialized internally
-	EncryptionKey      string                  // 32-byte key for configuration encryption
+	PkceRepository     domain.PkceRepository
+	FlowStore          domain.FlowStore
+	UserSessionStore   domain.UserSessionStore
+	EncryptionKey      string
 }
 
 // NewDefaultServiceProvider creates a new instance of DefaultServiceProvider.
 func NewDefaultServiceProvider(opts DefaultServiceProviderOptions) (*DefaultServiceProvider, error) {
-	// Initialize stores if not provided
 	flowStore := opts.FlowStore
 	if flowStore == nil {
 		flowStore = oidcflow.NewInMemoryFlowStore()
@@ -83,12 +78,11 @@ func NewDefaultServiceProvider(opts DefaultServiceProviderOptions) (*DefaultServ
 		return nil, errors.New("PkceRepository is required in DefaultServiceProviderOptions")
 	}
 
-	// Initialize configuration service
-	var configurationService *ConfigurationService
+	var configurationService ConfigurationService
 	if opts.EncryptionKey != "" {
 		configRepo := opts.RepositoryProvider.ConfigurationRepository(initCtx)
 		var err error
-		configurationService, err = NewConfigurationService(configRepo, opts.EncryptionKey)
+		configurationService, err = newDefaultConfigurationService(configRepo, opts.EncryptionKey)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize configuration service: %w", err)
 		}
@@ -100,16 +94,13 @@ func NewDefaultServiceProvider(opts DefaultServiceProviderOptions) (*DefaultServ
 		appConfig:            opts.AppConfig,
 		tokenSigner:          opts.TokenSigner,
 		tokenCache:           opts.TokenCache,
-		pkceService:          NewPKCEService(opts.PkceRepository), // Initialize PKCEService directly
+		pkceService:          newDefaultPKCEService(opts.PkceRepository),
 		flowStore:            flowStore,
 		userSessionStore:     userSessionStore,
 		passwordHasher:       pkgauth.NewBcryptPasswordHasher(bcrypt.DefaultCost),
 		configurationService: configurationService,
-
-		// pkceRepo field is not needed if service is initialized directly
 	}
 
-	// Initialize infrastructure services
 	p.smsService = p.initializeSMSService(configurationService)
 	p.emailService = p.initializeEmailService(configurationService)
 	p.pushService = p.initializePushService(configurationService)
@@ -117,37 +108,31 @@ func NewDefaultServiceProvider(opts DefaultServiceProviderOptions) (*DefaultServ
 	return p, nil
 }
 
-// Context used for repository getters. For singleton services, this is typically context.Background().
 var initCtx = context.Background()
 
-func (p *DefaultServiceProvider) OAuthService() *OAuthService {
+func (p *DefaultServiceProvider) OAuthService() OAuthService {
 	if p.oauthService == nil {
-		// Special case for ClientRepository [client.ClientStore] implementation
-
-		// OAuthService dependencies:
-		// tokenRepo, authCodeRepo, deviceAuthRepo, clientRepo, userRepo, sessionRepo, tokenService, issuer
-		p.oauthService = NewOAuthService(
+		p.oauthService = newDefaultOAuthService(
 			p.repoProvider.TokenRepository(initCtx),
 			p.repoProvider.AuthorizationCodeRepository(initCtx),
 			p.repoProvider.DeviceAuthorizationRepository(initCtx),
 			p.repoProvider.ClientRepository(initCtx),
 			p.repoProvider.UserRepository(initCtx),
 			p.repoProvider.SessionRepository(initCtx),
-			p.TokenService(), // Get TokenService via its getter to ensure it's initialized
+			p.TokenService(),
 			p.config.Issuer,
 		)
 	}
 	return p.oauthService
 }
 
-func (p *DefaultServiceProvider) TokenService() *TokenService {
+func (p *DefaultServiceProvider) TokenService() TokenService {
 	if p.tokenService == nil {
-		p.tokenService = NewTokenService(
+		p.tokenService = newDefaultTokenService(
 			p.repoProvider.TokenRepository(initCtx),
 			p.tokenCache,
 			p.config.Issuer,
 			p.tokenSigner,
-			p.JWKSService(),
 			p.repoProvider.PublicKeyRepository(initCtx),
 			p.repoProvider.ServiceAccountRepository(initCtx),
 			p.repoProvider.UserRepository(initCtx),
@@ -156,22 +141,17 @@ func (p *DefaultServiceProvider) TokenService() *TokenService {
 	return p.tokenService
 }
 
-func (p *DefaultServiceProvider) PKCEService() *PKCEService {
-	// PKCEService is now initialized in NewDefaultServiceProvider using the explicit PkceRepository from options.
+func (p *DefaultServiceProvider) PKCEService() PKCEService {
 	if p.pkceService == nil {
-		// This should not happen if NewDefaultServiceProvider ensures it.
-		// However, as a safeguard or if initialization logic changes:
 		panic("PKCEService was not initialized in NewDefaultServiceProvider")
 	}
 	return p.pkceService
 }
 
-func (p *DefaultServiceProvider) JWKSService() *JWKSService {
+func (p *DefaultServiceProvider) JWKSService() JWKSService {
 	if p.jwksService == nil {
 		var err error
-		p.jwksService, err = NewJWKSServiceWithGrace(p.config.KeyRotationPeriod, p.config.KeyRotationPeriod, func(keyID string, privateKey *rsa.PrivateKey) {
-			p.tokenSigner.AddRSASigner(keyID, privateKey)
-		})
+		p.jwksService, err = newDefaultJWKSService(p.config.KeyRotationPeriod)
 		if err != nil {
 			panic("failed to initialize JWKSService: " + err.Error())
 		}
@@ -179,36 +159,29 @@ func (p *DefaultServiceProvider) JWKSService() *JWKSService {
 	return p.jwksService
 }
 
-func (p *DefaultServiceProvider) ClientService() *client.ClientService {
+func (p *DefaultServiceProvider) ClientService() ClientService {
 	if p.clientService == nil {
-		p.clientService = client.NewClientService(p.repoProvider.ClientRepository(initCtx))
+		p.clientService = newClientService(p.repoProvider.ClientRepository(initCtx))
 	}
 	return p.clientService
 }
 
-func (p *DefaultServiceProvider) FederationService() *federation.Service {
+func (p *DefaultServiceProvider) FederationService() FederationService {
 	if p.federationService == nil {
-		// FederationService dependencies: idpRepo, userRepo, fedIdRepo, clientService, tokenService, config
-		// The NewService in internal/federation takes: IdPRepository, UserRepository, UserFederatedIdentityRepository, *client.ClientService, *TokenService, string (issuerURL), string (callbackBaseURL)
-		// callbackBaseURL needs to be constructed or taken from config.
-		callbackBaseURL := p.config.Issuer // Assuming issuer is the base for /federation/callback
-		if callbackBaseURL == "" {
-			// Attempt to construct from a configured base URL if Issuer is not suitable for callbacks
-			// For example, if Issuer is just an identifier, not a URL.
-			// This might require another field in OpenIDProviderConfig like "ExternalBaseURL"
-			// For now, using Issuer and logging a warning if it seems problematic.
-			// log.Warn().Msg("FederationService callback base URL derived from Issuer. Ensure this is correct.")
-		}
-
-		p.federationService = federation.NewService(
+		p.federationService = newFederationService(
 			p.repoProvider.IdPRepository(initCtx),
-			"https://sso.pilab.hu/oauth2/federeation/callback", // Pass full config for provider-specific details if needed by NewService
+			p.repoProvider.UserRepository(initCtx),
+			p.repoProvider.UserFederatedIdentityRepository(initCtx),
+			p.repoProvider.SessionRepository(initCtx),
+			p.TokenService(),
+			p.PasswordHasher(),
+			p.config.Issuer,
 		)
 	}
 	return p.federationService
 }
 
-func (p *DefaultServiceProvider) PhoneVerificationService() *domain.PhoneVerificationService {
+func (p *DefaultServiceProvider) PhoneVerificationService() PhoneVerificationService {
 	if p.phoneVerificationService == nil {
 		p.phoneVerificationService = domain.NewPhoneVerificationService(
 			p.repoProvider.UserRepository(initCtx),
@@ -218,33 +191,38 @@ func (p *DefaultServiceProvider) PhoneVerificationService() *domain.PhoneVerific
 	return p.phoneVerificationService
 }
 
-func (p *DefaultServiceProvider) MFAService() *domain.MFAService {
+func (p *DefaultServiceProvider) MFAService() MFAService {
 	if p.mfaService == nil {
+		pushSvc := domain.NewPushMFAService(
+			p.repoProvider.UserRepository(initCtx),
+			p.pushService,
+		)
+		p.pushMFAService = pushSvc
 		p.mfaService = domain.NewMFAService(
 			p.repoProvider.UserRepository(initCtx),
 			p.emailService,
-			p.PushMFAService(), // Include PushMFAService
+			pushSvc,
 		)
 	}
 	return p.mfaService
 }
 
-func (p *DefaultServiceProvider) TwoFactorService() *TwoFactorServer {
+func (p *DefaultServiceProvider) TwoFactorService() TwoFactorService {
 	if p.twoFactorService == nil {
-		p.twoFactorService = NewTwoFactorServer(
+		p.twoFactorService = newTwoFactorService(
 			p.repoProvider.UserRepository(initCtx),
 			p.passwordHasher,
-			p.MFAService(),     // Get MFAService via its getter to ensure it's initialized
-			p.PushMFAService(), // Get PushMFAService via its getter to ensure it's initialized
-			"ShadowSSO",        // App name for TOTP/HOTP issuer
+			p.MFAService(),
+			p.PushMFAService(),
+			"ShadowSSO",
 		)
 	}
 	return p.twoFactorService
 }
 
-func (p *DefaultServiceProvider) UserService() *UserServer {
+func (p *DefaultServiceProvider) UserService() UserService {
 	if p.userService == nil {
-		p.userService = NewUserServer(
+		p.userService = newUserService(
 			p.repoProvider.UserRepository(initCtx),
 			p.PasswordHasher(),
 			p.PhoneVerificationService(),
@@ -255,7 +233,6 @@ func (p *DefaultServiceProvider) UserService() *UserServer {
 
 func (p *DefaultServiceProvider) PasswordHasher() domain.PasswordHasher {
 	if p.passwordHasher == nil {
-		// Using bcrypt as the default. Cost can be from config.
 		cost := bcrypt.DefaultCost
 		if p.config.SecurityConfig.PasswordHashingCost > 0 {
 			cost = p.config.SecurityConfig.PasswordHashingCost
@@ -266,16 +243,14 @@ func (p *DefaultServiceProvider) PasswordHasher() domain.PasswordHasher {
 }
 
 func (p *DefaultServiceProvider) FlowStore() domain.FlowStore {
-	// Already initialized in NewDefaultServiceProvider, just return it.
 	return p.flowStore
 }
 
 func (p *DefaultServiceProvider) UserSessionStore() domain.UserSessionStore {
-	// Already initialized in NewDefaultServiceProvider.
 	return p.userSessionStore
 }
 
-func (p *DefaultServiceProvider) PushMFAService() *domain.PushMFAService {
+func (p *DefaultServiceProvider) PushMFAService() PushMFAService {
 	if p.pushMFAService == nil {
 		p.pushMFAService = domain.NewPushMFAService(
 			p.repoProvider.UserRepository(initCtx),
@@ -289,14 +264,37 @@ func (p *DefaultServiceProvider) PushNotificationService() domain.PushNotificati
 	return p.pushService
 }
 
-func (p *DefaultServiceProvider) ConfigurationService() *ConfigurationService {
+func (p *DefaultServiceProvider) ConfigurationService() ConfigurationService {
 	return p.configurationService
 }
 
-// initializeSMSService initializes the SMS service with configuration
-func (p *DefaultServiceProvider) initializeSMSService(configService *ConfigurationService) domain.SMSService {
+func (p *DefaultServiceProvider) IDPManagementService() IDPManagementService {
+	if p.idpManagementService == nil {
+		p.idpManagementService = newIDPManagementService(p.repoProvider.IdPRepository(initCtx))
+	}
+	return p.idpManagementService
+}
+
+func (p *DefaultServiceProvider) ClientManagementService() ClientManagementService {
+	if p.clientManagementService == nil {
+		p.clientManagementService = newClientManagementService(p.repoProvider.ClientRepository(initCtx), p.PasswordHasher())
+	}
+	return p.clientManagementService
+}
+
+func (p *DefaultServiceProvider) ServiceAccountService() ServiceAccountService {
+	if p.serviceAccountService == nil {
+		p.serviceAccountService = newServiceAccountService(
+			&defaultSAKeyGenerator{},
+			p.repoProvider.ServiceAccountRepository(initCtx),
+			p.repoProvider.PublicKeyRepository(initCtx),
+		)
+	}
+	return p.serviceAccountService
+}
+
+func (p *DefaultServiceProvider) initializeSMSService(configService ConfigurationService) domain.SMSService {
 	if configService == nil {
-		// Use viper config if configuration service is not available
 		if p.appConfig != nil {
 			return notifications.NewTwilioSMSService(
 				p.appConfig.TwilioAccountSID,
@@ -304,7 +302,6 @@ func (p *DefaultServiceProvider) initializeSMSService(configService *Configurati
 				p.appConfig.TwilioPhoneNumber,
 			)
 		}
-		// Fallback to empty config if neither configuration service nor app config is available
 		return notifications.NewTwilioSMSService("", "", "")
 	}
 
@@ -315,10 +312,8 @@ func (p *DefaultServiceProvider) initializeSMSService(configService *Configurati
 	return notifications.NewTwilioSMSService(accountSID, authToken, fromNumber)
 }
 
-// initializeEmailService initializes the email service with configuration
-func (p *DefaultServiceProvider) initializeEmailService(configService *ConfigurationService) domain.EmailService {
+func (p *DefaultServiceProvider) initializeEmailService(configService ConfigurationService) domain.EmailService {
 	if configService == nil {
-		// Use viper config if configuration service is not available
 		if p.appConfig != nil {
 			return notifications.NewResendEmailService(
 				p.appConfig.ResendAPIKey,
@@ -326,7 +321,6 @@ func (p *DefaultServiceProvider) initializeEmailService(configService *Configura
 				p.appConfig.NextPublicBaseURL,
 			)
 		}
-		// Fallback to empty config if neither configuration service nor app config is available
 		return notifications.NewResendEmailService("", "", "")
 	}
 
@@ -337,17 +331,14 @@ func (p *DefaultServiceProvider) initializeEmailService(configService *Configura
 	return notifications.NewResendEmailService(apiKey, fromEmail, baseURL)
 }
 
-// initializePushService initializes the push notification service with configuration
-func (p *DefaultServiceProvider) initializePushService(configService *ConfigurationService) domain.PushNotificationService {
+func (p *DefaultServiceProvider) initializePushService(configService ConfigurationService) domain.PushNotificationService {
 	if configService == nil {
-		// Use viper config if configuration service is not available
 		if p.appConfig != nil {
 			return notifications.NewFirebasePushService(
 				p.appConfig.FirebaseProjectID,
 				p.appConfig.FirebaseCredentialsPath,
 			)
 		}
-		// Fallback to empty config if neither configuration service nor app config is available
 		return notifications.NewFirebasePushService("", "")
 	}
 
@@ -357,5 +348,4 @@ func (p *DefaultServiceProvider) initializePushService(configService *Configurat
 	return notifications.NewFirebasePushService(projectID, credentialsPath)
 }
 
-// Compile-time check
 var _ ServiceProvider = (*DefaultServiceProvider)(nil)

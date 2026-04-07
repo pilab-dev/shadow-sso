@@ -23,5 +23,4 @@ type AuthCodeData struct {
 	SessionID   string `json:"session_id,omitempty"`
 	Claims      string `json:"claims,omitempty"`
 	AuthTimeIat string `json:"auth_time_iat,omitempty"`
-	Nonce       string `json:"nonce,omitempty"`
 }

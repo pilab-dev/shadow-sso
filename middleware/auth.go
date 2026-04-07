@@ -10,7 +10,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func NewAuthInterceptor(tokenService *services.TokenService) connect.Interceptor {
+func NewAuthInterceptor(tokenService services.TokenService) connect.Interceptor {
 	return connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
 		// This is a simplified interceptor. A real one would:
 		// 1. Extract token from req.Header().Get("Authorization")
