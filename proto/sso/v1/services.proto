@@ -99,6 +99,9 @@ service AuthService {
   rpc ClearUserSessions(ClearUserSessionsRequest) returns (google.protobuf.Empty); // Requires auth token, admin or self
   rpc Verify2FA(Verify2FARequest) returns (LoginResponse);
 
+  // Complete WebAuthn Login - returns tokens after WebAuthn verification
+  rpc CompleteWebAuthnLogin(VerifyWebAuthnAuthenticationRequest) returns (VerifyWebAuthnAuthenticationResponse);
+
   // OAuth Consent Flow
   rpc GetConsentInfo(GetConsentInfoRequest) returns (GetConsentInfoResponse);
   rpc SubmitConsent(SubmitConsentRequest) returns (SubmitConsentResponse);
@@ -662,6 +665,17 @@ message VerifyWebAuthnAuthenticationResponse {
   bool verified = 1;
   string user_id = 2;
   string error = 3;
+  // Authentication successful, return tokens
+  string access_token = 4;
+  string refresh_token = 5;
+  string id_token = 6;
+  string token_type = 7;
+  int32 expires_in = 8;
+  User user_info = 9;
+  // User has MFA enabled, requires additional verification
+  bool two_factor_required = 10;
+  // Session token for completing 2FA verification
+  string two_factor_session_token = 11;
 }
 
 // WebAuthn Credential Types (simplified for protobuf)
