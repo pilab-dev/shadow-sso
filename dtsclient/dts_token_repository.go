@@ -266,10 +266,5 @@ func min(a, b int) int {
 	return b
 }
 
-func (r *dtsTokenRepository) RevokeTokenFamily(ctx context.Context, family string) error {
-	log.Printf("RevokeTokenFamily called for family %s. Not yet supported by DTS, returning nil.", family)
-	return nil
-}
-
 // Ensure dtsTokenRepository implements domain.TokenRepository
 var _ domain.TokenRepository = (*dtsTokenRepository)(nil)

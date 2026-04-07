@@ -98,7 +98,7 @@ func Start(cfg ServerConfig, repoProvider services.RepositoryProvider) error {
 	userServer := services.NewUserServer(
 		repoProvider.UserRepository(ctx),
 		passwordHasher,
-		sp.PhoneVerificationService(),
+		nil,
 	)
 	authServer := services.NewAuthServer(
 		repoProvider.UserRepository(ctx),

@@ -14,37 +14,51 @@ import (
 )
 
 // ConfigurationService manages operational configuration with caching
-type ConfigurationService struct {
-	repo        domain.ConfigurationRepository
+type defaultConfigurationService struct {
+	repo          domain.ConfigurationRepository
 	encryptionKey []byte
-	cache        map[string]*ConfigurationCacheEntry
-	cacheMutex   sync.RWMutex
-	cacheTTL     time.Duration
+	cache         map[string]*configurationCacheEntry
+	cacheMutex    sync.RWMutex
+	cacheTTL      time.Duration
 }
 
 // ConfigurationCacheEntry holds cached configuration data
-type ConfigurationCacheEntry struct {
+type configurationCacheEntry struct {
 	Config    *domain.Configuration
 	CachedAt  time.Time
 	ExpiresAt time.Time
 }
 
-// NewConfigurationService creates a new configuration service
-func NewConfigurationService(repo domain.ConfigurationRepository, encryptionKey string) (*ConfigurationService, error) {
+// newDefaultConfigurationService creates a new configuration service (internal constructor).
+func newDefaultConfigurationService(repo domain.ConfigurationRepository, encryptionKey string) (ConfigurationService, error) {
 	if len(encryptionKey) != 32 {
 		return nil, fmt.Errorf("encryption key must be 32 bytes for AES-256")
 	}
 
-	return &ConfigurationService{
+	return &defaultConfigurationService{
 		repo:          repo,
 		encryptionKey: []byte(encryptionKey),
-		cache:         make(map[string]*ConfigurationCacheEntry),
-		cacheTTL:      5 * time.Minute, // 5 minute cache TTL
+		cache:         make(map[string]*configurationCacheEntry),
+		cacheTTL:      5 * time.Minute,
+	}, nil
+}
+
+// NewConfigurationService creates a new configuration service (public constructor for backward compatibility).
+func NewConfigurationService(repo domain.ConfigurationRepository, encryptionKey string) (*defaultConfigurationService, error) {
+	if len(encryptionKey) != 32 {
+		return nil, fmt.Errorf("encryption key must be 32 bytes for AES-256")
+	}
+
+	return &defaultConfigurationService{
+		repo:          repo,
+		encryptionKey: []byte(encryptionKey),
+		cache:         make(map[string]*configurationCacheEntry),
+		cacheTTL:      5 * time.Minute,
 	}, nil
 }
 
 // GetString retrieves a string configuration value
-func (s *ConfigurationService) GetString(ctx context.Context, configType domain.ConfigurationType, key string) (string, error) {
+func (s *defaultConfigurationService) GetString(ctx context.Context, configType domain.ConfigurationType, key string) (string, error) {
 	config, err := s.getConfig(ctx, configType, key)
 	if err != nil {
 		return "", err
@@ -57,7 +71,7 @@ func (s *ConfigurationService) GetString(ctx context.Context, configType domain.
 }
 
 // GetStringWithDefault retrieves a string configuration value with a default
-func (s *ConfigurationService) GetStringWithDefault(ctx context.Context, configType domain.ConfigurationType, key, defaultValue string) string {
+func (s *defaultConfigurationService) GetStringWithDefault(ctx context.Context, configType domain.ConfigurationType, key, defaultValue string) string {
 	value, err := s.GetString(ctx, configType, key)
 	if err != nil {
 		return defaultValue
@@ -66,7 +80,7 @@ func (s *ConfigurationService) GetStringWithDefault(ctx context.Context, configT
 }
 
 // GetBool retrieves a boolean configuration value
-func (s *ConfigurationService) GetBool(ctx context.Context, configType domain.ConfigurationType, key string) (bool, error) {
+func (s *defaultConfigurationService) GetBool(ctx context.Context, configType domain.ConfigurationType, key string) (bool, error) {
 	strValue, err := s.GetString(ctx, configType, key)
 	if err != nil {
 		return false, err
@@ -75,7 +89,7 @@ func (s *ConfigurationService) GetBool(ctx context.Context, configType domain.Co
 }
 
 // GetBoolWithDefault retrieves a boolean configuration value with a default
-func (s *ConfigurationService) GetBoolWithDefault(ctx context.Context, configType domain.ConfigurationType, key string, defaultValue bool) bool {
+func (s *defaultConfigurationService) GetBoolWithDefault(ctx context.Context, configType domain.ConfigurationType, key string, defaultValue bool) bool {
 	value, err := s.GetBool(ctx, configType, key)
 	if err != nil {
 		return defaultValue
@@ -84,7 +98,7 @@ func (s *ConfigurationService) GetBoolWithDefault(ctx context.Context, configTyp
 }
 
 // SetString sets a string configuration value
-func (s *ConfigurationService) SetString(ctx context.Context, configType domain.ConfigurationType, key, value string, encrypt bool, description string, updatedBy string) error {
+func (s *defaultConfigurationService) SetString(ctx context.Context, configType domain.ConfigurationType, key, value string, encrypt bool, description string, updatedBy string) error {
 	var encryptedValue string
 	var err error
 
@@ -138,22 +152,22 @@ func (s *ConfigurationService) SetString(ctx context.Context, configType domain.
 }
 
 // GetAllByType retrieves all configurations of a specific type
-func (s *ConfigurationService) GetAllByType(ctx context.Context, configType domain.ConfigurationType) ([]*domain.Configuration, error) {
+func (s *defaultConfigurationService) GetAllByType(ctx context.Context, configType domain.ConfigurationType) ([]*domain.Configuration, error) {
 	return s.repo.GetByTypeActive(ctx, configType)
 }
 
 // BootstrapDefaultConfigs initializes default configurations from environment variables
-func (s *ConfigurationService) BootstrapDefaultConfigs(ctx context.Context) error {
+func (s *defaultConfigurationService) BootstrapDefaultConfigs(ctx context.Context) error {
 	return s.repo.CreateDefaultConfigs(ctx)
 }
 
 // RefreshCache forces a cache refresh for all configurations
-func (s *ConfigurationService) RefreshCache(ctx context.Context) error {
+func (s *defaultConfigurationService) RefreshCache(ctx context.Context) error {
 	s.cacheMutex.Lock()
 	defer s.cacheMutex.Unlock()
 
 	// Clear cache
-	s.cache = make(map[string]*ConfigurationCacheEntry)
+	s.cache = make(map[string]*configurationCacheEntry)
 
 	// Reload all active configs
 	configs, err := s.repo.GetAllActive(ctx)
@@ -164,7 +178,7 @@ func (s *ConfigurationService) RefreshCache(ctx context.Context) error {
 	now := time.Now()
 	for _, config := range configs {
 		cacheKey := s.getCacheKey(config.Type, config.Key)
-		s.cache[cacheKey] = &ConfigurationCacheEntry{
+		s.cache[cacheKey] = &configurationCacheEntry{
 			Config:    config,
 			CachedAt:  now,
 			ExpiresAt: now.Add(s.cacheTTL),
@@ -175,7 +189,7 @@ func (s *ConfigurationService) RefreshCache(ctx context.Context) error {
 }
 
 // getConfig retrieves configuration with caching
-func (s *ConfigurationService) getConfig(ctx context.Context, configType domain.ConfigurationType, key string) (*domain.Configuration, error) {
+func (s *defaultConfigurationService) getConfig(ctx context.Context, configType domain.ConfigurationType, key string) (*domain.Configuration, error) {
 	cacheKey := s.getCacheKey(configType, key)
 
 	// Check cache first
@@ -194,7 +208,7 @@ func (s *ConfigurationService) getConfig(ctx context.Context, configType domain.
 
 	// Update cache
 	s.cacheMutex.Lock()
-	s.cache[cacheKey] = &ConfigurationCacheEntry{
+	s.cache[cacheKey] = &configurationCacheEntry{
 		Config:    config,
 		CachedAt:  time.Now(),
 		ExpiresAt: time.Now().Add(s.cacheTTL),
@@ -205,19 +219,19 @@ func (s *ConfigurationService) getConfig(ctx context.Context, configType domain.
 }
 
 // invalidateCache removes a specific config from cache
-func (s *ConfigurationService) invalidateCache(configType domain.ConfigurationType, key string) {
+func (s *defaultConfigurationService) invalidateCache(configType domain.ConfigurationType, key string) {
 	s.cacheMutex.Lock()
 	defer s.cacheMutex.Unlock()
 	delete(s.cache, s.getCacheKey(configType, key))
 }
 
 // getCacheKey generates a cache key
-func (s *ConfigurationService) getCacheKey(configType domain.ConfigurationType, key string) string {
+func (s *defaultConfigurationService) getCacheKey(configType domain.ConfigurationType, key string) string {
 	return string(configType) + ":" + key
 }
 
 // encrypt encrypts a value using AES-GCM
-func (s *ConfigurationService) encrypt(plaintext string) (string, error) {
+func (s *defaultConfigurationService) encrypt(plaintext string) (string, error) {
 	block, err := aes.NewCipher(s.encryptionKey)
 	if err != nil {
 		return "", err
@@ -238,7 +252,7 @@ func (s *ConfigurationService) encrypt(plaintext string) (string, error) {
 }
 
 // decrypt decrypts a value using AES-GCM
-func (s *ConfigurationService) decrypt(ciphertext string) (string, error) {
+func (s *defaultConfigurationService) decrypt(ciphertext string) (string, error) {
 	data, err := base64.StdEncoding.DecodeString(ciphertext)
 	if err != nil {
 		return "", err

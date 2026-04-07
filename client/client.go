@@ -3,7 +3,6 @@ package client
 import (
 	"context"
 	"crypto/rand"
-	"encoding/base64"
 	"fmt"
 	"time"
 
@@ -96,58 +95,6 @@ func (s *ClientService) CreatePublicClient(ctx context.Context,
 	return client, nil
 }
 
-// CreateClient creates a client with the given properties.
-func (s *ClientService) CreateClient(ctx context.Context, client *domain.Client) (*domain.Client, error) {
-	if client.ID == "" {
-		client.ID = uuid.NewString()
-	}
-
-	// Determine if the client should be confidential
-	isConfidential := client.IsConfidential || client.TokenEndpointAuth == "client_secret_basic" || client.TokenEndpointAuth == "client_secret_post"
-
-	if isConfidential {
-		// Generate secret if not already set
-		if client.Secret == "" {
-			secretBytes := make([]byte, 32)
-			if _, err := rand.Read(secretBytes); err != nil {
-				return nil, fmt.Errorf("failed to generate client secret: %w", err)
-			}
-			client.Secret = base64.RawURLEncoding.EncodeToString(secretBytes)
-		}
-		client.IsConfidential = true
-		// Set TokenEndpointAuth to a confidential method if not already set to one
-		if client.TokenEndpointAuth != "client_secret_basic" && client.TokenEndpointAuth != "client_secret_post" {
-			client.TokenEndpointAuth = "client_secret_basic"
-		}
-	} else {
-		client.IsConfidential = false
-		client.TokenEndpointAuth = "none"
-	}
-
-	client.IsActive = true
-
-	hasAuthCode := false
-	for _, gt := range client.AllowedGrantTypes {
-		if gt == "authorization_code" {
-			hasAuthCode = true
-			break
-		}
-	}
-	if hasAuthCode {
-		client.RequirePKCE = true
-	}
-
-	now := time.Now()
-	client.CreatedAt = now
-	client.UpdatedAt = now
-
-	if err := s.store.CreateClient(ctx, client); err != nil {
-		return nil, err
-	}
-
-	return client, nil
-}
-
 // ValidateRedirectURI checks if a redirect URI is valid for a client
 func (s *ClientService) ValidateRedirectURI(ctx context.Context, clientID, redirectURI string) error {
 	client, err := s.store.GetClient(ctx, clientID)
@@ -219,4 +166,12 @@ func (s *ClientService) GetClient(ctx context.Context, clientID string) (*domain
 // ValidateClient validates client credentials and returns the client if valid
 func (s *ClientService) ValidateClient(ctx context.Context, clientID, clientSecret string) (*domain.Client, error) {
 	return s.store.ValidateClient(ctx, clientID, clientSecret)
+}
+
+// CreateClient creates a new client
+func (s *ClientService) CreateClient(ctx context.Context, client *domain.Client) (*domain.Client, error) {
+	if err := s.store.CreateClient(ctx, client); err != nil {
+		return nil, err
+	}
+	return client, nil
 }
