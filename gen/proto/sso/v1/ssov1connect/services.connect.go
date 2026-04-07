@@ -195,6 +195,9 @@ const (
 	AuthServiceClearUserSessionsProcedure = "/sso.v1.AuthService/ClearUserSessions"
 	// AuthServiceVerify2FAProcedure is the fully-qualified name of the AuthService's Verify2FA RPC.
 	AuthServiceVerify2FAProcedure = "/sso.v1.AuthService/Verify2FA"
+	// AuthServiceCompleteWebAuthnLoginProcedure is the fully-qualified name of the AuthService's
+	// CompleteWebAuthnLogin RPC.
+	AuthServiceCompleteWebAuthnLoginProcedure = "/sso.v1.AuthService/CompleteWebAuthnLogin"
 	// AuthServiceGetConsentInfoProcedure is the fully-qualified name of the AuthService's
 	// GetConsentInfo RPC.
 	AuthServiceGetConsentInfoProcedure = "/sso.v1.AuthService/GetConsentInfo"
@@ -1544,6 +1547,8 @@ type AuthServiceClient interface {
 	ListUserSessions(context.Context, *connect.Request[v1.ListUserSessionsRequest]) (*connect.Response[v1.ListUserSessionsResponse], error)
 	ClearUserSessions(context.Context, *connect.Request[v1.ClearUserSessionsRequest]) (*connect.Response[emptypb.Empty], error)
 	Verify2FA(context.Context, *connect.Request[v1.Verify2FARequest]) (*connect.Response[v1.LoginResponse], error)
+	// Complete WebAuthn Login - returns tokens after WebAuthn verification
+	CompleteWebAuthnLogin(context.Context, *connect.Request[v1.VerifyWebAuthnAuthenticationRequest]) (*connect.Response[v1.VerifyWebAuthnAuthenticationResponse], error)
 	// OAuth Consent Flow
 	GetConsentInfo(context.Context, *connect.Request[v1.GetConsentInfoRequest]) (*connect.Response[v1.GetConsentInfoResponse], error)
 	SubmitConsent(context.Context, *connect.Request[v1.SubmitConsentRequest]) (*connect.Response[v1.SubmitConsentResponse], error)
@@ -1585,6 +1590,11 @@ func NewAuthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			baseURL+AuthServiceVerify2FAProcedure,
 			opts...,
 		),
+		completeWebAuthnLogin: connect.NewClient[v1.VerifyWebAuthnAuthenticationRequest, v1.VerifyWebAuthnAuthenticationResponse](
+			httpClient,
+			baseURL+AuthServiceCompleteWebAuthnLoginProcedure,
+			opts...,
+		),
 		getConsentInfo: connect.NewClient[v1.GetConsentInfoRequest, v1.GetConsentInfoResponse](
 			httpClient,
 			baseURL+AuthServiceGetConsentInfoProcedure,
@@ -1605,14 +1615,15 @@ func NewAuthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 
 // authServiceClient implements AuthServiceClient.
 type authServiceClient struct {
-	login             *connect.Client[v1.LoginRequest, v1.LoginResponse]
-	logout            *connect.Client[v1.LogoutRequest, emptypb.Empty]
-	listUserSessions  *connect.Client[v1.ListUserSessionsRequest, v1.ListUserSessionsResponse]
-	clearUserSessions *connect.Client[v1.ClearUserSessionsRequest, emptypb.Empty]
-	verify2FA         *connect.Client[v1.Verify2FARequest, v1.LoginResponse]
-	getConsentInfo    *connect.Client[v1.GetConsentInfoRequest, v1.GetConsentInfoResponse]
-	submitConsent     *connect.Client[v1.SubmitConsentRequest, v1.SubmitConsentResponse]
-	denyConsent       *connect.Client[v1.DenyConsentRequest, v1.DenyConsentResponse]
+	login                 *connect.Client[v1.LoginRequest, v1.LoginResponse]
+	logout                *connect.Client[v1.LogoutRequest, emptypb.Empty]
+	listUserSessions      *connect.Client[v1.ListUserSessionsRequest, v1.ListUserSessionsResponse]
+	clearUserSessions     *connect.Client[v1.ClearUserSessionsRequest, emptypb.Empty]
+	verify2FA             *connect.Client[v1.Verify2FARequest, v1.LoginResponse]
+	completeWebAuthnLogin *connect.Client[v1.VerifyWebAuthnAuthenticationRequest, v1.VerifyWebAuthnAuthenticationResponse]
+	getConsentInfo        *connect.Client[v1.GetConsentInfoRequest, v1.GetConsentInfoResponse]
+	submitConsent         *connect.Client[v1.SubmitConsentRequest, v1.SubmitConsentResponse]
+	denyConsent           *connect.Client[v1.DenyConsentRequest, v1.DenyConsentResponse]
 }
 
 // Login calls sso.v1.AuthService.Login.
@@ -1640,6 +1651,11 @@ func (c *authServiceClient) Verify2FA(ctx context.Context, req *connect.Request[
 	return c.verify2FA.CallUnary(ctx, req)
 }
 
+// CompleteWebAuthnLogin calls sso.v1.AuthService.CompleteWebAuthnLogin.
+func (c *authServiceClient) CompleteWebAuthnLogin(ctx context.Context, req *connect.Request[v1.VerifyWebAuthnAuthenticationRequest]) (*connect.Response[v1.VerifyWebAuthnAuthenticationResponse], error) {
+	return c.completeWebAuthnLogin.CallUnary(ctx, req)
+}
+
 // GetConsentInfo calls sso.v1.AuthService.GetConsentInfo.
 func (c *authServiceClient) GetConsentInfo(ctx context.Context, req *connect.Request[v1.GetConsentInfoRequest]) (*connect.Response[v1.GetConsentInfoResponse], error) {
 	return c.getConsentInfo.CallUnary(ctx, req)
@@ -1662,6 +1678,8 @@ type AuthServiceHandler interface {
 	ListUserSessions(context.Context, *connect.Request[v1.ListUserSessionsRequest]) (*connect.Response[v1.ListUserSessionsResponse], error)
 	ClearUserSessions(context.Context, *connect.Request[v1.ClearUserSessionsRequest]) (*connect.Response[emptypb.Empty], error)
 	Verify2FA(context.Context, *connect.Request[v1.Verify2FARequest]) (*connect.Response[v1.LoginResponse], error)
+	// Complete WebAuthn Login - returns tokens after WebAuthn verification
+	CompleteWebAuthnLogin(context.Context, *connect.Request[v1.VerifyWebAuthnAuthenticationRequest]) (*connect.Response[v1.VerifyWebAuthnAuthenticationResponse], error)
 	// OAuth Consent Flow
 	GetConsentInfo(context.Context, *connect.Request[v1.GetConsentInfoRequest]) (*connect.Response[v1.GetConsentInfoResponse], error)
 	SubmitConsent(context.Context, *connect.Request[v1.SubmitConsentRequest]) (*connect.Response[v1.SubmitConsentResponse], error)
@@ -1699,6 +1717,11 @@ func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption
 		svc.Verify2FA,
 		opts...,
 	)
+	authServiceCompleteWebAuthnLoginHandler := connect.NewUnaryHandler(
+		AuthServiceCompleteWebAuthnLoginProcedure,
+		svc.CompleteWebAuthnLogin,
+		opts...,
+	)
 	authServiceGetConsentInfoHandler := connect.NewUnaryHandler(
 		AuthServiceGetConsentInfoProcedure,
 		svc.GetConsentInfo,
@@ -1726,6 +1749,8 @@ func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption
 			authServiceClearUserSessionsHandler.ServeHTTP(w, r)
 		case AuthServiceVerify2FAProcedure:
 			authServiceVerify2FAHandler.ServeHTTP(w, r)
+		case AuthServiceCompleteWebAuthnLoginProcedure:
+			authServiceCompleteWebAuthnLoginHandler.ServeHTTP(w, r)
 		case AuthServiceGetConsentInfoProcedure:
 			authServiceGetConsentInfoHandler.ServeHTTP(w, r)
 		case AuthServiceSubmitConsentProcedure:
@@ -1759,6 +1784,10 @@ func (UnimplementedAuthServiceHandler) ClearUserSessions(context.Context, *conne
 
 func (UnimplementedAuthServiceHandler) Verify2FA(context.Context, *connect.Request[v1.Verify2FARequest]) (*connect.Response[v1.LoginResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.AuthService.Verify2FA is not implemented"))
+}
+
+func (UnimplementedAuthServiceHandler) CompleteWebAuthnLogin(context.Context, *connect.Request[v1.VerifyWebAuthnAuthenticationRequest]) (*connect.Response[v1.VerifyWebAuthnAuthenticationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.AuthService.CompleteWebAuthnLogin is not implemented"))
 }
 
 func (UnimplementedAuthServiceHandler) GetConsentInfo(context.Context, *connect.Request[v1.GetConsentInfoRequest]) (*connect.Response[v1.GetConsentInfoResponse], error) {
