@@ -2,12 +2,12 @@ package services
 
 import (
 	"context"
-	goerrors "errors"
 	"errors"
+	goerrors "errors"
 	"fmt"
 	"net/url"
 	"strings" // For Verify2FA token check
-	"time" // Needed for GenerateTokenPair TTL and session expiry
+	"time"    // Needed for GenerateTokenPair TTL and session expiry
 
 	"connectrpc.com/connect"
 	"github.com/pilab-dev/shadow-sso/client"
@@ -27,24 +27,24 @@ import (
 // AuthServer implements the ssov1connect.AuthServiceHandler interface.
 type AuthServer struct {
 	ssov1connect.UnimplementedAuthServiceHandler // Embed for forward compatibility
-	userRepo                                      domain.UserRepository
-	sessionRepo                                   domain.SessionRepository
-	tokenService                                  *TokenService
-	passwordHasher                                domain.PasswordHasher
-	flowStore                                     domain.FlowStore
-	oauthService                                  *OAuthService
-	clientService                                 *client.ClientService
+	userRepo                                     domain.UserRepository
+	sessionRepo                                  domain.SessionRepository
+	tokenService                                 domain.TokenServiceInterface
+	passwordHasher                               domain.PasswordHasher
+	flowStore                                    domain.FlowStore
+	oauthService                                 domain.OAuthServiceInterface
+	clientService                                client.ClientServiceInterface
 }
 
 // NewAuthServer creates a new AuthServer.
 func NewAuthServer(
 	userRepo domain.UserRepository,
 	sessionRepo domain.SessionRepository,
-	tokenService *TokenService,
+	tokenService domain.TokenServiceInterface,
 	passwordHasher domain.PasswordHasher,
 	flowStore domain.FlowStore,
-	oauthService *OAuthService,
-	clientService *client.ClientService,
+	oauthService domain.OAuthServiceInterface,
+	clientService client.ClientServiceInterface,
 ) *AuthServer {
 	return &AuthServer{
 		userRepo:       userRepo,
@@ -81,7 +81,9 @@ func (s *AuthServer) Login(ctx context.Context, req *connect.Request[ssov1.Login
 	if err != nil {
 		log.Warn().Err(err).Str("email", req.Msg.Email).Msg("Login: User not found")
 		audit.Log("AuthService", "Login", req.Msg.Email, "", "User not found or DB error", false, err)
-		metrics.LoginFailureTotal.Inc()
+		if metrics.LoginFailureTotal != nil {
+			metrics.LoginFailureTotal.Inc()
+		}
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid email or password"))
 	}
 	userID = user.ID // User found, set userID for audit
@@ -89,20 +91,26 @@ func (s *AuthServer) Login(ctx context.Context, req *connect.Request[ssov1.Login
 	if user.Status == domain.UserStatusLocked {
 		log.Warn().Str("userID", userID).Msg("Login: Account locked")
 		audit.Log("AuthService", "Login", userID, userID, "Account locked", false, errors.New("account locked"))
-		metrics.LoginFailureTotal.Inc()
+		if metrics.LoginFailureTotal != nil {
+			metrics.LoginFailureTotal.Inc()
+		}
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("account is locked"))
 	}
 	if user.Status == domain.UserStatusPending {
 		log.Warn().Str("userID", userID).Msg("Login: Account pending activation")
 		audit.Log("AuthService", "Login", userID, userID, "Account pending activation", false, errors.New("account pending activation"))
-		metrics.LoginFailureTotal.Inc()
+		if metrics.LoginFailureTotal != nil {
+			metrics.LoginFailureTotal.Inc()
+		}
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("account pending activation"))
 	}
 
 	if err := s.passwordHasher.Verify(user.PasswordHash, req.Msg.Password); err != nil {
 		log.Warn().Str("userID", userID).Msg("Login: Incorrect password")
 		audit.Log("AuthService", "Login", userID, userID, "Incorrect password", false, err)
-		metrics.LoginFailureTotal.Inc()
+		if metrics.LoginFailureTotal != nil {
+			metrics.LoginFailureTotal.Inc()
+		}
 		// TODO: Increment failed login attempts for user in userRepo.UpdateUser
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid email or password"))
 	}
@@ -167,8 +175,12 @@ func (s *AuthServer) completeLogin(ctx context.Context, user *domain.User) (*con
 		// Non-fatal
 	}
 
-	metrics.LoginSuccessTotal.Inc()
-	metrics.ActiveSessionsGauge.Inc() // Increment active sessions
+	if metrics.LoginSuccessTotal != nil {
+		metrics.LoginSuccessTotal.Inc()
+	}
+	if metrics.ActiveSessionsGauge != nil {
+		metrics.ActiveSessionsGauge.Inc()
+	}
 
 	userInfoProto := &ssov1.User{
 		Id:        user.ID,
@@ -261,7 +273,9 @@ func (s *AuthServer) Verify2FA(ctx context.Context, req *connect.Request[ssov1.V
 	log.Warn().Str("userID", user.ID).Msg("Verify2FA: Invalid TOTP or recovery code provided.")
 	audit.Log("AuthService", "Verify2FA", user.ID, user.ID, "Invalid TOTP or recovery code", false, errors.New("invalid 2FA code"))
 	// TODO: Implement failed 2FA attempt tracking and potential user lockout/alert.
-	metrics.LoginFailureTotal.Inc() // Count 2FA failure as a login failure type
+	if metrics.LoginFailureTotal != nil {
+		metrics.LoginFailureTotal.Inc()
+	}
 	return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid 2FA code"))
 }
 
@@ -316,7 +330,9 @@ func (s *AuthServer) Logout(ctx context.Context, req *connect.Request[ssov1.Logo
 		audit.Log("AuthService", "Logout", actingUserID, tokenJTI, "Token revoked via TokenService successfully", true, nil)
 	}
 
-	metrics.ActiveSessionsGauge.Dec() // Decrement active sessions
+	if metrics.ActiveSessionsGauge != nil {
+		metrics.ActiveSessionsGauge.Dec()
+	}
 	return connect.NewResponse(&emptypb.Empty{}), nil
 }
 
@@ -536,6 +552,8 @@ func (s *AuthServer) SubmitConsent(ctx context.Context, req *connect.Request[sso
 		acceptedScopeString, // Use only accepted scopes
 		flowState.CodeChallenge,
 		flowState.CodeChallengeMethod,
+		flowState.Nonce,
+		flowState.UserAuthenticatedAt,
 	)
 	if err != nil {
 		log.Error().Err(err).Str("flowId", flowID).Msg("Failed to generate authorization code after consent")

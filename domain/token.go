@@ -9,15 +9,16 @@ const (
 
 // TokenInfo represents metadata about a token.
 type TokenInfo struct {
-	ID        string    `bson:"_id"        json:"id"`         // Unique token identifier
-	TokenType string    `bson:"token_type" json:"token_type"` // "access_token" or "refresh_token"
-	ClientID  string    `bson:"client_id"  json:"client_id"`  // Client that the token was issued to
-	UserID    string    `bson:"user_id"    json:"user_id"`    // User that authorized the token
-	Scope     string    `bson:"scope"      json:"scope"`      // Authorized scopes
-	IssuedAt  time.Time `bson:"issued_at"  json:"issued_at"`  // When the token was issued
-	ExpiresAt time.Time `bson:"expires_at" json:"expires_at"` // When the token expires
-	IsRevoked bool      `bson:"is_revoked" json:"is_revoked"` // Whether token has been revoked
-	Roles     []string  `bson:"roles"      json:"roles"`
+	ID                 string    `bson:"_id"        json:"id"`         // Unique token identifier
+	TokenType          string    `bson:"token_type" json:"token_type"` // "access_token" or "refresh_token"
+	ClientID           string    `bson:"client_id"  json:"client_id"`  // Client that the token was issued to
+	UserID             string    `bson:"user_id"    json:"user_id"`    // User that authorized the token
+	Scope              string    `bson:"scope"      json:"scope"`      // Authorized scopes
+	IssuedAt           time.Time `bson:"issued_at"  json:"issued_at"`  // When the token was issued
+	ExpiresAt          time.Time `bson:"expires_at" json:"expires_at"` // When the token expires
+	IsRevoked          bool      `bson:"is_revoked" json:"is_revoked"` // Whether token has been revoked
+	Roles              []string  `bson:"roles"      json:"roles"`
+	RefreshTokenFamily string    `bson:"refresh_token_family" json:"refresh_token_family"` // For token refresh families
 }
 
 // Token represents an OAuth token, also used for synthetic service account tokens.

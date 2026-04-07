@@ -167,3 +167,11 @@ func (s *ClientService) GetClient(ctx context.Context, clientID string) (*domain
 func (s *ClientService) ValidateClient(ctx context.Context, clientID, clientSecret string) (*domain.Client, error) {
 	return s.store.ValidateClient(ctx, clientID, clientSecret)
 }
+
+// CreateClient creates a new client
+func (s *ClientService) CreateClient(ctx context.Context, client *domain.Client) (*domain.Client, error) {
+	if err := s.store.CreateClient(ctx, client); err != nil {
+		return nil, err
+	}
+	return client, nil
+}

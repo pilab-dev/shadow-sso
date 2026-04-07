@@ -16,7 +16,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func createOAuthService(ctrl *gomock.Controller) *services.OAuthService {
+func createOAuthService(ctrl *gomock.Controller) services.OAuthService {
 	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
 	mockAuthCodeRepo := mock_domain.NewMockAuthorizationCodeRepository(ctrl)
 	mockDeviceAuthRepo := mock_domain.NewMockDeviceAuthorizationRepository(ctrl)
@@ -317,7 +317,7 @@ func TestOAuthService_RefreshToken_Success(t *testing.T) {
 
 	mockTokenRepo.EXPECT().GetRefreshTokenInfo(ctx, refreshTokenValue).Return(tokenInfo, nil)
 	mockTokenRepo.EXPECT().RevokeRefreshToken(ctx, refreshTokenValue).Return(nil)
-	mockTokenServiceInterface.EXPECT().GenerateTokenPairWithFamily(ctx, clientID, tokenInfo.UserID, tokenInfo.Scope, time.Hour, tokenInfo.RefreshTokenFamily, "", gomock.Any()).Return(&api.TokenResponse{
+	mockTokenServiceInterface.EXPECT().GenerateTokenPair(ctx, clientID, tokenInfo.UserID, tokenInfo.Scope, time.Hour).Return(&api.TokenResponse{
 		AccessToken:  "new-access-token",
 		RefreshToken: "new-refresh-token",
 		TokenType:    "Bearer",
@@ -446,12 +446,11 @@ func TestOAuthService_RefreshToken_Revoked(t *testing.T) {
 	}
 
 	mockTokenRepo.EXPECT().GetRefreshTokenInfo(ctx, refreshTokenValue).Return(tokenInfo, nil)
-	mockTokenRepo.EXPECT().RevokeTokenFamily(ctx, "family-123").Return(nil)
 
 	_, err := oauthService.RefreshToken(ctx, refreshTokenValue, clientID)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "refresh token reused")
+	assert.Contains(t, err.Error(), "refresh token expired or revoked")
 }
 
 func TestOAuthService_GetJWKS(t *testing.T) {
@@ -849,7 +848,7 @@ func TestOAuthService_ExchangeAuthorizationCode_Success(t *testing.T) {
 	mockClientRepo.EXPECT().GetClient(ctx, clientID).Return(client, nil)
 	mockAuthCodeRepo.EXPECT().GetAuthCode(ctx, code).Return(authCode, nil)
 	mockAuthCodeRepo.EXPECT().MarkAuthCodeAsUsed(ctx, code).Return(nil)
-	mockTokenServiceInterface.EXPECT().GenerateTokenPairWithFamily(ctx, clientID, authCode.UserID, authCode.Scope, time.Hour, "", "", time.Time{}).Return(&api.TokenResponse{
+	mockTokenServiceInterface.EXPECT().GenerateTokenPair(ctx, clientID, authCode.UserID, authCode.Scope, time.Hour).Return(&api.TokenResponse{
 		AccessToken:  "access-token",
 		RefreshToken: "refresh-token",
 		TokenType:    "Bearer",
@@ -1122,8 +1121,8 @@ func TestOAuthService_GenerateAuthCode_Success(t *testing.T) {
 		AllowedScopes: []string{"openid", "profile"},
 	}
 
-	mockClientRepo.EXPECT().GetClient(ctx, clientID).Return(client, nil)
-	mockAuthCodeRepo.EXPECT().SaveAuthCode(ctx, gomock.Any()).Return(nil)
+	mockClientRepo.EXPECT().GetClient(gomock.Any(), clientID).Return(client, nil)
+	mockAuthCodeRepo.EXPECT().SaveAuthCode(gomock.Any(), gomock.Any()).Return(nil)
 
 	code, err := oauthService.GenerateAuthCode(ctx, clientID, userID, redirectURI, scope, "", "", "", time.Now())
 
@@ -1162,7 +1161,7 @@ func TestOAuthService_GenerateAuthCode_InvalidScope(t *testing.T) {
 		AllowedScopes: []string{"openid"},
 	}
 
-	mockClientRepo.EXPECT().GetClient(ctx, clientID).Return(client, nil)
+	mockClientRepo.EXPECT().GetClient(gomock.Any(), clientID).Return(client, nil)
 
 	_, err := oauthService.GenerateAuthCode(ctx, clientID, "user-id", "https://callback", "admin", "", "", "", time.Now())
 

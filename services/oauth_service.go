@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -56,18 +57,50 @@ func generateUserCode(length int, charset string, chunkSize int) string {
 	return result.String()
 }
 
-type OAuthService struct {
+type defaultOAuthService struct {
 	tokenRepo      domain.TokenRepository
 	authCodeRepo   domain.AuthorizationCodeRepository
 	deviceAuthRepo domain.DeviceAuthorizationRepository
 	clientRepo     domain.ClientRepository // Changed from client.ClientStore for consistency
 	userRepo       domain.UserRepository
 	sessionRepo    domain.SessionRepository
-	tokenService   *TokenService
+	tokenService   domain.TokenServiceInterface
 	issuer         string
 }
 
-// NewOAuthService creates a new OAuth service.
+// tokenServiceAdapter wraps the services.TokenService interface to satisfy domain.TokenServiceInterface
+type tokenServiceAdapter struct {
+	TokenService
+}
+
+func (a *tokenServiceAdapter) GenerateTokenPairWithFamily(ctx context.Context, clientID, userID, scope string, tokenTTL time.Duration, family string, nonce string, authTime time.Time) (*api.TokenResponse, error) {
+	return a.TokenService.GenerateTokenPairWithFamily(ctx, clientID, userID, scope, tokenTTL, family, nonce, authTime)
+}
+
+// newDefaultOAuthService creates a new OAuth service (internal constructor).
+func newDefaultOAuthService(
+	tokenRepo domain.TokenRepository,
+	authCodeRepo domain.AuthorizationCodeRepository,
+	deviceAuthRepo domain.DeviceAuthorizationRepository,
+	clientRepo domain.ClientRepository,
+	userRepo domain.UserRepository,
+	sessionRepo domain.SessionRepository,
+	tokenService TokenService,
+	issuer string,
+) OAuthService {
+	return &defaultOAuthService{
+		tokenRepo:      tokenRepo,
+		authCodeRepo:   authCodeRepo,
+		deviceAuthRepo: deviceAuthRepo,
+		clientRepo:     clientRepo,
+		userRepo:       userRepo,
+		sessionRepo:    sessionRepo,
+		tokenService:   &tokenServiceAdapter{tokenService},
+		issuer:         issuer,
+	}
+}
+
+// NewOAuthService creates a new OAuth service (public constructor returning concrete type for backward compatibility).
 func NewOAuthService(
 	tokenRepo domain.TokenRepository,
 	authCodeRepo domain.AuthorizationCodeRepository,
@@ -75,10 +108,10 @@ func NewOAuthService(
 	clientRepo domain.ClientRepository,
 	userRepo domain.UserRepository,
 	sessionRepo domain.SessionRepository,
-	tokenService *TokenService,
+	tokenService domain.TokenServiceInterface,
 	issuer string,
-) *OAuthService {
-	return &OAuthService{
+) *defaultOAuthService {
+	return &defaultOAuthService{
 		tokenRepo:      tokenRepo,
 		authCodeRepo:   authCodeRepo,
 		deviceAuthRepo: deviceAuthRepo,
@@ -90,7 +123,7 @@ func NewOAuthService(
 	}
 }
 
-func (s *OAuthService) RegisterUser(ctx context.Context, username, password string) (*domain.User, error) {
+func (s *defaultOAuthService) RegisterUser(ctx context.Context, username, password string) (*domain.User, error) {
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, fmt.Errorf("failed to hash password: %w", err)
@@ -107,7 +140,7 @@ func (s *OAuthService) RegisterUser(ctx context.Context, username, password stri
 	return user, nil
 }
 
-func (s *OAuthService) Login(ctx context.Context, username, password, deviceInfo string) (*api.TokenResponse, error) {
+func (s *defaultOAuthService) Login(ctx context.Context, username, password, deviceInfo string) (*api.TokenResponse, error) {
 	user, err := s.userRepo.GetUserByEmail(ctx, username)
 	if err != nil {
 		return nil, fmt.Errorf("user not found: %w", err)
@@ -143,11 +176,11 @@ func (s *OAuthService) Login(ctx context.Context, username, password, deviceInfo
 	return tokenPair, nil
 }
 
-func (s *OAuthService) GetUserSessions(ctx context.Context, userID string) ([]*domain.Session, error) {
+func (s *defaultOAuthService) GetUserSessions(ctx context.Context, userID string) ([]*domain.Session, error) {
 	return s.sessionRepo.ListSessionsByUserID(ctx, userID, domain.SessionFilter{})
 }
 
-func (s *OAuthService) RefreshToken(ctx context.Context, refreshTokenValue string, clientID string) (*api.TokenResponse, error) {
+func (s *defaultOAuthService) RefreshToken(ctx context.Context, refreshTokenValue string, clientID string) (*api.TokenResponse, error) {
 	tokenInfo, err := s.tokenRepo.GetRefreshTokenInfo(ctx, refreshTokenValue)
 	if err != nil {
 		return nil, domain.NewInvalidGrant("invalid refresh token")
@@ -155,18 +188,20 @@ func (s *OAuthService) RefreshToken(ctx context.Context, refreshTokenValue strin
 	if tokenInfo.IsRevoked || time.Now().After(tokenInfo.ExpiresAt) {
 		return nil, domain.NewInvalidGrant("refresh token expired or revoked")
 	}
+	if err := s.tokenRepo.RevokeRefreshToken(ctx, refreshTokenValue); err != nil {
+		return nil, fmt.Errorf("failed to revoke refresh token: %w", err)
+	}
 	return s.tokenService.GenerateTokenPair(ctx, clientID, tokenInfo.UserID, tokenInfo.Scope, time.Hour)
 }
 
-func (s *OAuthService) GetJWKS() *JSONWebKeySet {
-	keyset := &JSONWebKeySet{
-		Keys: make([]JSONWebKey, 0),
+func (s *defaultOAuthService) GetJWKS() *domain.JWKS {
+	keyset := &domain.JWKS{
+		Keys: make([]domain.JSONWebKey, 0),
 	}
-	// Actual key retrieval should be from JWKSService if it's managing keys
 	return keyset
 }
 
-func (s *OAuthService) ValidateClient(ctx context.Context, clientID, clientSecret string) (*domain.Client, error) {
+func (s *defaultOAuthService) ValidateClient(ctx context.Context, clientID, clientSecret string) (*domain.Client, error) {
 	cli, err := s.clientRepo.GetClient(ctx, clientID)
 	if err != nil {
 		return nil, fmt.Errorf("client not found: %w", err)
@@ -177,7 +212,7 @@ func (s *OAuthService) ValidateClient(ctx context.Context, clientID, clientSecre
 	return cli, nil
 }
 
-func (s *OAuthService) DirectGrant(ctx context.Context,
+func (s *defaultOAuthService) DirectGrant(ctx context.Context,
 	clientID, clientSecret, username, password, scope string,
 ) (*api.TokenResponse, error) {
 	cli, err := s.ValidateClient(ctx, clientID, clientSecret)
@@ -234,7 +269,7 @@ func (s *OAuthService) DirectGrant(ctx context.Context,
 	}, nil
 }
 
-func (s *OAuthService) ClientCredentials(ctx context.Context,
+func (s *defaultOAuthService) ClientCredentials(ctx context.Context,
 	clientID, clientSecret, scope string,
 ) (*api.TokenResponse, error) {
 	cli, err := s.ValidateClient(ctx, clientID, clientSecret)
@@ -247,12 +282,12 @@ func (s *OAuthService) ClientCredentials(ctx context.Context,
 	if !s.validateScope(scope, cli.AllowedScopes) {
 		return nil, domain.NewInvalidScope("invalid scope requested by client")
 	}
-	token, err := s.tokenService.CreateToken(ctx, CreateTokenOptions{
+	token, err := s.tokenService.CreateToken(ctx, domain.CreateTokenOptions{
 		TokenID:      uuid.NewString(),
 		Scope:        scope,
 		ClientID:     clientID,
 		UserID:       "", // No user for client_credentials
-		TokenType:    api.TokenTypeAccessToken,
+		TokenType:    "access_token",
 		ExpireIn:     time.Hour,
 		SigningKeyID: "",
 	}, nil)
@@ -266,7 +301,7 @@ func (s *OAuthService) ClientCredentials(ctx context.Context,
 	}, nil
 }
 
-func (s *OAuthService) validateScope(requestedScope string, allowedScopes []string) bool {
+func (s *defaultOAuthService) validateScope(requestedScope string, allowedScopes []string) bool {
 	if requestedScope == "" {
 		return true
 	}
@@ -295,7 +330,7 @@ func contains(slice []string, item string) bool {
 	return false
 }
 
-func (s *OAuthService) PasswordGrant(ctx context.Context,
+func (s *defaultOAuthService) PasswordGrant(ctx context.Context,
 	username, password, scope string, cli *domain.Client,
 ) (*api.TokenResponse, error) {
 	user, err := s.userRepo.GetUserByEmail(ctx, username) // Changed from GetUserByUsername
@@ -308,7 +343,7 @@ func (s *OAuthService) PasswordGrant(ctx context.Context,
 	return s.tokenService.GenerateTokenPair(ctx, cli.ID, user.ID, scope, time.Hour)
 }
 
-func (s *OAuthService) ExchangeAuthorizationCode(ctx context.Context,
+func (s *defaultOAuthService) ExchangeAuthorizationCode(ctx context.Context,
 	code, clientID, clientSecret, redirectURI string,
 ) (*api.TokenResponse, error) {
 	_, err := s.ValidateClient(ctx, clientID, clientSecret) // Corrected call
@@ -335,7 +370,7 @@ func (s *OAuthService) ExchangeAuthorizationCode(ctx context.Context,
 	return tokenPair, nil
 }
 
-func (s *OAuthService) IntrospectToken(ctx context.Context,
+func (s *defaultOAuthService) IntrospectToken(ctx context.Context,
 	token, tokenTypeHint, clientID, clientSecret string,
 ) (*domain.TokenIntrospection, error) {
 	_, err := s.ValidateClient(ctx, clientID, clientSecret)
@@ -387,7 +422,7 @@ func (s *OAuthService) IntrospectToken(ctx context.Context,
 	}, nil
 }
 
-func (s *OAuthService) RevokeToken(ctx context.Context, tokenToRevoke, tokenTypeHint, clientID, clientSecret string) error {
+func (s *defaultOAuthService) RevokeToken(ctx context.Context, tokenToRevoke, tokenTypeHint, clientID, clientSecret string) error {
 	_, err := s.ValidateClient(ctx, clientID, clientSecret)
 	if err != nil {
 		return fmt.Errorf("invalid client: %w", err)
@@ -396,10 +431,19 @@ func (s *OAuthService) RevokeToken(ctx context.Context, tokenToRevoke, tokenType
 	return nil
 }
 
-func (s *OAuthService) GenerateAuthCode(
+func (s *defaultOAuthService) GenerateAuthCode(
 	ctx context.Context, clientID string, userID string,
 	redirectURI string, scope string, codeChallenge string, codeChallengeMethod string,
+	nonce string, authTime time.Time,
 ) (string, error) {
+	cli, err := s.clientRepo.GetClient(ctx, clientID)
+	if err != nil {
+		return "", domain.NewInvalidClient("client not found or invalid")
+	}
+	if !s.validateScope(scope, cli.AllowedScopes) {
+		return "", domain.NewInvalidScope("requested scope not allowed")
+	}
+
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		log.Error().Err(err).Msg("Failed to generate random bytes for auth code")
@@ -427,12 +471,14 @@ func (s *OAuthService) GenerateAuthCode(
 }
 
 // InitiateDeviceAuthorization, VerifyUserCode, IssueTokenForDeviceFlow need to use domain.DeviceCode and domain.DeviceCodeStatus
-func (s *OAuthService) InitiateDeviceAuthorization(ctx context.Context, clientID string, scope string, verificationBaseURI string) (*api.DeviceAuthResponse, error) {
+func (s *defaultOAuthService) InitiateDeviceAuthorization(ctx context.Context, clientID string, scope string, verificationBaseURI string) (*api.DeviceAuthResponse, error) {
 	cli, err := s.clientRepo.GetClient(ctx, clientID)
 	if err != nil {
 		return nil, domain.NewInvalidClient("client not found or invalid")
 	}
-	_ = cli
+	if !s.validateScope(scope, cli.AllowedScopes) {
+		return nil, domain.NewInvalidScope("requested scope not allowed")
+	}
 	deviceCodeVal, err := generateRandomString(deviceCodeLength)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate device_code: %w", err)
@@ -466,7 +512,7 @@ func (s *OAuthService) InitiateDeviceAuthorization(ctx context.Context, clientID
 	}, nil
 }
 
-func (s *OAuthService) VerifyUserCode(ctx context.Context, userCode string, userID string) (*domain.DeviceCode, error) {
+func (s *defaultOAuthService) VerifyUserCode(ctx context.Context, userCode string, userID string) (*domain.DeviceCode, error) {
 	deviceAuth, err := s.deviceAuthRepo.GetDeviceAuthByUserCode(ctx, userCode)
 	if err != nil {
 		if err == domain.ErrUserCodeNotFound { // Assuming ErrUserCodeNotFound is defined in domain
@@ -491,7 +537,7 @@ func (s *OAuthService) VerifyUserCode(ctx context.Context, userCode string, user
 	return updatedDeviceAuth, nil
 }
 
-func (s *OAuthService) IssueTokenForDeviceFlow(ctx context.Context, deviceCode string, clientID string) (*api.TokenResponse, error) {
+func (s *defaultOAuthService) IssueTokenForDeviceFlow(ctx context.Context, deviceCode string, clientID string) (*api.TokenResponse, error) {
 	deviceAuth, err := s.deviceAuthRepo.GetDeviceAuthByDeviceCode(ctx, deviceCode)
 	if err != nil {
 		// Assuming ErrDeviceCodeNotFound is defined in domain
@@ -546,3 +592,34 @@ func (s *OAuthService) IssueTokenForDeviceFlow(ctx context.Context, deviceCode s
 // OAuthService.Device flow methods now use domain.DeviceCode and domain.DeviceCodeStatus.
 // Removed local definitions of Token, UserSession, AuthCode, DeviceCode, TokenIntrospection, etc.
 // All repository interfaces are now from domain package.
+
+func (s *defaultOAuthService) TokenExchange(ctx context.Context, subjectToken, subjectTokenType, requestedTokenType, resource, scope, clientID string) (*api.TokenResponse, error) {
+	if subjectTokenType != "urn:ietf:params:oauth:token-type:access_token" && subjectTokenType != "urn:ietf:params:oauth:token-type:jwt" {
+		return nil, domain.NewInvalidRequest("unsupported subject_token_type")
+	}
+
+	tokenInfo, err := s.tokenService.ValidateAccessToken(ctx, subjectToken)
+	if err != nil {
+		if errors.Is(err, domain.ErrTokenExpiredOrRevoked) {
+			return nil, domain.NewInvalidGrant("invalid subject token: expired or revoked")
+		}
+		return nil, domain.NewInvalidGrant("invalid subject token")
+	}
+
+	if clientID != "" {
+		client, err := s.clientRepo.GetClient(ctx, clientID)
+		if err != nil {
+			return nil, domain.NewInvalidClient("client not found")
+		}
+		if tokenInfo.ClientID != "" && tokenInfo.ClientID != clientID {
+			return nil, domain.NewInvalidClient("client ID mismatch")
+		}
+		_ = client
+	}
+
+	if scope == "" {
+		scope = tokenInfo.Scope
+	}
+
+	return s.tokenService.GenerateTokenPair(ctx, clientID, tokenInfo.UserID, scope, time.Hour)
+}

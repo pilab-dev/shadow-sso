@@ -14,7 +14,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-type JWKSService struct {
+type defaultJWKSService struct {
 	mu           sync.RWMutex
 	keys         map[string]*rsa.PrivateKey
 	currentKeyID string
@@ -34,26 +34,40 @@ type JSONWebKeySet struct {
 	Keys []JSONWebKey `json:"keys"`
 }
 
-// NewJWKSService creates a new JWKS service with key rotation.
-func NewJWKSService(keyRotation time.Duration) (*JWKSService, error) {
-	service := &JWKSService{
+// newDefaultJWKSService creates a new JWKS service with key rotation (internal constructor).
+func newDefaultJWKSService(keyRotation time.Duration) (JWKSService, error) {
+	service := &defaultJWKSService{
 		keys:        make(map[string]*rsa.PrivateKey),
 		keyRotation: keyRotation,
 	}
 
-	// Kezdeti kulcs generálása
 	if err := service.rotateKeys(); err != nil {
 		return nil, err
 	}
 
-	// Kulcs rotáció időzítő indítása
+	go service.startKeyRotation()
+
+	return service, nil
+}
+
+// NewJWKSService creates a new JWKS service with key rotation (public constructor for backward compatibility).
+func NewJWKSService(keyRotation time.Duration) (*defaultJWKSService, error) {
+	service := &defaultJWKSService{
+		keys:        make(map[string]*rsa.PrivateKey),
+		keyRotation: keyRotation,
+	}
+
+	if err := service.rotateKeys(); err != nil {
+		return nil, err
+	}
+
 	go service.startKeyRotation()
 
 	return service, nil
 }
 
 // GetPublicJWKS retrieves the public JSON Web Key Set.
-func (s *JWKSService) GetPublicJWKS(ctx context.Context) (*JSONWebKeySet, error) {
+func (s *defaultJWKSService) GetPublicJWKS(ctx context.Context) (*JSONWebKeySet, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -83,7 +97,7 @@ func (s *JWKSService) GetPublicJWKS(ctx context.Context) (*JSONWebKeySet, error)
 }
 
 // GetJWKS retrieves the JSON Web Key Set.
-func (s *JWKSService) GetJWKS() JSONWebKeySet {
+func (s *defaultJWKSService) GetJWKS() JSONWebKeySet {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -109,13 +123,13 @@ func (s *JWKSService) GetJWKS() JSONWebKeySet {
 }
 
 // GetSigningKey retrieves the current signing key.
-func (s *JWKSService) GetSigningKey() (string, *rsa.PrivateKey) {
+func (s *defaultJWKSService) GetSigningKey() (string, interface{}) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.currentKeyID, s.keys[s.currentKeyID]
 }
 
-func (s *JWKSService) rotateKeys() error {
+func (s *defaultJWKSService) rotateKeys() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -140,7 +154,7 @@ func (s *JWKSService) rotateKeys() error {
 	return nil
 }
 
-func (s *JWKSService) startKeyRotation() {
+func (s *defaultJWKSService) startKeyRotation() {
 	ticker := time.NewTicker(s.keyRotation)
 	defer ticker.Stop()
 

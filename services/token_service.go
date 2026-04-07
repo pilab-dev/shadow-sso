@@ -7,6 +7,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -21,7 +22,7 @@ import (
 var errMissingKidSAValidation = errors.New("missing kid header, not a service account token, try other validation")
 
 // TokenService handles token generation and validation
-type TokenService struct {
+type defaultTokenService struct {
 	repo   domain.TokenRepository // Changed to domain.TokenRepository
 	cache  cache.TokenStore
 	issuer string
@@ -34,24 +35,45 @@ type TokenService struct {
 	userRepo   domain.UserRepository // New dependency
 }
 
-// NewTokenService creates a new TokenService instance
-func NewTokenService(
-	repo domain.TokenRepository, // Changed to domain.TokenRepository
+// newDefaultTokenService creates a new TokenService instance (internal constructor).
+func newDefaultTokenService(
+	repo domain.TokenRepository,
 	tokenCache cache.TokenStore,
-	issuer string, // Issuer for user tokens
+	issuer string,
 	signer *TokenSigner,
 	pubKeyRepo domain.PublicKeyRepository,
 	saRepo domain.ServiceAccountRepository,
-	userRepo domain.UserRepository, // New
-) *TokenService {
-	return &TokenService{
+	userRepo domain.UserRepository,
+) TokenService {
+	return &defaultTokenService{
 		repo:       repo,
 		cache:      tokenCache,
 		issuer:     issuer,
 		signer:     signer,
 		pubKeyRepo: pubKeyRepo,
 		saRepo:     saRepo,
-		userRepo:   userRepo, // New
+		userRepo:   userRepo,
+	}
+}
+
+// NewTokenService creates a new TokenService instance (public constructor for backward compatibility).
+func NewTokenService(
+	repo domain.TokenRepository,
+	tokenCache cache.TokenStore,
+	issuer string,
+	signer *TokenSigner,
+	pubKeyRepo domain.PublicKeyRepository,
+	saRepo domain.ServiceAccountRepository,
+	userRepo domain.UserRepository,
+) *defaultTokenService {
+	return &defaultTokenService{
+		repo:       repo,
+		cache:      tokenCache,
+		issuer:     issuer,
+		signer:     signer,
+		pubKeyRepo: pubKeyRepo,
+		saRepo:     saRepo,
+		userRepo:   userRepo,
 	}
 }
 
@@ -104,7 +126,7 @@ type CreateTokenOptions struct {
 }
 
 // CreateToken creates a new token with the given options and claims.
-func (s *TokenService) CreateToken(ctx context.Context, opts CreateTokenOptions, claims jwt.Claims) (*domain.Token, error) { // Changed return type
+func (s *defaultTokenService) CreateToken(ctx context.Context, opts domain.CreateTokenOptions, claims jwt.Claims) (*domain.Token, error) { // Changed return type
 	expiresAt := time.Now().Add(opts.ExpireIn)
 
 	// ? This is a default claim object, it can be used for both access and refresh tokens.
@@ -164,12 +186,14 @@ func (s *TokenService) CreateToken(ctx context.Context, opts CreateTokenOptions,
 			log.Warn().Err(err).Msg("failed to cache token")
 		}
 	}
-	metrics.TokensCreatedTotal.Inc()
+	if metrics.TokensCreatedTotal != nil {
+		metrics.TokensCreatedTotal.Inc()
+	}
 	return token, nil
 }
 
 // BuildToken builds the token value for an existing token struct.
-func (s *TokenService) BuildToken(token *domain.Token) error { // Changed to domain.Token
+func (s *defaultTokenService) BuildToken(token *domain.Token) error { // Changed to domain.Token
 	// ? This is a default claim object, it can be used for both access and refresh tokens.
 	// ? Later it should be changed to a specific one for access_token, and id_token
 	// Access token claims
@@ -210,7 +234,7 @@ func (s *TokenService) BuildToken(token *domain.Token) error { // Changed to dom
 	return nil
 }
 
-// func (s *TokenService) generateUserTokens(ctx context.Context, userID, clientID, scope string) (*TokenResponse, error) {
+// func (s *defaultTokenService) generateUserTokens(ctx context.Context, userID, clientID, scope string) (*TokenResponse, error) {
 // 	tokenID := uuid.NewString()
 
 // 	// Generate access token
@@ -220,7 +244,7 @@ func (s *TokenService) BuildToken(token *domain.Token) error { // Changed to dom
 // 		UserID:       userID,
 // 		Scope:        scope,
 // 		ExpireIn:     time.Hour,
-// 		TokenType:    "access_token",
+// 		TokenType:    api.TokenTypeAccessToken,
 // 		SigningKeyID: "", // Use the default
 // 	}, nil)
 // 	if err != nil {
@@ -285,12 +309,12 @@ func (s *TokenService) BuildToken(token *domain.Token) error { // Changed to dom
 // }
 
 // GenerateTokenPair creates a new access and refresh token pair
-func (s *TokenService) GenerateTokenPair(ctx context.Context,
+func (s *defaultTokenService) GenerateTokenPair(ctx context.Context,
 	clientID, userID, scope string, tokenTTL time.Duration,
 ) (*api.TokenResponse, error) {
 	// Generate access token
 	accessTokenID := uuid.NewString()
-	accessToken, err := s.CreateToken(ctx, CreateTokenOptions{
+	accessToken, err := s.CreateToken(ctx, domain.CreateTokenOptions{
 		TokenID:      accessTokenID,
 		Scope:        scope,
 		ClientID:     clientID,
@@ -306,7 +330,7 @@ func (s *TokenService) GenerateTokenPair(ctx context.Context,
 	// Generate refresh token
 	refreshTokenID := uuid.NewString()
 	refreshTokenTTL := tokenTTL * 24 // Example: Refresh token lives 24x longer
-	refreshToken, err := s.CreateToken(ctx, CreateTokenOptions{
+	refreshToken, err := s.CreateToken(ctx, domain.CreateTokenOptions{
 		TokenID:      refreshTokenID,
 		Scope:        scope,
 		ClientID:     clientID,
@@ -324,8 +348,17 @@ func (s *TokenService) GenerateTokenPair(ctx context.Context,
 	// CreateToken already handles storing in repo and caching for access tokens.
 	// The metrics.TokensCreatedTotal.Inc() is also called within CreateToken.
 
+	var idToken string
+	if strings.Contains(scope, "openid") {
+		idToken, err = s.GenerateIDToken(ctx, userID, clientID, "", time.Now(), scope)
+		if err != nil {
+			log.Warn().Err(err).Msg("failed to generate ID token, continuing without it")
+			idToken = ""
+		}
+	}
+
 	return &api.TokenResponse{
-		IDToken:      "", // ID Token generation is a separate concern if needed
+		IDToken:      idToken,
 		AccessToken:  accessToken.TokenValue,
 		TokenType:    "Bearer", // Standard token type for responses
 		ExpiresIn:    int(tokenTTL.Seconds()),
@@ -336,7 +369,7 @@ func (s *TokenService) GenerateTokenPair(ctx context.Context,
 // ValidateToken validates an access token and returns its information. If the token is revoked or expired,
 // it returns ErrTokenExpiredOrRevoked.
 // This version handles both Service Account JWTs and regular user tokens.
-func (s *TokenService) ValidateAccessToken(ctx context.Context, tokenValue string) (*domain.Token, error) { // Changed return type
+func (s *defaultTokenService) ValidateAccessToken(ctx context.Context, tokenValue string) (*domain.Token, error) { // Changed return type
 	// This line needs to be at the package level of token_service.go, or passed in.
 	// var errMissingKidSAValidation = errors.New("missing kid header, not a service account token, try other validation")
 
@@ -417,7 +450,8 @@ func (s *TokenService) ValidateAccessToken(ctx context.Context, tokenValue strin
 	} // end if err == nil
 
 	// At this point, err != nil. Check if it's the signal to fallback.
-	if errors.Is(err, errMissingKidSAValidation) {
+	// Also handle malformed token errors (not a valid JWT) - treat same as missing kid, fall back to user token validation
+	if errors.Is(err, errMissingKidSAValidation) || (err != nil && strings.Contains(err.Error(), "malformed")) {
 		log.Debug().Msg("Attempting user token validation (SA token 'kid' missing or error explicitly requesting fallback).")
 		// Fallback to user token validation (original logic from existing ValidateAccessToken)
 		// Ensure s.repo, s.cache, ErrTokenExpiredOrRevoked are accessible and correctly used
@@ -471,7 +505,7 @@ func (s *TokenService) ValidateAccessToken(ctx context.Context, tokenValue strin
 
 // RevokeToken revokes an access token. This will invalidate the token and remove it from cache
 // This is a no-op if the token is already revoked. This is useful for logging out, for example.
-func (s *TokenService) RevokeToken(ctx context.Context, token string) error {
+func (s *defaultTokenService) RevokeToken(ctx context.Context, token string) error {
 	if err := s.cache.Delete(ctx, token); err != nil {
 		log.Warn().Err(err).Msg("failed to delete token from cache")
 	}
@@ -481,12 +515,64 @@ func (s *TokenService) RevokeToken(ctx context.Context, token string) error {
 
 // GetRefreshTokenInfo retrieves metadata about a refresh token. Returns the token info if found,
 // or an error if not found or database error.
-func (s *TokenService) GetRefreshTokenInfo(ctx context.Context, tokenValue string) (*domain.TokenInfo, error) { // Changed to domain.TokenInfo
+func (s *defaultTokenService) GetRefreshTokenInfo(ctx context.Context, tokenValue string) (*domain.TokenInfo, error) { // Changed to domain.TokenInfo
 	return s.repo.GetRefreshTokenInfo(ctx, tokenValue)
 }
 
 // GetAccessTokenInfo retrieves metadata about an access token. Returns the token info if found,
 // or an error if not found or database error.
-func (s *TokenService) GetAccessTokenInfo(ctx context.Context, tokenValue string) (*domain.TokenInfo, error) { // Changed to domain.TokenInfo
+func (s *defaultTokenService) GetAccessTokenInfo(ctx context.Context, tokenValue string) (*domain.TokenInfo, error) { // Changed to domain.TokenInfo
 	return s.repo.GetAccessTokenInfo(ctx, tokenValue)
+}
+
+// GenerateIDToken generates an ID token for a user.
+func (s *defaultTokenService) GenerateIDToken(ctx context.Context, userID, clientID, nonce string, authTime time.Time, scope string) (string, error) {
+	if userID == "" {
+		return "", errors.New("userID required for ID token")
+	}
+
+	user, err := s.userRepo.GetUserByID(ctx, userID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get user for ID token: %w", err)
+	}
+	if user == nil {
+		return "", errors.New("user not found for ID token")
+	}
+
+	claims := jwt.MapClaims{
+		"iss":       s.issuer,
+		"sub":       userID,
+		"aud":       clientID,
+		"exp":       jwt.NewNumericDate(authTime.Add(time.Hour)),
+		"iat":       jwt.NewNumericDate(authTime),
+		"auth_time": jwt.NewNumericDate(authTime),
+		"email":     user.Email,
+	}
+
+	if nonce != "" {
+		claims["nonce"] = nonce
+	}
+
+	scopes := strings.Split(scope, " ")
+	for _, s := range scopes {
+		if s == "profile" {
+			claims["name"] = strings.TrimSpace(user.FirstName + " " + user.LastName)
+			claims["preferred_username"] = user.Email
+		} else if s == "email" {
+			claims["email"] = user.Email
+			claims["email_verified"] = true
+		}
+	}
+
+	return s.signer.Sign(claims, "")
+}
+
+// ValidateIDToken validates an ID token.
+func (s *defaultTokenService) ValidateIDToken(ctx context.Context, tokenValue string) (map[string]interface{}, error) {
+	return nil, errors.New("not implemented: ValidateIDToken requires JWKS setup, see skipped tests")
+}
+
+// GenerateTokenPairWithFamily generates a token pair with a refresh token family.
+func (s *defaultTokenService) GenerateTokenPairWithFamily(ctx context.Context, clientID, userID, scope string, tokenTTL time.Duration, family string, nonce string, authTime time.Time) (*api.TokenResponse, error) {
+	return nil, errors.New("not implemented: GenerateTokenPairWithFamily requires JWKS setup, see skipped tests")
 }

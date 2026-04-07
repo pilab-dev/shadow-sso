@@ -13,12 +13,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 	sssoapi "github.com/pilab-dev/shadow-sso/api"
-	"github.com/pilab-dev/shadow-sso/client"
 
 	"github.com/google/uuid"
-	"github.com/pilab-dev/shadow-sso/domain" // Corrected: Single import of domain
-	"github.com/pilab-dev/shadow-sso/internal/federation" // Added for federation.Service
-	"github.com/pilab-dev/shadow-sso/internal/metrics"    // For custom metrics
+	"github.com/pilab-dev/shadow-sso/domain"           // Corrected: Single import of domain
+	"github.com/pilab-dev/shadow-sso/internal/metrics" // For custom metrics
 	// Removed duplicate domain import
 	"github.com/pilab-dev/shadow-sso/services"
 	"github.com/rs/zerolog/log"
@@ -35,33 +33,32 @@ const (
 
 // OAuth2API struct to hold dependencies.
 type OAuth2API struct {
-	service           *services.OAuthService
-	jwksService       *services.JWKSService
-	clientService     *client.ClientService
-	pkceService       *services.PKCEService
+	service           services.OAuthService
+	jwksService       services.JWKSService
+	clientService     services.ClientService
+	pkceService       services.PKCEService
 	config            *sssoapi.OpenIDProviderConfig
-	flowStore         domain.FlowStore // Changed to domain.FlowStore
+	flowStore         domain.FlowStore        // Changed to domain.FlowStore
 	userSessionStore  domain.UserSessionStore // Changed to domain.UserSessionStore
 	userRepo          domain.UserRepository
-	passwordHasher    domain.PasswordHasher // Changed to domain.PasswordHasher
-	federationService *federation.Service    // Added for LDAP and other federation flows
-	tokenService      *services.TokenService // Added for issuing tokens after LDAP auth
+	passwordHasher    domain.PasswordHasher      // Changed to domain.PasswordHasher
+	federationService services.FederationService // Added for LDAP and other federation flows
+	tokenService      services.TokenService      // Added for issuing tokens after LDAP auth
 }
 
 type OAuth2APIOptions struct {
-	OAuthService      *services.OAuthService
-	JSKSService       *services.JWKSService
-	ClientService     *client.ClientService
-	PkceService       *services.PKCEService
+	OAuthService      services.OAuthService
+	JSKSService       services.JWKSService
+	ClientService     services.ClientService
+	PkceService       services.PKCEService
 	Config            *sssoapi.OpenIDProviderConfig
-	FlowStore         domain.FlowStore // Changed to domain.FlowStore
+	FlowStore         domain.FlowStore        // Changed to domain.FlowStore
 	UserSessionStore  domain.UserSessionStore // Changed to domain.UserSessionStore
 	UserRepo          domain.UserRepository
-	PasswordHasher    domain.PasswordHasher // Changed to domain.PasswordHasher
-	FederationService *federation.Service // Added
-	TokenService      *services.TokenService
+	PasswordHasher    domain.PasswordHasher      // Changed to domain.PasswordHasher
+	FederationService services.FederationService // Added
+	TokenService      services.TokenService
 }
-
 
 // NewOAuth2API initializes the OAuth2 API.
 func NewOAuth2API(
@@ -542,6 +539,8 @@ func (oa *OAuth2API) tryHandleWithExistingSession(c *gin.Context, data *authoriz
 			data.scopeQuery,
 			data.codeChallenge,
 			data.codeChallengeMethod,
+			data.nonce,
+			userSession.AuthenticatedAt,
 		)
 		if errGen != nil {
 			log.Error().Err(errGen).Msg("AuthorizeHandler: Failed to generate authorization code for authenticated user")
@@ -1556,6 +1555,8 @@ func (oa *OAuth2API) AuthenticateUserHandler(c *gin.Context) {
 		flowState.Scope,
 		flowState.CodeChallenge,       // Pass stored code challenge
 		flowState.CodeChallengeMethod, // Pass stored code challenge method
+		flowState.Nonce,
+		flowState.UserAuthenticatedAt,
 	)
 	if err != nil {
 		log.Error().Err(err).Str("flowId", req.FlowID).Msg("Failed to generate authorization code after UI authentication")
@@ -1584,4 +1585,3 @@ func (oa *OAuth2API) AuthenticateUserHandler(c *gin.Context) {
 	log.Info().Str("flowId", req.FlowID).Str("userID", user.ID).Str("redirectURL", redirectURL).Msg("User authenticated via UI, redirecting to client with auth code.")
 	c.Redirect(http.StatusFound, redirectURL)
 }
-

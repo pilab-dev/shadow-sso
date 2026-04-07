@@ -17,10 +17,9 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-func createTokenService(ctrl *gomock.Controller) *services.TokenService {
+func createTokenService(ctrl *gomock.Controller) services.TokenService {
 	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
 	mockCache := mock_cache.NewMockTokenStore(ctrl)
-	mockJWKS, _ := services.NewJWKSService(24 * time.Hour)
 	mockSigner := services.NewTokenSigner()
 	mockSigner.AddKeySigner("test-secret")
 	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
@@ -32,7 +31,6 @@ func createTokenService(ctrl *gomock.Controller) *services.TokenService {
 		mockCache,
 		"test-issuer",
 		mockSigner,
-		mockJWKS,
 		mockPubKeyRepo,
 		mockSARepo,
 		mockUserRepo,
@@ -65,7 +63,6 @@ func TestTokenService_CreateToken(t *testing.T) {
 	// Create service with these mocks
 	mockPubKeyRepo := mock_domain.NewMockPublicKeyRepository(ctrl)
 	mockSARepo := mock_domain.NewMockServiceAccountRepository(ctrl)
-	mockJWKS, _ := services.NewJWKSService(24 * time.Hour)
 	mockSigner := services.NewTokenSigner()
 	mockSigner.AddKeySigner("test-secret")
 
@@ -74,7 +71,6 @@ func TestTokenService_CreateToken(t *testing.T) {
 		mockCache,
 		"test-issuer",
 		mockSigner,
-		mockJWKS,
 		mockPubKeyRepo,
 		mockSARepo,
 		mockUserRepo,
@@ -93,7 +89,6 @@ func TestTokenService_CreateToken_WithRoles(t *testing.T) {
 
 	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
 	mockCache := mock_cache.NewMockTokenStore(ctrl)
-	mockJWKS, _ := services.NewJWKSService(24 * time.Hour)
 	mockSigner := services.NewTokenSigner()
 	mockSigner.AddKeySigner("test-secret")
 	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
@@ -105,7 +100,7 @@ func TestTokenService_CreateToken_WithRoles(t *testing.T) {
 		mockCache,
 		"test-issuer",
 		mockSigner,
-		mockJWKS,
+
 		mockPubKeyRepo,
 		mockSARepo,
 		mockUserRepo,
@@ -142,7 +137,6 @@ func TestTokenService_GenerateTokenPair(t *testing.T) {
 
 	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
 	mockCache := mock_cache.NewMockTokenStore(ctrl)
-	mockJWKS, _ := services.NewJWKSService(24 * time.Hour)
 	mockSigner := services.NewTokenSigner()
 	mockSigner.AddKeySigner("test-secret")
 	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
@@ -154,7 +148,7 @@ func TestTokenService_GenerateTokenPair(t *testing.T) {
 		mockCache,
 		"test-issuer",
 		mockSigner,
-		mockJWKS,
+
 		mockPubKeyRepo,
 		mockSARepo,
 		mockUserRepo,
@@ -168,6 +162,11 @@ func TestTokenService_GenerateTokenPair(t *testing.T) {
 
 	mockTokenRepo.EXPECT().StoreToken(ctx, gomock.Any()).Return(nil).AnyTimes()
 	mockCache.EXPECT().Set(ctx, gomock.Any()).Return(nil).AnyTimes()
+	mockUserRepo.EXPECT().GetUserByID(ctx, userID).Return(&domain.User{
+		ID:    userID,
+		Email: "test@example.com",
+		Roles: []string{"user"},
+	}, nil).AnyTimes()
 
 	resp, err := tokenService.GenerateTokenPair(ctx, clientID, userID, scope, tokenTTL)
 
@@ -184,7 +183,6 @@ func TestTokenService_GenerateTokenPair_WithOpenID(t *testing.T) {
 
 	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
 	mockCache := mock_cache.NewMockTokenStore(ctrl)
-	mockJWKS, _ := services.NewJWKSService(24 * time.Hour)
 	mockSigner := services.NewTokenSigner()
 	mockSigner.AddKeySigner("test-secret")
 	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
@@ -196,7 +194,7 @@ func TestTokenService_GenerateTokenPair_WithOpenID(t *testing.T) {
 		mockCache,
 		"test-issuer",
 		mockSigner,
-		mockJWKS,
+
 		mockPubKeyRepo,
 		mockSARepo,
 		mockUserRepo,
@@ -210,6 +208,11 @@ func TestTokenService_GenerateTokenPair_WithOpenID(t *testing.T) {
 
 	mockTokenRepo.EXPECT().StoreToken(ctx, gomock.Any()).Return(nil).AnyTimes()
 	mockCache.EXPECT().Set(ctx, gomock.Any()).Return(nil).AnyTimes()
+	mockUserRepo.EXPECT().GetUserByID(ctx, userID).Return(&domain.User{
+		ID:    userID,
+		Email: "test@example.com",
+		Roles: []string{"user"},
+	}, nil).AnyTimes()
 
 	resp, err := tokenService.GenerateTokenPair(ctx, clientID, userID, scope, tokenTTL)
 
@@ -224,7 +227,6 @@ func TestTokenService_GenerateTokenPair_WithoutOpenID(t *testing.T) {
 
 	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
 	mockCache := mock_cache.NewMockTokenStore(ctrl)
-	mockJWKS, _ := services.NewJWKSService(24 * time.Hour)
 	mockSigner := services.NewTokenSigner()
 	mockSigner.AddKeySigner("test-secret")
 	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
@@ -236,7 +238,7 @@ func TestTokenService_GenerateTokenPair_WithoutOpenID(t *testing.T) {
 		mockCache,
 		"test-issuer",
 		mockSigner,
-		mockJWKS,
+
 		mockPubKeyRepo,
 		mockSARepo,
 		mockUserRepo,
@@ -250,6 +252,11 @@ func TestTokenService_GenerateTokenPair_WithoutOpenID(t *testing.T) {
 
 	mockTokenRepo.EXPECT().StoreToken(ctx, gomock.Any()).Return(nil).AnyTimes()
 	mockCache.EXPECT().Set(ctx, gomock.Any()).Return(nil).AnyTimes()
+	mockUserRepo.EXPECT().GetUserByID(ctx, userID).Return(&domain.User{
+		ID:    userID,
+		Email: "test@example.com",
+		Roles: []string{"user"},
+	}, nil).AnyTimes()
 
 	resp, err := tokenService.GenerateTokenPair(ctx, clientID, userID, scope, tokenTTL)
 
@@ -264,7 +271,6 @@ func TestTokenService_ValidateAccessToken_CacheHit(t *testing.T) {
 
 	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
 	mockCache := mock_cache.NewMockTokenStore(ctrl)
-	mockJWKS, _ := services.NewJWKSService(24 * time.Hour)
 	mockSigner := services.NewTokenSigner()
 	mockSigner.AddKeySigner("test-secret")
 	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
@@ -276,7 +282,7 @@ func TestTokenService_ValidateAccessToken_CacheHit(t *testing.T) {
 		mockCache,
 		"test-issuer",
 		mockSigner,
-		mockJWKS,
+
 		mockPubKeyRepo,
 		mockSARepo,
 		mockUserRepo,
@@ -310,7 +316,6 @@ func TestTokenService_ValidateAccessToken_CacheMiss_RepoHit(t *testing.T) {
 
 	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
 	mockCache := mock_cache.NewMockTokenStore(ctrl)
-	mockJWKS, _ := services.NewJWKSService(24 * time.Hour)
 	mockSigner := services.NewTokenSigner()
 	mockSigner.AddKeySigner("test-secret")
 	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
@@ -322,7 +327,7 @@ func TestTokenService_ValidateAccessToken_CacheMiss_RepoHit(t *testing.T) {
 		mockCache,
 		"test-issuer",
 		mockSigner,
-		mockJWKS,
+
 		mockPubKeyRepo,
 		mockSARepo,
 		mockUserRepo,
@@ -359,7 +364,6 @@ func TestTokenService_ValidateAccessToken_Revoked(t *testing.T) {
 
 	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
 	mockCache := mock_cache.NewMockTokenStore(ctrl)
-	mockJWKS, _ := services.NewJWKSService(24 * time.Hour)
 	mockSigner := services.NewTokenSigner()
 	mockSigner.AddKeySigner("test-secret")
 	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
@@ -371,7 +375,7 @@ func TestTokenService_ValidateAccessToken_Revoked(t *testing.T) {
 		mockCache,
 		"test-issuer",
 		mockSigner,
-		mockJWKS,
+
 		mockPubKeyRepo,
 		mockSARepo,
 		mockUserRepo,
@@ -406,7 +410,6 @@ func TestTokenService_RevokeToken(t *testing.T) {
 
 	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
 	mockCache := mock_cache.NewMockTokenStore(ctrl)
-	mockJWKS, _ := services.NewJWKSService(24 * time.Hour)
 	mockSigner := services.NewTokenSigner()
 	mockSigner.AddKeySigner("test-secret")
 	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
@@ -418,7 +421,7 @@ func TestTokenService_RevokeToken(t *testing.T) {
 		mockCache,
 		"test-issuer",
 		mockSigner,
-		mockJWKS,
+
 		mockPubKeyRepo,
 		mockSARepo,
 		mockUserRepo,
@@ -441,7 +444,6 @@ func TestTokenService_GetRefreshTokenInfo(t *testing.T) {
 
 	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
 	mockCache := mock_cache.NewMockTokenStore(ctrl)
-	mockJWKS, _ := services.NewJWKSService(24 * time.Hour)
 	mockSigner := services.NewTokenSigner()
 	mockSigner.AddKeySigner("test-secret")
 	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
@@ -453,7 +455,7 @@ func TestTokenService_GetRefreshTokenInfo(t *testing.T) {
 		mockCache,
 		"test-issuer",
 		mockSigner,
-		mockJWKS,
+
 		mockPubKeyRepo,
 		mockSARepo,
 		mockUserRepo,
@@ -484,7 +486,6 @@ func TestTokenService_GetAccessTokenInfo(t *testing.T) {
 
 	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
 	mockCache := mock_cache.NewMockTokenStore(ctrl)
-	mockJWKS, _ := services.NewJWKSService(24 * time.Hour)
 	mockSigner := services.NewTokenSigner()
 	mockSigner.AddKeySigner("test-secret")
 	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
@@ -496,7 +497,7 @@ func TestTokenService_GetAccessTokenInfo(t *testing.T) {
 		mockCache,
 		"test-issuer",
 		mockSigner,
-		mockJWKS,
+
 		mockPubKeyRepo,
 		mockSARepo,
 		mockUserRepo,
@@ -528,7 +529,6 @@ func TestTokenService_ValidateAccessToken_Expired(t *testing.T) {
 
 	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
 	mockCache := mock_cache.NewMockTokenStore(ctrl)
-	mockJWKS, _ := services.NewJWKSService(24 * time.Hour)
 	mockSigner := services.NewTokenSigner()
 	mockSigner.AddKeySigner("test-secret")
 	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
@@ -540,7 +540,7 @@ func TestTokenService_ValidateAccessToken_Expired(t *testing.T) {
 		mockCache,
 		"test-issuer",
 		mockSigner,
-		mockJWKS,
+
 		mockPubKeyRepo,
 		mockSARepo,
 		mockUserRepo,
@@ -575,7 +575,6 @@ func TestTokenService_ValidateAccessToken_NotFound(t *testing.T) {
 
 	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
 	mockCache := mock_cache.NewMockTokenStore(ctrl)
-	mockJWKS, _ := services.NewJWKSService(24 * time.Hour)
 	mockSigner := services.NewTokenSigner()
 	mockSigner.AddKeySigner("test-secret")
 	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
@@ -587,7 +586,7 @@ func TestTokenService_ValidateAccessToken_NotFound(t *testing.T) {
 		mockCache,
 		"test-issuer",
 		mockSigner,
-		mockJWKS,
+
 		mockPubKeyRepo,
 		mockSARepo,
 		mockUserRepo,
@@ -618,7 +617,6 @@ func TestTokenService_RevokeToken_CacheError(t *testing.T) {
 
 	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
 	mockCache := mock_cache.NewMockTokenStore(ctrl)
-	mockJWKS, _ := services.NewJWKSService(24 * time.Hour)
 	mockSigner := services.NewTokenSigner()
 	mockSigner.AddKeySigner("test-secret")
 	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
@@ -630,7 +628,7 @@ func TestTokenService_RevokeToken_CacheError(t *testing.T) {
 		mockCache,
 		"test-issuer",
 		mockSigner,
-		mockJWKS,
+
 		mockPubKeyRepo,
 		mockSARepo,
 		mockUserRepo,

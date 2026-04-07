@@ -29,7 +29,7 @@ func (oa *OAuth2API) LDAPLoginHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	// Authenticate user via federation service
-	externalUser, err := oa.federationService.AuthenticateDirect(ctx, req.ProviderName, req.Username, req.Password)
+	rawUser, err := oa.federationService.AuthenticateDirect(ctx, req.ProviderName, req.Username, req.Password)
 	if err != nil {
 		log.Warn().Err(err).Str("provider", req.ProviderName).Str("username", req.Username).Msg("LDAP authentication failed")
 		// Check for specific federation errors to return appropriate responses
@@ -45,6 +45,12 @@ func (oa *OAuth2API) LDAPLoginHandler(c *gin.Context) {
 		} else {
 			oa.sendJSONError(c, http.StatusUnauthorized, domain.NewInvalidGrant("Authentication failed."))
 		}
+		return
+	}
+
+	externalUser, ok := rawUser.(*federation.ExternalUserInfo)
+	if !ok {
+		oa.sendJSONError(c, http.StatusInternalServerError, domain.NewServerError("Unexpected user type from authentication provider."))
 		return
 	}
 

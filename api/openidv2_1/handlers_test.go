@@ -21,9 +21,9 @@ import (
 	"github.com/pilab-dev/shadow-sso/client"
 	"github.com/pilab-dev/shadow-sso/domain"
 	mock_domain "github.com/pilab-dev/shadow-sso/domain/mocks"
-	pkgauth "github.com/pilab-dev/shadow-sso/pkg/auth"
 	"github.com/pilab-dev/shadow-sso/internal/metrics"
 	"github.com/pilab-dev/shadow-sso/internal/oidcflow"
+	pkgauth "github.com/pilab-dev/shadow-sso/pkg/auth"
 	"github.com/pilab-dev/shadow-sso/services"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -64,6 +64,7 @@ func setupTokenHandlerTest(t *testing.T) (
 	*mock_cache.MockTokenStore,
 	*mock_domain.MockPublicKeyRepository,
 	*mock_domain.MockServiceAccountRepository,
+	domain.TokenServiceInterface,
 ) {
 	ctrl := gomock.NewController(t)
 
@@ -82,8 +83,6 @@ func setupTokenHandlerTest(t *testing.T) (
 	// * Initialize Services
 	actualSigner := services.NewTokenSigner()
 	actualSigner.AddKeySigner("test-secret-for-hs256-handlers-test")
-	tokenService := services.NewTokenService(
-		mockTokenRepo, mockTokenCache, "issuer", actualSigner, mockPubKeyRepo, mockServiceAccountRepo, mockUserRepo)
 
 	jwksService, err := services.NewJWKSService(time.Hour * 24 * 365)
 	require.NoError(t, err)
@@ -94,6 +93,16 @@ func setupTokenHandlerTest(t *testing.T) (
 
 	flowStore := oidcflow.NewInMemoryFlowStore()
 	userSessionStore := oidcflow.NewInMemoryUserSessionStore()
+
+	tokenService := services.NewTokenService(
+		mockTokenRepo,
+		mockTokenCache,
+		"test-issuer",
+		actualSigner,
+		mockPubKeyRepo,
+		mockServiceAccountRepo,
+		mockUserRepo,
+	)
 
 	// OAuthService initialization
 	oauthService := services.NewOAuthService(
@@ -122,13 +131,13 @@ func setupTokenHandlerTest(t *testing.T) (
 	)
 
 	router := setupRouter(t, api)
-	return router, ctrl, mockTokenRepo, mockAuthCodeRepo, mockDeviceAuthRepo, mockClientRepo, mockUserRepo, mockSessionRepo, mockPkceRepo, mockTokenCache, mockPubKeyRepo, mockServiceAccountRepo
+	return router, ctrl, mockTokenRepo, mockAuthCodeRepo, mockDeviceAuthRepo, mockClientRepo, mockUserRepo, mockSessionRepo, mockPkceRepo, mockTokenCache, mockPubKeyRepo, mockServiceAccountRepo, tokenService
 }
 
 func TestTokenHandler_AuthorizationCodeGrant_Success(t *testing.T) {
 	t.Skip("this expects redirect, but gets token. Which is OK i think, but needs to be investigated")
 
-	router, ctrl, mockTokenRepo, mockAuthCodeRepo, _, mockClientStore, _, _, _, mockTokenCache, _, _ := setupTokenHandlerTest(t) // mockUserRepo assigned to _
+	router, ctrl, mockTokenRepo, mockAuthCodeRepo, _, mockClientStore, _, _, _, mockTokenCache, _, _, _ := setupTokenHandlerTest(t) // mockUserRepo assigned to _
 	defer ctrl.Finish()
 
 	_ = mockAuthCodeRepo
@@ -245,7 +254,7 @@ func TestTokenHandler_AuthorizationCodeGrant_Success(t *testing.T) {
 }
 
 func TestTokenHandler_MissingClientID(t *testing.T) {
-	router, ctrl, _, _, _, _, _, _, _, _, _, _ := setupTokenHandlerTest(t)
+	router, ctrl, _, _, _, _, _, _, _, _, _, _, _ := setupTokenHandlerTest(t)
 	defer ctrl.Finish()
 
 	data := url.Values{}
@@ -270,7 +279,7 @@ func TestTokenHandler_MissingClientID(t *testing.T) {
 }
 
 func TestTokenHandler_InvalidClientCredentials(t *testing.T) {
-	router, ctrl, _, _, _, mockClientStore, _, _, _, _, _, _ := setupTokenHandlerTest(t)
+	router, ctrl, _, _, _, mockClientStore, _, _, _, _, _, _, _ := setupTokenHandlerTest(t)
 	defer ctrl.Finish()
 
 	clientID := "test-client"
@@ -304,7 +313,7 @@ func TestTokenHandler_InvalidClientCredentials(t *testing.T) {
 }
 
 func TestTokenHandler_GrantTypeNotAllowed(t *testing.T) {
-	router, ctrl, _, _, _, mockClientStore, _, _, _, _, _, _ := setupTokenHandlerTest(t)
+	router, ctrl, _, _, _, mockClientStore, _, _, _, _, _, _, _ := setupTokenHandlerTest(t)
 	defer ctrl.Finish()
 
 	clientID := "client-no-auth-code-grant"
@@ -340,7 +349,7 @@ func TestTokenHandler_GrantTypeNotAllowed(t *testing.T) {
 }
 
 func TestTokenHandler_UnsupportedGrantType(t *testing.T) {
-	router, ctrl, _, _, _, mockClientStore, _, _, _, _, _, _ := setupTokenHandlerTest(t)
+	router, ctrl, _, _, _, mockClientStore, _, _, _, _, _, _, _ := setupTokenHandlerTest(t)
 	defer ctrl.Finish()
 
 	clientID := "test-client"
@@ -375,7 +384,7 @@ func TestTokenHandler_UnsupportedGrantType(t *testing.T) {
 }
 
 func TestTokenHandler_AuthorizationCodeGrant_PKCERequired_MissingVerifier(t *testing.T) {
-	router, ctrl, _, _, _, mockClientStore, _, _, _, _, _, _ := setupTokenHandlerTest(t)
+	router, ctrl, _, _, _, mockClientStore, _, _, _, _, _, _, _ := setupTokenHandlerTest(t)
 	defer ctrl.Finish()
 
 	clientID := "pkce-client"
@@ -415,7 +424,7 @@ func TestTokenHandler_AuthorizationCodeGrant_PKCERequired_MissingVerifier(t *tes
 }
 
 func TestTokenHandler_AuthorizationCodeGrant_PKCEInvalidVerifier(t *testing.T) {
-	router, ctrl, _, _, _, mockClientStore, _, _, mockPkceRepo, _, _, _ := setupTokenHandlerTest(t)
+	router, ctrl, _, _, _, mockClientStore, _, _, mockPkceRepo, _, _, _, _ := setupTokenHandlerTest(t)
 	defer ctrl.Finish()
 
 	clientID := "pkce-client-invalid"
@@ -458,7 +467,7 @@ func TestTokenHandler_AuthorizationCodeGrant_PKCEInvalidVerifier(t *testing.T) {
 }
 
 func TestTokenHandler_RefreshTokenGrant_Success(t *testing.T) {
-	router, ctrl, mockTokenRepo, _, _, mockClientStore, mockUserRepo, _, _, mockTokenCache, _, _ := setupTokenHandlerTest(t)
+	router, ctrl, mockTokenRepo, _, _, mockClientStore, mockUserRepo, _, _, mockTokenCache, _, _, _ := setupTokenHandlerTest(t)
 	defer ctrl.Finish()
 
 	_ = mockTokenCache
@@ -476,7 +485,7 @@ func TestTokenHandler_RefreshTokenGrant_Success(t *testing.T) {
 	mockClientStore.EXPECT().GetClient(gomock.Any(), clientID).Return(mockReturnedClient, nil)
 	mockTokenRepo.EXPECT().GetRefreshTokenInfo(gomock.Any(), refreshTokenVal).Return(refreshTokenInfo, nil)
 	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), userID).AnyTimes().Return(&domain.User{ID: userID, Email: "user@example.com", Roles: []string{"user"}}, nil)
-	// mockSessionRepo.EXPECT().StoreSession(context.Background(), gomock.Any()).Return(nil) // This is not called by RefreshToken path in OAuthService -> TokenService
+	mockTokenRepo.EXPECT().RevokeRefreshToken(gomock.Any(), refreshTokenVal).Return(nil)
 	mockTokenRepo.EXPECT().StoreToken(gomock.Any(), gomock.Any()).Times(2).Return(nil)
 	mockTokenCache.EXPECT().Set(gomock.Any(), gomock.Any()).Return(nil)
 
@@ -505,7 +514,7 @@ func TestTokenHandler_RefreshTokenGrant_Success(t *testing.T) {
 }
 
 func TestTokenHandler_RefreshTokenGrant_MissingToken(t *testing.T) {
-	router, ctrl, _, _, _, mockClientStore, _, _, _, _, _, _ := setupTokenHandlerTest(t)
+	router, ctrl, _, _, _, mockClientStore, _, _, _, _, _, _, _ := setupTokenHandlerTest(t)
 	defer ctrl.Finish()
 
 	clientID := "client-for-refresh-missing"
@@ -539,7 +548,7 @@ func TestTokenHandler_RefreshTokenGrant_MissingToken(t *testing.T) {
 }
 
 func TestTokenHandler_ClientCredentialsGrant_Success(t *testing.T) {
-	router, ctrl, mockTokenRepo, _, _, mockClientStore, _, _, _, mockTokenCache, _, _ := setupTokenHandlerTest(t)
+	router, ctrl, mockTokenRepo, _, _, mockClientStore, _, _, _, mockTokenCache, _, _, _ := setupTokenHandlerTest(t)
 	defer ctrl.Finish()
 
 	clientID := "cc-client"
@@ -577,7 +586,7 @@ func TestTokenHandler_ClientCredentialsGrant_Success(t *testing.T) {
 }
 
 func TestTokenHandler_PasswordGrant_Success(t *testing.T) {
-	router, ctrl, mockTokenRepo, _, _, mockClientStore, mockUserRepo, _, _, mockTokenCache, _, _ := setupTokenHandlerTest(t)
+	router, ctrl, mockTokenRepo, _, _, mockClientStore, mockUserRepo, _, _, mockTokenCache, _, _, _ := setupTokenHandlerTest(t)
 	defer ctrl.Finish()
 
 	clientID := "password-client"
@@ -628,7 +637,7 @@ func TestTokenHandler_PasswordGrant_Success(t *testing.T) {
 }
 
 func TestTokenHandler_PasswordGrant_MissingParameters(t *testing.T) {
-	router, ctrl, _, _, _, mockClientStore, _, _, _, _, _, _ := setupTokenHandlerTest(t)
+	router, ctrl, _, _, _, mockClientStore, _, _, _, _, _, _, _ := setupTokenHandlerTest(t)
 	defer ctrl.Finish()
 
 	clientID := "password-client-missing-params"
@@ -662,7 +671,7 @@ func TestTokenHandler_PasswordGrant_MissingParameters(t *testing.T) {
 }
 
 func TestTokenHandler_DeviceCodeGrant_Success(t *testing.T) {
-	router, ctrl, mockTokenRepo, _, mockDeviceAuthRepo, mockClientStore, mockUserRepo, _, _, mockTokenCache, _, _ := setupTokenHandlerTest(t)
+	router, ctrl, mockTokenRepo, _, mockDeviceAuthRepo, mockClientStore, mockUserRepo, _, _, mockTokenCache, _, _, _ := setupTokenHandlerTest(t)
 	defer ctrl.Finish()
 
 	clientID := "device-client"
@@ -707,7 +716,7 @@ func TestTokenHandler_DeviceCodeGrant_Success(t *testing.T) {
 }
 
 func TestTokenHandler_DeviceCodeGrant_AuthorizationPending(t *testing.T) {
-	router, ctrl, _, _, mockDeviceAuthRepo, mockClientStore, _, _, _, _, _, _ := setupTokenHandlerTest(t)
+	router, ctrl, _, _, mockDeviceAuthRepo, mockClientStore, _, _, _, _, _, _, _ := setupTokenHandlerTest(t)
 	defer ctrl.Finish()
 
 	clientID := "device-client-pending"
@@ -743,7 +752,7 @@ func TestTokenHandler_DeviceCodeGrant_AuthorizationPending(t *testing.T) {
 }
 
 func TestTokenHandler_AuthorizationCodeGrant_ExchangeError(t *testing.T) {
-	router, ctrl, _, mockAuthCodeRepo, _, mockClientStore, _, _, _, _, _, _ := setupTokenHandlerTest(t)
+	router, ctrl, _, mockAuthCodeRepo, _, mockClientStore, _, _, _, _, _, _, _ := setupTokenHandlerTest(t)
 	defer ctrl.Finish()
 
 	clientID := "test-client-exchange-err"
@@ -784,7 +793,7 @@ func TestTokenHandler_AuthorizationCodeGrant_ExchangeError(t *testing.T) {
 }
 
 func TestTokenHandler_PublicClient_NoSecretProvided(t *testing.T) {
-	router, ctrl, mockTokenRepo, mockAuthCodeRepo, _, mockClientStore, mockUserRepo, _, mockPkceRepo, mockTokenCache, _, _ := setupTokenHandlerTest(t)
+	router, ctrl, mockTokenRepo, mockAuthCodeRepo, _, mockClientStore, mockUserRepo, _, mockPkceRepo, mockTokenCache, _, _, _ := setupTokenHandlerTest(t)
 	defer ctrl.Finish()
 
 	clientID := "public-client-id"
@@ -828,7 +837,7 @@ func TestTokenHandler_PublicClient_NoSecretProvided(t *testing.T) {
 }
 
 func TestTokenHandler_ConfidentialClient_SecretNotProvided_CorrectedLogic(t *testing.T) {
-	router, ctrl, tokenRepo, authCodeRepo, _, mockClientStore, _, _, _, mockTokenStore, _, _ := setupTokenHandlerTest(t)
+	router, ctrl, tokenRepo, authCodeRepo, _, mockClientStore, _, _, _, mockTokenStore, _, _, _ := setupTokenHandlerTest(t)
 	defer ctrl.Finish()
 
 	_, _, _ = tokenRepo, authCodeRepo, mockTokenStore
@@ -863,7 +872,7 @@ func TestTokenHandler_ConfidentialClient_SecretNotProvided_CorrectedLogic(t *tes
 }
 
 func TestTokenHandler_InternalServerError(t *testing.T) {
-	router, ctrl, _, mockAuthCodeRepo, _, mockClientStore, _, _, _, _, _, _ := setupTokenHandlerTest(t)
+	router, ctrl, _, mockAuthCodeRepo, _, mockClientStore, _, _, _, _, _, _, _ := setupTokenHandlerTest(t)
 	defer ctrl.Finish()
 
 	_ = mockAuthCodeRepo

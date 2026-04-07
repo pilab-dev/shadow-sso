@@ -68,7 +68,7 @@ func extractJWTFromHeader(bearerToken string) (string, error) {
 	return "", errors.New("invalid bearer token")
 }
 
-func UserAuthMiddleware(tokenService *services.TokenService) gin.HandlerFunc {
+func UserAuthMiddleware(tokenService services.TokenService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tp := otel.GetTracerProvider()
 		ctx, span := tp.Tracer("").Start(c.Request.Context(), "JWTAuthMiddleware")
