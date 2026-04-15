@@ -1,6 +1,6 @@
 module github.com/pilab-dev/shadow-sso
 
-go 1.24.0
+go 1.25.0
 
 require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.10-20250912141014-52f32327d4b0.1
@@ -35,7 +35,7 @@ require (
 	go.uber.org/mock v0.5.2
 	golang.org/x/crypto v0.42.0
 	golang.org/x/net v0.44.0
-	golang.org/x/oauth2 v0.30.0
+	golang.org/x/oauth2 v0.36.0
 	golang.org/x/term v0.35.0
 	google.golang.org/grpc v1.74.2
 	google.golang.org/protobuf v1.36.11
