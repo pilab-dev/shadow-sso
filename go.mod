@@ -21,7 +21,7 @@ require (
 	github.com/redis/go-redis/v9 v9.18.0
 	github.com/resendlabs/resend-go v1.7.0
 	github.com/rs/zerolog v1.34.0
-	github.com/spf13/cobra v1.9.1
+	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
 	github.com/twilio/twilio-go v1.28.7
