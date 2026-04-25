@@ -1,5 +1,5 @@
 # Stage 1: Build the Go application
-FROM golang:1.24.4-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 # Set necessary environment variables
 ENV CGO_ENABLED=0
