@@ -391,7 +391,7 @@ func TestAuthServer_GetConsentInfo_NotFound(t *testing.T) {
 
 	ctx := context.Background()
 
-	mockFlowStore.EXPECT().GetFlow("invalid-flow").Return(nil, domain.ErrFlowNotFound)
+	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "invalid-flow").Return(nil, domain.ErrFlowNotFound)
 
 	_, err := authServer.GetConsentInfo(ctx, connect.NewRequest(&ssov1.GetConsentInfoRequest{
 		FlowId: "invalid-flow",
@@ -421,7 +421,7 @@ func TestAuthServer_GetConsentInfo_Expired(t *testing.T) {
 
 	ctx := context.Background()
 
-	mockFlowStore.EXPECT().GetFlow("expired-flow").Return(nil, domain.ErrFlowExpired)
+	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "expired-flow").Return(nil, domain.ErrFlowExpired)
 
 	_, err := authServer.GetConsentInfo(ctx, connect.NewRequest(&ssov1.GetConsentInfoRequest{
 		FlowId: "expired-flow",
@@ -463,9 +463,9 @@ func TestAuthServer_SubmitConsent_Success(t *testing.T) {
 		UserAuthenticatedAt: time.Now(),
 	}
 
-	mockFlowStore.EXPECT().GetFlow(flowID).Return(flowState, nil)
+	mockFlowStore.EXPECT().GetFlow(gomock.Any(), flowID).Return(flowState, nil)
 	mockOAuthService.EXPECT().GenerateAuthCode(ctx, "client-id", "", "https://callback", "openid profile email", "", "", "", flowState.UserAuthenticatedAt).Return("auth-code", nil)
-	mockFlowStore.EXPECT().DeleteFlow(flowID).Return(nil)
+	mockFlowStore.EXPECT().DeleteFlow(gomock.Any(), flowID).Return(nil)
 
 	resp, err := authServer.SubmitConsent(ctx, connect.NewRequest(&ssov1.SubmitConsentRequest{
 		FlowId:          flowID,
@@ -507,8 +507,8 @@ func TestAuthServer_DenyConsent_Success(t *testing.T) {
 		State:       "state123",
 	}
 
-	mockFlowStore.EXPECT().GetFlow(flowID).Return(flowState, nil)
-	mockFlowStore.EXPECT().DeleteFlow(flowID).Return(nil)
+	mockFlowStore.EXPECT().GetFlow(gomock.Any(), flowID).Return(flowState, nil)
+	mockFlowStore.EXPECT().DeleteFlow(gomock.Any(), flowID).Return(nil)
 
 	resp, err := authServer.DenyConsent(ctx, connect.NewRequest(&ssov1.DenyConsentRequest{
 		FlowId: flowID,

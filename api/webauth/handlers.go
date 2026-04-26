@@ -64,7 +64,9 @@ func (wa *WebAuth) ConsentPageHandler(c *gin.Context) {
 		return
 	}
 
-	flowState, err := wa.flowStore.GetFlow(flowID)
+	ctx := c.Request.Context()
+
+	flowState, err := wa.flowStore.GetFlow(ctx, flowID)
 	if err != nil {
 		log.Warn().Err(err).Str("flow_id", flowID).Msg("consent: flow not found")
 		c.HTML(http.StatusBadRequest, "error.html", gin.H{
@@ -75,7 +77,7 @@ func (wa *WebAuth) ConsentPageHandler(c *gin.Context) {
 	}
 	if time.Now().After(flowState.ExpiresAt) {
 		log.Warn().Str("flow_id", flowID).Msg("consent: flow expired")
-		_ = wa.flowStore.DeleteFlow(flowID)
+		_ = wa.flowStore.DeleteFlow(ctx, flowID)
 		c.HTML(http.StatusBadRequest, "error.html", gin.H{
 			"PageTitle": "Error",
 			"Message":   "Consent request has expired. Please try again.",
@@ -83,7 +85,6 @@ func (wa *WebAuth) ConsentPageHandler(c *gin.Context) {
 		return
 	}
 
-	ctx := c.Request.Context()
 	client, err := wa.clientService.GetClient(ctx, flowState.ClientID)
 	if err != nil {
 		log.Error().Err(err).Str("client_id", flowState.ClientID).Msg("consent: failed to load client")
@@ -129,7 +130,9 @@ func (wa *WebAuth) ConsentSubmitHandler(c *gin.Context) {
 		return
 	}
 
-	flowState, err := wa.flowStore.GetFlow(flowID)
+	ctx := c.Request.Context()
+
+	flowState, err := wa.flowStore.GetFlow(ctx, flowID)
 	if err != nil {
 		log.Warn().Err(err).Str("flow_id", flowID).Msg("consent: flow not found on submit")
 		c.HTML(http.StatusBadRequest, "error.html", gin.H{
@@ -140,7 +143,7 @@ func (wa *WebAuth) ConsentSubmitHandler(c *gin.Context) {
 	}
 	if time.Now().After(flowState.ExpiresAt) {
 		log.Warn().Str("flow_id", flowID).Msg("consent: flow expired on submit")
-		_ = wa.flowStore.DeleteFlow(flowID)
+		_ = wa.flowStore.DeleteFlow(ctx, flowID)
 		c.HTML(http.StatusBadRequest, "error.html", gin.H{
 			"PageTitle": "Error",
 			"Message":   "Consent request has expired. Please try again.",
@@ -150,7 +153,7 @@ func (wa *WebAuth) ConsentSubmitHandler(c *gin.Context) {
 
 	if decision != "approve" {
 		log.Info().Str("flow_id", flowID).Str("client_id", flowState.ClientID).Msg("consent: user denied")
-		_ = wa.flowStore.DeleteFlow(flowID)
+		_ = wa.flowStore.DeleteFlow(ctx, flowID)
 		if flowState.RedirectURI == "" {
 			c.HTML(http.StatusOK, "error.html", gin.H{
 				"PageTitle": "Error",
@@ -178,7 +181,6 @@ func (wa *WebAuth) ConsentSubmitHandler(c *gin.Context) {
 		return
 	}
 
-	ctx := c.Request.Context()
 	authTime := flowState.UserAuthenticatedAt
 	if authTime.IsZero() {
 		authTime = time.Now()
@@ -204,7 +206,7 @@ func (wa *WebAuth) ConsentSubmitHandler(c *gin.Context) {
 		return
 	}
 
-	_ = wa.flowStore.DeleteFlow(flowID)
+	_ = wa.flowStore.DeleteFlow(ctx, flowID)
 
 	isSecure := IsSecureRequest(c.Request)
 	displayName := flowState.UserID

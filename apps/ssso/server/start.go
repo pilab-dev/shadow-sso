@@ -5,9 +5,12 @@ import (
 	"net"
 	"net/http"
 
+	"context"
+
 	ssso "github.com/pilab-dev/shadow-sso"
 	"github.com/pilab-dev/shadow-sso/apps/ssso/config"
 	"github.com/pilab-dev/shadow-sso/cache"
+	"github.com/pilab-dev/shadow-sso/mongodb"
 	"github.com/pilab-dev/shadow-sso/services"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
@@ -57,7 +60,12 @@ func StartServer(cfg config.Config, repoProvider services.RepositoryProvider, ex
 		AppConfig:          &cfg,
 		RepositoryProvider: repoProvider,
 		TokenSigner:        tokenSigner,
-		TokenCache:         cache.NewMemoryTokenStore(oidcConfig.AccessTokenTTL),
+		TokenCache: func() cache.TokenStore {
+			if mongoRp, ok := repoProvider.(*mongodb.MongoRepositoryProvider); ok {
+				return mongoRp.TokenStore(context.Background())
+			}
+			return cache.NewMemoryTokenStore(oidcConfig.AccessTokenTTL)
+		}(),
 		PkceRepository:     nil, // Let NewSSOServer default to in-memory
 		FlowStore:          nil, // Let NewSSOServer default to in-memory
 		UserSessionStore:   nil, // Let NewSSOServer default to in-memory

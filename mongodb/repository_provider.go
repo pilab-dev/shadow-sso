@@ -5,6 +5,7 @@ import (
 	"errors" // Standard Go errors package
 	"fmt"
 
+	"github.com/pilab-dev/shadow-sso/cache"
 	"github.com/pilab-dev/shadow-sso/domain"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -31,6 +32,9 @@ type MongoRepositoryProvider struct {
 	idpRepo         domain.IdPRepository
 	configRepo      domain.ConfigurationRepository
 	clientRepo      *ClientRepository
+	flowStore        domain.FlowStore
+	userSessionStore domain.UserSessionStore
+	tokenCache       cache.TokenStore
 }
 
 // NewMongoRepositoryProvider creates a new instance of MongoRepositoryProvider.
@@ -151,7 +155,31 @@ func (p *MongoRepositoryProvider) AuthorizationCodeRepository(ctx context.Contex
 }
 
 func (p *MongoRepositoryProvider) PkceRepository(ctx context.Context) domain.PkceRepository {
+	if p.pkceRepo == nil && p.db != nil {
+		p.pkceRepo = NewPkceRepository(p.db)
+	}
 	return p.pkceRepo
+}
+
+func (p *MongoRepositoryProvider) FlowStore(ctx context.Context) domain.FlowStore {
+	if p.flowStore == nil && p.db != nil {
+		p.flowStore = NewFlowStore(p.db)
+	}
+	return p.flowStore
+}
+
+func (p *MongoRepositoryProvider) UserSessionStore(ctx context.Context) domain.UserSessionStore {
+	if p.userSessionStore == nil && p.db != nil {
+		p.userSessionStore = NewUserSessionStore(p.db)
+	}
+	return p.userSessionStore
+}
+
+func (p *MongoRepositoryProvider) TokenStore(ctx context.Context) cache.TokenStore {
+	if p.tokenCache == nil && p.db != nil {
+		p.tokenCache = NewTokenCache(p.db)
+	}
+	return p.tokenCache
 }
 
 // DeviceAuthorizationRepository returns a MongoDB-backed DeviceAuthorizationRepository.

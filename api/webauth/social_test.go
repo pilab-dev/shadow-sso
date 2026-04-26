@@ -97,7 +97,7 @@ func TestSocialLoginHandler_ValidProvider_WithFlowID(t *testing.T) {
 	flowState := &domain.LoginFlowState{
 		FlowID: "test-flow",
 	}
-	mockFlowStore.EXPECT().GetFlow("test-flow").Return(flowState, nil)
+	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "test-flow").Return(flowState, nil)
 	mockIdPRepo.EXPECT().GetIdPByName(gomock.Any(), "google").Return(&domain.IdentityProvider{
 		Name:      "google",
 		IsEnabled: true,
@@ -159,7 +159,7 @@ func TestSocialLoginHandler_InvalidFlowID(t *testing.T) {
 	router, ctrl, mockFlowStore, _, _ := setupSocialTest(t)
 	defer ctrl.Finish()
 
-	mockFlowStore.EXPECT().GetFlow("bad-flow").Return(nil, errors.New("flow not found"))
+	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "bad-flow").Return(nil, errors.New("flow not found"))
 
 	// When
 	req := httptest.NewRequest("GET", "/login/google", nil)

@@ -73,7 +73,7 @@ func TestConsentPage_Success(t *testing.T) {
 		Scope:     "openid profile email",
 		ExpiresAt: time.Now().Add(10 * time.Minute),
 	}
-	mockFlowStore.EXPECT().GetFlow("valid-flow").Return(flowState, nil)
+	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "valid-flow").Return(flowState, nil)
 	mockClientService.EXPECT().GetClient(gomock.Any(), "test-client").Return(&domain.Client{
 		ID:             "test-client",
 		Name:           "My App",
@@ -105,7 +105,7 @@ func TestConsentPage_InvalidFlow(t *testing.T) {
 	router, ctrl, mockFlowStore, _, _ := setupConsentTest(t)
 	defer ctrl.Finish()
 
-	mockFlowStore.EXPECT().GetFlow("invalid-flow").Return(nil, errors.New("flow not found"))
+	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "invalid-flow").Return(nil, errors.New("flow not found"))
 
 	req := httptest.NewRequest("GET", "/consent", nil)
 	req.AddCookie(&http.Cookie{Name: "sso_oidc_flow_id", Value: "invalid-flow"})
@@ -125,8 +125,8 @@ func TestConsentPage_ExpiredFlow(t *testing.T) {
 		ClientID:  "test-client",
 		ExpiresAt: time.Now().Add(-10 * time.Minute),
 	}
-	mockFlowStore.EXPECT().GetFlow("expired-flow").Return(flowState, nil)
-	mockFlowStore.EXPECT().DeleteFlow("expired-flow").Return(nil)
+	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "expired-flow").Return(flowState, nil)
+	mockFlowStore.EXPECT().DeleteFlow(gomock.Any(), "expired-flow").Return(nil)
 
 	req := httptest.NewRequest("GET", "/consent", nil)
 	req.AddCookie(&http.Cookie{Name: "sso_oidc_flow_id", Value: "expired-flow"})
@@ -146,7 +146,7 @@ func TestConsentPage_ClientServiceError(t *testing.T) {
 		ClientID:  "test-client",
 		ExpiresAt: time.Now().Add(10 * time.Minute),
 	}
-	mockFlowStore.EXPECT().GetFlow("valid-flow").Return(flowState, nil)
+	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "valid-flow").Return(flowState, nil)
 	mockClientService.EXPECT().GetClient(gomock.Any(), "test-client").Return(nil, errors.New("client not found"))
 
 	req := httptest.NewRequest("GET", "/consent", nil)
@@ -173,7 +173,7 @@ func TestConsentSubmit_Approve(t *testing.T) {
 		State:     "my-state",
 		ExpiresAt: time.Now().Add(10 * time.Minute),
 	}
-	mockFlowStore.EXPECT().GetFlow("valid-flow").Return(flowState, nil)
+	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "valid-flow").Return(flowState, nil)
 	mockOAuthService.EXPECT().GenerateAuthCode(
 		gomock.Any(),
 		"test-client",
@@ -185,7 +185,7 @@ func TestConsentSubmit_Approve(t *testing.T) {
 		"",
 		gomock.Any(),
 	).Return("auth-code-abc", nil)
-	mockFlowStore.EXPECT().DeleteFlow("valid-flow").Return(nil)
+	mockFlowStore.EXPECT().DeleteFlow(gomock.Any(), "valid-flow").Return(nil)
 
 	form := url.Values{}
 	form.Set("decision", "approve")
@@ -216,8 +216,8 @@ func TestConsentSubmit_Deny(t *testing.T) {
 		State:       "my-state",
 		ExpiresAt:   time.Now().Add(10 * time.Minute),
 	}
-	mockFlowStore.EXPECT().GetFlow("valid-flow").Return(flowState, nil)
-	mockFlowStore.EXPECT().DeleteFlow("valid-flow").Return(nil)
+	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "valid-flow").Return(flowState, nil)
+	mockFlowStore.EXPECT().DeleteFlow(gomock.Any(), "valid-flow").Return(nil)
 
 	form := url.Values{}
 	form.Set("decision", "deny")
@@ -274,7 +274,7 @@ func TestConsentSubmit_InvalidFlow(t *testing.T) {
 	router, ctrl, mockFlowStore, _, _ := setupConsentTest(t)
 	defer ctrl.Finish()
 
-	mockFlowStore.EXPECT().GetFlow("invalid-flow").Return(nil, errors.New("flow not found"))
+	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "invalid-flow").Return(nil, errors.New("flow not found"))
 
 	form := url.Values{}
 	form.Set("decision", "approve")
@@ -300,8 +300,8 @@ func TestConsentSubmit_ExpiredFlow(t *testing.T) {
 		ClientID:  "test-client",
 		ExpiresAt: time.Now().Add(-10 * time.Minute),
 	}
-	mockFlowStore.EXPECT().GetFlow("expired-flow").Return(flowState, nil)
-	mockFlowStore.EXPECT().DeleteFlow("expired-flow").Return(nil)
+	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "expired-flow").Return(flowState, nil)
+	mockFlowStore.EXPECT().DeleteFlow(gomock.Any(), "expired-flow").Return(nil)
 
 	form := url.Values{}
 	form.Set("decision", "approve")
@@ -327,8 +327,8 @@ func TestConsentSubmit_DenyNoRedirectURI(t *testing.T) {
 		ClientID:  "test-client",
 		ExpiresAt: time.Now().Add(10 * time.Minute),
 	}
-	mockFlowStore.EXPECT().GetFlow("valid-flow").Return(flowState, nil)
-	mockFlowStore.EXPECT().DeleteFlow("valid-flow").Return(nil)
+	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "valid-flow").Return(flowState, nil)
+	mockFlowStore.EXPECT().DeleteFlow(gomock.Any(), "valid-flow").Return(nil)
 
 	form := url.Values{}
 	form.Set("decision", "deny")

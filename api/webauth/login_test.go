@@ -87,7 +87,7 @@ func TestLoginPage_InvalidFlow(t *testing.T) {
 	router, ctrl, mockFlowStore, _, _, _, _, _ := setupLoginTest(t)
 	defer ctrl.Finish()
 
-	mockFlowStore.EXPECT().GetFlow("invalid-flow").Return(nil, errors.New("flow not found"))
+	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "invalid-flow").Return(nil, errors.New("flow not found"))
 
 	// When
 	req := httptest.NewRequest("GET", "/login", nil)
@@ -109,7 +109,7 @@ func TestLoginPage_Success(t *testing.T) {
 		FlowID:    "valid-flow",
 		ExpiresAt: time.Now().Add(10 * time.Minute),
 	}
-	mockFlowStore.EXPECT().GetFlow("valid-flow").Return(flowState, nil)
+	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "valid-flow").Return(flowState, nil)
 	mockIdPRepo.EXPECT().ListIdPs(gomock.Any(), true).Return([]*domain.IdentityProvider{
 		{Name: "google", IsEnabled: true},
 	}, nil)
@@ -178,7 +178,7 @@ func TestLoginSubmit_RateLimited(t *testing.T) {
 		FlowID:    "valid-flow",
 		ExpiresAt: time.Now().Add(10 * time.Minute),
 	}
-	mockFlowStore.EXPECT().GetFlow("valid-flow").Return(flowState, nil).AnyTimes()
+	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "valid-flow").Return(flowState, nil).AnyTimes()
 
 	user := &domain.User{
 		ID:           "user-123",
@@ -230,7 +230,7 @@ func TestLoginSubmit_UnknownEmail(t *testing.T) {
 		FlowID:    "valid-flow",
 		ExpiresAt: time.Now().Add(10 * time.Minute),
 	}
-	mockFlowStore.EXPECT().GetFlow("valid-flow").Return(flowState, nil)
+	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "valid-flow").Return(flowState, nil)
 	mockUserRepo.EXPECT().GetUserByEmail(gomock.Any(), "unknown@example.com").Return(nil, errors.New("user not found"))
 
 	// When
@@ -260,7 +260,7 @@ func TestLoginSubmit_WrongPassword(t *testing.T) {
 		FlowID:    "valid-flow",
 		ExpiresAt: time.Now().Add(10 * time.Minute),
 	}
-	mockFlowStore.EXPECT().GetFlow("valid-flow").Return(flowState, nil)
+	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "valid-flow").Return(flowState, nil)
 
 	user := &domain.User{
 		ID:           "user-123",
@@ -299,7 +299,7 @@ func TestLoginSubmit_Success(t *testing.T) {
 		ExpiresAt: time.Now().Add(10 * time.Minute),
 		ClientID:  "test-client",
 	}
-	mockFlowStore.EXPECT().GetFlow("valid-flow").Return(flowState, nil)
+	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "valid-flow").Return(flowState, nil)
 
 	user := &domain.User{
 		ID:           "user-123",
@@ -343,8 +343,8 @@ func TestLoginSubmit_ExpiredFlow(t *testing.T) {
 		FlowID:    "expired-flow",
 		ExpiresAt: time.Now().Add(-10 * time.Minute), // Already expired
 	}
-	mockFlowStore.EXPECT().GetFlow("expired-flow").Return(flowState, nil)
-	mockFlowStore.EXPECT().DeleteFlow("expired-flow").Return(nil)
+	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "expired-flow").Return(flowState, nil)
+	mockFlowStore.EXPECT().DeleteFlow(gomock.Any(), "expired-flow").Return(nil)
 
 	// When
 	form := url.Values{}
@@ -373,7 +373,7 @@ func TestLoginSubmit_InactiveAccount(t *testing.T) {
 		FlowID:    "valid-flow",
 		ExpiresAt: time.Now().Add(10 * time.Minute),
 	}
-	mockFlowStore.EXPECT().GetFlow("valid-flow").Return(flowState, nil)
+	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "valid-flow").Return(flowState, nil)
 
 	user := &domain.User{
 		ID:           "user-123",

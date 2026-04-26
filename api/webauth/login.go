@@ -65,7 +65,7 @@ func (wa *WebAuth) LoginPageHandler(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	flowState, err := wa.flowStore.GetFlow(flowID)
+	flowState, err := wa.flowStore.GetFlow(ctx, flowID)
 	if err != nil {
 		log.Warn().Err(err).Str("flow_id", flowID).Msg("login: flow not found")
 		c.HTML(http.StatusBadRequest, "error.html", gin.H{
@@ -76,7 +76,7 @@ func (wa *WebAuth) LoginPageHandler(c *gin.Context) {
 	}
 	if time.Now().After(flowState.ExpiresAt) {
 		log.Warn().Str("flow_id", flowID).Msg("login: flow expired")
-		_ = wa.flowStore.DeleteFlow(flowID)
+		_ = wa.flowStore.DeleteFlow(ctx, flowID)
 		c.HTML(http.StatusBadRequest, "error.html", gin.H{
 			"PageTitle": "Error",
 			"Message":   "Login request has expired. Please try again.",
@@ -123,7 +123,9 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 		return
 	}
 
-	flowState, err := wa.flowStore.GetFlow(flowID)
+	ctx := c.Request.Context()
+
+	flowState, err := wa.flowStore.GetFlow(ctx, flowID)
 	if err != nil {
 		log.Warn().Err(err).Str("flow_id", flowID).Msg("login: flow not found on submit")
 		c.HTML(http.StatusBadRequest, "error.html", gin.H{
@@ -134,7 +136,7 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 	}
 	if time.Now().After(flowState.ExpiresAt) {
 		log.Warn().Str("flow_id", flowID).Msg("login: flow expired on submit")
-		_ = wa.flowStore.DeleteFlow(flowID)
+		_ = wa.flowStore.DeleteFlow(ctx, flowID)
 		c.HTML(http.StatusBadRequest, "error.html", gin.H{
 			"PageTitle": "Error",
 			"Message":   "Login request has expired. Please try again.",
@@ -142,7 +144,6 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 		return
 	}
 
-	ctx := c.Request.Context()
 	user, err := wa.userRepo.GetUserByEmail(ctx, email)
 	if err != nil {
 		wa.rateLimiter.RecordFailure(rateLimitKey)
@@ -170,7 +171,7 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 	if hasMFAEnabled(user) {
 		flowState.UserID = user.ID
 		flowState.UserAuthenticatedAt = time.Now()
-		if err := wa.flowStore.UpdateFlow(flowID, flowState); err != nil {
+		if err := wa.flowStore.UpdateFlow(ctx, flowID, flowState); err != nil {
 			log.Error().Err(err).Str("flow_id", flowID).Msg("login: failed to update flow for MFA")
 			c.HTML(http.StatusInternalServerError, "error.html", gin.H{
 				"PageTitle": "Error",

@@ -508,16 +508,7 @@ func (s *AuthServer) GetConsentInfo(ctx context.Context, req *connect.Request[ss
 	log.Info().Str("flowId", flowID).Msg("GetConsentInfo called")
 
 	// Get flow state
-	flowState, err := s.flowStore.GetFlow(flowID)
-	if err != nil {
-		if goerrors.Is(err, domain.ErrFlowNotFound) || goerrors.Is(err, domain.ErrFlowExpired) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("consent flow not found or expired"))
-		}
-		log.Error().Err(err).Str("flowId", flowID).Msg("Error retrieving flow state for consent")
-		return nil, connect.NewError(connect.CodeInternal, errors.New("could not retrieve flow details"))
-	}
-
-	// Get client information
+	flowState, err := s.flowStore.GetFlow(ctx, flowID)
 	client, err := s.clientService.GetClient(ctx, flowState.ClientID)
 	if err != nil {
 		log.Error().Err(err).Str("clientID", flowState.ClientID).Msg("Failed to get client for consent")
@@ -577,7 +568,7 @@ func (s *AuthServer) SubmitConsent(ctx context.Context, req *connect.Request[sso
 		Msg("SubmitConsent called")
 
 	// Get flow state
-	flowState, err := s.flowStore.GetFlow(flowID)
+	flowState, err := s.flowStore.GetFlow(ctx, flowID)
 	if err != nil {
 		if goerrors.Is(err, domain.ErrFlowNotFound) || goerrors.Is(err, domain.ErrFlowExpired) {
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("consent flow not found or expired"))
@@ -631,7 +622,7 @@ func (s *AuthServer) SubmitConsent(ctx context.Context, req *connect.Request[sso
 	}
 
 	// Delete the flow state as it's now been used
-	_ = s.flowStore.DeleteFlow(flowID)
+	_ = s.flowStore.DeleteFlow(ctx, flowID)
 
 	// Build redirect URL back to the client application
 	redirectURL := flowState.RedirectURI
@@ -662,7 +653,7 @@ func (s *AuthServer) DenyConsent(ctx context.Context, req *connect.Request[ssov1
 	log.Info().Str("flowId", flowID).Msg("DenyConsent called")
 
 	// Get flow state
-	flowState, err := s.flowStore.GetFlow(flowID)
+	flowState, err := s.flowStore.GetFlow(ctx, flowID)
 	if err != nil {
 		if goerrors.Is(err, domain.ErrFlowNotFound) || goerrors.Is(err, domain.ErrFlowExpired) {
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("consent flow not found or expired"))
@@ -672,7 +663,7 @@ func (s *AuthServer) DenyConsent(ctx context.Context, req *connect.Request[ssov1
 	}
 
 	// Delete the flow state
-	_ = s.flowStore.DeleteFlow(flowID)
+	_ = s.flowStore.DeleteFlow(ctx, flowID)
 
 	// Build error redirect URL back to the client application
 	redirectURL := flowState.RedirectURI

@@ -1,6 +1,7 @@
 package oidcflow
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -22,7 +23,7 @@ func NewInMemoryFlowStore() *InMemoryFlowStore {
 }
 
 // StoreFlow adds a new login flow state to the store.
-func (s *InMemoryFlowStore) StoreFlow(flowID string, state domain.LoginFlowState) error { // Changed to domain.LoginFlowState
+func (s *InMemoryFlowStore) StoreFlow(ctx context.Context, flowID string, state domain.LoginFlowState) error { // Changed to domain.LoginFlowState
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.flows[flowID] = state
@@ -31,7 +32,7 @@ func (s *InMemoryFlowStore) StoreFlow(flowID string, state domain.LoginFlowState
 
 // GetFlow retrieves a login flow state by its ID.
 // It also checks for expiry.
-func (s *InMemoryFlowStore) GetFlow(flowID string) (*domain.LoginFlowState, error) { // Changed to domain.LoginFlowState
+func (s *InMemoryFlowStore) GetFlow(ctx context.Context, flowID string) (*domain.LoginFlowState, error) { // Changed to domain.LoginFlowState
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	state, ok := s.flows[flowID]
@@ -47,7 +48,7 @@ func (s *InMemoryFlowStore) GetFlow(flowID string) (*domain.LoginFlowState, erro
 }
 
 // UpdateFlow updates an existing login flow state.
-func (s *InMemoryFlowStore) UpdateFlow(flowID string, state *domain.LoginFlowState) error { // Changed to domain.LoginFlowState
+func (s *InMemoryFlowStore) UpdateFlow(ctx context.Context, flowID string, state *domain.LoginFlowState) error { // Changed to domain.LoginFlowState
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_, ok := s.flows[flowID]
@@ -59,7 +60,7 @@ func (s *InMemoryFlowStore) UpdateFlow(flowID string, state *domain.LoginFlowSta
 }
 
 // DeleteFlow removes a login flow state from the store.
-func (s *InMemoryFlowStore) DeleteFlow(flowID string) error {
+func (s *InMemoryFlowStore) DeleteFlow(ctx context.Context, flowID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.flows, flowID)
@@ -81,7 +82,7 @@ func NewInMemoryUserSessionStore() *InMemoryUserSessionStore {
 
 // StoreUserSession adds a new user session to the store.
 // It generates a SessionID if not provided.
-func (s *InMemoryUserSessionStore) StoreUserSession(session *domain.UserSession) error { // Changed to domain.UserSession
+func (s *InMemoryUserSessionStore) StoreUserSession(ctx context.Context, session *domain.UserSession) error { // Changed to domain.UserSession
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -98,7 +99,7 @@ func (s *InMemoryUserSessionStore) StoreUserSession(session *domain.UserSession)
 
 // GetUserSession retrieves a user session by its ID.
 // It also checks for expiry.
-func (s *InMemoryUserSessionStore) GetUserSession(sessionID string) (*domain.UserSession, error) { // Changed to domain.UserSession
+func (s *InMemoryUserSessionStore) GetUserSession(ctx context.Context, sessionID string) (*domain.UserSession, error) { // Changed to domain.UserSession
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -116,7 +117,7 @@ func (s *InMemoryUserSessionStore) GetUserSession(sessionID string) (*domain.Use
 }
 
 // DeleteUserSession removes a user session from the store.
-func (s *InMemoryUserSessionStore) DeleteUserSession(sessionID string) error {
+func (s *InMemoryUserSessionStore) DeleteUserSession(ctx context.Context, sessionID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.sessions, sessionID)

@@ -13,17 +13,17 @@ type PasswordHasher interface {
 }
 
 type FlowStore interface {
-	StoreFlow(flowID string, state LoginFlowState) error
-	GetFlow(flowID string) (*LoginFlowState, error)
-	UpdateFlow(flowID string, state *LoginFlowState) error
-	DeleteFlow(flowID string) error
+	StoreFlow(ctx context.Context, flowID string, state LoginFlowState) error
+	GetFlow(ctx context.Context, flowID string) (*LoginFlowState, error)
+	UpdateFlow(ctx context.Context, flowID string, state *LoginFlowState) error
+	DeleteFlow(ctx context.Context, flowID string) error
 	CleanupExpiredFlows()
 }
 
 type UserSessionStore interface {
-	StoreUserSession(session *UserSession) error
-	GetUserSession(sessionID string) (*UserSession, error)
-	DeleteUserSession(sessionID string) error
+	StoreUserSession(ctx context.Context, session *UserSession) error
+	GetUserSession(ctx context.Context, sessionID string) (*UserSession, error)
+	DeleteUserSession(ctx context.Context, sessionID string) error
 	CleanupExpiredSessions()
 }
 

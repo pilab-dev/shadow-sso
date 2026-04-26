@@ -147,17 +147,32 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 	// Initialize PKCE Repository
 	pkceRepo := opts.PkceRepository
 	if pkceRepo == nil {
+		if mongoRp, ok := repoProvider.(*mongodb.MongoRepositoryProvider); ok {
+			pkceRepo = mongoRp.PkceRepository(context.Background())
+		}
+	}
+	if pkceRepo == nil {
 		pkceRepo = NewInMemoryPkceRepository()
 	}
 
 	// Initialize FlowStore
 	flowStore := opts.FlowStore
 	if flowStore == nil {
+		if mongoRp, ok := repoProvider.(*mongodb.MongoRepositoryProvider); ok {
+			flowStore = mongoRp.FlowStore(context.Background())
+		}
+	}
+	if flowStore == nil {
 		flowStore = NewInMemoryFlowStore()
 	}
 
 	// Initialize UserSessionStore
 	userSessionStore := opts.UserSessionStore
+	if userSessionStore == nil {
+		if mongoRp, ok := repoProvider.(*mongodb.MongoRepositoryProvider); ok {
+			userSessionStore = mongoRp.UserSessionStore(context.Background())
+		}
+	}
 	if userSessionStore == nil {
 		userSessionStore = NewInMemoryUserSessionStore()
 	}

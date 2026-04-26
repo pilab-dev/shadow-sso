@@ -5,9 +5,9 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
-	goerrors "errors" // Standard Go errors package
 	"encoding/base64"
 	"encoding/hex"
+	goerrors "errors" // Standard Go errors package
 	"fmt"
 	"html/template" // Added for HTML rendering
 	"net/http"
@@ -22,6 +22,7 @@ import (
 	"github.com/pilab-dev/shadow-sso/domain"           // Corrected: Single import of domain
 	"github.com/pilab-dev/shadow-sso/internal/metrics" // For custom metrics
 	"github.com/pilab-dev/shadow-sso/internal/ssosession"
+
 	// Removed duplicate domain import
 	"github.com/pilab-dev/shadow-sso/services"
 	"github.com/rs/zerolog/log"
@@ -38,17 +39,17 @@ const (
 
 // OAuth2API struct to hold dependencies.
 type OAuth2API struct {
-	service           services.OAuthService
-	jwksService       services.JWKSService
-	clientService     services.ClientService
-	pkceService       services.PKCEService
-	config            *sssoapi.OpenIDProviderConfig
-	flowStore         domain.FlowStore
-	userSessionStore  domain.UserSessionStore
-	userRepo        domain.UserRepository
-	passwordHasher   domain.PasswordHasher
-	federationService services.FederationService
-	tokenService    services.TokenService
+	service             services.OAuthService
+	jwksService         services.JWKSService
+	clientService       services.ClientService
+	pkceService         services.PKCEService
+	config              *sssoapi.OpenIDProviderConfig
+	flowStore           domain.FlowStore
+	userSessionStore    domain.UserSessionStore
+	userRepo            domain.UserRepository
+	passwordHasher      domain.PasswordHasher
+	federationService   services.FederationService
+	tokenService        services.TokenService
 	realmKeysRepo       domain.RealmKeysRepository
 	clientRepo          domain.ClientRepository
 	cookieSigningSecret string
@@ -59,20 +60,20 @@ type OAuth2API struct {
 }
 
 type OAuth2APIOptions struct {
-	OAuthService      services.OAuthService
-	JSKSService       services.JWKSService
-	ClientService     services.ClientService
-	PkceService       services.PKCEService
-	Config            *sssoapi.OpenIDProviderConfig
-	FlowStore         domain.FlowStore
-	UserSessionStore  domain.UserSessionStore
-	UserRepo          domain.UserRepository
-	PasswordHasher   domain.PasswordHasher
-	FederationService services.FederationService
-	TokenService      services.TokenService
-	RealmKeysRepo     domain.RealmKeysRepository
-	ClientRepo        domain.ClientRepository
-	CookieSigningSecret string
+	OAuthService          services.OAuthService
+	JSKSService           services.JWKSService
+	ClientService         services.ClientService
+	PkceService           services.PKCEService
+	Config                *sssoapi.OpenIDProviderConfig
+	FlowStore             domain.FlowStore
+	UserSessionStore      domain.UserSessionStore
+	UserRepo              domain.UserRepository
+	PasswordHasher        domain.PasswordHasher
+	FederationService     services.FederationService
+	TokenService          services.TokenService
+	RealmKeysRepo         domain.RealmKeysRepository
+	ClientRepo            domain.ClientRepository
+	CookieSigningSecret   string
 	BrandLogoURL          string
 	BrandOrganizationName string
 	BrandPrimaryColor     string
@@ -93,19 +94,19 @@ func NewOAuth2API(
 		log.Debug().Msg("NextJSLoginURL is not configured; server-rendered /login flow does not require it.")
 	}
 	return &OAuth2API{
-		service:           opts.OAuthService,
-		jwksService:       opts.JSKSService,
-		clientService:     opts.ClientService,
-		pkceService:       opts.PkceService,
-		config:            opts.Config,
-		flowStore:         opts.FlowStore,
-		userSessionStore:  opts.UserSessionStore,
-		userRepo:        opts.UserRepo,
-		passwordHasher:   opts.PasswordHasher,
-		federationService: opts.FederationService,
-		tokenService:     opts.TokenService,
-		realmKeysRepo:   opts.RealmKeysRepo,
-		clientRepo:      opts.ClientRepo,
+		service:             opts.OAuthService,
+		jwksService:         opts.JSKSService,
+		clientService:       opts.ClientService,
+		pkceService:         opts.PkceService,
+		config:              opts.Config,
+		flowStore:           opts.FlowStore,
+		userSessionStore:    opts.UserSessionStore,
+		userRepo:            opts.UserRepo,
+		passwordHasher:      opts.PasswordHasher,
+		federationService:   opts.FederationService,
+		tokenService:        opts.TokenService,
+		realmKeysRepo:       opts.RealmKeysRepo,
+		clientRepo:          opts.ClientRepo,
 		cookieSigningSecret: opts.CookieSigningSecret,
 		brandLogo:           opts.BrandLogoURL,
 		brandName:           opts.BrandOrganizationName,
@@ -621,7 +622,7 @@ func (oa *OAuth2API) tryHandleWithExistingSession(c *gin.Context, data *authoriz
 		return false, nil // No cookie, not handled by this path
 	}
 
-	userSession, sessionErr := oa.userSessionStore.GetUserSession(sessionCookie)
+	userSession, sessionErr := oa.userSessionStore.GetUserSession(ctx, sessionCookie)
 	if sessionErr == nil {
 		// User is logged in.
 		// TODO: Handle 'prompt=login' - if present, must re-authenticate even if session exists. (This would return false from here)
@@ -651,7 +652,7 @@ func (oa *OAuth2API) tryHandleWithExistingSession(c *gin.Context, data *authoriz
 				ExpiresAt:           time.Now().Add(10 * time.Minute),
 			}
 
-			if storeErr := oa.flowStore.StoreFlow(flowID, flowState); storeErr != nil {
+			if storeErr := oa.flowStore.StoreFlow(ctx, flowID, flowState); storeErr != nil {
 				log.Error().Err(storeErr).Msg("AuthorizeHandler: Failed to store flow state for consent")
 				oa.sendHTMLError(c, http.StatusInternalServerError, domain.NewServerError("failed to initiate consent flow"))
 				return true, storeErr
@@ -718,6 +719,7 @@ func (oa *OAuth2API) tryHandleWithExistingSession(c *gin.Context, data *authoriz
 // initiateExternalLoginFlow sets up the OIDC flow state and redirects the user to the login page.
 // Returns an error if the process fails and a response has been sent.
 func (oa *OAuth2API) initiateExternalLoginFlow(c *gin.Context, data *authorizeRequestData) error {
+	ctx := c.Request.Context()
 	flowID := uuid.NewString()
 	flowState := domain.LoginFlowState{
 		FlowID:              flowID,
@@ -732,7 +734,7 @@ func (oa *OAuth2API) initiateExternalLoginFlow(c *gin.Context, data *authorizeRe
 		OriginalOIDCParams:  oa.extractOriginalOIDCParams(c), // Extracted from original request
 	}
 
-	if err := oa.flowStore.StoreFlow(flowID, flowState); err != nil {
+	if err := oa.flowStore.StoreFlow(ctx, flowID, flowState); err != nil {
 		log.Error().Err(err).Msg("AuthorizeHandler: Failed to store OIDC flow state")
 		ssoErr := domain.NewServerError("failed to initiate login flow")
 		oa.sendHTMLError(c, http.StatusInternalServerError, ssoErr)
@@ -758,9 +760,9 @@ func (oa *OAuth2API) initiateExternalLoginFlow(c *gin.Context, data *authorizeRe
 	}
 	setCSRFCookie(c, csrfToken, 10*time.Minute)
 
-		loginURL := "/login"
-		log.Info().Str("flow_id", flowID).Str("login_url", loginURL).Msg("AuthorizeHandler: Redirecting user to login flow.")
-		c.Redirect(http.StatusFound, loginURL)
+	loginURL := "/login"
+	log.Info().Str("flow_id", flowID).Str("login_url", loginURL).Msg("AuthorizeHandler: Redirecting user to login flow.")
+	c.Redirect(http.StatusFound, loginURL)
 	return nil
 }
 
@@ -979,11 +981,11 @@ func (oa *OAuth2API) FederatedCallbackHandler(c *gin.Context) {
 				return
 			}
 
-			flowState, flowErr := oa.flowStore.GetFlow(flowID)
+			flowState, flowErr := oa.flowStore.GetFlow(c.Request.Context(), flowID)
 			if flowErr == nil && flowState.ClientID != "" {
 				flowState.UserID = result.UserInfo.ID
 				flowState.UserAuthenticatedAt = time.Now()
-				_ = oa.flowStore.StoreFlow(flowID, *flowState)
+				_ = oa.flowStore.StoreFlow(c.Request.Context(), flowID, *flowState)
 
 				client, clientErr := oa.clientService.GetClient(c.Request.Context(), flowState.ClientID)
 				if clientErr == nil && client.RequireConsent {
@@ -1144,9 +1146,9 @@ func (oa *OAuth2API) TokenHandler(c *gin.Context) {
 	}
 
 	params := map[string][]string{
-		"client_secret":               {clientSecret},
-		"client_assertion":           {clientAssertion},
-		"client_assertion_type":      {clientAssertionType},
+		"client_secret":                {clientSecret},
+		"client_assertion":             {clientAssertion},
+		"client_assertion_type":        {clientAssertionType},
 		"tls_client_auth_cert_subject": {c.Request.Header.Get("X-SSL-Client-Cert")},
 	}
 
@@ -1822,7 +1824,7 @@ func (oa *OAuth2API) IntrospectHandler(c *gin.Context) {
 
 	introspection, err := oa.service.IntrospectToken(ctx, token, tokenType, clientID, clientSecret)
 	if err != nil {
-		log.Error().Err(err).Msg("token introspection failed")
+		log.Ctx(ctx).Error().Err(err).Msg("token introspection failed")
 		// According to RFC 7662, we should still return 200 OK with active=false
 		c.JSON(http.StatusOK, gin.H{
 			"active": false,
@@ -1841,7 +1843,9 @@ func (oa *OAuth2API) GetFlowDetailsHandler(c *gin.Context) {
 		return
 	}
 
-	flowState, err := oa.flowStore.GetFlow(flowID)
+	ctx := c.Request.Context()
+
+	flowState, err := oa.flowStore.GetFlow(ctx, flowID)
 	if err != nil {
 		if goerrors.Is(err, domain.ErrFlowNotFound) { // Changed errors.Is to goerrors.Is
 			c.JSON(http.StatusNotFound, gin.H{"error": "invalid_flow", "error_description": "Flow ID not found."})
@@ -1850,10 +1854,10 @@ func (oa *OAuth2API) GetFlowDetailsHandler(c *gin.Context) {
 		if goerrors.Is(err, domain.ErrFlowExpired) { // Changed errors.Is to goerrors.Is
 			c.JSON(http.StatusNotFound, gin.H{"error": "expired_flow", "error_description": "Flow ID has expired."})
 			// Optionally delete it now
-			_ = oa.flowStore.DeleteFlow(flowID)
+			_ = oa.flowStore.DeleteFlow(ctx, flowID)
 			return
 		}
-		log.Error().Err(err).Str("flowId", flowID).Msg("Error retrieving flow state")
+		log.Ctx(ctx).Error().Err(err).Str("flowId", flowID).Msg("Error retrieving flow state")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error", "error_description": "Could not retrieve flow details."})
 		return
 	}
@@ -1862,9 +1866,9 @@ func (oa *OAuth2API) GetFlowDetailsHandler(c *gin.Context) {
 	// For example, client_id, scope. Avoid sending back code_challenge etc. unless specifically needed by UI.
 	// For this example, we'll send ClientID and Scope.
 	// The actual client application details (like name) could be fetched using clientService if needed.
-	client, err := oa.clientService.GetClient(c.Request.Context(), flowState.ClientID)
+	client, err := oa.clientService.GetClient(ctx, flowState.ClientID)
 	if err != nil {
-		log.Error().Err(err).Str("clientID", flowState.ClientID).Msg("Client not found for flow details")
+		log.Ctx(ctx).Error().Err(err).Str("clientID", flowState.ClientID).Msg("Client not found for flow details")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error", "error_description": "Error fetching client details for flow."})
 		return
 	}
@@ -1897,17 +1901,17 @@ func (oa *OAuth2API) AuthenticateUserHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	if !validateCSRFToken(c) {
-		log.Warn().Msg("AuthenticateUserHandler: CSRF token mismatch or missing")
+		log.Ctx(ctx).Warn().Msg("AuthenticateUserHandler: CSRF token mismatch or missing")
 		c.JSON(http.StatusForbidden, gin.H{"error": "invalid_csrf", "error_description": "CSRF token mismatch or missing."})
 		return
 	}
 
-	flowState, err := oa.flowStore.GetFlow(req.FlowID)
+	flowState, err := oa.flowStore.GetFlow(ctx, req.FlowID)
 	if err != nil {
 		if goerrors.Is(err, domain.ErrFlowNotFound) || goerrors.Is(err, domain.ErrFlowExpired) { // Use goerrors.Is
 			desc := "Flow ID not found or expired."
 			if goerrors.Is(err, domain.ErrFlowExpired) { // Use goerrors.Is
-				_ = oa.flowStore.DeleteFlow(req.FlowID)
+				_ = oa.flowStore.DeleteFlow(ctx, req.FlowID)
 			}
 			c.JSON(http.StatusForbidden, gin.H{"error": "invalid_flow", "error_description": desc})
 			return
@@ -1958,7 +1962,7 @@ func (oa *OAuth2API) AuthenticateUserHandler(c *gin.Context) {
 		// UserAgent:    c.Request.UserAgent(), // Optionally store
 		// IPAddress:    c.ClientIP(),          // Optionally store
 	}
-	if err := oa.userSessionStore.StoreUserSession(userSession); err != nil {
+	if err := oa.userSessionStore.StoreUserSession(ctx, userSession); err != nil {
 		log.Error().Err(err).Str("userID", user.ID).Msg("Failed to store user session for OP")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error", "error_description": "Could not create user session."})
 		return
@@ -1978,7 +1982,7 @@ func (oa *OAuth2API) AuthenticateUserHandler(c *gin.Context) {
 	// Update flow state with authenticated user
 	flowState.UserID = user.ID
 	flowState.UserAuthenticatedAt = time.Now()
-	if err := oa.flowStore.UpdateFlow(req.FlowID, flowState); err != nil {
+	if err := oa.flowStore.UpdateFlow(ctx, req.FlowID, flowState); err != nil {
 		log.Error().Err(err).Str("flowId", req.FlowID).Msg("Failed to update flow state with authenticated user")
 		// This is tricky. User session is created, but flow update failed.
 		// For now, log and proceed. Consider cleanup or more robust error handling.
@@ -2019,7 +2023,7 @@ func (oa *OAuth2API) AuthenticateUserHandler(c *gin.Context) {
 	}
 
 	// Delete the flow state as it's now been used
-	_ = oa.flowStore.DeleteFlow(req.FlowID)
+	_ = oa.flowStore.DeleteFlow(ctx, req.FlowID)
 
 	// Build redirect URL back to the client application
 	redirectURL := flowState.RedirectURI

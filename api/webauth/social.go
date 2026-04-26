@@ -22,7 +22,7 @@ func (wa *WebAuth) SocialLoginHandler(c *gin.Context) {
 
 	// 1. Validate the login flow if a flow_id was provided.
 	if flowID != "" {
-		_, err := wa.flowStore.GetFlow(flowID)
+		_, err := wa.flowStore.GetFlow(c.Request.Context(), flowID)
 		if err != nil {
 			c.HTML(http.StatusBadRequest, "error.html", gin.H{
 				"PageTitle": "Error",
