@@ -7,11 +7,33 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/url"
+	"strings"
 
 	// Added for client.Client type
 	"github.com/pilab-dev/shadow-sso/domain"
 	"golang.org/x/oauth2"
 )
+
+// extractRawState extracts the raw state nonce from an encoded state parameter.
+// The state format is base64url(flow_id + "." + random_nonce).
+// Returns empty string if state is not base64url encoded flow_id.nonce.
+func extractRawState(state string) string {
+	if state == "" {
+		return ""
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(state)
+	if err != nil {
+		decoded, err = base64.StdEncoding.DecodeString(state)
+		if err != nil {
+			return ""
+		}
+	}
+	parts := strings.SplitN(string(decoded), ".", 2)
+	if len(parts) == 2 && parts[1] != "" {
+		return parts[1]
+	}
+	return ""
+}
 
 const (
 // stateCookieName is the name of the cookie used to store the OAuth2 state.
@@ -154,7 +176,12 @@ func (s *Service) HandleCallback(
 	code string,
 	authCodeOptions ...oauth2.AuthCodeOption,
 ) (*ExternalUserInfo, *oauth2.Token, error) {
-	if queryState == "" || subtle.ConstantTimeCompare([]byte(queryState), []byte(sessionState)) != 1 {
+	rawState := extractRawState(queryState)
+	if rawState == "" {
+		rawState = queryState
+	}
+
+	if queryState == "" || subtle.ConstantTimeCompare([]byte(rawState), []byte(sessionState)) != 1 {
 		return nil, nil, ErrInvalidAuthState
 	}
 

@@ -3,6 +3,7 @@ package openidv2_1
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	// For error checking in callback
 	"connectrpc.com/connect"
@@ -98,24 +99,6 @@ func (fapi *FederationAPI) CallbackHandler(c *gin.Context) {
 		return
 	}
 
-	// Retrieve state from cookie
-	stateCookie, err := c.Cookie(federationStateCookieName)
-	if err != nil {
-		log.Warn().Err(err).Msg("State cookie not found during callback")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_state_cookie", "message": "Authentication session expired or invalid."})
-		return
-	}
-	// Clear the state cookie once read
-	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     federationStateCookieName,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1, // Expire immediately
-		Secure:   c.Request.TLS != nil,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-	})
-
 	var code, queryState, idToken, userFormParam string
 	_ = userFormParam
 
@@ -124,7 +107,6 @@ func (fapi *FederationAPI) CallbackHandler(c *gin.Context) {
 		if err := c.Request.ParseForm(); err != nil {
 			log.Warn().Err(err).Str("provider", providerName).Msg("Failed to parse form POST for Apple callback")
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_apple_callback", "message": "Could not parse Apple callback data."})
-
 			return
 		}
 
@@ -136,22 +118,37 @@ func (fapi *FederationAPI) CallbackHandler(c *gin.Context) {
 		code = c.Query("code")
 		queryState = c.Query("state")
 
-		// Handle OAuth errors passed in query params
 		oauthError := c.Query("error")
 		if oauthError != "" {
 			oauthErrorDesc := c.Query("error_description")
-
-			log.Warn().Str("provider", providerName).
-				Str("error", oauthError).
-				Str("desc", oauthErrorDesc).
-				Msg("OAuth error in callback from provider")
-
-			// TODO: Redirect to a UI page that displays this error nicely
+			log.Warn().Str("provider", providerName).Str("error", oauthError).Str("desc", oauthErrorDesc).Msg("OAuth error in callback from provider")
 			c.JSON(http.StatusBadRequest, gin.H{"error": "provider_error", "message": fmt.Sprintf("Error from %s: %s (%s)", providerName, oauthError, oauthErrorDesc)})
-
 			return
 		}
 	}
+
+	// Retrieve state from cookie with query state fallback
+	stateCookie, err := c.Cookie(federationStateCookieName)
+	if err != nil || stateCookie == "" {
+		stateCookie = extractRawState(queryState)
+		if stateCookie != "" {
+			log.Info().Msg("CallbackHandler: State cookie missing, using extracted state nonce from query state parameter")
+		} else {
+			log.Warn().Err(err).Msg("State cookie not found during callback")
+			c.JSON(http.StatusBadRequest, gin.H{"error": "missing_state_cookie", "message": "Authentication session expired or invalid."})
+			return
+		}
+	}
+	// Clear the state cookie once read
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     federationStateCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1, // Expire immediately
+		Secure:   c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https"),
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
 
 	if queryState == "" {
 		log.Warn().

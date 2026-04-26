@@ -57,9 +57,9 @@ func (s *defaultFederationService) HandleFederatedCallback(ctx context.Context, 
 		return nil, err
 	}
 
-	providerConfig, err := s.idpRepo.GetIdPByName(ctx, providerName)
-	if err != nil || providerConfig == nil {
-		return nil, domain.ErrClientNotFound
+	providerID := providerName
+	if providerConfig, idpErr := s.idpRepo.GetIdPByName(ctx, providerName); idpErr == nil && providerConfig != nil {
+		providerID = providerConfig.ID
 	}
 
 	fedIdentity, err := s.fedIDRepo.GetByProviderUserID(ctx, providerName, externalUser.ProviderUserID)
@@ -84,7 +84,7 @@ func (s *defaultFederationService) HandleFederatedCallback(ctx context.Context, 
 
 	newLink := &domain.UserFederatedIdentity{
 		UserID:           newUser.ID,
-		ProviderID:       providerConfig.ID,
+		ProviderID:       providerID,
 		ProviderUserID:   externalUser.ProviderUserID,
 		ProviderEmail:    externalUser.Email,
 		ProviderUsername: externalUser.Username,

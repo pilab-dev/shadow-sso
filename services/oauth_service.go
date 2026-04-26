@@ -13,7 +13,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/pilab-dev/shadow-sso/api"
 	"github.com/pilab-dev/shadow-sso/domain"
+	"github.com/pilab-dev/shadow-sso/internal/telemetry"
 	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -25,6 +28,7 @@ const (
 	userCodeChunkSize   = 4
 	deviceCodeLifetime  = 10 * time.Minute
 	defaultPollInterval = 5
+	tracerName          = "oauth-service"
 )
 
 func generateRandomString(length int) (string, error) {
@@ -123,10 +127,19 @@ func NewOAuthService(
 }
 
 func (s *defaultOAuthService) RegisterUser(ctx context.Context, username, password string) (*domain.User, error) {
+	_, span := telemetry.StartSpan(ctx, tracerName, "RegisterUser", attribute.String("user.username", username))
+	defer span.End()
+
+	log.Debug().Str("username", username).Msg("Attempting user registration")
+
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
+		telemetry.RecordSpanError(span, err, "failed to hash password")
+		span.SetStatus(codes.Error, err.Error())
+		log.Error().Err(err).Str("username", username).Msg("Failed to hash password during user registration")
 		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
+
 	user := &domain.User{
 		Email:        username,
 		PasswordHash: string(hashedPassword),
@@ -134,17 +147,39 @@ func (s *defaultOAuthService) RegisterUser(ctx context.Context, username, passwo
 	}
 	err = s.userRepo.CreateUser(ctx, user)
 	if err != nil {
+		telemetry.RecordSpanError(span, err, "failed to create user")
+		span.SetStatus(codes.Error, err.Error())
+		log.Error().Err(err).Str("username", username).Msg("Failed to create user in repository")
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
+
+	span.SetAttributes(attribute.String("user.id", user.ID))
+	log.Info().Str("username", username).Str("user_id", user.ID).Msg("User registered successfully")
 	return user, nil
 }
 
 func (s *defaultOAuthService) Login(ctx context.Context, username, password, deviceInfo string) (*api.TokenResponse, error) {
+	_, span := telemetry.StartSpan(ctx, tracerName, "Login",
+		attribute.String("user.username", username),
+		attribute.String("device_info", deviceInfo),
+	)
+	defer span.End()
+
+	log.Debug().Str("username", username).Str("device_info", deviceInfo).Msg("Processing user login attempt")
+
 	user, err := s.userRepo.GetUserByEmail(ctx, username)
 	if err != nil {
+		telemetry.RecordSpanError(span, err, "user not found")
+		span.SetStatus(codes.Error, err.Error())
+		log.Warn().Err(err).Str("username", username).Msg("Login failed: user not found")
 		return nil, fmt.Errorf("user not found: %w", err)
 	}
+	span.SetAttributes(attribute.String("user.id", user.ID))
+
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
+		telemetry.RecordSpanError(span, err, "invalid password credentials")
+		span.SetStatus(codes.Error, "invalid credentials")
+		log.Warn().Str("username", username).Str("user_id", user.ID).Msg("Login failed: password mismatch")
 		return nil, domain.ErrInvalidCredentials
 	}
 
@@ -159,41 +194,98 @@ func (s *defaultOAuthService) Login(ctx context.Context, username, password, dev
 		IsRevoked:  false,
 	}
 	if err := s.sessionRepo.StoreSession(ctx, session); err != nil {
-		log.Warn().Err(err).Msg("Failed to store session in OAuthService.Login")
-		// Not returning error for session storage failure for now.
+		log.Warn().Err(err).Str("user_id", user.ID).Str("session_id", session.ID).Msg("Failed to store session in OAuthService.Login")
+	} else {
+		log.Debug().Str("user_id", user.ID).Str("session_id", session.ID).Msg("Session stored successfully during login")
 	}
 
 	// Generate tokens for the client
-	// ClientID and scope for this direct ROPC-like login are not well-defined here.
-	// Using placeholder values.
 	clientIdentifier := "oauth-service-login-client"
 	loginScope := "openid profile email"
 	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientIdentifier, user.ID, loginScope, time.Hour)
 	if err != nil {
+		telemetry.RecordSpanError(span, err, "failed to generate token pair")
+		span.SetStatus(codes.Error, err.Error())
+		log.Error().Err(err).Str("user_id", user.ID).Msg("Failed to generate token pair during login")
 		return nil, fmt.Errorf("failed to generate token pair: %w", err)
 	}
+
+	log.Info().Str("username", username).Str("user_id", user.ID).Str("session_id", session.ID).Msg("User login successful")
 	return tokenPair, nil
 }
 
 func (s *defaultOAuthService) GetUserSessions(ctx context.Context, userID string) ([]*domain.Session, error) {
-	return s.sessionRepo.ListSessionsByUserID(ctx, userID, domain.SessionFilter{})
+	_, span := telemetry.StartSpan(ctx, tracerName, "GetUserSessions", attribute.String("user.id", userID))
+	defer span.End()
+
+	log.Debug().Str("user_id", userID).Msg("Fetching user sessions")
+
+	sessions, err := s.sessionRepo.ListSessionsByUserID(ctx, userID, domain.SessionFilter{})
+	if err != nil {
+		telemetry.RecordSpanError(span, err, "failed to list user sessions")
+		span.SetStatus(codes.Error, err.Error())
+		log.Error().Err(err).Str("user_id", userID).Msg("Failed to list sessions by user ID")
+		return nil, err
+	}
+
+	span.SetAttributes(attribute.Int("sessions.count", len(sessions)))
+	log.Debug().Str("user_id", userID).Int("session_count", len(sessions)).Msg("Successfully retrieved user sessions")
+	return sessions, nil
 }
 
 func (s *defaultOAuthService) RefreshToken(ctx context.Context, refreshTokenValue string, clientID string) (*api.TokenResponse, error) {
+	_, span := telemetry.StartSpan(ctx, tracerName, "RefreshToken", attribute.String("oauth.client_id", clientID))
+	defer span.End()
+
+	log.Debug().Str("client_id", clientID).Msg("Attempting refresh token exchange")
+
 	tokenInfo, err := s.tokenRepo.GetRefreshTokenInfo(ctx, refreshTokenValue)
 	if err != nil {
+		telemetry.RecordSpanError(span, err, "invalid refresh token")
+		span.SetStatus(codes.Error, "invalid refresh token")
+		log.Warn().Err(err).Str("client_id", clientID).Msg("Refresh token lookup failed")
 		return nil, domain.NewInvalidGrant("invalid refresh token")
 	}
+	span.SetAttributes(
+		attribute.String("user.id", tokenInfo.UserID),
+		attribute.String("oauth.scope", tokenInfo.Scope),
+		attribute.Bool("token.is_revoked", tokenInfo.IsRevoked),
+	)
+
 	if tokenInfo.IsRevoked || time.Now().After(tokenInfo.ExpiresAt) {
+		errRev := errors.New("refresh token expired or revoked")
+		telemetry.RecordSpanError(span, errRev, "refresh token invalid state")
+		span.SetStatus(codes.Error, errRev.Error())
+		log.Warn().
+			Str("client_id", clientID).
+			Str("user_id", tokenInfo.UserID).
+			Bool("is_revoked", tokenInfo.IsRevoked).
+			Time("expires_at", tokenInfo.ExpiresAt).
+			Msg("Refresh token grant rejected: expired or revoked")
 		return nil, domain.NewInvalidGrant("refresh token expired or revoked")
 	}
+
 	if err := s.tokenRepo.RevokeRefreshToken(ctx, refreshTokenValue); err != nil {
+		telemetry.RecordSpanError(span, err, "failed to revoke refresh token")
+		span.SetStatus(codes.Error, err.Error())
+		log.Error().Err(err).Str("client_id", clientID).Str("user_id", tokenInfo.UserID).Msg("Failed to revoke current refresh token")
 		return nil, fmt.Errorf("failed to revoke refresh token: %w", err)
 	}
-	return s.tokenService.GenerateTokenPair(ctx, clientID, tokenInfo.UserID, tokenInfo.Scope, time.Hour)
+
+	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, tokenInfo.UserID, tokenInfo.Scope, time.Hour)
+	if err != nil {
+		telemetry.RecordSpanError(span, err, "failed to generate token pair")
+		span.SetStatus(codes.Error, err.Error())
+		log.Error().Err(err).Str("client_id", clientID).Str("user_id", tokenInfo.UserID).Msg("Failed to generate new token pair during refresh")
+		return nil, err
+	}
+
+	log.Info().Str("client_id", clientID).Str("user_id", tokenInfo.UserID).Msg("Refresh token exchange successful")
+	return tokenPair, nil
 }
 
 func (s *defaultOAuthService) GetJWKS() *domain.JWKS {
+	log.Debug().Msg("Retrieving JWKS keyset")
 	keyset := &domain.JWKS{
 		Keys: make([]domain.JSONWebKey, 0),
 	}
@@ -201,35 +293,74 @@ func (s *defaultOAuthService) GetJWKS() *domain.JWKS {
 }
 
 func (s *defaultOAuthService) ValidateClient(ctx context.Context, clientID, clientSecret string) (*domain.Client, error) {
+	_, span := telemetry.StartSpan(ctx, tracerName, "ValidateClient", attribute.String("oauth.client_id", clientID))
+	defer span.End()
+
+	log.Debug().Str("client_id", clientID).Msg("Validating client credentials")
+
 	cli, err := s.clientRepo.ValidateClient(ctx, clientID, clientSecret)
 	if err != nil {
+		telemetry.RecordSpanError(span, err, "client validation failed")
+		span.SetStatus(codes.Error, err.Error())
+		log.Warn().Err(err).Str("client_id", clientID).Msg("Client credential validation failed")
 		if strings.Contains(err.Error(), domain.ErrInvalidClientCredentials.Error()) {
 			return nil, domain.ErrInvalidClientCredentials
 		}
 		return nil, fmt.Errorf("client not found: %w", err)
 	}
+
+	log.Debug().Str("client_id", clientID).Str("client_name", cli.Name).Msg("Client validated successfully")
 	return cli, nil
 }
 
 func (s *defaultOAuthService) DirectGrant(ctx context.Context,
 	clientID, clientSecret, username, password, scope string,
 ) (*api.TokenResponse, error) {
+	_, span := telemetry.StartSpan(ctx, tracerName, "DirectGrant",
+		attribute.String("oauth.client_id", clientID),
+		attribute.String("user.username", username),
+		attribute.String("oauth.scope", scope),
+	)
+	defer span.End()
+
+	log.Debug().Str("client_id", clientID).Str("username", username).Str("scope", scope).Msg("Processing Direct Grant authentication")
+
 	cli, err := s.ValidateClient(ctx, clientID, clientSecret)
 	if err != nil {
+		telemetry.RecordSpanError(span, err, "client validation failed in direct grant")
 		return nil, err
 	}
+
 	if !contains(cli.AllowedGrantTypes, "password") {
-		return nil, domain.ErrInvalidConfig
+		errGrant := domain.ErrInvalidConfig
+		telemetry.RecordSpanError(span, errGrant, "password grant type not allowed")
+		span.SetStatus(codes.Error, "password grant type not allowed for client")
+		log.Warn().Str("client_id", clientID).Msg("Direct grant rejected: password grant type not allowed for client")
+		return nil, errGrant
 	}
-	user, err := s.userRepo.GetUserByEmail(ctx, username) // Changed from GetUserByUsername
+
+	user, err := s.userRepo.GetUserByEmail(ctx, username)
 	if err != nil {
+		telemetry.RecordSpanError(span, err, "user not found")
+		span.SetStatus(codes.Error, "user not found")
+		log.Warn().Err(err).Str("username", username).Msg("Direct grant failed: user not found")
 		return nil, domain.ErrInvalidCredentials
 	}
+	span.SetAttributes(attribute.String("user.id", user.ID))
+
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
+		telemetry.RecordSpanError(span, err, "password mismatch")
+		span.SetStatus(codes.Error, "invalid credentials")
+		log.Warn().Str("username", username).Str("user_id", user.ID).Msg("Direct grant failed: invalid password")
 		return nil, domain.ErrInvalidCredentials
 	}
+
 	if !s.validateScope(scope, cli.AllowedScopes) {
-		return nil, domain.NewInvalidScope("invalid scope requested by client")
+		errScope := domain.NewInvalidScope("invalid scope requested by client")
+		telemetry.RecordSpanError(span, errScope, "invalid scope requested")
+		span.SetStatus(codes.Error, "invalid scope")
+		log.Warn().Str("client_id", clientID).Str("requested_scope", scope).Msg("Direct grant rejected: scope not allowed")
+		return nil, errScope
 	}
 
 	session := &domain.Session{
@@ -242,31 +373,55 @@ func (s *defaultOAuthService) DirectGrant(ctx context.Context,
 		IsRevoked:  false,
 	}
 	if err := s.sessionRepo.StoreSession(ctx, session); err != nil {
-		log.Warn().Err(err).Msg("Failed to store session in OAuthService.DirectGrant")
+		log.Warn().Err(err).Str("session_id", session.ID).Str("user_id", user.ID).Msg("Failed to store session in OAuthService.DirectGrant")
 	}
+
 	tokenTTL := 1 * time.Hour
 	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, user.ID, scope, tokenTTL)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to generate token pair in DirectGrant")
+		telemetry.RecordSpanError(span, err, "token pair generation failed")
+		span.SetStatus(codes.Error, err.Error())
+		log.Error().Err(err).Str("client_id", clientID).Str("user_id", user.ID).Msg("Failed to generate token pair in DirectGrant")
 		return nil, fmt.Errorf("could not generate tokens: %w", err)
 	}
 
+	log.Info().Str("client_id", clientID).Str("user_id", user.ID).Msg("Direct Grant token issuance successful")
 	return tokenPair, nil
 }
 
 func (s *defaultOAuthService) ClientCredentials(ctx context.Context,
 	clientID, clientSecret, scope string,
 ) (*api.TokenResponse, error) {
+	_, span := telemetry.StartSpan(ctx, tracerName, "ClientCredentials",
+		attribute.String("oauth.client_id", clientID),
+		attribute.String("oauth.scope", scope),
+	)
+	defer span.End()
+
+	log.Debug().Str("client_id", clientID).Str("scope", scope).Msg("Processing Client Credentials grant")
+
 	cli, err := s.ValidateClient(ctx, clientID, clientSecret)
 	if err != nil {
+		telemetry.RecordSpanError(span, err, "client validation failed")
 		return nil, err
 	}
+
 	if !contains(cli.AllowedGrantTypes, "client_credentials") {
-		return nil, domain.ErrInvalidConfig
+		errGrant := domain.ErrInvalidConfig
+		telemetry.RecordSpanError(span, errGrant, "client_credentials grant type not allowed")
+		span.SetStatus(codes.Error, "grant type disabled")
+		log.Warn().Str("client_id", clientID).Msg("Client Credentials grant rejected: grant type disabled for client")
+		return nil, errGrant
 	}
+
 	if !s.validateScope(scope, cli.AllowedScopes) {
-		return nil, domain.NewInvalidScope("invalid scope requested by client")
+		errScope := domain.NewInvalidScope("invalid scope requested by client")
+		telemetry.RecordSpanError(span, errScope, "invalid scope requested")
+		span.SetStatus(codes.Error, "invalid scope")
+		log.Warn().Str("client_id", clientID).Str("scope", scope).Msg("Client Credentials grant rejected: scope not allowed")
+		return nil, errScope
 	}
+
 	token, err := s.tokenService.CreateToken(ctx, domain.CreateTokenOptions{
 		TokenID:      uuid.NewString(),
 		Scope:        scope,
@@ -278,12 +433,17 @@ func (s *defaultOAuthService) ClientCredentials(ctx context.Context,
 		Roles:        cli.ServiceAccountRoles,
 	}, nil)
 	if err != nil {
+		telemetry.RecordSpanError(span, err, "failed to create token")
+		span.SetStatus(codes.Error, err.Error())
+		log.Error().Err(err).Str("client_id", clientID).Msg("Failed to create access token for client_credentials")
 		return nil, err
 	}
+
+	log.Info().Str("client_id", clientID).Msg("Client Credentials token issuance successful")
 	return &api.TokenResponse{
 		AccessToken: token.TokenValue,
 		TokenType:   "Bearer",
-		ExpiresIn:   int(time.Hour.Seconds()), // Changed to int
+		ExpiresIn:   int(time.Hour.Seconds()),
 	}, nil
 }
 
@@ -301,6 +461,7 @@ func (s *defaultOAuthService) validateScope(requestedScope string, allowedScopes
 			}
 		}
 		if !found {
+			log.Debug().Str("requested_scope", req).Msg("Scope validation failed: scope not in allowed list")
 			return false
 		}
 	}
@@ -319,52 +480,137 @@ func contains(slice []string, item string) bool {
 func (s *defaultOAuthService) PasswordGrant(ctx context.Context,
 	username, password, scope string, cli *domain.Client,
 ) (*api.TokenResponse, error) {
-	user, err := s.userRepo.GetUserByEmail(ctx, username) // Changed from GetUserByUsername
+	_, span := telemetry.StartSpan(ctx, tracerName, "PasswordGrant",
+		attribute.String("oauth.client_id", cli.ID),
+		attribute.String("user.username", username),
+		attribute.String("oauth.scope", scope),
+	)
+	defer span.End()
+
+	log.Debug().Str("client_id", cli.ID).Str("username", username).Msg("Processing Password Grant request")
+
+	user, err := s.userRepo.GetUserByEmail(ctx, username)
 	if err != nil {
+		telemetry.RecordSpanError(span, err, "user not found")
+		span.SetStatus(codes.Error, "user not found")
+		log.Warn().Err(err).Str("username", username).Msg("Password grant failed: user not found")
 		return nil, domain.ErrInvalidCredentials
 	}
+	span.SetAttributes(attribute.String("user.id", user.ID))
+
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
+		telemetry.RecordSpanError(span, err, "password mismatch")
+		span.SetStatus(codes.Error, "invalid credentials")
+		log.Warn().Str("username", username).Str("user_id", user.ID).Msg("Password grant failed: password mismatch")
 		return nil, domain.ErrInvalidCredentials
 	}
-	return s.tokenService.GenerateTokenPair(ctx, cli.ID, user.ID, scope, time.Hour)
+
+	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, cli.ID, user.ID, scope, time.Hour)
+	if err != nil {
+		telemetry.RecordSpanError(span, err, "token pair generation failed")
+		span.SetStatus(codes.Error, err.Error())
+		log.Error().Err(err).Str("client_id", cli.ID).Str("user_id", user.ID).Msg("Password grant failed: token generation error")
+		return nil, err
+	}
+
+	log.Info().Str("client_id", cli.ID).Str("user_id", user.ID).Msg("Password grant token issuance successful")
+	return tokenPair, nil
 }
 
 func (s *defaultOAuthService) ExchangeAuthorizationCode(ctx context.Context,
 	code, clientID, clientSecret, redirectURI string,
 ) (*api.TokenResponse, error) {
-	_, err := s.ValidateClient(ctx, clientID, clientSecret) // Corrected call
+	_, span := telemetry.StartSpan(ctx, tracerName, "ExchangeAuthorizationCode",
+		attribute.String("oauth.client_id", clientID),
+		attribute.String("oauth.redirect_uri", redirectURI),
+	)
+	defer span.End()
+
+	log.Debug().Str("client_id", clientID).Str("redirect_uri", redirectURI).Msg("Exchanging authorization code for tokens")
+
+	_, err := s.ValidateClient(ctx, clientID, clientSecret)
 	if err != nil {
+		telemetry.RecordSpanError(span, err, "client validation failed")
 		return nil, err
 	}
+
 	authCodeDomain, err := s.authCodeRepo.GetAuthCode(ctx, code)
 	if err != nil {
+		telemetry.RecordSpanError(span, err, "auth code not found")
+		span.SetStatus(codes.Error, "invalid authorization code")
+		log.Warn().Err(err).Str("client_id", clientID).Msg("Authorization code exchange failed: code not found")
 		return nil, domain.NewInvalidGrant("invalid authorization code")
 	}
+	span.SetAttributes(
+		attribute.String("user.id", authCodeDomain.UserID),
+		attribute.String("oauth.scope", authCodeDomain.Scope),
+		attribute.Bool("auth_code.used", authCodeDomain.Used),
+	)
+
 	if authCodeDomain.Used || time.Now().After(authCodeDomain.ExpiresAt) {
+		errUsed := errors.New("authorization code expired or already used")
+		telemetry.RecordSpanError(span, errUsed, "auth code expired/used")
+		span.SetStatus(codes.Error, errUsed.Error())
+		log.Warn().
+			Str("client_id", clientID).
+			Bool("used", authCodeDomain.Used).
+			Time("expires_at", authCodeDomain.ExpiresAt).
+			Msg("Authorization code exchange rejected: code expired or already used")
 		return nil, domain.NewInvalidGrant("authorization code expired or already used")
 	}
+
 	if authCodeDomain.ClientID != clientID || authCodeDomain.RedirectURI != redirectURI {
+		errMismatch := errors.New("invalid client or redirect URI for auth code")
+		telemetry.RecordSpanError(span, errMismatch, "auth code metadata mismatch")
+		span.SetStatus(codes.Error, errMismatch.Error())
+		log.Warn().
+			Str("client_id", clientID).
+			Str("expected_client_id", authCodeDomain.ClientID).
+			Str("redirect_uri", redirectURI).
+			Str("expected_redirect_uri", authCodeDomain.RedirectURI).
+			Msg("Authorization code exchange rejected: client or redirect URI mismatch")
 		return nil, domain.NewInvalidGrant("invalid client or redirect URI for auth code")
 	}
+
 	if err := s.authCodeRepo.MarkAuthCodeAsUsed(ctx, code); err != nil {
+		telemetry.RecordSpanError(span, err, "failed to mark auth code as used")
+		span.SetStatus(codes.Error, err.Error())
+		log.Error().Err(err).Str("client_id", clientID).Msg("Failed to mark authorization code as used")
 		return nil, fmt.Errorf("failed to mark auth code as used: %w", err)
 	}
+
 	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, authCodeDomain.UserID, authCodeDomain.Scope, time.Hour)
 	if err != nil {
+		telemetry.RecordSpanError(span, err, "failed to generate token pair")
+		span.SetStatus(codes.Error, err.Error())
+		log.Error().Err(err).Str("client_id", clientID).Str("user_id", authCodeDomain.UserID).Msg("Failed to generate token pair during auth code exchange")
 		return nil, fmt.Errorf("failed to generate token pair: %w", err)
 	}
+
+	log.Info().Str("client_id", clientID).Str("user_id", authCodeDomain.UserID).Msg("Authorization code exchange successful")
 	return tokenPair, nil
 }
 
 func (s *defaultOAuthService) IntrospectToken(ctx context.Context,
 	token, tokenTypeHint, clientID, clientSecret string,
 ) (*domain.TokenIntrospection, error) {
+	_, span := telemetry.StartSpan(ctx, tracerName, "IntrospectToken",
+		attribute.String("oauth.client_id", clientID),
+		attribute.String("oauth.token_type_hint", tokenTypeHint),
+	)
+	defer span.End()
+
+	log.Debug().Str("client_id", clientID).Str("token_type_hint", tokenTypeHint).Msg("Introspecting token")
+
 	_, err := s.ValidateClient(ctx, clientID, clientSecret)
 	if err != nil {
+		telemetry.RecordSpanError(span, err, "invalid client during introspection")
+		span.SetStatus(codes.Error, err.Error())
+		log.Warn().Err(err).Str("client_id", clientID).Msg("Token introspection failed: invalid client")
 		return nil, fmt.Errorf("invalid client: %w", err)
 	}
+
 	var tokenInfo *domain.TokenInfo
-	// err is already declared above, so use = for subsequent assignments
 	switch tokenTypeHint {
 	case "refresh_token":
 		tokenInfo, err = s.tokenService.GetRefreshTokenInfo(ctx, token)
@@ -379,19 +625,37 @@ func (s *defaultOAuthService) IntrospectToken(ctx context.Context,
 			tokenInfo, err = s.tokenService.GetRefreshTokenInfo(ctx, token)
 		}
 	}
+
 	if err != nil {
+		log.Debug().Err(err).Str("client_id", clientID).Msg("Token introspection completed: token active=false (lookup failed)")
+		span.SetAttributes(attribute.Bool("token.active", false))
 		return &domain.TokenIntrospection{Active: false}, nil
 	}
+
 	if time.Now().After(tokenInfo.ExpiresAt) {
+		log.Debug().Str("client_id", clientID).Time("expires_at", tokenInfo.ExpiresAt).Msg("Token introspection completed: token active=false (expired)")
+		span.SetAttributes(attribute.Bool("token.active", false))
 		return &domain.TokenIntrospection{Active: false}, nil
 	}
+
+	span.SetAttributes(
+		attribute.Bool("token.active", true),
+		attribute.String("user.id", tokenInfo.UserID),
+		attribute.String("oauth.scope", tokenInfo.Scope),
+		attribute.String("token.type", tokenInfo.TokenType),
+	)
+
 	var username string
 	if tokenInfo.UserID != "" {
 		user, err := s.userRepo.GetUserByID(ctx, tokenInfo.UserID)
 		if err == nil {
 			username = user.Email
+		} else {
+			log.Warn().Err(err).Str("user_id", tokenInfo.UserID).Msg("Failed to resolve user email during introspection")
 		}
 	}
+
+	log.Info().Str("client_id", clientID).Str("user_id", tokenInfo.UserID).Bool("active", true).Msg("Token introspection active response returned")
 	return &domain.TokenIntrospection{
 		Active:    true,
 		Scope:     tokenInfo.Scope,
@@ -409,11 +673,28 @@ func (s *defaultOAuthService) IntrospectToken(ctx context.Context,
 }
 
 func (s *defaultOAuthService) RevokeToken(ctx context.Context, tokenToRevoke, tokenTypeHint, clientID, clientSecret string) error {
+	_, span := telemetry.StartSpan(ctx, tracerName, "RevokeToken",
+		attribute.String("oauth.client_id", clientID),
+		attribute.String("oauth.token_type_hint", tokenTypeHint),
+	)
+	defer span.End()
+
+	log.Debug().Str("client_id", clientID).Str("token_type_hint", tokenTypeHint).Msg("Revoking token")
+
 	_, err := s.ValidateClient(ctx, clientID, clientSecret)
 	if err != nil {
+		telemetry.RecordSpanError(span, err, "invalid client during token revocation")
+		span.SetStatus(codes.Error, err.Error())
+		log.Warn().Err(err).Str("client_id", clientID).Msg("Token revocation failed: invalid client")
 		return fmt.Errorf("invalid client: %w", err)
 	}
-	_ = s.tokenService.RevokeToken(ctx, tokenToRevoke)
+
+	if err := s.tokenService.RevokeToken(ctx, tokenToRevoke); err != nil {
+		telemetry.RecordSpanError(span, err, "failed to revoke token")
+		log.Warn().Err(err).Str("client_id", clientID).Msg("Token revocation returned warning/error")
+	}
+
+	log.Info().Str("client_id", clientID).Msg("Token revocation processed successfully")
 	return nil
 }
 
@@ -422,16 +703,42 @@ func (s *defaultOAuthService) GenerateAuthCode(
 	redirectURI string, scope string, codeChallenge string, codeChallengeMethod string,
 	nonce string, authTime time.Time,
 ) (string, error) {
+	_, span := telemetry.StartSpan(ctx, tracerName, "GenerateAuthCode",
+		attribute.String("oauth.client_id", clientID),
+		attribute.String("user.id", userID),
+		attribute.String("oauth.redirect_uri", redirectURI),
+		attribute.String("oauth.scope", scope),
+		attribute.String("pkce.code_challenge_method", codeChallengeMethod),
+	)
+	defer span.End()
+
+	log.Debug().
+		Str("client_id", clientID).
+		Str("user_id", userID).
+		Str("redirect_uri", redirectURI).
+		Str("scope", scope).
+		Msg("Generating authorization code")
+
 	cli, err := s.clientRepo.GetClient(ctx, clientID)
 	if err != nil {
+		telemetry.RecordSpanError(span, err, "client not found")
+		span.SetStatus(codes.Error, "invalid client")
+		log.Warn().Err(err).Str("client_id", clientID).Msg("GenerateAuthCode failed: client not found")
 		return "", domain.NewInvalidClient("client not found or invalid")
 	}
+
 	if !s.validateScope(scope, cli.AllowedScopes) {
-		return "", domain.NewInvalidScope("requested scope not allowed")
+		errScope := domain.NewInvalidScope("requested scope not allowed")
+		telemetry.RecordSpanError(span, errScope, "scope not allowed")
+		span.SetStatus(codes.Error, "invalid scope")
+		log.Warn().Str("client_id", clientID).Str("scope", scope).Msg("GenerateAuthCode failed: scope not allowed")
+		return "", errScope
 	}
 
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
+		telemetry.RecordSpanError(span, err, "entropy failure for auth code")
+		span.SetStatus(codes.Error, err.Error())
 		log.Error().Err(err).Msg("Failed to generate random bytes for auth code")
 		return "", fmt.Errorf("failed to generate random bytes for auth code: %w", err)
 	}
@@ -448,27 +755,51 @@ func (s *defaultOAuthService) GenerateAuthCode(
 		CodeChallenge:       codeChallenge,
 		CodeChallengeMethod: codeChallengeMethod,
 	}
+
 	if err := s.authCodeRepo.SaveAuthCode(ctx, authCode); err != nil {
+		telemetry.RecordSpanError(span, err, "failed to save auth code")
+		span.SetStatus(codes.Error, err.Error())
 		log.Error().Err(err).Str("clientID", clientID).Str("userID", userID).Msg("Failed to save authorization code")
 		return "", fmt.Errorf("failed to save auth code: %w", err)
 	}
+
 	log.Info().Str("clientID", clientID).Str("userID", userID).Msg("Authorization code generated and saved")
 	return code, nil
 }
 
-// InitiateDeviceAuthorization, VerifyUserCode, IssueTokenForDeviceFlow need to use domain.DeviceCode and domain.DeviceCodeStatus
 func (s *defaultOAuthService) InitiateDeviceAuthorization(ctx context.Context, clientID string, scope string, verificationBaseURI string) (*api.DeviceAuthResponse, error) {
+	_, span := telemetry.StartSpan(ctx, tracerName, "InitiateDeviceAuthorization",
+		attribute.String("oauth.client_id", clientID),
+		attribute.String("oauth.scope", scope),
+	)
+	defer span.End()
+
+	log.Debug().Str("client_id", clientID).Str("scope", scope).Msg("Initiating device authorization flow")
+
 	cli, err := s.clientRepo.GetClient(ctx, clientID)
 	if err != nil {
+		telemetry.RecordSpanError(span, err, "client not found")
+		span.SetStatus(codes.Error, "invalid client")
+		log.Warn().Err(err).Str("client_id", clientID).Msg("InitiateDeviceAuthorization failed: client not found")
 		return nil, domain.NewInvalidClient("client not found or invalid")
 	}
+
 	if !s.validateScope(scope, cli.AllowedScopes) {
-		return nil, domain.NewInvalidScope("requested scope not allowed")
+		errScope := domain.NewInvalidScope("requested scope not allowed")
+		telemetry.RecordSpanError(span, errScope, "scope not allowed")
+		span.SetStatus(codes.Error, "invalid scope")
+		log.Warn().Str("client_id", clientID).Str("scope", scope).Msg("InitiateDeviceAuthorization failed: scope not allowed")
+		return nil, errScope
 	}
+
 	deviceCodeVal, err := generateRandomString(deviceCodeLength)
 	if err != nil {
+		telemetry.RecordSpanError(span, err, "failed to generate device_code")
+		span.SetStatus(codes.Error, err.Error())
+		log.Error().Err(err).Str("client_id", clientID).Msg("Failed to generate random string for device code")
 		return nil, fmt.Errorf("failed to generate device_code: %w", err)
 	}
+
 	userCodeVal := generateUserCode(userCodeLength, userCodeCharset, userCodeChunkSize)
 	expiresAt := time.Now().UTC().Add(deviceCodeLifetime)
 	deviceAuth := &domain.DeviceCode{
@@ -483,11 +814,18 @@ func (s *defaultOAuthService) InitiateDeviceAuthorization(ctx context.Context, c
 		CreatedAt:    time.Now().UTC(),
 		LastPolledAt: time.Time{},
 	}
+
 	if err := s.deviceAuthRepo.SaveDeviceAuth(ctx, deviceAuth); err != nil {
+		telemetry.RecordSpanError(span, err, "failed to save device authorization")
+		span.SetStatus(codes.Error, err.Error())
+		log.Error().Err(err).Str("client_id", clientID).Msg("Failed to save device authorization request")
 		return nil, fmt.Errorf("failed to save device authorization request: %w", err)
 	}
+
 	verificationURI := fmt.Sprintf("%s/device", verificationBaseURI)
 	verificationURIComplete := fmt.Sprintf("%s?user_code=%s", verificationURI, userCodeVal)
+
+	log.Info().Str("client_id", clientID).Str("user_code", userCodeVal).Msg("Device authorization flow initiated successfully")
 	return &api.DeviceAuthResponse{
 		DeviceCode:              deviceCodeVal,
 		UserCode:                userCodeVal,
@@ -499,89 +837,137 @@ func (s *defaultOAuthService) InitiateDeviceAuthorization(ctx context.Context, c
 }
 
 func (s *defaultOAuthService) VerifyUserCode(ctx context.Context, userCode string, userID string) (*domain.DeviceCode, error) {
+	_, span := telemetry.StartSpan(ctx, tracerName, "VerifyUserCode",
+		attribute.String("user.id", userID),
+		attribute.String("device_flow.user_code", userCode),
+	)
+	defer span.End()
+
+	log.Debug().Str("user_id", userID).Str("user_code", userCode).Msg("Verifying device user code")
+
 	deviceAuth, err := s.deviceAuthRepo.GetDeviceAuthByUserCode(ctx, userCode)
 	if err != nil {
-		if err == domain.ErrUserCodeNotFound { // Assuming ErrUserCodeNotFound is defined in domain
+		telemetry.RecordSpanError(span, err, "user code lookup failed")
+		span.SetStatus(codes.Error, err.Error())
+		log.Warn().Err(err).Str("user_code", userCode).Msg("Failed to retrieve device authorization by user code")
+		if err == domain.ErrUserCodeNotFound {
 			return nil, domain.ErrUserCodeNotFound
 		}
 		return nil, fmt.Errorf("failed to retrieve device authorization by user code: %w", err)
 	}
+
+	span.SetAttributes(
+		attribute.String("oauth.client_id", deviceAuth.ClientID),
+		attribute.String("device_flow.status", string(deviceAuth.Status)),
+	)
+
 	if deviceAuth.Status != domain.DeviceCodeStatusPending {
-		return nil, domain.ErrCannotApproveDeviceAuth // Assuming ErrCannotApproveDeviceAuth is defined
+		errStatus := domain.ErrCannotApproveDeviceAuth
+		telemetry.RecordSpanError(span, errStatus, "device authorization not pending")
+		span.SetStatus(codes.Error, "device authorization not pending")
+		log.Warn().Str("user_code", userCode).Str("status", string(deviceAuth.Status)).Msg("Cannot approve device auth: status not pending")
+		return nil, errStatus
 	}
+
 	if time.Now().UTC().After(deviceAuth.ExpiresAt) {
+		errExpired := domain.ErrUserCodeNotFound
+		telemetry.RecordSpanError(span, errExpired, "device authorization expired")
+		span.SetStatus(codes.Error, "expired user code")
+		log.Warn().Str("user_code", userCode).Time("expires_at", deviceAuth.ExpiresAt).Msg("User code verification failed: code expired")
 		_ = s.deviceAuthRepo.UpdateDeviceAuthStatus(ctx, deviceAuth.DeviceCode, domain.DeviceCodeStatusExpired)
-		return nil, domain.ErrUserCodeNotFound // Or ErrDeviceFlowTokenExpired
+		return nil, errExpired
 	}
+
 	updatedDeviceAuth, err := s.deviceAuthRepo.ApproveDeviceAuth(ctx, userCode, userID)
 	if err != nil {
+		telemetry.RecordSpanError(span, err, "failed to approve device auth")
+		span.SetStatus(codes.Error, err.Error())
+		log.Error().Err(err).Str("user_code", userCode).Str("user_id", userID).Msg("Failed to approve device authorization")
 		if err == domain.ErrCannotApproveDeviceAuth {
 			return nil, domain.ErrCannotApproveDeviceAuth
 		}
 		return nil, fmt.Errorf("failed to approve device authorization: %w", err)
 	}
+
+	log.Info().Str("user_code", userCode).Str("user_id", userID).Str("client_id", updatedDeviceAuth.ClientID).Msg("Device authorization approved successfully")
 	return updatedDeviceAuth, nil
 }
 
 func (s *defaultOAuthService) IssueTokenForDeviceFlow(ctx context.Context, deviceCode string, clientID string) (*api.TokenResponse, error) {
+	_, span := telemetry.StartSpan(ctx, tracerName, "IssueTokenForDeviceFlow",
+		attribute.String("oauth.client_id", clientID),
+	)
+	defer span.End()
+
+	log.Debug().Str("client_id", clientID).Msg("Polling/issuing token for device flow")
+
 	deviceAuth, err := s.deviceAuthRepo.GetDeviceAuthByDeviceCode(ctx, deviceCode)
 	if err != nil {
-		// Assuming ErrDeviceCodeNotFound is defined in domain
+		telemetry.RecordSpanError(span, err, "device code lookup failed")
+		span.SetStatus(codes.Error, "device code not found")
+		log.Warn().Err(err).Str("client_id", clientID).Msg("Failed to retrieve device authorization by device code")
 		if err == domain.ErrDeviceCodeNotFound || (err != nil && strings.Contains(err.Error(), "not found")) {
 			return nil, domain.ErrDeviceFlowTokenExpired
 		}
 		return nil, fmt.Errorf("failed to retrieve device auth by device code: %w", err)
 	}
+
+	span.SetAttributes(
+		attribute.String("device_flow.status", string(deviceAuth.Status)),
+		attribute.String("user.id", deviceAuth.UserID),
+	)
+
 	if deviceAuth.ClientID != clientID {
-		return nil, domain.NewInvalidClient("client ID mismatch")
+		errMismatch := domain.NewInvalidClient("client ID mismatch")
+		telemetry.RecordSpanError(span, errMismatch, "client ID mismatch for device flow")
+		span.SetStatus(codes.Error, "client ID mismatch")
+		log.Warn().Str("client_id", clientID).Str("expected_client_id", deviceAuth.ClientID).Msg("Device flow token polling failed: client ID mismatch")
+		return nil, errMismatch
 	}
+
 	switch deviceAuth.Status {
 	case domain.DeviceCodeStatusPending:
 		if pollErr := s.deviceAuthRepo.UpdateDeviceAuthLastPolledAt(ctx, deviceAuth.DeviceCode); pollErr != nil {
-			fmt.Printf("Warning: failed to update last polled at for device code %s: %v\n", deviceAuth.DeviceCode, pollErr)
+			log.Warn().Err(pollErr).Str("client_id", clientID).Msg("Failed to update last polled time for device code")
 		}
+		log.Debug().Str("client_id", clientID).Msg("Device authorization pending user consent")
 		return nil, domain.ErrAuthorizationPending
+
 	case domain.DeviceCodeStatusAuthorized:
 		tokenResponse, tokenErr := s.tokenService.GenerateTokenPair(ctx, deviceAuth.ClientID, deviceAuth.UserID, deviceAuth.Scope, time.Hour)
 		if tokenErr != nil {
+			telemetry.RecordSpanError(span, tokenErr, "token generation failed for device flow")
+			span.SetStatus(codes.Error, tokenErr.Error())
+			log.Error().Err(tokenErr).Str("client_id", clientID).Str("user_id", deviceAuth.UserID).Msg("Failed to generate token pair for approved device flow")
 			return nil, fmt.Errorf("failed to generate token pair for device flow: %w", tokenErr)
 		}
 		if redeemErr := s.deviceAuthRepo.UpdateDeviceAuthStatus(ctx, deviceAuth.DeviceCode, domain.DeviceCodeStatusRedeemed); redeemErr != nil {
-			fmt.Printf("Critical Warning: failed to mark device code %s as redeemed after token issuance: %v\n", deviceAuth.DeviceCode, redeemErr)
+			log.Error().Err(redeemErr).Str("client_id", clientID).Msg("Critical Warning: failed to mark device code as redeemed after token issuance")
 		}
+		log.Info().Str("client_id", clientID).Str("user_id", deviceAuth.UserID).Msg("Tokens successfully issued for device flow")
 		return tokenResponse, nil
+
 	case domain.DeviceCodeStatusExpired:
+		log.Warn().Str("client_id", clientID).Msg("Device flow token request rejected: status expired")
 		return nil, domain.ErrDeviceFlowTokenExpired
+
 	case domain.DeviceCodeStatusDenied:
+		log.Warn().Str("client_id", clientID).Msg("Device flow token request rejected: user denied authorization")
 		return nil, domain.ErrDeviceFlowAccessDenied
+
 	case domain.DeviceCodeStatusRedeemed:
+		log.Warn().Str("client_id", clientID).Msg("Device flow token request rejected: device code already redeemed")
 		return nil, domain.ErrDeviceFlowTokenExpired
+
 	default:
-		return nil, domain.NewServerError("unexpected device authorization status")
+		errStatus := domain.NewServerError("unexpected device authorization status")
+		telemetry.RecordSpanError(span, errStatus, "unexpected device auth status")
+		span.SetStatus(codes.Error, "unexpected device authorization status")
+		log.Error().Str("client_id", clientID).Str("status", string(deviceAuth.Status)).Msg("Unexpected device authorization status")
+		return nil, errStatus
 	}
 }
 
-// GenerateTokens was a duplicate of ExchangeAuthorizationCode, removed it.
-// GetUserInfo was a stub, removed it as user info is part of AuthService or OIDC UserInfo endpoint.
-// TokenIntrospection struct was moved to domain package.
-// JSONWebKey and JSONWebKeySet are local to jwks_service.go and used there.
-// User, UserSession, Token, AuthCode, DeviceCode, DeviceCodeStatus are now from domain package.
-// Error variables are now from domain (github.com/pilab-dev/shadow-sso/errors).
-// UserRepository.GetUserByUsername changed to GetUserByEmail.
-// UserRepository.CreateSession changed to SessionRepository.StoreSession.
-// UserRepository.GetUserSessions changed to SessionRepository.ListSessionsByUserID.
-// OAuthService.Login now uses TokenService.GenerateTokenPair and SessionRepository.StoreSession.
-// OAuthService.DirectGrant now uses SessionRepository.StoreSession.
-// OAuthService.RefreshToken now uses OAuthRepository.GetRefreshTokenInfo.
-// OAuthService.ExchangeAuthorizationCode now uses TokenService.GenerateTokenPair.
-// OAuthService.IntrospectToken now returns *domain.TokenIntrospection and uses domain.TokenInfo.
-// OAuthService.Device flow methods now use domain.DeviceCode and domain.DeviceCodeStatus.
-// Removed local definitions of Token, UserSession, AuthCode, DeviceCode, TokenIntrospection, etc.
-// All repository interfaces are now from domain package.
-
-// intersectScopes returns the space-delimited intersection of requested and
-// granted scopes. If requested is empty it returns granted verbatim (no
-// restriction). When the intersection is empty the exchange is denied.
 func intersectScopes(requested, granted string) (string, error) {
 	if requested == "" {
 		return granted, nil
@@ -612,36 +998,78 @@ func intersectScopes(requested, granted string) (string, error) {
 }
 
 func (s *defaultOAuthService) TokenExchange(ctx context.Context, subjectToken, subjectTokenType, requestedTokenType, resource, scope, clientID string) (*api.TokenResponse, error) {
+	_, span := telemetry.StartSpan(ctx, tracerName, "TokenExchange",
+		attribute.String("oauth.client_id", clientID),
+		attribute.String("oauth.subject_token_type", subjectTokenType),
+		attribute.String("oauth.requested_token_type", requestedTokenType),
+		attribute.String("oauth.scope", scope),
+	)
+	defer span.End()
+
+	log.Debug().
+		Str("client_id", clientID).
+		Str("subject_token_type", subjectTokenType).
+		Str("requested_token_type", requestedTokenType).
+		Str("scope", scope).
+		Msg("Processing RFC 8693 Token Exchange request")
+
 	if subjectTokenType != "urn:ietf:params:oauth:token-type:access_token" && subjectTokenType != "urn:ietf:params:oauth:token-type:jwt" {
-		return nil, domain.NewInvalidRequest("unsupported subject_token_type")
+		errType := domain.NewInvalidRequest("unsupported subject_token_type")
+		telemetry.RecordSpanError(span, errType, "unsupported subject_token_type")
+		span.SetStatus(codes.Error, "unsupported subject_token_type")
+		log.Warn().Str("subject_token_type", subjectTokenType).Msg("Token exchange rejected: unsupported subject token type")
+		return nil, errType
 	}
 
 	tokenInfo, err := s.tokenService.ValidateAccessToken(ctx, subjectToken)
 	if err != nil {
+		telemetry.RecordSpanError(span, err, "invalid subject token")
+		span.SetStatus(codes.Error, "invalid subject token")
+		log.Warn().Err(err).Str("client_id", clientID).Msg("Token exchange rejected: subject token validation failed")
 		if errors.Is(err, domain.ErrTokenExpiredOrRevoked) {
 			return nil, domain.NewInvalidGrant("invalid subject token: expired or revoked")
 		}
 		return nil, domain.NewInvalidGrant("invalid subject token")
 	}
+	span.SetAttributes(
+		attribute.String("user.id", tokenInfo.UserID),
+		attribute.String("oauth.subject_client_id", tokenInfo.ClientID),
+	)
 
 	if clientID != "" {
 		client, err := s.clientRepo.GetClient(ctx, clientID)
 		if err != nil {
+			telemetry.RecordSpanError(span, err, "client not found")
+			span.SetStatus(codes.Error, "client not found")
+			log.Warn().Err(err).Str("client_id", clientID).Msg("Token exchange failed: client not found")
 			return nil, domain.NewInvalidClient("client not found")
 		}
 		if tokenInfo.ClientID != "" && tokenInfo.ClientID != clientID {
-			return nil, domain.NewInvalidClient("client ID mismatch")
+			errMismatch := domain.NewInvalidClient("client ID mismatch")
+			telemetry.RecordSpanError(span, errMismatch, "client ID mismatch")
+			span.SetStatus(codes.Error, "client ID mismatch")
+			log.Warn().Str("client_id", clientID).Str("token_client_id", tokenInfo.ClientID).Msg("Token exchange failed: client ID mismatch")
+			return nil, errMismatch
 		}
 		_ = client
 	}
 
-	// RFC 8693 §2: the exchanged token's scope is the intersection of the
-	// requested scope and the original token's scope. Never grant broader
-	// scopes than the subject token carried.
 	effectiveScope, err := intersectScopes(scope, tokenInfo.Scope)
 	if err != nil {
+		telemetry.RecordSpanError(span, err, "scope intersection error")
+		span.SetStatus(codes.Error, err.Error())
+		log.Warn().Err(err).Str("requested_scope", scope).Str("granted_scope", tokenInfo.Scope).Msg("Token exchange failed: scope intersection invalid")
 		return nil, err
 	}
 
-	return s.tokenService.GenerateTokenPair(ctx, clientID, tokenInfo.UserID, effectiveScope, time.Hour)
+	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, tokenInfo.UserID, effectiveScope, time.Hour)
+	if err != nil {
+		telemetry.RecordSpanError(span, err, "failed to generate token pair")
+		span.SetStatus(codes.Error, err.Error())
+		log.Error().Err(err).Str("client_id", clientID).Str("user_id", tokenInfo.UserID).Msg("Token exchange failed: error generating new token pair")
+		return nil, err
+	}
+
+	log.Info().Str("client_id", clientID).Str("user_id", tokenInfo.UserID).Str("effective_scope", effectiveScope).Msg("RFC 8693 Token Exchange successful")
+	return tokenPair, nil
 }

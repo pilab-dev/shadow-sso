@@ -8,11 +8,12 @@ import (
 	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	prometheusexporter "go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	prometheusexporter "go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
+	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
 // InitTracer initializes the OpenTelemetry tracer provider with an OTLP gRPC exporter.
@@ -93,5 +94,23 @@ func Shutdown(ctx context.Context, tp *trace.TracerProvider, mp *metric.MeterPro
 		} else {
 			log.Info().Msg("OpenTelemetry MeterProvider shut down successfully")
 		}
+	}
+}
+
+// StartSpan creates a new child span using the global OpenTelemetry TracerProvider.
+func StartSpan(ctx context.Context, tracerName, spanName string, attrs ...attribute.KeyValue) (context.Context, oteltrace.Span) {
+	tracer := otel.Tracer(tracerName)
+	ctx, span := tracer.Start(ctx, spanName, oteltrace.WithAttributes(attrs...))
+	return ctx, span
+}
+
+// RecordSpanError records an error on the given span, sets status to Error, and logs a message.
+func RecordSpanError(span oteltrace.Span, err error, desc string) {
+	if span == nil || err == nil {
+		return
+	}
+	span.RecordError(err)
+	if desc != "" {
+		span.SetAttributes(attribute.String("error.description", desc))
 	}
 }

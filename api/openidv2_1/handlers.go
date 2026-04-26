@@ -303,6 +303,27 @@ func extractFlowIDFromState(state string) string {
 	return parts[0]
 }
 
+// extractRawState extracts the raw state nonce from an encoded state parameter.
+// The state format is base64url(flow_id + "." + random_nonce).
+// Returns empty string if the state does not contain a valid encoded flow_id.nonce.
+func extractRawState(state string) string {
+	if state == "" {
+		return ""
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(state)
+	if err != nil {
+		decoded, err = base64.StdEncoding.DecodeString(state)
+		if err != nil {
+			return ""
+		}
+	}
+	parts := strings.SplitN(string(decoded), ".", 2)
+	if len(parts) == 2 && parts[1] != "" {
+		return parts[1]
+	}
+	return ""
+}
+
 // DeviceVerificationPageHandler serves the HTML page for user to enter their device code.
 // It can optionally pre-fill the user_code if provided as a query parameter.
 func (oa *OAuth2API) DeviceVerificationPageHandler(c *gin.Context) {
@@ -846,22 +867,6 @@ func (oa *OAuth2API) FederatedCallbackHandler(c *gin.Context) {
 		return
 	}
 
-	stateCookie, err := c.Cookie(federationStateCookieName)
-	if err != nil {
-		log.Warn().Err(err).Msg("FederatedCallbackHandler: State cookie not found during callback")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_state_cookie", "message": "Authentication session expired or invalid."})
-		return
-	}
-	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     federationStateCookieName,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		Secure:   c.Request.TLS != nil,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-	})
-
 	var code, queryState string
 
 	if c.Request.Method == http.MethodPost && providerName == "apple" {
@@ -897,8 +902,33 @@ func (oa *OAuth2API) FederatedCallbackHandler(c *gin.Context) {
 		return
 	}
 
-	if queryState != stateCookie {
-		log.Warn().Str("provider", providerName).Str("queryState", queryState).Str("cookieState", stateCookie).Msg("State mismatch in callback")
+	stateCookie, err := c.Cookie(federationStateCookieName)
+	if err != nil || stateCookie == "" {
+		stateCookie = extractRawState(queryState)
+		if stateCookie != "" {
+			log.Info().Msg("FederatedCallbackHandler: State cookie missing, using extracted state nonce from query state parameter")
+		} else {
+			log.Warn().Err(err).Msg("FederatedCallbackHandler: State cookie not found during callback")
+			c.JSON(http.StatusBadRequest, gin.H{"error": "missing_state_cookie", "message": "Authentication session expired or invalid."})
+			return
+		}
+	}
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     federationStateCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		Secure:   c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https"),
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	rawState := extractRawState(queryState)
+	if rawState == "" {
+		rawState = queryState
+	}
+	if rawState != stateCookie {
+		log.Warn().Str("provider", providerName).Str("queryState", queryState).Str("rawState", rawState).Str("cookieState", stateCookie).Msg("State mismatch in callback")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "state_mismatch", "message": "Invalid session state. Please try logging in again."})
 		return
 	}
@@ -949,7 +979,59 @@ func (oa *OAuth2API) FederatedCallbackHandler(c *gin.Context) {
 				return
 			}
 
+			flowState, flowErr := oa.flowStore.GetFlow(flowID)
+			if flowErr == nil && flowState.ClientID != "" {
+				flowState.UserID = result.UserInfo.ID
+				flowState.UserAuthenticatedAt = time.Now()
+				_ = oa.flowStore.StoreFlow(flowID, *flowState)
+
+				client, clientErr := oa.clientService.GetClient(c.Request.Context(), flowState.ClientID)
+				if clientErr == nil && client.RequireConsent {
+					csrfToken, _ := generateCSRFToken()
+					setCSRFCookie(c, csrfToken, 10*time.Minute)
+					c.Redirect(http.StatusFound, "/consent")
+					return
+				}
+
+				authCode, errGen := oa.service.GenerateAuthCode(
+					c.Request.Context(),
+					flowState.ClientID,
+					result.UserInfo.ID,
+					flowState.RedirectURI,
+					flowState.Scope,
+					flowState.CodeChallenge,
+					flowState.CodeChallengeMethod,
+					flowState.Nonce,
+					time.Now(),
+				)
+				if errGen == nil {
+					oa.redirectToClient(c, flowState.RedirectURI, authCode, flowState.State)
+					return
+				}
+			}
+
+			// Fallback: reconstruct /oauth2/authorize URL with original parameters if available
+			params := url.Values{}
+			if flowErr == nil && len(flowState.OriginalOIDCParams) > 0 {
+				for k, v := range flowState.OriginalOIDCParams {
+					params.Set(k, v)
+				}
+			} else if flowErr == nil && flowState.ClientID != "" {
+				params.Set("client_id", flowState.ClientID)
+				params.Set("redirect_uri", flowState.RedirectURI)
+				params.Set("response_type", "code")
+				if flowState.Scope != "" {
+					params.Set("scope", flowState.Scope)
+				}
+				if flowState.State != "" {
+					params.Set("state", flowState.State)
+				}
+			}
+
 			redirectURL := "/oauth2/authorize"
+			if len(params) > 0 {
+				redirectURL += "?" + params.Encode()
+			}
 			c.Redirect(http.StatusFound, redirectURL)
 			return
 		}
