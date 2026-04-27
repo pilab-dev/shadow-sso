@@ -7,7 +7,7 @@ require (
 	connectrpc.com/connect v1.19.2
 	connectrpc.com/grpchealth v1.4.0
 	connectrpc.com/grpcreflect v1.3.0
-	connectrpc.com/otelconnect v0.8.0
+	connectrpc.com/otelconnect v0.9.0
 	firebase.google.com/go/v4 v4.19.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-ldap/ldap/v3 v3.4.13
