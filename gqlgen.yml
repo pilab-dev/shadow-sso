@@ -1,0 +1,42 @@
+# gqlgen configuration. See https://gqlgen.com/config/
+
+schema:
+  - "graphql/schema.graphqls"
+
+exec:
+  filename: "graphql/generated.go"
+  package: graphql
+
+model:
+  filename: "graphql/models_gen.go"
+  package: graphql
+
+resolver:
+  filename: "graphql/schema.resolvers.go"
+  package: graphql
+  type: Resolver
+
+autobind:
+  - "github.com/pilab-dev/shadow-sso/domain"
+
+omit_slice_element_pointers: true
+
+models:
+  Role:
+    model: github.com/pilab-dev/shadow-sso/domain.Role
+  Group:
+    model: github.com/pilab-dev/shadow-sso/domain.Group
+  Session:
+    model: github.com/pilab-dev/shadow-sso/domain.Session
+  ClientScope:
+    model: github.com/pilab-dev/shadow-sso/domain.ClientScope
+  ProtocolMapper:
+    model: github.com/pilab-dev/shadow-sso/domain.ProtocolMapper
+  AuthenticationFlow:
+    model: github.com/pilab-dev/shadow-sso/domain.AuthenticationFlow
+  RealmKey:
+    model: github.com/pilab-dev/shadow-sso/domain.RealmKey
+  UserAttribute:
+    model: github.com/pilab-dev/shadow-sso/domain.UserAttribute
+  UserAttributeMapper:
+    model: github.com/pilab-dev/shadow-sso/domain.UserAttributeMapper
