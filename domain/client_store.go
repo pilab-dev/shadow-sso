@@ -3,6 +3,10 @@ package domain
 
 import (
 	"context"
+	"crypto/rsa"
+	"fmt"
+	"math/big"
+	"strconv"
 	"time"
 )
 
@@ -100,4 +104,47 @@ type JSONWebKey struct {
 	Qi string `json:"qi,omitempty"` // RSA other prime factor
 	Dq string `json:"dq,omitempty"` // RSA private exponent
 	Dp string `json:"dp,omitempty"` // RSA private exponent
+}
+
+func (k JSONWebKey) ToRSAKey() (*rsa.PrivateKey, error) {
+	if k.D == "" {
+		return nil, fmt.Errorf("private key not available")
+	}
+
+	key := &rsa.PrivateKey{}
+
+	key.N = new(big.Int)
+	if _, ok := key.N.SetString(k.N, 10); !ok {
+		return nil, fmt.Errorf("invalid modulus")
+	}
+
+	key.E = 65537
+	if k.E != "" {
+		if e, err := strconv.Atoi(k.E); err == nil {
+			key.E = e
+		}
+	}
+
+	key.D = new(big.Int)
+	if _, ok := key.D.SetString(k.D, 10); !ok {
+		return nil, fmt.Errorf("invalid private exponent")
+	}
+
+	if k.P != "" {
+		p := new(big.Int)
+		if _, ok := p.SetString(k.P, 10); !ok {
+			return nil, fmt.Errorf("invalid prime P")
+		}
+		key.Primes = append(key.Primes, p)
+	}
+
+	if k.Q != "" {
+		q := new(big.Int)
+		if _, ok := q.SetString(k.Q, 10); !ok {
+			return nil, fmt.Errorf("invalid prime Q")
+		}
+		key.Primes = append(key.Primes, q)
+	}
+
+	return key, nil
 }

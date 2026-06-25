@@ -63,7 +63,7 @@ func NewSessionRepositoryMongo(ctx context.Context, db *mongo.Database) (domain.
 // StoreSession creates a new session.
 func (r *SessionRepositoryMongo) StoreSession(ctx context.Context, session *domain.Session) error {
 	if session.ID == "" {
-		session.ID = NewObjectID() // Generate new ID if not provided
+		session.ID = NewID() // Generate new UUID if not provided
 	}
 	if session.CreatedAt.IsZero() {
 		session.CreatedAt = time.Now().UTC()

@@ -16,6 +16,7 @@ import (
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
 	"google.golang.org/protobuf/types/known/emptypb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	// Add other necessary imports like service_account_repository, public_key_repository
 )
 
@@ -134,17 +135,53 @@ func (s *ServiceAccountServer) CreateServiceAccountKey(ctx context.Context, req 
 }
 
 func (s *ServiceAccountServer) ListServiceAccountKeys(ctx context.Context, req *connect.Request[ssov1.ListServiceAccountKeysRequest]) (*connect.Response[ssov1.ListServiceAccountKeysResponse], error) {
-	// 1. Validate req.GetServiceAccountId()
-	// 2. Fetch active public keys (domain.PublicKeyInfo) for the service_account_id from pubKeyRepo
-	// 3. Convert to ssov1.StoredServiceAccountKeyInfo
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ListServiceAccountKeys not implemented"))
+	serviceAccountID := req.Msg.GetServiceAccountId()
+	if serviceAccountID == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("service_account_id is required"))
+	}
+
+	_, err := s.saRepo.GetServiceAccount(ctx, serviceAccountID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("service account not found"))
+	}
+
+	pubKeys, err := s.pubKeyRepo.ListPublicKeysForServiceAccount(ctx, serviceAccountID, false)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to list keys: %w", err))
+	}
+
+	keys := make([]*ssov1.StoredServiceAccountKeyInfo, 0, len(pubKeys))
+	for _, pk := range pubKeys {
+		keyInfo := &ssov1.StoredServiceAccountKeyInfo{
+			KeyId:            pk.ID,
+			ServiceAccountId: pk.ServiceAccountID,
+			Algorithm:        pk.Algorithm,
+			Status:           pk.Status,
+			CreatedAt:        timestamppb.New(time.Unix(pk.CreatedAt, 0)),
+		}
+		if pk.ExpiresAt > 0 {
+			keyInfo.ExpiresAt = timestamppb.New(time.Unix(pk.ExpiresAt, 0))
+		}
+		keys = append(keys, keyInfo)
+	}
+
+	return connect.NewResponse(&ssov1.ListServiceAccountKeysResponse{
+		Keys: keys,
+	}), nil
 }
 
 func (s *ServiceAccountServer) DeleteServiceAccountKey(ctx context.Context, req *connect.Request[ssov1.DeleteServiceAccountKeyRequest]) (*connect.Response[emptypb.Empty], error) {
-	// 1. Validate req.GetServiceAccountId() and req.GetKeyId()
-	// 2. Update key status to "REVOKED" or delete from pubKeyRepo
-	//    (Consider if actual deletion or just marking as revoked is better for audit)
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("DeleteServiceAccountKey not implemented"))
+	serviceAccountID := req.Msg.GetServiceAccountId()
+	keyID := req.Msg.GetKeyId()
+	if serviceAccountID == "" || keyID == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("service_account_id and key_id are required"))
+	}
+
+	if err := s.pubKeyRepo.UpdatePublicKeyStatus(ctx, keyID, "REVOKED"); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to delete key: %w", err))
+	}
+
+	return connect.NewResponse(&emptypb.Empty{}), nil
 }
 
 // Helper function (can be moved to a util package)

@@ -20,20 +20,17 @@ import (
 type TwoFactorServer struct {
 	ssov1connect.UnimplementedTwoFactorServiceHandler // Embed for forward compatibility
 	userRepo                                          domain.UserRepository
-	passwordHasher                                    domain.PasswordHasher  // For verifying password in Disable2FA/GenerateRecoveryCodes
-	mfaService                                        *domain.MFAService     // For email MFA operations
-	pushMFAService                                    *domain.PushMFAService // For push MFA operations
-	ssoAppName                                        string                 // Used as issuer in TOTP (e.g., "ShadowSSO")
-	// secretEncrypter Decrypter // For encrypting/decrypting TOTP secret in DB (future)
+	passwordHasher                                    domain.PasswordHasher
+	mfaService                                        MFAService
+	pushMFAService                                    PushMFAService
+	ssoAppName                                        string
 }
 
-// NewTwoFactorServer creates a new TwoFactorServer.
-// ssoAppName is the name displayed in authenticator apps (TOTP issuer).
 func NewTwoFactorServer(
 	userRepo domain.UserRepository,
 	hasher domain.PasswordHasher,
-	mfaService *domain.MFAService,
-	pushMFAService *domain.PushMFAService,
+	mfaService MFAService,
+	pushMFAService PushMFAService,
 	ssoAppName string,
 ) *TwoFactorServer {
 	return &TwoFactorServer{

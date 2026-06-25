@@ -106,8 +106,10 @@ type TwoFactorService interface {
 
 // FederationService defines the interface for federated identity operations.
 type FederationService interface {
-	InitiateFederatedLogin(ctx context.Context, providerName string) (authURL, state string, err error)
+	GenerateAuthState() (string, error)
+	GetAuthorizationURL(ctx context.Context, providerName, state string) (string, error)
 	HandleFederatedCallback(ctx context.Context, providerName, state, sessionState, code string) (*FederationCallbackResult, error)
+	InitiateFederatedLogin(ctx context.Context, providerName string) (authURL, state string, err error)
 	ListUserFederatedIdentities(ctx context.Context, userID string) ([]*domain.UserFederatedIdentity, error)
 	RemoveUserFederatedIdentity(ctx context.Context, userID, providerName, providerUserID string) error
 	PromptMergeFederatedAccount(ctx context.Context, continuationToken string) (*MergePromptResult, error)

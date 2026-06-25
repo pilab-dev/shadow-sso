@@ -34,6 +34,8 @@ func createTokenService(ctrl *gomock.Controller) services.TokenService {
 		mockPubKeyRepo,
 		mockSARepo,
 		mockUserRepo,
+		nil, // userAttrMapperRepo
+		nil, // userAttrRepo
 	)
 }
 
@@ -74,6 +76,8 @@ func TestTokenService_CreateToken(t *testing.T) {
 		mockPubKeyRepo,
 		mockSARepo,
 		mockUserRepo,
+		nil,
+		nil,
 	)
 
 	token, err := ts.CreateToken(ctx, opts, nil)
@@ -104,6 +108,8 @@ func TestTokenService_CreateToken_WithRoles(t *testing.T) {
 		mockPubKeyRepo,
 		mockSARepo,
 		mockUserRepo,
+		nil,
+		nil,
 	)
 
 	ctx := context.Background()
@@ -152,6 +158,8 @@ func TestTokenService_GenerateTokenPair(t *testing.T) {
 		mockPubKeyRepo,
 		mockSARepo,
 		mockUserRepo,
+		nil,
+		nil,
 	)
 
 	ctx := context.Background()
@@ -198,6 +206,8 @@ func TestTokenService_GenerateTokenPair_WithOpenID(t *testing.T) {
 		mockPubKeyRepo,
 		mockSARepo,
 		mockUserRepo,
+		nil,
+		nil,
 	)
 
 	ctx := context.Background()
@@ -242,6 +252,8 @@ func TestTokenService_GenerateTokenPair_WithoutOpenID(t *testing.T) {
 		mockPubKeyRepo,
 		mockSARepo,
 		mockUserRepo,
+		nil,
+		nil,
 	)
 
 	ctx := context.Background()
@@ -286,6 +298,8 @@ func TestTokenService_ValidateAccessToken_CacheHit(t *testing.T) {
 		mockPubKeyRepo,
 		mockSARepo,
 		mockUserRepo,
+		nil,
+		nil,
 	)
 
 	ctx := context.Background()
@@ -331,6 +345,8 @@ func TestTokenService_ValidateAccessToken_CacheMiss_RepoHit(t *testing.T) {
 		mockPubKeyRepo,
 		mockSARepo,
 		mockUserRepo,
+		nil,
+		nil,
 	)
 
 	ctx := context.Background()
@@ -379,6 +395,8 @@ func TestTokenService_ValidateAccessToken_Revoked(t *testing.T) {
 		mockPubKeyRepo,
 		mockSARepo,
 		mockUserRepo,
+		nil,
+		nil,
 	)
 
 	ctx := context.Background()
@@ -425,6 +443,8 @@ func TestTokenService_RevokeToken(t *testing.T) {
 		mockPubKeyRepo,
 		mockSARepo,
 		mockUserRepo,
+		nil,
+		nil,
 	)
 
 	ctx := context.Background()
@@ -459,6 +479,8 @@ func TestTokenService_GetRefreshTokenInfo(t *testing.T) {
 		mockPubKeyRepo,
 		mockSARepo,
 		mockUserRepo,
+		nil,
+		nil,
 	)
 
 	ctx := context.Background()
@@ -501,6 +523,8 @@ func TestTokenService_GetAccessTokenInfo(t *testing.T) {
 		mockPubKeyRepo,
 		mockSARepo,
 		mockUserRepo,
+		nil,
+		nil,
 	)
 
 	ctx := context.Background()
@@ -544,6 +568,8 @@ func TestTokenService_ValidateAccessToken_Expired(t *testing.T) {
 		mockPubKeyRepo,
 		mockSARepo,
 		mockUserRepo,
+		nil,
+		nil,
 	)
 
 	ctx := context.Background()
@@ -590,6 +616,8 @@ func TestTokenService_ValidateAccessToken_NotFound(t *testing.T) {
 		mockPubKeyRepo,
 		mockSARepo,
 		mockUserRepo,
+		nil,
+		nil,
 	)
 
 	ctx := context.Background()
@@ -632,6 +660,8 @@ func TestTokenService_RevokeToken_CacheError(t *testing.T) {
 		mockPubKeyRepo,
 		mockSARepo,
 		mockUserRepo,
+		nil,
+		nil,
 	)
 
 	ctx := context.Background()

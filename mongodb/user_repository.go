@@ -63,7 +63,7 @@ func (r *UserRepository) createIndexes(ctx context.Context) error {
 // CreateUser creates a new user.
 func (r *UserRepository) CreateUser(ctx context.Context, user *domain.User) error {
 	if user.ID == "" {
-		user.ID = NewObjectID() // Assuming NewObjectID() is in this package or accessible (e.g. mongodb/utils.go)
+		user.ID = NewID() // Generate UUID for new users
 	}
 	if user.CreatedAt.IsZero() {
 		user.CreatedAt = time.Now().UTC()
@@ -237,9 +237,9 @@ func (r *UserRepository) StorePhoneVerificationOtp(ctx context.Context, userID, 
 	filter := bson.M{"_id": userID}
 	update := bson.M{
 		"$set": bson.M{
-			"phone_verification_otp":           otp,
+			"phone_verification_otp":            otp,
 			"phone_verification_otp_expires_at": expiresAt,
-			"updated_at":                       time.Now(),
+			"updated_at":                        time.Now(),
 		},
 	}
 
@@ -261,9 +261,9 @@ func (r *UserRepository) ClearPhoneVerificationOtp(ctx context.Context, userID s
 	filter := bson.M{"_id": userID}
 	update := bson.M{
 		"$unset": bson.M{
-			"phone_verification_otp":            "",
-			"phone_verification_otp_expires_at": "",
-			"phone_verification_attempts":       "",
+			"phone_verification_otp":             "",
+			"phone_verification_otp_expires_at":  "",
+			"phone_verification_attempts":        "",
 			"phone_verification_last_attempt_at": "",
 		},
 		"$set": bson.M{
@@ -290,10 +290,10 @@ func (r *UserRepository) StoreEmailMFAOtp(ctx context.Context, userID, otp strin
 	now := time.Now()
 	update := bson.M{
 		"$set": bson.M{
-			"email_mfa_otp":           otp,
+			"email_mfa_otp":            otp,
 			"email_mfa_otp_expires_at": expiresAt,
 			"email_mfa_last_sent_at":   &now,
-			"updated_at":              now,
+			"updated_at":               now,
 		},
 	}
 
@@ -388,11 +388,11 @@ func (r *UserRepository) DisableEmailMFA(ctx context.Context, userID string) err
 	filter := bson.M{"_id": userID}
 	update := bson.M{
 		"$unset": bson.M{
-			"email_mfa_enabled":       "",
-			"email_mfa_otp":           "",
+			"email_mfa_enabled":        "",
+			"email_mfa_otp":            "",
 			"email_mfa_otp_expires_at": "",
-			"email_mfa_otp_counter":   "",
-			"email_mfa_last_sent_at":  "",
+			"email_mfa_otp_counter":    "",
+			"email_mfa_last_sent_at":   "",
 		},
 		"$set": bson.M{
 			"updated_at": time.Now(),
@@ -468,7 +468,7 @@ func (r *UserRepository) UpdatePushMFAChallenges(ctx context.Context, userID str
 	update := bson.M{
 		"$set": bson.M{
 			"push_mfa_challenges": challenges,
-			"updated_at":           time.Now(),
+			"updated_at":          time.Now(),
 		},
 	}
 
@@ -491,7 +491,7 @@ func (r *UserRepository) EnablePushMFA(ctx context.Context, userID string) error
 	update := bson.M{
 		"$set": bson.M{
 			"push_mfa_enabled": true,
-			"updated_at":        time.Now(),
+			"updated_at":       time.Now(),
 		},
 	}
 
@@ -532,6 +532,373 @@ func (r *UserRepository) DisablePushMFA(ctx context.Context, userID string) erro
 		return domain.ErrUserNotFound
 	}
 
+	return nil
+}
+
+func (r *UserRepository) GetUserByEmailVerificationToken(ctx context.Context, token string) (*domain.User, error) {
+	var user domain.User
+	err := r.users.FindOne(ctx, bson.M{"email_verification_token": token}).Decode(&user)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, domain.ErrUserNotFound
+		}
+		return nil, err
+	}
+	return &user, nil
+}
+
+func (r *UserRepository) GetUserByPasswordResetToken(ctx context.Context, token string) (*domain.User, error) {
+	var user domain.User
+	err := r.users.FindOne(ctx, bson.M{"password_reset_token": token}).Decode(&user)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, domain.ErrUserNotFound
+		}
+		return nil, err
+	}
+	return &user, nil
+}
+
+func (r *UserRepository) StoreEmailVerificationToken(ctx context.Context, userID, token string, expiresAt time.Time) error {
+	filter := bson.M{"_id": userID}
+	update := bson.M{
+		"$set": bson.M{
+			"email_verification_token":            token,
+			"email_verification_token_expires_at": expiresAt,
+			"updated_at":                          time.Now(),
+		},
+	}
+	result, err := r.users.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return fmt.Errorf("failed to store email verification token: %w", err)
+	}
+	if result.MatchedCount == 0 {
+		return domain.ErrUserNotFound
+	}
+	return nil
+}
+
+func (r *UserRepository) ClearEmailVerificationToken(ctx context.Context, userID string) error {
+	filter := bson.M{"_id": userID}
+	update := bson.M{
+		"$unset": bson.M{
+			"email_verification_token":            "",
+			"email_verification_token_expires_at": "",
+		},
+		"$set": bson.M{
+			"updated_at": time.Now(),
+		},
+	}
+	result, err := r.users.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return fmt.Errorf("failed to clear email verification token: %w", err)
+	}
+	if result.MatchedCount == 0 {
+		return domain.ErrUserNotFound
+	}
+	return nil
+}
+
+func (r *UserRepository) StorePasswordResetToken(ctx context.Context, userID, token string, expiresAt time.Time) error {
+	filter := bson.M{"_id": userID}
+	update := bson.M{
+		"$set": bson.M{
+			"password_reset_token":            token,
+			"password_reset_token_expires_at": expiresAt,
+			"updated_at":                      time.Now(),
+		},
+	}
+	result, err := r.users.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return fmt.Errorf("failed to store password reset token: %w", err)
+	}
+	if result.MatchedCount == 0 {
+		return domain.ErrUserNotFound
+	}
+	return nil
+}
+
+func (r *UserRepository) ClearPasswordResetToken(ctx context.Context, userID string) error {
+	filter := bson.M{"_id": userID}
+	update := bson.M{
+		"$unset": bson.M{
+			"password_reset_token":            "",
+			"password_reset_token_expires_at": "",
+		},
+		"$set": bson.M{
+			"updated_at": time.Now(),
+		},
+	}
+	result, err := r.users.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return fmt.Errorf("failed to clear password reset token: %w", err)
+	}
+	if result.MatchedCount == 0 {
+		return domain.ErrUserNotFound
+	}
+	return nil
+}
+
+func (r *UserRepository) StoreLoginOtp(ctx context.Context, userID, otp string, methodType string, expiresAt time.Time) error {
+	filter := bson.M{"_id": userID}
+	update := bson.M{
+		"$set": bson.M{
+			"login_otp":             otp,
+			"login_otp_expires_at":  expiresAt,
+			"login_otp_method_type": methodType,
+			"updated_at":            time.Now(),
+		},
+	}
+	result, err := r.users.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return fmt.Errorf("failed to store login OTP: %w", err)
+	}
+	if result.MatchedCount == 0 {
+		return domain.ErrUserNotFound
+	}
+	return nil
+}
+
+func (r *UserRepository) ClearLoginOtp(ctx context.Context, userID string) error {
+	filter := bson.M{"_id": userID}
+	update := bson.M{
+		"$unset": bson.M{
+			"login_otp":             "",
+			"login_otp_expires_at":  "",
+			"login_otp_method_type": "",
+		},
+		"$set": bson.M{
+			"updated_at": time.Now(),
+		},
+	}
+	result, err := r.users.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return fmt.Errorf("failed to clear login OTP: %w", err)
+	}
+	if result.MatchedCount == 0 {
+		return domain.ErrUserNotFound
+	}
+	return nil
+}
+
+func (r *UserRepository) SetPhoneNumber(ctx context.Context, userID, phoneNumber string) error {
+	filter := bson.M{"_id": userID}
+	update := bson.M{
+		"$set": bson.M{
+			"phone_number": phoneNumber,
+			"updated_at":   time.Now(),
+		},
+	}
+	result, err := r.users.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return fmt.Errorf("failed to set phone number: %w", err)
+	}
+	if result.MatchedCount == 0 {
+		return domain.ErrUserNotFound
+	}
+	return nil
+}
+
+func (r *UserRepository) AddMfaMethod(ctx context.Context, userID string, method *domain.MfaMethod) error {
+	filter := bson.M{"_id": userID}
+	update := bson.M{
+		"$push": bson.M{
+			"mfa_methods": method,
+		},
+		"$set": bson.M{
+			"updated_at": time.Now(),
+		},
+	}
+	result, err := r.users.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return fmt.Errorf("failed to add MFA method: %w", err)
+	}
+	if result.MatchedCount == 0 {
+		return domain.ErrUserNotFound
+	}
+	return nil
+}
+
+func (r *UserRepository) GetMfaMethod(ctx context.Context, userID, methodID string) (*domain.MfaMethod, error) {
+	user, err := r.GetUserByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	for _, m := range user.MfaMethods {
+		if m.ID == methodID {
+			return &m, nil
+		}
+	}
+	return nil, errors.New("MFA method not found")
+}
+
+func (r *UserRepository) ListMfaMethods(ctx context.Context, userID string) ([]domain.MfaMethod, error) {
+	user, err := r.GetUserByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return user.MfaMethods, nil
+}
+
+func (r *UserRepository) VerifyMfaMethod(ctx context.Context, userID, methodID string) error {
+	filter := bson.M{"_id": userID, "mfa_methods.id": methodID}
+	update := bson.M{
+		"$set": bson.M{
+			"mfa_methods.$.verified": true,
+			"updated_at":             time.Now(),
+		},
+	}
+	result, err := r.users.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return fmt.Errorf("failed to verify MFA method: %w", err)
+	}
+	if result.MatchedCount == 0 {
+		return domain.ErrUserNotFound
+	}
+	return nil
+}
+
+func (r *UserRepository) RemoveMfaMethod(ctx context.Context, userID, methodID string) error {
+	filter := bson.M{"_id": userID}
+	update := bson.M{
+		"$pull": bson.M{
+			"mfa_methods": bson.M{"id": methodID},
+		},
+		"$set": bson.M{
+			"updated_at": time.Now(),
+		},
+	}
+	result, err := r.users.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return fmt.Errorf("failed to remove MFA method: %w", err)
+	}
+	if result.MatchedCount == 0 {
+		return domain.ErrUserNotFound
+	}
+	return nil
+}
+
+func (r *UserRepository) AddWebAuthnDevice(ctx context.Context, userID string, device *domain.WebAuthnDevice) error {
+	filter := bson.M{"_id": userID}
+	update := bson.M{
+		"$push": bson.M{
+			"webauthn_devices": device,
+		},
+		"$set": bson.M{
+			"updated_at": time.Now(),
+		},
+	}
+	result, err := r.users.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return fmt.Errorf("failed to add WebAuthn device: %w", err)
+	}
+	if result.MatchedCount == 0 {
+		return domain.ErrUserNotFound
+	}
+	return nil
+}
+
+func (r *UserRepository) GetWebAuthnDevice(ctx context.Context, userID, deviceID string) (*domain.WebAuthnDevice, error) {
+	user, err := r.GetUserByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range user.WebAuthnDevices {
+		if d.ID == deviceID {
+			return &d, nil
+		}
+	}
+	return nil, errors.New("WebAuthn device not found")
+}
+
+func (r *UserRepository) ListWebAuthnDevices(ctx context.Context, userID string) ([]domain.WebAuthnDevice, error) {
+	user, err := r.GetUserByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return user.WebAuthnDevices, nil
+}
+
+func (r *UserRepository) UpdateWebAuthnDeviceCounter(ctx context.Context, userID, deviceID string, newCounter int32) error {
+	filter := bson.M{"_id": userID, "webauthn_devices.id": deviceID}
+	update := bson.M{
+		"$set": bson.M{
+			"webauthn_devices.$.counter": newCounter,
+			"updated_at":                 time.Now(),
+		},
+	}
+	result, err := r.users.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return fmt.Errorf("failed to update WebAuthn device counter: %w", err)
+	}
+	if result.MatchedCount == 0 {
+		return domain.ErrUserNotFound
+	}
+	return nil
+}
+
+func (r *UserRepository) RemoveWebAuthnDevice(ctx context.Context, userID, deviceID string) error {
+	filter := bson.M{"_id": userID}
+	update := bson.M{
+		"$pull": bson.M{
+			"webauthn_devices": bson.M{"id": deviceID},
+		},
+		"$set": bson.M{
+			"updated_at": time.Now(),
+		},
+	}
+	result, err := r.users.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return fmt.Errorf("failed to remove WebAuthn device: %w", err)
+	}
+	if result.MatchedCount == 0 {
+		return domain.ErrUserNotFound
+	}
+	return nil
+}
+
+func (r *UserRepository) IncrementFailedLoginAttempts(ctx context.Context, userID string) (int32, error) {
+	filter := bson.M{"_id": userID}
+	update := bson.M{
+		"$inc": bson.M{
+			"failed_login_attempts": 1,
+		},
+		"$set": bson.M{
+			"last_failed_login_time": time.Now(),
+			"updated_at":             time.Now(),
+		},
+	}
+	result, err := r.users.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return 0, fmt.Errorf("failed to increment failed login attempts: %w", err)
+	}
+	if result.MatchedCount == 0 {
+		return 0, domain.ErrUserNotFound
+	}
+
+	user, err := r.GetUserByID(ctx, userID)
+	if err != nil {
+		return 0, err
+	}
+	return int32(user.FailedLoginAttempts), nil
+}
+
+func (r *UserRepository) ResetFailedLoginAttempts(ctx context.Context, userID string) error {
+	filter := bson.M{"_id": userID}
+	update := bson.M{
+		"$set": bson.M{
+			"failed_login_attempts":  0,
+			"last_failed_login_time": nil,
+			"updated_at":             time.Now(),
+		},
+	}
+	result, err := r.users.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return fmt.Errorf("failed to reset failed login attempts: %w", err)
+	}
+	if result.MatchedCount == 0 {
+		return domain.ErrUserNotFound
+	}
 	return nil
 }
 

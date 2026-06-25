@@ -87,7 +87,7 @@ func (r *ServiceAccountRepositoryMongo) GetServiceAccountByClientEmail(ctx conte
 // Used by ServiceAccountService.
 func (r *ServiceAccountRepositoryMongo) CreateServiceAccount(ctx context.Context, sa *domain.ServiceAccount) error {
 	if sa.ID == "" {
-		sa.ID = NewObjectID() // Generate a new MongoDB ObjectID if ID is not provided
+		sa.ID = NewID() // Generate a new UUID if ID is not provided
 	}
 	if sa.CreatedAt == 0 {
 		sa.CreatedAt = time.Now().Unix()

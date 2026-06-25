@@ -153,6 +153,14 @@ func (s *defaultFederationService) ConfirmMergeFederatedAccount(ctx context.Cont
 
 func (s *defaultFederationService) Stop() {}
 
+func (s *defaultFederationService) GenerateAuthState() (string, error) {
+	return s.fedService.GenerateAuthState()
+}
+
+func (s *defaultFederationService) GetAuthorizationURL(ctx context.Context, providerName, state string) (string, error) {
+	return s.fedService.GetAuthorizationURL(ctx, providerName, state)
+}
+
 func (s *defaultFederationService) AuthenticateDirect(ctx context.Context, providerName, username, password string) (interface{}, error) {
 	return s.fedService.AuthenticateDirect(ctx, providerName, username, password)
 }
