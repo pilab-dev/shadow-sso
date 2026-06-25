@@ -49,7 +49,7 @@ func main() {
 	// Get MongoDB URI from environment or use default
 	mongoURI := os.Getenv("MONGO_URI")
 	if mongoURI == "" {
-		mongoURI = "mongodb+srv://pirat:PASSWORD-REMOVED@sandbox.yuwak.mongodb.net/sso_dev?retryWrites=true&w=majority&minPoolSize=15&appName=Sandbox&authSource=admin"
+		mongoURI = "mongodb://localhost:27017/sso_dev"
 	}
 
 	// Connect to MongoDB

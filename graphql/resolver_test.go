@@ -29,10 +29,10 @@ func (m *MockPasswordHasher) Verify(hashedPassword, password string) error { ret
 func TestGraphQLResolverWithMongoDB(t *testing.T) {
 	ctx := context.Background()
 
-	// Get MongoDB URI from environment or use default Atlas cluster
+	// Get MongoDB URI from environment or use default
 	mongoURI := os.Getenv("MONGO_URI")
 	if mongoURI == "" {
-		mongoURI = "mongodb+srv://pirat:PASSWORD-REMOVED@sandbox.yuwak.mongodb.net/sso_dev?retryWrites=true&w=majority&minPoolSize=15&appName=Sandbox&authSource=admin"
+		mongoURI = "mongodb://localhost:27017/sso_dev"
 	}
 
 	// Try to connect to MongoDB
