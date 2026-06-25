@@ -38,12 +38,14 @@ type OAuth2API struct {
 	clientService     services.ClientService
 	pkceService       services.PKCEService
 	config            *sssoapi.OpenIDProviderConfig
-	flowStore         domain.FlowStore        // Changed to domain.FlowStore
-	userSessionStore  domain.UserSessionStore // Changed to domain.UserSessionStore
-	userRepo          domain.UserRepository
-	passwordHasher    domain.PasswordHasher      // Changed to domain.PasswordHasher
-	federationService services.FederationService // Added for LDAP and other federation flows
-	tokenService      services.TokenService      // Added for issuing tokens after LDAP auth
+	flowStore         domain.FlowStore
+	userSessionStore  domain.UserSessionStore
+	userRepo        domain.UserRepository
+	passwordHasher   domain.PasswordHasher
+	federationService services.FederationService
+	tokenService    services.TokenService
+	realmKeysRepo    domain.RealmKeysRepository
+	clientRepo     domain.ClientRepository
 }
 
 type OAuth2APIOptions struct {
@@ -52,12 +54,14 @@ type OAuth2APIOptions struct {
 	ClientService     services.ClientService
 	PkceService       services.PKCEService
 	Config            *sssoapi.OpenIDProviderConfig
-	FlowStore         domain.FlowStore        // Changed to domain.FlowStore
-	UserSessionStore  domain.UserSessionStore // Changed to domain.UserSessionStore
+	FlowStore         domain.FlowStore
+	UserSessionStore  domain.UserSessionStore
 	UserRepo          domain.UserRepository
-	PasswordHasher    domain.PasswordHasher      // Changed to domain.PasswordHasher
-	FederationService services.FederationService // Added
-	TokenService      services.TokenService
+	PasswordHasher   domain.PasswordHasher
+	FederationService services.FederationService
+	TokenService     services.TokenService
+	RealmKeysRepo   domain.RealmKeysRepository
+	ClientRepo       domain.ClientRepository
 }
 
 // NewOAuth2API initializes the OAuth2 API.
@@ -84,10 +88,12 @@ func NewOAuth2API(
 		config:            opts.Config,
 		flowStore:         opts.FlowStore,
 		userSessionStore:  opts.UserSessionStore,
-		userRepo:          opts.UserRepo,
-		passwordHasher:    opts.PasswordHasher,
-		federationService: opts.FederationService, // Added
-		tokenService:      opts.TokenService,      // Added
+		userRepo:        opts.UserRepo,
+		passwordHasher:   opts.PasswordHasher,
+		federationService: opts.FederationService,
+		tokenService:     opts.TokenService,
+		realmKeysRepo:   opts.RealmKeysRepo,
+		clientRepo:      opts.ClientRepo,
 	}
 }
 
@@ -106,6 +112,9 @@ func (oa *OAuth2API) RegisterRoutes(e *gin.Engine) {
 	// OpenID Configuration endpoints
 	e.GET("/.well-known/openid-configuration", oa.OpenIDConfigurationHandler)
 	e.GET("/.well-known/jwks.json", oa.JWKSHandler)
+
+	// Client JWKS endpoints
+	e.GET("/clients/:clientId/jwks", oa.ClientJWKSHandler)
 
 	// Device Verification User-Facing Endpoints
 	deviceGroup := e.Group("/oauth2/device")
@@ -697,11 +706,13 @@ const (
 func (oa *OAuth2API) TokenHandler(c *gin.Context) {
 	clientID := c.PostForm("client_id")
 	clientSecret := c.PostForm("client_secret")
+	clientAssertion := c.PostForm("client_assertion")
+	clientAssertionType := c.PostForm("client_assertion_type")
 	grantType := c.PostForm("grant_type")
 
 	ctx := c.Request.Context()
 	var cli *domain.Client
-	var err error // Keep err scoped within this function initially
+	var err error
 
 	isDeviceCodeGrant := GrantType(grantType) == GrantTypeDeviceCode
 
@@ -710,29 +721,24 @@ func (oa *OAuth2API) TokenHandler(c *gin.Context) {
 		return
 	}
 
-	// Client Authentication:
-	if clientSecret != "" {
-		cli, err = oa.clientService.ValidateClient(ctx, clientID, clientSecret)
-		if err != nil {
-			log.Error().Err(err).Msg("Invalid client credentials")
-			c.JSON(http.StatusUnauthorized, domain.NewInvalidClient("Invalid client credentials"))
-			return
-		}
-	} else {
-		cli, err = oa.clientService.GetClient(ctx, clientID)
-		if err != nil {
-			log.Error().Err(err).Str("client_id", clientID).Msg("Client not found")
-			c.JSON(http.StatusBadRequest, domain.NewInvalidClient("Invalid client_id"))
-			return
-		}
-		// Assuming client.Client has IsConfidential() method. If not, this check needs adjustment.
-		// For now, let's assume a helper or direct field access like 'cli.Confidential'.
-		// This is a placeholder for actual IsConfidential() check.
-		if !isDeviceCodeGrant && cli.IsConfidential {
-			log.Error().Str("client_id", clientID).Msg("Client is confidential but no secret provided")
-			c.JSON(http.StatusUnauthorized, domain.NewInvalidClient("Client secret required for confidential client"))
-			return
-		}
+	params := map[string][]string{
+		"client_secret":               {clientSecret},
+		"client_assertion":           {clientAssertion},
+		"client_assertion_type":      {clientAssertionType},
+		"tls_client_auth_cert_subject": {c.Request.Header.Get("X-SSL-Client-Cert")},
+	}
+
+	cli, err = oa.authenticateClient(ctx, clientID, cli, params)
+	if err != nil {
+		log.Error().Err(err).Msg("Client authentication failed")
+		c.JSON(http.StatusUnauthorized, domain.NewInvalidClient("Invalid client credentials"))
+		return
+	}
+
+	if !isDeviceCodeGrant && cli.IsConfidential && cli.TokenEndpointAuth != string(domain.ClientAuthMethodNone) && clientSecret == "" && clientAssertion == "" {
+		log.Error().Str("client_id", clientID).Msg("Client is confidential but no credentials provided")
+		c.JSON(http.StatusUnauthorized, domain.NewInvalidClient("Client secret required for confidential client"))
+		return
 	}
 
 	// Validate grant type (check if this client is allowed to use this grant type)
@@ -1584,4 +1590,60 @@ func (oa *OAuth2API) AuthenticateUserHandler(c *gin.Context) {
 
 	log.Info().Str("flowId", req.FlowID).Str("userID", user.ID).Str("redirectURL", redirectURL).Msg("User authenticated via UI, redirecting to client with auth code.")
 	c.Redirect(http.StatusFound, redirectURL)
+}
+
+func (oa *OAuth2API) authenticateClient(ctx context.Context, clientID string, existingClient *domain.Client, params map[string][]string) (*domain.Client, error) {
+	clientSecret := getFirstParam(params, "client_secret")
+	clientAssertion := getFirstParam(params, "client_assertion")
+
+	if clientSecret != "" {
+		return oa.clientService.ValidateClient(ctx, clientID, clientSecret)
+	}
+
+	if clientAssertion != "" {
+		return oa.authenticateWithJWT(ctx, clientID, existingClient, params)
+	}
+
+	if existingClient != nil {
+		return existingClient, nil
+	}
+
+	return oa.clientService.GetClient(ctx, clientID)
+}
+
+func (oa *OAuth2API) authenticateWithJWT(ctx context.Context, clientID string, existingClient *domain.Client, params map[string][]string) (*domain.Client, error) {
+	clientAssertion := getFirstParam(params, "client_assertion")
+	clientAssertionType := getFirstParam(params, "client_assertion_type")
+
+	if clientAssertion == "" {
+		return nil, domain.ErrInvalidClientAssertion
+	}
+
+	if !strings.Contains(clientAssertionType, "jwt") {
+		return nil, domain.NewInvalidClient("invalid client_assertion_type")
+	}
+
+	realmKeys, _ := oa.realmKeysRepo.ListRealmKeys(ctx)
+
+	authenticator := domain.NewJWTAssertionAuthenticator(realmKeys)
+	cli, err := authenticator.Authenticate(ctx, existingClient, clientID, params)
+	if err == nil {
+		return cli, nil
+	}
+
+	if existingClient != nil && existingClient.JWKS != nil {
+		cli, err := domain.NewClientJWTAuthenticator(existingClient).Authenticate(ctx, existingClient, clientID, params)
+		if err == nil {
+			return cli, nil
+		}
+	}
+
+	return nil, domain.ErrInvalidClientAssertion
+}
+
+func getFirstParam(params map[string][]string, key string) string {
+	if v, ok := params[key]; ok && len(v) > 0 {
+		return v[0]
+	}
+	return ""
 }

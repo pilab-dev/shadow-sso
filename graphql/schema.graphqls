@@ -1,0 +1,907 @@
+# GraphQL Schema for Keycloak-style SSO API
+# Schema-first approach using gqlgen
+
+# =============================================================================
+# SCALARS
+# =============================================================================
+
+scalar Time
+scalar Map
+scalar JSON
+
+# =============================================================================
+# QUERIES
+# =============================================================================
+
+type Query {
+  # User queries
+  users(filter: UserFilter, first: Int, after: Int): UserConnection!
+  user(id: ID!): User
+
+  # Client queries
+  clients(filter: ClientFilter, first: Int, after: Int): ClientConnection!
+  client(id: ID!): Client
+  clientByClientId(clientId: String!): Client
+
+  # Role queries
+  roles: [Role!]!
+  role(id: ID!): Role
+  realmRoles: [Role!]!
+  clientRoles(clientId: String!): [Role!]!
+
+  # Group queries
+  groups: [Group!]!
+  group(id: ID!): Group
+
+  # Session queries
+  sessions(userId: ID, first: Int, after: Int): SessionConnection!
+  session(id: ID!): Session
+
+  # Identity provider queries
+  identityProviders: [IdentityProvider!]!
+  identityProvider(id: ID!): IdentityProvider
+
+  # Realm queries
+  realm: RealmSettings!
+
+  # Token introspection (public endpoint)
+  introspectToken(token: String!): TokenIntrospection!
+
+  # Authentication flow queries
+  authenticationExecutions(flowId: ID!): [AuthenticationExecution!]!
+  authenticationFlows: [AuthenticationFlow!]!
+
+  # Group membership queries
+  groupMembers(groupId: ID!, first: Int, after: Int): UserConnection!
+
+  # Role mapping queries
+  roleMappings(userId: ID!): RoleMapping!
+  clientRoleMappings(userId: ID!, clientId: String!): [Role!]!
+
+  # Token mapper queries
+  tokenMappers: [ProtocolMapper!]!
+  clientTokenMappers(clientId: String!): [ProtocolMapper!]!
+
+  # Groups for user
+  userGroups(userId: ID!): [Group!]!
+
+  # Client user sessions
+  userSessions(userId: ID!): [Session!]!
+  clientUserSessions(userId: ID!, clientId: String!): [Session!]!
+
+  # Realm_keys
+  realmKeys: [RealmKey!]!
+
+  # User attribute queries
+  userAttributes(userId: ID!): [UserAttribute!]!
+  userAttributeMappers: [UserAttributeMapper!]!
+  clientUserAttributeMappers(clientId: String!): [UserAttributeMapper!]!
+}
+
+# =============================================================================
+# MUTATIONS
+# =============================================================================
+
+type Mutation {
+  # ----- User Management -----
+  createUser(input: CreateUserInput!): User!
+  updateUser(id: ID!, input: UpdateUserInput!): User!
+  deleteUser(id: ID!): Boolean!
+  sendVerificationEmail(userId: ID!): Boolean!
+  sendPasswordResetEmail(userId: ID!): Boolean!
+  resetPassword(userId: ID!, newPassword: String!): Boolean!
+  executeActions(userId: ID!, actions: [String!]!): Boolean!
+
+  # ----- Client Management -----
+  createClient(input: CreateClientInput!): Client!
+  updateClient(id: ID!, input: UpdateClientInput!): Client!
+  deleteClient(id: ID!): Boolean!
+  generateClientSecret(clientId: ID!): String!
+  generateClientKeys(clientId: ID!, keyType: String, keyBits: Int): JSON!
+
+  # ----- Role Management -----
+  createRole(input: CreateRoleInput!): Role!
+  updateRole(id: ID!, input: UpdateRoleInput!): Role!
+  deleteRole(id: ID!): Boolean!
+  addRealmRoleToUser(userId: ID!, roleId: ID!): Boolean!
+  removeRealmRoleFromUser(userId: ID!, roleId: ID!): Boolean!
+  addClientRoleToUser(userId: ID!, clientId: String!, roleId: ID!): Boolean!
+  removeClientRoleFromUser(userId: ID!, clientId: String!, roleId: ID!): Boolean!
+  addRealmRoleToGroup(groupId: ID!, roleId: ID!): Boolean!
+  removeRealmRoleFromGroup(groupId: ID!, roleId: ID!): Boolean!
+  addClientRoleToGroup(groupId: ID!, clientId: String!, roleId: ID!): Boolean!
+  removeClientRoleFromGroup(groupId: ID!, clientId: String!, roleId: ID!): Boolean!
+
+  # ----- Group Management -----
+  createGroup(input: CreateGroupInput!): Group!
+  updateGroup(id: ID!, input: UpdateGroupInput!): Group!
+  deleteGroup(id: ID!): Boolean!
+  addUserToGroup(userId: ID!, groupId: ID!): Boolean!
+  removeUserFromGroup(userId: ID!, groupId: ID!): Boolean!
+
+  # ----- Identity Provider Management -----
+  createIdentityProvider(input: CreateIdentityProviderInput!): IdentityProvider!
+  updateIdentityProvider(id: ID!, input: UpdateIdentityProviderInput!): IdentityProvider!
+  deleteIdentityProvider(id: ID!): Boolean!
+
+  # ----- Session Management -----
+  revokeSession(sessionId: ID!): Boolean!
+  revokeAllSessions(userId: ID!): Boolean!
+  logoutUser(userId: ID!): Boolean!
+
+  # ----- Realm Settings -----
+  updateRealm(input: UpdateRealmInput!): RealmSettings!
+
+  # ----- Token Mapper Management -----
+  createProtocolMapper(input: CreateProtocolMapperInput!): ProtocolMapper!
+  updateProtocolMapper(id: ID!, input: UpdateProtocolMapperInput!): ProtocolMapper!
+  deleteProtocolMapper(id: ID!): Boolean!
+
+  # ----- User Attribute Management -----
+  createUserAttribute(input: CreateUserAttributeInput!): UserAttribute!
+  updateUserAttribute(id: ID!, input: UpdateUserAttributeInput!): UserAttribute!
+  deleteUserAttribute(id: ID!): Boolean!
+  deleteUserAttributesByUserId(userId: ID!): Boolean!
+
+  # ----- User Attribute Mapper Management -----
+  createUserAttributeMapper(input: CreateUserAttributeMapperInput!): UserAttributeMapper!
+  updateUserAttributeMapper(id: ID!, input: UpdateUserAttributeMapperInput!): UserAttributeMapper!
+  deleteUserAttributeMapper(id: ID!): Boolean!
+
+  # ----- Authentication Flow Management -----
+  createAuthenticationFlow(input: CreateAuthenticationFlowInput!): AuthenticationFlow!
+  updateAuthenticationFlow(id: ID!, input: UpdateAuthenticationFlowInput!): AuthenticationFlow!
+  deleteAuthenticationFlow(id: ID!): Boolean!
+  updateAuthenticationExecutions(flowId: ID!, executions: [AuthenticationExecutionInput!]!): Boolean!
+
+  # ----- User Credentials -----
+  setUserPassword(userId: ID!, password: String!, temporary: Boolean!): Boolean!
+  deleteUserCredentials(userId: ID!, credentialId: String!): Boolean!
+  resetUserTwoFactor(userId: ID!): Boolean!
+
+  # ----- Client Scope -----
+  createClientScope(input: CreateClientScopeInput!): ClientScope!
+  deleteClientScope(id: ID!): Boolean!
+
+  # ----- Realm Keys -----
+  updateRealmKeys(input: UpdateRealmKeysInput!): [RealmKey!]!
+
+  # ----- Composite Role -----
+  createCompositeRole(input: CreateCompositeRoleInput!): Role!
+}
+
+# =============================================================================
+# INPUTS - User
+# =============================================================================
+
+input UserFilter {
+  email: String
+  username: String
+  firstName: String
+  lastName: String
+  enabled: Boolean
+  emailVerified: Boolean
+  search: String
+}
+
+input CreateUserInput {
+  username: String!
+  email: String!
+  firstName: String
+  lastName: String
+  enabled: Boolean
+  emailVerified: Boolean
+  credentials: [UserCredentialInput!]
+  groups: [ID!]
+  roles: [ID!]
+}
+
+input UpdateUserInput {
+  username: String
+  email: String
+  firstName: String
+  lastName: String
+  enabled: Boolean
+  emailVerified: Boolean
+  groups: [ID!]
+  roles: [ID!]
+}
+
+input UserCredentialInput {
+  type: String!
+  value: String!
+  temporary: Boolean
+}
+
+# =============================================================================
+# INPUTS - Client
+# =============================================================================
+
+input ClientFilter {
+  clientId: String
+  clientName: String
+  enabled: Boolean
+  search: String
+}
+
+input CreateClientInput {
+  clientId: String!
+  clientName: String!
+  description: String
+  enabled: Boolean
+  redirectUris: [String!]
+  postLogoutRedirectUris: [String!]
+  webOrigins: [String!]
+  allowedGrantTypes: [String!]
+  standardFlowEnabled: Boolean
+  implicitFlowEnabled: Boolean
+  directAccessGrantsEnabled: Boolean
+  serviceAccountsEnabled: Boolean
+  publicClient: Boolean
+  frontchannelLogout: Boolean
+  fullScopeAllowed: Boolean
+  defaultRoles: [String!]
+  optionalClaims: [ClaimMappingInput!]
+  scope: [String!]
+  clientSecret: String
+  clientType: String
+  jwks: JSON
+  jwksUri: String
+}
+
+input UpdateClientInput {
+  clientName: String
+  description: String
+  enabled: Boolean
+  redirectUris: [String!]
+  postLogoutRedirectUris: [String!]
+  webOrigins: [String!]
+  allowedGrantTypes: [String!]
+  standardFlowEnabled: Boolean
+  implicitFlowEnabled: Boolean
+  directAccessGrantsEnabled: Boolean
+  serviceAccountsEnabled: Boolean
+  publicClient: Boolean
+  frontchannelLogout: Boolean
+  fullScopeAllowed: Boolean
+  defaultRoles: [String!]
+  optionalClaims: [ClaimMappingInput!]
+  scope: [String!]
+  clientSecret: String
+  clientType: String
+  jwks: JSON
+  jwksUri: String
+}
+
+input ClaimMappingInput {
+  name: String!
+  alwaysIncludeInToken: Boolean
+}
+
+# =============================================================================
+# INPUTS - Role
+# =============================================================================
+
+input CreateRoleInput {
+  name: String!
+  description: String
+  composite: Boolean
+  clientRole: Boolean
+  clientId: String
+}
+
+input UpdateRoleInput {
+  name: String
+  description: String
+  composite: Boolean
+}
+
+input CreateCompositeRoleInput {
+  name: String!
+  description: String
+  realmRoles: [ID!]
+  clientRoles: [ClientRoleMappingInput!]
+}
+
+input ClientRoleMappingInput {
+  clientId: String!
+  roleId: ID!
+}
+
+# =============================================================================
+# INPUTS - Group
+# =============================================================================
+
+input CreateGroupInput {
+  name: String!
+  path: String
+  realmRoles: [ID!]
+}
+
+input UpdateGroupInput {
+  name: String
+  path: String
+  realmRoles: [ID!]
+}
+
+# =============================================================================
+# INPUTS - Identity Provider
+# =============================================================================
+
+input CreateIdentityProviderInput {
+  alias: String!
+  displayName: String!
+  providerId: String!
+  config: Map
+  enabled: Boolean
+  trustEmail: Boolean
+  storeToken: Boolean
+  addReadTokenRoleOnCreate: Boolean
+  authenticateDefaultAction: Boolean
+}
+
+input UpdateIdentityProviderInput {
+  displayName: String
+  enabled: Boolean
+  config: Map
+  trustEmail: Boolean
+  storeToken: Boolean
+  addReadTokenRoleOnCreate: Boolean
+  authenticateDefaultAction: Boolean
+}
+
+# =============================================================================
+# INPUTS - Realm
+# =============================================================================
+
+input UpdateRealmInput {
+  displayName: String
+  registrationAllowed: Boolean
+  loginWithEmailAllowed: Boolean
+  duplicateEmailsAllowed: Boolean
+  resetPasswordAllowed: Boolean
+  editUsernameAllowed: Boolean
+  bruteForceProtected: Boolean
+  permanentLockout: Int
+  waitIncrementSeconds: Int
+  minimumQuickLoginWaitSeconds: Int
+  quickLoginCheckSMTPPort: Int
+  quickLoginCheckSMTPHost: String
+  maxTemporaryLockouts: Int
+  enabled: Boolean
+  sslRequired: String
+  passwordCredentialConfig: PasswordPolicyConfigInput
+}
+
+input PasswordPolicyConfigInput {
+  digitRegex: String
+  length: Int
+  lowerCase: Int
+  specialChars: Int
+  upperCase: Int
+  forceExpiredPasswords: Boolean
+  notUsername: Boolean
+}
+
+input UpdateRealmKeysInput {
+  keys: [RealmKeyInput!]
+}
+
+input RealmKeyInput {
+  name: String!
+  type: String!
+  providerId: String!
+  active: Boolean
+  priority: Int
+  publicKey: String
+  privateKey: String
+  certificate: String
+}
+
+# =============================================================================
+# INPUTS - Protocol Mapper
+# =============================================================================
+
+input CreateProtocolMapperInput {
+  name: String!
+  protocol: String!
+  protocolMapper: String!
+  config: Map
+}
+
+input UpdateProtocolMapperInput {
+  name: String
+  protocol: String
+  protocolMapper: String
+  config: Map
+}
+
+# =============================================================================
+# INPUTS - User Attribute
+# =============================================================================
+
+input CreateUserAttributeInput {
+  name: String!
+  value: String!
+  userId: ID!
+}
+
+input UpdateUserAttributeInput {
+  name: String
+  value: String
+}
+
+input CreateUserAttributeMapperInput {
+  name: String!
+  userAttribute: String!
+  tokenClaimName: String!
+  tokenType: String!
+  multiValued: Boolean
+  protocol: String
+  clientId: ID
+}
+
+input UpdateUserAttributeMapperInput {
+  name: String
+  userAttribute: String
+  tokenClaimName: String
+  tokenType: String
+  multiValued: Boolean
+  protocol: String
+  clientId: ID
+}
+
+# =============================================================================
+# INPUTS - Authentication Flow
+# =============================================================================
+
+input CreateAuthenticationFlowInput {
+  alias: String!
+  displayName: String!
+  description: String
+  builtIn: Boolean
+  topLevel: Boolean
+}
+
+input UpdateAuthenticationFlowInput {
+  alias: String
+  displayName: String
+  description: String
+}
+
+input AuthenticationExecutionInput {
+  id: ID
+  execution: String!
+  requirement: String!
+}
+
+# =============================================================================
+# INPUTS - Client Scope
+# =============================================================================
+
+input CreateClientScopeInput {
+  name: String!
+  description: String
+  protocol: String
+  consentScreenText: String
+  displayOrder: Int
+}
+
+# =============================================================================
+# TYPES - User
+# =============================================================================
+
+type User {
+  id: ID!
+  username: String!
+  email: String!
+  firstName: String
+  lastName: String
+  enabled: Boolean!
+  emailVerified: Boolean!
+  createdTimestamp: Time!
+  lastAccess: Time
+  status: UserStatus!
+
+  # Relationships
+  groups: [Group!]!
+  federatedIdentities: [FederatedIdentity!]!
+
+  # Credentials (filtered - not all on every query)
+  credentials: [UserCredential!]
+
+  # Roles
+  clientRoles(clientId: String!): [Role!]!
+
+  # Sessions
+  sessions: [Session!]!
+
+  # Two-factor
+  totp: Boolean!
+  # Not exposing actual secret
+
+  # Attributes (custom attributes)
+  attributes: Map
+
+  # Groups (IDs only for quick lookup)
+  groupIds: [ID!]!
+}
+
+enum UserStatus {
+  ENABLED
+  DISABLED
+  VERIFIED
+  Federated_VERIFIED
+  LINKED
+}
+
+type FederatedIdentity {
+  identityProvider: String!
+  userId: String!
+  username: String!
+}
+
+type UserCredential {
+  id: ID!
+  type: String
+  createdDate: Time
+  credentialData: String
+  priority: Int
+  value: String
+  temporary: Boolean
+  userLabel: String
+}
+
+type UserConnection {
+  edges: [UserEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+}
+
+type UserEdge {
+  node: User!
+  cursor: String!
+}
+
+# =============================================================================
+# TYPES - Client
+# =============================================================================
+
+type Client {
+  id: ID!
+  clientId: String!
+  clientName: String!
+  description: String
+  enabled: Boolean!
+  createdTimestamp: Time!
+  rootUrl: String
+  baseUrl: String
+
+  # URLs
+  redirectUris: [String!]!
+  postLogoutRedirectUris: [String!]!
+  webOrigins: [String!]!
+
+  # Grant types
+  allowedGrantTypes: [String!]!
+  standardFlowEnabled: Boolean!
+  implicitFlowEnabled: Boolean!
+  directAccessGrantsEnabled: Boolean!
+  serviceAccountsEnabled: Boolean!
+
+  # Authentication
+  publicClient: Boolean!
+  frontchannelLogout: Boolean!
+  fullScopeAllowed: Boolean!
+  tokenEndpointAuthMethod: String!
+
+  # Client type (confidential vs public)
+  clientType: String
+
+  # JWKS for client authentication
+  jwks: JSON
+  jwksUri: String
+
+  # Secret - write-only, never returned in queries
+
+  # Roles
+  roles: [Role!]!
+  defaultRoles: [Role!]!
+
+  # Scopes
+  scope: [ClientScope!]
+
+  # Claims
+  optionalClaims: [ClaimMapping!]
+
+  # Attributes
+  attributes: Map
+}
+
+type ClientConnection {
+  edges: [ClientEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+}
+
+type ClientEdge {
+  node: Client!
+  cursor: String!
+}
+
+type ClaimMapping {
+  name: String!
+  alwaysIncludeInToken: Boolean!
+}
+
+type ClientScope {
+  id: ID!
+  name: String!
+  description: String
+  protocol: String
+  displayOrder: Int
+  consentScreenText: String
+}
+
+# =============================================================================
+# TYPES - Role
+# =============================================================================
+
+type Role {
+  id: ID!
+  name: String!
+  description: String
+  composite: Boolean!
+  clientRole: Boolean!
+  containerId: String
+
+  # Composite role references
+  realmRoles: [Role!]
+  clientRoles(clientId: String!): [Role!]
+}
+
+type RoleMapping {
+  clientMappings: [Role!]
+  realmMappings: [Role!]
+}
+
+# =============================================================================
+# TYPES - Group
+# =============================================================================
+
+type Group {
+  id: ID!
+  name: String!
+  path: String!
+  # parentGroupId - for hierarchical groups
+  parentGroupId: String
+
+  # Roles
+  realmRoles: [Role!]
+  clientRoles(clientId: String!): [Role!]
+
+  # Members
+  members: [User!]
+  memberCount: Int!
+
+  # Subgroups
+  subgroups: [Group!]
+
+  # Attributes
+  attributes: Map
+}
+
+# =============================================================================
+# TYPES - Session
+# =============================================================================
+
+type Session {
+  id: ID!
+  userId: String!
+  username: String
+  ipAddress: String!
+  userAgent: String
+  createdTime: Time!
+  lastAccessedTime: Time!
+  expires: Time!
+
+  # State
+  state: String
+
+  # Client info
+  clientId: String
+  clientName: String
+
+  # Note: token data not exposed
+}
+
+type SessionConnection {
+  edges: [SessionEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+}
+
+type SessionEdge {
+  node: Session!
+  cursor: String!
+}
+
+# =============================================================================
+# TYPES - Identity Provider
+# =============================================================================
+
+type IdentityProvider {
+  id: ID!
+  alias: String!
+  displayName: String!
+  providerId: String!
+  enabled: Boolean!
+  trustEmail: Boolean!
+  storeToken: Boolean!
+  addReadTokenRoleOnCreate: Boolean!
+  authenticateDefaultAction: Boolean!
+
+  # Configuration
+  config: Map
+
+  # SSO endpoint (computed)
+  ssoEndpoint: String
+}
+
+# =============================================================================
+# TYPES - Realm
+# =============================================================================
+
+type RealmSettings {
+  id: ID!
+  realm: String!
+  displayName: String!
+  enabled: Boolean!
+  registrationAllowed: Boolean!
+  loginWithEmailAllowed: Boolean!
+  duplicateEmailsAllowed: Boolean!
+  resetPasswordAllowed: Boolean!
+  editUsernameAllowed: Boolean!
+  bruteForceProtected: Boolean!
+  sslRequired: String!
+
+  # Password policy
+  passwordPolicy: PasswordPolicy!
+
+  # Tokens
+  accessTokenLifespan: Int
+  accessCodeLifespan: Int
+
+  # Endpoints
+  tokenEndpoint: String
+  authorizationEndpoint: String
+  issuanceEndpoint: String
+}
+
+type PasswordPolicy {
+  minLength: Int
+  maxLength: Int
+  lowerCase: Int
+  upperCase: Int
+  digits: Int
+  specialChars: Int
+  forceExpiredPasswords: Boolean
+  notUsername: Boolean
+}
+
+type RealmKey {
+  id: ID!
+  name: String!
+  type: String!
+  providerId: String!
+  active: Boolean!
+  priority: Int!
+  publicKey: String
+  certificate: String
+}
+
+# =============================================================================
+# TYPES - Token
+# =============================================================================
+
+type TokenIntrospection {
+  active: Boolean!
+  scope: String
+  clientId: String
+  username: String
+  tokenType: String
+  exp: Int
+  iat: Int
+  nbf: Int
+  sub: String
+  iss: String
+  jti: String
+
+  # Custom claims from token
+  aud: String
+  azp: String
+  authTime: Int
+  nonce: String
+}
+
+# =============================================================================
+# TYPES - Protocol Mapper
+# =============================================================================
+
+type ProtocolMapper {
+  id: ID!
+  name: String!
+  protocol: String!
+  protocolMapper: String!
+  config: Map
+
+  # Associated client (if any)
+  client: Client
+}
+
+# =============================================================================
+# TYPES - User Attribute
+# =============================================================================
+
+type UserAttribute {
+  id: ID!
+  name: String!
+  value: String!
+  userId: ID!
+}
+
+type UserAttributeMapper {
+  id: ID!
+  name: String!
+  userAttribute: String!
+  tokenClaimName: String!
+  tokenType: String!
+  multiValued: Boolean!
+  protocol: String!
+  clientId: ID
+}
+
+# =============================================================================
+# TYPES - Authentication Flow
+# =============================================================================
+
+type AuthenticationFlow {
+  id: ID!
+  alias: String!
+  displayName: String!
+  description: String
+  builtIn: Boolean!
+  topLevel: Boolean!
+
+  # Executions
+  executions: [AuthenticationExecution!]
+}
+
+type AuthenticationExecution {
+  id: ID!
+  execution: String!
+  authenticator: String!
+  requirement: String!
+  priority: Int!
+  authenticationConfig: String
+}
+
+# =============================================================================
+# TYPES - Common
+# =============================================================================
+
+type PageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+# =============================================================================
+# SUBSCRIPTIONS (for real-time) - Not implemented in initial version
+# =============================================================================
+
+# The current implementation uses queries. Subscriptions would require
+# WebSocket support and additional infrastructure.
+
+# =============================================================================

@@ -629,6 +629,34 @@ func (m *MockUserRepository) EXPECT() *MockUserRepositoryMockRecorder {
 	return m.recorder
 }
 
+// AddMfaMethod mocks base method.
+func (m *MockUserRepository) AddMfaMethod(ctx context.Context, userID string, method *domain.MfaMethod) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddMfaMethod", ctx, userID, method)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddMfaMethod indicates an expected call of AddMfaMethod.
+func (mr *MockUserRepositoryMockRecorder) AddMfaMethod(ctx, userID, method any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddMfaMethod", reflect.TypeOf((*MockUserRepository)(nil).AddMfaMethod), ctx, userID, method)
+}
+
+// AddWebAuthnDevice mocks base method.
+func (m *MockUserRepository) AddWebAuthnDevice(ctx context.Context, userID string, device *domain.WebAuthnDevice) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddWebAuthnDevice", ctx, userID, device)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddWebAuthnDevice indicates an expected call of AddWebAuthnDevice.
+func (mr *MockUserRepositoryMockRecorder) AddWebAuthnDevice(ctx, userID, device any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddWebAuthnDevice", reflect.TypeOf((*MockUserRepository)(nil).AddWebAuthnDevice), ctx, userID, device)
+}
+
 // ClearEmailMFAOtp mocks base method.
 func (m *MockUserRepository) ClearEmailMFAOtp(ctx context.Context, userID string) error {
 	m.ctrl.T.Helper()
@@ -641,6 +669,48 @@ func (m *MockUserRepository) ClearEmailMFAOtp(ctx context.Context, userID string
 func (mr *MockUserRepositoryMockRecorder) ClearEmailMFAOtp(ctx, userID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClearEmailMFAOtp", reflect.TypeOf((*MockUserRepository)(nil).ClearEmailMFAOtp), ctx, userID)
+}
+
+// ClearEmailVerificationToken mocks base method.
+func (m *MockUserRepository) ClearEmailVerificationToken(ctx context.Context, userID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ClearEmailVerificationToken", ctx, userID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ClearEmailVerificationToken indicates an expected call of ClearEmailVerificationToken.
+func (mr *MockUserRepositoryMockRecorder) ClearEmailVerificationToken(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClearEmailVerificationToken", reflect.TypeOf((*MockUserRepository)(nil).ClearEmailVerificationToken), ctx, userID)
+}
+
+// ClearLoginOtp mocks base method.
+func (m *MockUserRepository) ClearLoginOtp(ctx context.Context, userID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ClearLoginOtp", ctx, userID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ClearLoginOtp indicates an expected call of ClearLoginOtp.
+func (mr *MockUserRepositoryMockRecorder) ClearLoginOtp(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClearLoginOtp", reflect.TypeOf((*MockUserRepository)(nil).ClearLoginOtp), ctx, userID)
+}
+
+// ClearPasswordResetToken mocks base method.
+func (m *MockUserRepository) ClearPasswordResetToken(ctx context.Context, userID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ClearPasswordResetToken", ctx, userID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ClearPasswordResetToken indicates an expected call of ClearPasswordResetToken.
+func (mr *MockUserRepositoryMockRecorder) ClearPasswordResetToken(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClearPasswordResetToken", reflect.TypeOf((*MockUserRepository)(nil).ClearPasswordResetToken), ctx, userID)
 }
 
 // ClearPhoneVerificationOtp mocks base method.
@@ -771,6 +841,21 @@ func (mr *MockUserRepositoryMockRecorder) EnablePushMFA(ctx, userID any) *gomock
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnablePushMFA", reflect.TypeOf((*MockUserRepository)(nil).EnablePushMFA), ctx, userID)
 }
 
+// GetMfaMethod mocks base method.
+func (m *MockUserRepository) GetMfaMethod(ctx context.Context, userID, methodID string) (*domain.MfaMethod, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetMfaMethod", ctx, userID, methodID)
+	ret0, _ := ret[0].(*domain.MfaMethod)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetMfaMethod indicates an expected call of GetMfaMethod.
+func (mr *MockUserRepositoryMockRecorder) GetMfaMethod(ctx, userID, methodID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMfaMethod", reflect.TypeOf((*MockUserRepository)(nil).GetMfaMethod), ctx, userID, methodID)
+}
+
 // GetUserByEmail mocks base method.
 func (m *MockUserRepository) GetUserByEmail(ctx context.Context, email string) (*domain.User, error) {
 	m.ctrl.T.Helper()
@@ -786,6 +871,21 @@ func (mr *MockUserRepositoryMockRecorder) GetUserByEmail(ctx, email any) *gomock
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUserByEmail", reflect.TypeOf((*MockUserRepository)(nil).GetUserByEmail), ctx, email)
 }
 
+// GetUserByEmailVerificationToken mocks base method.
+func (m *MockUserRepository) GetUserByEmailVerificationToken(ctx context.Context, token string) (*domain.User, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetUserByEmailVerificationToken", ctx, token)
+	ret0, _ := ret[0].(*domain.User)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetUserByEmailVerificationToken indicates an expected call of GetUserByEmailVerificationToken.
+func (mr *MockUserRepositoryMockRecorder) GetUserByEmailVerificationToken(ctx, token any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUserByEmailVerificationToken", reflect.TypeOf((*MockUserRepository)(nil).GetUserByEmailVerificationToken), ctx, token)
+}
+
 // GetUserByID mocks base method.
 func (m *MockUserRepository) GetUserByID(ctx context.Context, id string) (*domain.User, error) {
 	m.ctrl.T.Helper()
@@ -799,6 +899,66 @@ func (m *MockUserRepository) GetUserByID(ctx context.Context, id string) (*domai
 func (mr *MockUserRepositoryMockRecorder) GetUserByID(ctx, id any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUserByID", reflect.TypeOf((*MockUserRepository)(nil).GetUserByID), ctx, id)
+}
+
+// GetUserByPasswordResetToken mocks base method.
+func (m *MockUserRepository) GetUserByPasswordResetToken(ctx context.Context, token string) (*domain.User, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetUserByPasswordResetToken", ctx, token)
+	ret0, _ := ret[0].(*domain.User)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetUserByPasswordResetToken indicates an expected call of GetUserByPasswordResetToken.
+func (mr *MockUserRepositoryMockRecorder) GetUserByPasswordResetToken(ctx, token any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUserByPasswordResetToken", reflect.TypeOf((*MockUserRepository)(nil).GetUserByPasswordResetToken), ctx, token)
+}
+
+// GetWebAuthnDevice mocks base method.
+func (m *MockUserRepository) GetWebAuthnDevice(ctx context.Context, userID, deviceID string) (*domain.WebAuthnDevice, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetWebAuthnDevice", ctx, userID, deviceID)
+	ret0, _ := ret[0].(*domain.WebAuthnDevice)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetWebAuthnDevice indicates an expected call of GetWebAuthnDevice.
+func (mr *MockUserRepositoryMockRecorder) GetWebAuthnDevice(ctx, userID, deviceID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWebAuthnDevice", reflect.TypeOf((*MockUserRepository)(nil).GetWebAuthnDevice), ctx, userID, deviceID)
+}
+
+// IncrementFailedLoginAttempts mocks base method.
+func (m *MockUserRepository) IncrementFailedLoginAttempts(ctx context.Context, userID string) (int32, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IncrementFailedLoginAttempts", ctx, userID)
+	ret0, _ := ret[0].(int32)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// IncrementFailedLoginAttempts indicates an expected call of IncrementFailedLoginAttempts.
+func (mr *MockUserRepositoryMockRecorder) IncrementFailedLoginAttempts(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncrementFailedLoginAttempts", reflect.TypeOf((*MockUserRepository)(nil).IncrementFailedLoginAttempts), ctx, userID)
+}
+
+// ListMfaMethods mocks base method.
+func (m *MockUserRepository) ListMfaMethods(ctx context.Context, userID string) ([]domain.MfaMethod, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListMfaMethods", ctx, userID)
+	ret0, _ := ret[0].([]domain.MfaMethod)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListMfaMethods indicates an expected call of ListMfaMethods.
+func (mr *MockUserRepositoryMockRecorder) ListMfaMethods(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListMfaMethods", reflect.TypeOf((*MockUserRepository)(nil).ListMfaMethods), ctx, userID)
 }
 
 // ListUsers mocks base method.
@@ -817,6 +977,21 @@ func (mr *MockUserRepositoryMockRecorder) ListUsers(ctx, pageToken, pageSize any
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListUsers", reflect.TypeOf((*MockUserRepository)(nil).ListUsers), ctx, pageToken, pageSize)
 }
 
+// ListWebAuthnDevices mocks base method.
+func (m *MockUserRepository) ListWebAuthnDevices(ctx context.Context, userID string) ([]domain.WebAuthnDevice, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListWebAuthnDevices", ctx, userID)
+	ret0, _ := ret[0].([]domain.WebAuthnDevice)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListWebAuthnDevices indicates an expected call of ListWebAuthnDevices.
+func (mr *MockUserRepositoryMockRecorder) ListWebAuthnDevices(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListWebAuthnDevices", reflect.TypeOf((*MockUserRepository)(nil).ListWebAuthnDevices), ctx, userID)
+}
+
 // RegisterPushMFADevice mocks base method.
 func (m *MockUserRepository) RegisterPushMFADevice(ctx context.Context, userID, deviceToken string) error {
 	m.ctrl.T.Helper()
@@ -831,6 +1006,62 @@ func (mr *MockUserRepositoryMockRecorder) RegisterPushMFADevice(ctx, userID, dev
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RegisterPushMFADevice", reflect.TypeOf((*MockUserRepository)(nil).RegisterPushMFADevice), ctx, userID, deviceToken)
 }
 
+// RemoveMfaMethod mocks base method.
+func (m *MockUserRepository) RemoveMfaMethod(ctx context.Context, userID, methodID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RemoveMfaMethod", ctx, userID, methodID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RemoveMfaMethod indicates an expected call of RemoveMfaMethod.
+func (mr *MockUserRepositoryMockRecorder) RemoveMfaMethod(ctx, userID, methodID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveMfaMethod", reflect.TypeOf((*MockUserRepository)(nil).RemoveMfaMethod), ctx, userID, methodID)
+}
+
+// RemoveWebAuthnDevice mocks base method.
+func (m *MockUserRepository) RemoveWebAuthnDevice(ctx context.Context, userID, deviceID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RemoveWebAuthnDevice", ctx, userID, deviceID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RemoveWebAuthnDevice indicates an expected call of RemoveWebAuthnDevice.
+func (mr *MockUserRepositoryMockRecorder) RemoveWebAuthnDevice(ctx, userID, deviceID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveWebAuthnDevice", reflect.TypeOf((*MockUserRepository)(nil).RemoveWebAuthnDevice), ctx, userID, deviceID)
+}
+
+// ResetFailedLoginAttempts mocks base method.
+func (m *MockUserRepository) ResetFailedLoginAttempts(ctx context.Context, userID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ResetFailedLoginAttempts", ctx, userID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ResetFailedLoginAttempts indicates an expected call of ResetFailedLoginAttempts.
+func (mr *MockUserRepositoryMockRecorder) ResetFailedLoginAttempts(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResetFailedLoginAttempts", reflect.TypeOf((*MockUserRepository)(nil).ResetFailedLoginAttempts), ctx, userID)
+}
+
+// SetPhoneNumber mocks base method.
+func (m *MockUserRepository) SetPhoneNumber(ctx context.Context, userID, phoneNumber string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetPhoneNumber", ctx, userID, phoneNumber)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetPhoneNumber indicates an expected call of SetPhoneNumber.
+func (mr *MockUserRepositoryMockRecorder) SetPhoneNumber(ctx, userID, phoneNumber any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetPhoneNumber", reflect.TypeOf((*MockUserRepository)(nil).SetPhoneNumber), ctx, userID, phoneNumber)
+}
+
 // StoreEmailMFAOtp mocks base method.
 func (m *MockUserRepository) StoreEmailMFAOtp(ctx context.Context, userID, otp string, expiresAt time.Time) error {
 	m.ctrl.T.Helper()
@@ -843,6 +1074,48 @@ func (m *MockUserRepository) StoreEmailMFAOtp(ctx context.Context, userID, otp s
 func (mr *MockUserRepositoryMockRecorder) StoreEmailMFAOtp(ctx, userID, otp, expiresAt any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StoreEmailMFAOtp", reflect.TypeOf((*MockUserRepository)(nil).StoreEmailMFAOtp), ctx, userID, otp, expiresAt)
+}
+
+// StoreEmailVerificationToken mocks base method.
+func (m *MockUserRepository) StoreEmailVerificationToken(ctx context.Context, userID, token string, expiresAt time.Time) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StoreEmailVerificationToken", ctx, userID, token, expiresAt)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// StoreEmailVerificationToken indicates an expected call of StoreEmailVerificationToken.
+func (mr *MockUserRepositoryMockRecorder) StoreEmailVerificationToken(ctx, userID, token, expiresAt any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StoreEmailVerificationToken", reflect.TypeOf((*MockUserRepository)(nil).StoreEmailVerificationToken), ctx, userID, token, expiresAt)
+}
+
+// StoreLoginOtp mocks base method.
+func (m *MockUserRepository) StoreLoginOtp(ctx context.Context, userID, otp, methodType string, expiresAt time.Time) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StoreLoginOtp", ctx, userID, otp, methodType, expiresAt)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// StoreLoginOtp indicates an expected call of StoreLoginOtp.
+func (mr *MockUserRepositoryMockRecorder) StoreLoginOtp(ctx, userID, otp, methodType, expiresAt any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StoreLoginOtp", reflect.TypeOf((*MockUserRepository)(nil).StoreLoginOtp), ctx, userID, otp, methodType, expiresAt)
+}
+
+// StorePasswordResetToken mocks base method.
+func (m *MockUserRepository) StorePasswordResetToken(ctx context.Context, userID, token string, expiresAt time.Time) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StorePasswordResetToken", ctx, userID, token, expiresAt)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// StorePasswordResetToken indicates an expected call of StorePasswordResetToken.
+func (mr *MockUserRepositoryMockRecorder) StorePasswordResetToken(ctx, userID, token, expiresAt any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StorePasswordResetToken", reflect.TypeOf((*MockUserRepository)(nil).StorePasswordResetToken), ctx, userID, token, expiresAt)
 }
 
 // StorePhoneVerificationOtp mocks base method.
@@ -913,6 +1186,34 @@ func (m *MockUserRepository) UpdateUser(ctx context.Context, user *domain.User) 
 func (mr *MockUserRepositoryMockRecorder) UpdateUser(ctx, user any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateUser", reflect.TypeOf((*MockUserRepository)(nil).UpdateUser), ctx, user)
+}
+
+// UpdateWebAuthnDeviceCounter mocks base method.
+func (m *MockUserRepository) UpdateWebAuthnDeviceCounter(ctx context.Context, userID, deviceID string, newCounter int32) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateWebAuthnDeviceCounter", ctx, userID, deviceID, newCounter)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateWebAuthnDeviceCounter indicates an expected call of UpdateWebAuthnDeviceCounter.
+func (mr *MockUserRepositoryMockRecorder) UpdateWebAuthnDeviceCounter(ctx, userID, deviceID, newCounter any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateWebAuthnDeviceCounter", reflect.TypeOf((*MockUserRepository)(nil).UpdateWebAuthnDeviceCounter), ctx, userID, deviceID, newCounter)
+}
+
+// VerifyMfaMethod mocks base method.
+func (m *MockUserRepository) VerifyMfaMethod(ctx context.Context, userID, methodID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "VerifyMfaMethod", ctx, userID, methodID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// VerifyMfaMethod indicates an expected call of VerifyMfaMethod.
+func (mr *MockUserRepositoryMockRecorder) VerifyMfaMethod(ctx, userID, methodID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "VerifyMfaMethod", reflect.TypeOf((*MockUserRepository)(nil).VerifyMfaMethod), ctx, userID, methodID)
 }
 
 // MockSessionRepository is a mock of SessionRepository interface.

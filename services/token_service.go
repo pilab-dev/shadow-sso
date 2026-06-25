@@ -32,32 +32,15 @@ type defaultTokenService struct {
 	// Added for SA token validation
 	pubKeyRepo domain.PublicKeyRepository
 	saRepo     domain.ServiceAccountRepository
-	userRepo   domain.UserRepository // New dependency
+	userRepo  domain.UserRepository // New dependency
+
+	// For user attribute mappers (optional - nil checks when not configured)
+	userAttrMapperRepo domain.UserAttributeMapperRepository
+	userAttrRepo       domain.UserAttributeRepository
 }
 
 // newDefaultTokenService creates a new TokenService instance (internal constructor).
 func newDefaultTokenService(
-	repo domain.TokenRepository,
-	tokenCache cache.TokenStore,
-	issuer string,
-	signer *TokenSigner,
-	pubKeyRepo domain.PublicKeyRepository,
-	saRepo domain.ServiceAccountRepository,
-	userRepo domain.UserRepository,
-) TokenService {
-	return &defaultTokenService{
-		repo:       repo,
-		cache:      tokenCache,
-		issuer:     issuer,
-		signer:     signer,
-		pubKeyRepo: pubKeyRepo,
-		saRepo:     saRepo,
-		userRepo:   userRepo,
-	}
-}
-
-// NewTokenService creates a new TokenService instance (public constructor for backward compatibility).
-func NewTokenService(
 	repo domain.TokenRepository,
 	tokenCache cache.TokenStore,
 	issuer string,
@@ -74,6 +57,31 @@ func NewTokenService(
 		pubKeyRepo: pubKeyRepo,
 		saRepo:     saRepo,
 		userRepo:   userRepo,
+	}
+}
+
+// NewTokenService creates a new TokenService instance (public constructor).
+func NewTokenService(
+	repo domain.TokenRepository,
+	tokenCache cache.TokenStore,
+	issuer string,
+	signer *TokenSigner,
+	pubKeyRepo domain.PublicKeyRepository,
+	saRepo domain.ServiceAccountRepository,
+	userRepo domain.UserRepository,
+	userAttrMapperRepo domain.UserAttributeMapperRepository,
+	userAttrRepo domain.UserAttributeRepository,
+) *defaultTokenService {
+	return &defaultTokenService{
+		repo:       repo,
+		cache:      tokenCache,
+		issuer:     issuer,
+		signer:     signer,
+		pubKeyRepo: pubKeyRepo,
+		saRepo:     saRepo,
+		userRepo:  userRepo,
+		userAttrMapperRepo: userAttrMapperRepo,
+		userAttrRepo: userAttrRepo,
 	}
 }
 
@@ -561,6 +569,25 @@ func (s *defaultTokenService) GenerateIDToken(ctx context.Context, userID, clien
 		} else if s == "email" {
 			claims["email"] = user.Email
 			claims["email_verified"] = true
+		}
+	}
+
+	// Apply user attribute mappers if repositories are configured
+	if s.userAttrMapperRepo != nil && s.userAttrRepo != nil {
+		mappers, err := s.userAttrMapperRepo.GetMappersForClient(ctx, clientID, "id_token")
+		if err == nil && len(mappers) > 0 {
+			userAttrs, err := s.userAttrRepo.GetAttributesByUserID(ctx, userID)
+			if err == nil && len(userAttrs) > 0 {
+				attrMap := make(map[string]string)
+				for _, attr := range userAttrs {
+					attrMap[attr.Name] = attr.Value
+				}
+				for _, mapper := range mappers {
+					if attrValue, exists := attrMap[mapper.UserAttribute]; exists {
+						claims[mapper.TokenClaimName] = attrValue
+					}
+				}
+			}
 		}
 	}
 

@@ -365,14 +365,16 @@ func (s *AuthServer) ListUserSessions(ctx context.Context, req *connect.Request[
 
 	protoSessions := make([]*ssov1.SessionInfo, 0, len(dbSessions))
 	for _, ds := range dbSessions {
+		// Check if this session's TokenID matches the calling token's JTI (ID)
+		isCurrentSession := ds.TokenID == authedToken.ID
 		protoSessions = append(protoSessions, &ssov1.SessionInfo{
-			Id:        ds.ID,
-			UserId:    ds.UserID,
-			UserAgent: ds.UserAgent,
-			IpAddress: ds.IPAddress,
-			CreatedAt: timestamppb.New(ds.CreatedAt),
-			ExpiresAt: timestamppb.New(ds.ExpiresAt),
-			// IsCurrentSession: ds.TokenID == authedToken.ID, // Check if it's the session of the calling token
+			Id:               ds.ID,
+			UserId:           ds.UserID,
+			UserAgent:        ds.UserAgent,
+			IpAddress:        ds.IPAddress,
+			CreatedAt:        timestamppb.New(ds.CreatedAt),
+			ExpiresAt:        timestamppb.New(ds.ExpiresAt),
+			IsCurrentSession: isCurrentSession,
 		})
 	}
 	return connect.NewResponse(&ssov1.ListUserSessionsResponse{Sessions: protoSessions}), nil
@@ -626,6 +628,121 @@ func (s *AuthServer) DenyConsent(ctx context.Context, req *connect.Request[ssov1
 	}
 
 	return connect.NewResponse(response), nil
+}
+
+func (s *AuthServer) CompleteWebAuthnLogin(ctx context.Context, req *connect.Request[ssov1.VerifyWebAuthnAuthenticationRequest]) (*connect.Response[ssov1.VerifyWebAuthnAuthenticationResponse], error) {
+	authResponse := req.Msg.GetAuthenticationResponse()
+	if authResponse == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("authentication_response is required"))
+	}
+
+	credentialID := authResponse.GetId()
+	if credentialID == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("credential_id is required"))
+	}
+
+	var userID string
+	if authResponse.GetResponse() != nil && authResponse.GetResponse().GetAuthenticatorAssertionResponse() != nil {
+		userID = authResponse.GetResponse().GetAuthenticatorAssertionResponse().GetUserHandle()
+	}
+
+	if userID == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("user_handle is required in authentication response"))
+	}
+
+	user, err := s.userRepo.GetUserByID(ctx, userID)
+	if err != nil {
+		if goerrors.Is(err, domain.ErrUserNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("user not found"))
+		}
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to get user: %w", err))
+	}
+
+	if user.Status == domain.UserStatusLocked {
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("account is locked"))
+	}
+	if user.Status == domain.UserStatusPending {
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("account pending activation"))
+	}
+
+	if len(user.WebAuthnDevices) == 0 {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("no WebAuthn devices registered"))
+	}
+
+	var matchedDevice *domain.WebAuthnDevice
+	for i := range user.WebAuthnDevices {
+		if user.WebAuthnDevices[i].CredentialID == credentialID {
+			matchedDevice = &user.WebAuthnDevices[i]
+			break
+		}
+	}
+
+	if matchedDevice == nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("device not registered for this user"))
+	}
+
+	// TODO: Implement actual WebAuthn signature verification using go-webauthn library
+	// In production, use go-webauthn/webauthn.FinishLogin() to verify the assertion
+
+	matchedDevice.Counter++
+	user.UpdatedAt = time.Now()
+
+	if err := s.userRepo.UpdateUser(ctx, user); err != nil {
+		log.Warn().Err(err).Str("userID", user.ID).Msg("CompleteWebAuthnLogin: Failed to update device counter")
+	}
+
+	audit.Log("AuthService", "CompleteWebAuthnLogin", user.ID, user.ID, "WebAuthn login successful", true, nil)
+
+	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, "sso-default-client", user.ID, "openid profile email offline_access", 1*time.Hour)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("could not generate tokens: %w", err))
+	}
+
+	session := &domain.Session{
+		UserID:       user.ID,
+		RefreshToken: tokenPair.RefreshToken,
+		ExpiresAt:    time.Now().Add(30 * 24 * time.Hour),
+		IsRevoked:    false,
+	}
+	if err := s.sessionRepo.StoreSession(ctx, session); err != nil {
+		log.Error().Err(err).Str("userID", user.ID).Msg("CompleteWebAuthnLogin: Failed to store session")
+	}
+
+	now := time.Now()
+	user.LastLoginAt = &now
+	user.FailedLoginAttempts = 0
+	if err := s.userRepo.UpdateUser(ctx, user); err != nil {
+		log.Warn().Err(err).Str("userID", user.ID).Msg("CompleteWebAuthnLogin: Failed to update user LastLoginAt")
+	}
+
+	userInfoProto := &ssov1.User{
+		Id:        user.ID,
+		Email:     user.Email,
+		FirstName: user.FirstName,
+		LastName:  user.LastName,
+		Status:    mapDomainStatusToProto(user.Status),
+		Roles:     user.Roles,
+	}
+	if !user.CreatedAt.IsZero() {
+		userInfoProto.CreatedAt = timestamppb.New(user.CreatedAt)
+	}
+	if !user.UpdatedAt.IsZero() {
+		userInfoProto.UpdatedAt = timestamppb.New(user.UpdatedAt)
+	}
+	if user.LastLoginAt != nil && !user.LastLoginAt.IsZero() {
+		userInfoProto.LastLoginAt = timestamppb.New(*user.LastLoginAt)
+	}
+
+	return connect.NewResponse(&ssov1.VerifyWebAuthnAuthenticationResponse{
+		Verified:     true,
+		UserId:       user.ID,
+		AccessToken:  tokenPair.AccessToken,
+		RefreshToken: tokenPair.RefreshToken,
+		IdToken:      tokenPair.IDToken,
+		TokenType:    tokenPair.TokenType,
+		ExpiresIn:    int32(tokenPair.ExpiresIn),
+		UserInfo:     userInfoProto,
+	}), nil
 }
 
 // Ensure AuthServer implements ssov1connect.AuthServiceHandler

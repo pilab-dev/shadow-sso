@@ -35,22 +35,21 @@ const (
 
 // FederationServer implements the ssov1connect.FederationServiceHandler interface.
 type FederationServer struct {
-	ssov1connect.UnimplementedFederationServiceHandler // Embed for forward compatibility
+	ssov1connect.UnimplementedFederationServiceHandler
 
-	fedService     *federation.Service
+	fedService     FederationService
 	userRepo       domain.UserRepository
 	fedIDRepo      domain.UserFederatedIdentityRepository
-	idpRepo        domain.IdPRepository // To resolve provider_id to provider_name for responses
-	tokenService   TokenService         // To issue local tokens
+	idpRepo        domain.IdPRepository
+	tokenService   TokenService
 	sessionRepo    domain.SessionRepository
-	passwordHasher domain.PasswordHasher // For creating users if local password setup is part of flow
+	passwordHasher domain.PasswordHasher
 
 	continuationCache *ttlcache.Cache[string, *ContinuationTokenData]
 }
 
-// NewFederationServer creates a new FederationServer.
 func NewFederationServer(
-	fedService *federation.Service,
+	fedService FederationService,
 	userRepo domain.UserRepository,
 	fedIDRepo domain.UserFederatedIdentityRepository,
 	idpRepo domain.IdPRepository,
@@ -131,7 +130,17 @@ func (s *FederationServer) HandleFederatedCallback(ctx context.Context, req *con
 	// implying the caller of this gRPC method is responsible for the actual CSRF check if one is needed beyond this.
 	// A better way would be for this RPC to take `clientStateFromCookie` as a parameter.
 	// For now, we pass req.Msg.State as the validated state.
-	externalUser, _, err := s.fedService.HandleCallback(ctx, req.Msg.ProviderName, req.Msg.State, req.Msg.State, req.Msg.Code)
+	callbackResult, err := s.fedService.HandleFederatedCallback(ctx, req.Msg.ProviderName, req.Msg.State, req.Msg.State, req.Msg.Code)
+	var externalUser *federation.ExternalUserInfo
+	if callbackResult != nil {
+		externalUser = &federation.ExternalUserInfo{
+			ProviderUserID: callbackResult.ProviderUserID,
+			Email:          callbackResult.ProviderEmail,
+			FirstName:      callbackResult.UserInfo.FirstName,
+			LastName:       callbackResult.UserInfo.LastName,
+			Username:       callbackResult.ProviderEmail,
+		}
+	}
 	if err != nil {
 		log.Warn().Err(err).Str("provider", req.Msg.ProviderName).Msg("Federated callback processing failed")
 		if errors.Is(err, federation.ErrInvalidAuthState) {

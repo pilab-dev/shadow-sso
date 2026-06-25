@@ -29,7 +29,6 @@ type UserSessionStore interface {
 
 // PublicKeyInfo, ServiceAccount, User, Session are defined in their respective domain files.
 
-
 type PublicKeyRepository interface {
 	GetPublicKey(ctx context.Context, keyID string) (*PublicKeyInfo, error)
 	// Add CreatePublicKey, UpdatePublicKeyStatus etc. if they should be part of the interface
@@ -73,11 +72,13 @@ type UserRepository interface {
 	CreateUser(ctx context.Context, user *User) error
 	GetUserByID(ctx context.Context, id string) (*User, error)
 	GetUserByEmail(ctx context.Context, email string) (*User, error)
-	UpdateUser(ctx context.Context, user *User) error                                       // Could also be UpdateUser(id, updates map[string]interface{})
-	DeleteUser(ctx context.Context, id string) error                                        // Optional, consider soft delete by status
-	ListUsers(ctx context.Context, pageToken string, pageSize int) ([]*User, string, error) // Returns users, next page token, error
-	CountUsers(ctx context.Context) (int64, error)                                         // Method to count all users
-	CountUsersByRole(ctx context.Context, role string) (int64, error)                      // New method to count users by role
+	GetUserByEmailVerificationToken(ctx context.Context, token string) (*User, error)
+	GetUserByPasswordResetToken(ctx context.Context, token string) (*User, error)
+	UpdateUser(ctx context.Context, user *User) error
+	DeleteUser(ctx context.Context, id string) error
+	ListUsers(ctx context.Context, pageToken string, pageSize int) ([]*User, string, error)
+	CountUsers(ctx context.Context) (int64, error)
+	CountUsersByRole(ctx context.Context, role string) (int64, error)
 
 	// Phone verification methods
 	StorePhoneVerificationOtp(ctx context.Context, userID, otp string, expiresAt time.Time) error
@@ -96,6 +97,39 @@ type UserRepository interface {
 	UpdatePushMFAChallenges(ctx context.Context, userID string, challenges []PushMFAChallenge) error
 	EnablePushMFA(ctx context.Context, userID string) error
 	DisablePushMFA(ctx context.Context, userID string) error
+
+	// Email verification token methods
+	StoreEmailVerificationToken(ctx context.Context, userID, token string, expiresAt time.Time) error
+	ClearEmailVerificationToken(ctx context.Context, userID string) error
+
+	// Password reset token methods
+	StorePasswordResetToken(ctx context.Context, userID, token string, expiresAt time.Time) error
+	ClearPasswordResetToken(ctx context.Context, userID string) error
+
+	// Login OTP methods
+	StoreLoginOtp(ctx context.Context, userID, otp string, methodType string, expiresAt time.Time) error
+	ClearLoginOtp(ctx context.Context, userID string) error
+
+	// Phone number methods
+	SetPhoneNumber(ctx context.Context, userID, phoneNumber string) error
+
+	// MFA method management
+	AddMfaMethod(ctx context.Context, userID string, method *MfaMethod) error
+	GetMfaMethod(ctx context.Context, userID, methodID string) (*MfaMethod, error)
+	ListMfaMethods(ctx context.Context, userID string) ([]MfaMethod, error)
+	VerifyMfaMethod(ctx context.Context, userID, methodID string) error
+	RemoveMfaMethod(ctx context.Context, userID, methodID string) error
+
+	// WebAuthn device management
+	AddWebAuthnDevice(ctx context.Context, userID string, device *WebAuthnDevice) error
+	GetWebAuthnDevice(ctx context.Context, userID, deviceID string) (*WebAuthnDevice, error)
+	ListWebAuthnDevices(ctx context.Context, userID string) ([]WebAuthnDevice, error)
+	UpdateWebAuthnDeviceCounter(ctx context.Context, userID, deviceID string, newCounter int32) error
+	RemoveWebAuthnDevice(ctx context.Context, userID, deviceID string) error
+
+	// Failed login attempts
+	IncrementFailedLoginAttempts(ctx context.Context, userID string) (int32, error)
+	ResetFailedLoginAttempts(ctx context.Context, userID string) error
 }
 
 // SessionRepository defines methods for user session persistence.
@@ -198,7 +232,7 @@ type Configuration struct {
 	ID          string            `bson:"_id,omitempty" json:"id"`
 	Type        ConfigurationType `bson:"type" json:"type"`
 	Key         string            `bson:"key" json:"key"`
-	Value       string            `bson:"value" json:"value"`       // Encrypted for sensitive data
+	Value       string            `bson:"value" json:"value"` // Encrypted for sensitive data
 	IsEncrypted bool              `bson:"is_encrypted" json:"is_encrypted"`
 	Description string            `bson:"description" json:"description"`
 	IsActive    bool              `bson:"is_active" json:"is_active"`

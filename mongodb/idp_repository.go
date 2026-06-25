@@ -60,7 +60,7 @@ func NewIdPRepositoryMongo(ctx context.Context, db *mongo.Database) (domain.IdPR
 // AddIdP stores a new IdP configuration.
 func (r *IdPRepositoryMongo) AddIdP(ctx context.Context, idp *domain.IdentityProvider) error {
 	if idp.ID == "" {
-		idp.ID = NewObjectID() // From mongodb/utils.go
+		idp.ID = NewID() // From mongodb/utils.go
 	}
 	if idp.CreatedAt.IsZero() {
 		idp.CreatedAt = time.Now().UTC()

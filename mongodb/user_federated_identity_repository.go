@@ -84,7 +84,7 @@ func (r *UserFederatedIdentityRepositoryMongo) resolveProviderID(ctx context.Con
 
 func (r *UserFederatedIdentityRepositoryMongo) Create(ctx context.Context, identity *domain.UserFederatedIdentity) error {
 	if identity.ID == "" {
-		identity.ID = NewObjectID()
+		identity.ID = NewID()
 	}
 	identity.CreatedAt = time.Now().UTC()
 	identity.UpdatedAt = time.Now().UTC()

@@ -91,7 +91,7 @@ func setupTokenHandlerTest(t *testing.T) (
 
 	pkceService := services.NewPKCEService(mockPkceRepo)
 
-	flowStore := oidcflow.NewInMemoryFlowStore()
+flowStore := oidcflow.NewInMemoryFlowStore()
 	userSessionStore := oidcflow.NewInMemoryUserSessionStore()
 
 	tokenService := services.NewTokenService(
@@ -102,6 +102,8 @@ func setupTokenHandlerTest(t *testing.T) (
 		mockPubKeyRepo,
 		mockServiceAccountRepo,
 		mockUserRepo,
+		nil,
+		nil,
 	)
 
 	// OAuthService initialization

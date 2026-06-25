@@ -72,6 +72,9 @@ Shadow SSO is packed with comprehensive authentication functionality to ensure t
 -   **🛡️ LDAP / Active Directory Integration:** External user authentication with attribute mapping
 -   **🔗 Identity Provider Federation:** Support for external IdPs (OIDC, SAML)
 -   **👨‍💼 Service Accounts:** Machine identities with downloadable JSON keys
+-   **📝 User Attributes:** Custom user attributes for extended profile data
+-   **🔀 Attribute Mappers:** Map user attributes to token claims
+-   **🔐 OAuth Client JWKS:** Public key authentication for clients
 -   **🏗️ Distributed Token Store (DTS):** High-performance BBoltDB-based token storage
 -   **🐳 Kubernetes Integration:** Helm charts for production deployment
 
