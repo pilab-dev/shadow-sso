@@ -3,6 +3,8 @@ package graphql
 import (
 	"html/template"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/99designs/gqlgen/graphql/handler/extension"
@@ -45,8 +47,55 @@ var sandboxHTML = template.Must(template.New("sandbox").Parse(`<!DOCTYPE html>
 </body>
 </html>`))
 
-// NewHandler creates a new GraphQL handler with Apollo Sandbox support
-func NewHandler(resolver *Resolver, endpoint string) http.Handler {
+// GraphQLConfig holds configuration for the GraphQL server.
+type GraphQLConfig struct {
+	// AllowedOrigins is a list of allowed origin URLs for WebSocket connections.
+	// Empty strings and entries matching the full origin are allowed.
+	// Use []string{"*"} or set IsDevelopment to true to allow all origins.
+	AllowedOrigins []string
+
+	// IsDevelopment when true allows all origins (disables origin checking).
+	IsDevelopment bool
+}
+
+// checkOrigin returns a WebSocket origin checker that validates the request's
+// Origin header against the configured allowed origins.
+//
+// Rules:
+//   - Empty Origin header is always allowed (same-origin requests).
+//   - If IsDevelopment is true, all origins are allowed.
+//   - Otherwise, the Origin must exactly match one of AllowedOrigins.
+func checkOrigin(cfg GraphQLConfig) func(r *http.Request) bool {
+	if cfg.IsDevelopment {
+		return func(_ *http.Request) bool { return true }
+	}
+
+	allowed := make(map[string]struct{}, len(cfg.AllowedOrigins))
+	for _, o := range cfg.AllowedOrigins {
+		if o != "" {
+			allowed[o] = struct{}{}
+		}
+	}
+
+	return func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true
+		}
+		// Parse to normalize scheme://host[:port]
+		parsed, err := url.Parse(origin)
+		if err != nil {
+			return false
+		}
+		normalized := strings.TrimRight(parsed.Scheme+"://"+parsed.Host, "/")
+		_, ok := allowed[normalized]
+		return ok
+	}
+}
+
+// NewHandler creates a new GraphQL handler with Apollo Sandbox support.
+// Pass a zero-value GraphQLConfig to get default behavior (deny all origins except empty).
+func NewHandler(resolver *Resolver, endpoint string, cfg GraphQLConfig) http.Handler {
 	srv := handler.New(NewExecutableSchema(Config{Resolvers: resolver}))
 
 	// Configure transports
@@ -55,9 +104,7 @@ func NewHandler(resolver *Resolver, endpoint string) http.Handler {
 	srv.AddTransport(transport.POST{})
 	srv.AddTransport(transport.Websocket{
 		Upgrader: websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool {
-				return true
-			},
+			CheckOrigin:  checkOrigin(cfg),
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
 		},

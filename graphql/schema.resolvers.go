@@ -512,12 +512,16 @@ func (r *mutationResolver) GenerateClientSecret(ctx context.Context, clientID st
 	if err != nil {
 		return "", err
 	}
-	secret := generateRandomSecret()
-	client.Secret = secret
+	plaintextSecret := generateRandomSecret()
+	hashedSecret, err := r.PasswordHasher.Hash(plaintextSecret)
+	if err != nil {
+		return "", errors.New("error processing client secret")
+	}
+	client.Secret = hashedSecret
 	if err := r.ClientRepo.UpdateClient(ctx, client); err != nil {
 		return "", err
 	}
-	return secret, nil
+	return plaintextSecret, nil
 }
 
 // GenerateClientKeys is the resolver for the generateClientKeys field.
