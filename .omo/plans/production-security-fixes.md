@@ -184,7 +184,7 @@ Your next move: Run `$start-work .omo/plans/production-security-fixes.md` to beg
   QA scenarios: Happy: InitiateTOTPSetup returns QR code URI but no raw secret. Failure: raw secret not present in response body. Evidence: `.omo/evidence/wave-3-task-13-totp-secret.log`
   Commit: Y | `fix(security): remove TOTP secret from API response`
 
-- [ ] 14. Escape special regex characters in client search
+- [x] 14. Escape special regex characters in client search
   What to do / Must NOT do: In `mongodb/client_repository.go:96-98`, wrap `filter.Search` with `regexp.QuoteMeta()` before passing to `$regex`. Add `import "regexp"`. Must NOT change any other search behavior or logic.
   Parallelization: Wave 3 | Blocked by: 0 | Blocks: nothing
   References: `mongodb/client_repository.go:94-99` (regex filter), `services/client_management_service.go:212-216` (ListClients caller)
@@ -192,7 +192,7 @@ Your next move: Run `$start-work .omo/plans/production-security-fixes.md` to beg
   QA scenarios: Happy: search for `"test-client"` returns expected results. Failure: search for `".*"` does NOT match all clients. Evidence: `.omo/evidence/wave-3-task-14-regex-escape.log`
   Commit: Y | `fix(security): escape regex special characters in client search`
 
-- [ ] 15. Default LDAP TLS verification to required
+- [x] 15. Default LDAP TLS verification to required
   What to do / Must NOT do: In the LDAP provider, change the default for `skipTLSVerify` to `false` (or default TLS verification to `true`). If InsecureSkipVerify is set to true in configuration, log a warning. Must NOT remove the option to skip TLS — just change the default. Must NOT affect non-LDAP connections.
   Parallelization: Wave 3 | Blocked by: 0 | Blocks: nothing
   References: `internal/federation/ldap_provider.go:238` (InsecureSkipVerify), internal/federation/ directory
@@ -208,7 +208,7 @@ Your next move: Run `$start-work .omo/plans/production-security-fixes.md` to beg
   QA scenarios: Happy: docker build succeeds with pinned version. Failure: "latest" tag not used. Evidence: `.omo/evidence/wave-3-task-16-docker-pin.log`
   Commit: Y | `fix(security): pin Alpine base image version in Dockerfile`
 
-- [ ] 17. Add Kubernetes NetworkPolicy to Helm chart
+- [x] 17. Add Kubernetes NetworkPolicy to Helm chart
   What to do / Must NOT do: Create `helm/ssso-backend/templates/networkpolicy.yaml` with a NetworkPolicy that: (a) allows ingress on port 8080 from Ingress controller (label `app.kubernetes.io/component: ingress-controller`), (b) allows egress to MongoDB (via label or CIDR), (c) allows internal DNS (port 53 UDP), (d) denies all other ingress/egress. Set `networkPolicy.enabled: true` in values-production.yaml. Must NOT block health check probes.
   Parallelization: Wave 3 | Blocked by: 5 (Helm cleanup) | Blocks: nothing
   References: `helm/ssso-backend/values-production.yaml`, `helm/ssso-backend/templates/`, Kubernetes NetworkPolicy API: networking.k8s.io/v1
@@ -216,7 +216,7 @@ Your next move: Run `$start-work .omo/plans/production-security-fixes.md` to beg
   QA scenarios: Happy: NetworkPolicy is created with correct pod selector matching app labels. Failure: NetworkPolicy blocks health check probes (port 8080 still accessible from kubelet). Evidence: `.omo/evidence/wave-3-task-17-netpol.log`
   Commit: Y | `feat(security): add Kubernetes NetworkPolicy to Helm chart`
 
-- [ ] 18. Hash client secrets in GraphQL GenerateClientSecret
+- [x] 18. Hash client secrets in GraphQL GenerateClientSecret
   What to do / Must NOT do: In `graphql/schema.resolvers.go:483-494`, after generating the random secret with `generateRandomSecret()`, hash it using the resolver's `PasswordHasher` before storing. Return the unhashed secret in the response (user needs to see it once). Mirror the pattern from `client_management_service.go:150-157` (which properly hashes). Must NOT break the existing client_management_service hashing path.
   Parallelization: Wave 3 | Blocked by: 2 (GraphQL RBAC) | Blocks: nothing
   References: `graphql/schema.resolvers.go:483-494` (GenerateClientSecret), `services/client_management_service.go:150-157` (proper hashing pattern), `graphql/schema.resolvers.go:30` (PasswordHasher field in Resolver struct)
@@ -224,7 +224,7 @@ Your next move: Run `$start-work .omo/plans/production-security-fixes.md` to beg
   QA scenarios: Happy: client secret generated → returned in response → stored hash in DB verified by `passwordHasher.Verify(storedHash, returnedSecret)` works. Failure: stored value equals returned secret (no hashing) → test fails. Evidence: `.omo/evidence/wave-3-task-18-client-secret.log`
   Commit: Y | `fix(security): hash client secrets in GraphQL GenerateClientSecret`
 
-- [ ] 19. Validate scope intersection in Token Exchange
+- [x] 19. Validate scope intersection in Token Exchange
   What to do / Must NOT do: In `services/oauth_service.go:620-624`, when `scope` is provided, validate that it is a subset of the original token's scope (`tokenInfo.Scope`). Compute the intersection of requested scope and original scope. Use the intersection (not the raw request) for the new token. Must NOT allow scope escalation beyond the original token's permissions.
   Parallelization: Wave 3 | Blocked by: 0 | Blocks: nothing
   References: `services/oauth_service.go:596-625` (TokenExchange), `services/token_service.go` (GenerateTokenPair signature)
@@ -232,7 +232,7 @@ Your next move: Run `$start-work .omo/plans/production-security-fixes.md` to beg
   QA scenarios: Happy: original token has "openid profile", request "openid" → new token has "openid". Failure: original token has "openid", request "openid admin" → new token has "openid" only. Evidence: `.omo/evidence/wave-3-task-19-scope-intersect.log`
   Commit: Y | `fix(security): validate scope intersection in Token Exchange`
 
-- [ ] 20. Restrict WebSocket CheckOrigin to configured origins
+- [x] 20. Restrict WebSocket CheckOrigin to configured origins
   What to do / Must NOT do: Replace `CheckOrigin: func(r *http.Request) bool { return true }` in `graphql/server.go:58-60` with a configurable origin check. Add a `AllowedOrigins` field to the GraphQL config (or read from environment). Accept requests where `Origin` header matches an allowed origin or is empty (same-origin requests). When in development mode, allow all origins (configurable). Must NOT accept arbitrary origins in production.
   Parallelization: Wave 3 | Blocked by: 0 | Blocks: nothing
   References: `graphql/server.go:56-64` (WebSocket transport), `graphql/server.go:49-74` (NewHandler signature)
@@ -240,7 +240,7 @@ Your next move: Run `$start-work .omo/plans/production-security-fixes.md` to beg
   QA scenarios: Happy: allowed origin connects to WebSocket. Failure: disallowed origin gets 403. Evidence: `.omo/evidence/wave-3-task-20-websocket-origin.log`
   Commit: Y | `fix(security): restrict GraphQL WebSocket CheckOrigin to allowed origins`
 
-- [ ] 21. Implement CSRF protection in AuthenticateUserHandler
+- [x] 21. Implement CSRF protection in AuthenticateUserHandler
   What to do / Must NOT do: Implement the commented-out CSRF check in `api/openidv2_1/handlers.go:1441-1447`. Use the existing flow cookie (HttpOnly, SameSite) as a CSRF token. Compare a header value (e.g., `X-CSRF-Token`) against the flow cookie value. Generate a random CSRF token during flow creation (`api/openidv2_1/handlers.go:502-528` — where `flowID` is created and `StoreFlow` is called) and set it as a separate cookie. Check that the header matches the cookie on authenticate requests. Must NOT use the flow ID directly as the CSRF token (it's already used for flow lookup). Must NOT block legitimate requests from the Next.js frontend.
   Parallelization: Wave 3 | Blocked by: 0 | Blocks: nothing
   References: `api/openidv2_1/handlers.go:1441-1447` (TODO comment), `api/openidv2_1/handlers.go:502-528` (flow creation with StoreFlow + cookie set), `api/openidv2_1/handlers.go:1378-1395` (GetFlowDetailsHandler — reads flow cookie)
@@ -248,7 +248,7 @@ Your next move: Run `$start-work .omo/plans/production-security-fixes.md` to beg
   QA scenarios: Happy: authenticate request with valid CSRF header succeeds. Failure: missing CSRF header → 403. Failure: wrong CSRF header → 403. Evidence: `.omo/evidence/wave-3-task-21-csrf.log`
   Commit: Y | `fix(security): implement CSRF protection in AuthenticateUserHandler`
 
-- [ ] 22. Migrate JWT signing from HS256 to RS256
+- [x] 22. Migrate JWT signing from HS256 to RS256
   What to do / Must NOT do: Add `AddRSAKeySigner` method to `TokenSigner` in `services/signer.go` that uses `jwt.SigningMethodRS256` with an RSA private key loaded from the configured path (`SSSO_SIGNING_KEY_PATH`). Load the PEM file, parse with `jwt.ParseRSAPrivateKeyFromPEM`. Use the existing `pkg/crypto/keys.go:GenerateRSAKey()` for key generation if no key exists. Update `TokenService` initialization to use RSA by default. Keep HS256 as fallback for backward compatibility during migration. Must NOT break existing JWT validation — add a validation path that tries RS256 first, then falls back to HS256 for tokens signed before migration.
   Parallelization: Wave 4 | Blocked by: 0 | Blocks: nothing
   References: `services/signer.go:27-38` (HS256), `services/token_service.go` (token validation), `pkg/crypto/keys.go:10-12` (GenerateRSAKey), `apps/ssso/config/config.go:18` (SigningKeyPath), `apps/ssso/config/config.go:50` (TokenSigningKey). Use `github.com/golang-jwt/jwt/v5` (already in go.mod)
@@ -256,7 +256,7 @@ Your next move: Run `$start-work .omo/plans/production-security-fixes.md` to beg
   QA scenarios: Happy: new token validates with RS256. Happy: old HS256 token still validates. Failure: token signed with different key fails validation. Evidence: `.omo/evidence/wave-4-task-22-jwt-rs256.log`
   Commit: Y | `feat(security): migrate JWT signing from HS256 to RS256`
 
-- [ ] 23. Remove authorization codes from log output
+- [x] 23. Remove authorization codes from log output
   What to do / Must NOT do: Remove or redact authorization code values from log statements. Change `log.Info().Str("code", code).Msg("Authorization code generated and saved")` in `services/oauth_service.go:469` to log only the user ID and client ID, NOT the code itself. Check `mongodb/auth_code_repository.go:48` for the same issue. Must NOT change log levels (keep Info debug-level appropriate).
   Parallelization: Wave 4 | Blocked by: 0 | Blocks: nothing
   References: `services/oauth_service.go:469` (auth code log), `mongodb/auth_code_repository.go:48` (auth code repo log)
@@ -264,7 +264,7 @@ Your next move: Run `$start-work .omo/plans/production-security-fixes.md` to beg
   QA scenarios: Happy: auth code generated → log shows user ID and client ID only. Failure: log does not contain the raw auth code value. Evidence: `.omo/evidence/wave-4-task-23-authcode-log.log`
   Commit: Y | `fix(security): remove authorization codes from log output`
 
-- [ ] 24. Remove dead code with hardcoded JWT secret
+- [x] 24. Remove dead code with hardcoded JWT secret
   What to do / Must NOT do: Remove the `ParseClaims` function in `api/openidv2_1/middleware.go:22-49` that uses `[]byte("your-256-bit-secret")`. Confirm via `codegraph_callers` or grep that no caller exists. If any caller exists, update it to use `tokenService.ValidateAccessToken()`. Must NOT remove the `UserAuthMiddleware` or `AdminAuthMiddleware` which use the correct token validation path.
   Parallelization: Wave 4 | Blocked by: 0 | Blocks: nothing
   References: `api/openidv2_1/middleware.go:22-49` (ParseClaims), `api/openidv2_1/middleware.go:71-123` (UserAuthMiddleware/AdminAuthMiddleware)
@@ -272,7 +272,7 @@ Your next move: Run `$start-work .omo/plans/production-security-fixes.md` to beg
   QA scenarios: Happy: `ParseClaims` function is removed. Failure: remaining caller of `ParseClaims` would break the build. Evidence: `.omo/evidence/wave-4-task-24-deadcode.log`
   Commit: Y | `chore(security): remove dead ParseClaims function with hardcoded JWT secret`
 
-- [ ] 25. Wire RSA signing key correctly in server config
+- [x] 25. Wire RSA signing key correctly in server config
   What to do / Must NOT do: Update `apps/ssso/ssso.go` and `apps/ssso/config/config.go` to properly wire the RSA signing key. When `SSSO_SIGNING_KEY_PATH` is set, load the PEM file, parse the RSA private key, and configure `TokenSigner` for RS256. Fall back to HS256 if no key path is set (for development). Add startup log that indicates which signing algorithm is active. Must NOT require a signing key path for development mode. Must NOT fall back to hardcoded defaults.
   Parallelization: Wave 4 | Blocked by: 22 | Blocks: nothing
   References: `apps/ssso/config/config.go:18` (SigningKeyPath), `apps/ssso/config/config.go:50-51` (TokenSigningKey/TokenSigningKeyFile), `apps/ssso/ssso.go` (server startup), `services/signer.go` (AddKeySigner)
