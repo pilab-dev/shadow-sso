@@ -2,12 +2,15 @@ package services
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	goerrors "errors"
 	"fmt"
 	"net/url"
-	"strings" // For Verify2FA token check
-	"time"    // Needed for GenerateTokenPair TTL and session expiry
+	"strings"
+	"sync"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/pilab-dev/shadow-sso/client"
@@ -24,6 +27,61 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb" // For mapping time to proto
 )
 
+type twoFactorSessionEntry struct {
+	UserID    string
+	ExpiresAt time.Time
+}
+
+// FIXME: Use Redis TTL store instead of in-memory when multi-replica deployment is active (see helm values replicaCount: 2)
+type twoFactorSessionStore struct {
+	mu      sync.Mutex
+	entries map[string]twoFactorSessionEntry
+}
+
+func newTwoFactorSessionStore() *twoFactorSessionStore {
+	s := &twoFactorSessionStore{
+		entries: make(map[string]twoFactorSessionEntry),
+	}
+	go s.cleanup()
+	return s
+}
+
+func (s *twoFactorSessionStore) Set(token, userID string, ttl time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.entries[token] = twoFactorSessionEntry{
+		UserID:    userID,
+		ExpiresAt: time.Now().Add(ttl),
+	}
+}
+
+// GetAndDelete retrieves and atomically removes a token entry if valid.
+func (s *twoFactorSessionStore) GetAndDelete(token string) (twoFactorSessionEntry, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	entry, ok := s.entries[token]
+	if !ok {
+		return twoFactorSessionEntry{}, false
+	}
+	delete(s.entries, token)
+	return entry, time.Now().Before(entry.ExpiresAt)
+}
+
+func (s *twoFactorSessionStore) cleanup() {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		s.mu.Lock()
+		now := time.Now()
+		for token, entry := range s.entries {
+			if now.After(entry.ExpiresAt) {
+				delete(s.entries, token)
+			}
+		}
+		s.mu.Unlock()
+	}
+}
+
 // AuthServer implements the ssov1connect.AuthServiceHandler interface.
 type AuthServer struct {
 	ssov1connect.UnimplementedAuthServiceHandler // Embed for forward compatibility
@@ -34,6 +92,7 @@ type AuthServer struct {
 	flowStore                                    domain.FlowStore
 	oauthService                                 domain.OAuthServiceInterface
 	clientService                                client.ClientServiceInterface
+	twoFactorSessions                            *twoFactorSessionStore
 }
 
 // NewAuthServer creates a new AuthServer.
@@ -47,14 +106,25 @@ func NewAuthServer(
 	clientService client.ClientServiceInterface,
 ) *AuthServer {
 	return &AuthServer{
-		userRepo:       userRepo,
-		sessionRepo:    sessionRepo,
-		tokenService:   tokenService,
-		passwordHasher: passwordHasher,
-		flowStore:      flowStore,
-		oauthService:   oauthService,
-		clientService:  clientService,
+		userRepo:        userRepo,
+		sessionRepo:     sessionRepo,
+		tokenService:    tokenService,
+		passwordHasher:  passwordHasher,
+		flowStore:       flowStore,
+		oauthService:    oauthService,
+		clientService:   clientService,
+		twoFactorSessions: newTwoFactorSessionStore(),
 	}
+}
+
+const twoFactorSessionTTL = 5 * time.Minute
+
+func (s *AuthServer) generateSecure2FAToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("failed to generate secure 2FA token: %w", err)
+	}
+	return hex.EncodeToString(b), nil
 }
 
 func mapDomainStatusToProto(ds domain.UserStatus) ssov1.UserStatus {
@@ -118,10 +188,12 @@ func (s *AuthServer) Login(ctx context.Context, req *connect.Request[ssov1.Login
 	// --- 2FA Check ---
 	if user.IsTwoFactorEnabled && user.TwoFactorMethod == "TOTP" {
 		log.Info().Str("userID", user.ID).Msg("Login: 2FA (TOTP) is enabled, step-up required.")
-		// The TwoFactorSessionToken should be a secure, short-lived token (e.g., a JWT or opaque token stored server-side).
-		// For this implementation, we use a simple placeholder. This is NOT production-ready.
-		// A robust implementation would involve s.tokenService generating a special short-lived token.
-		tfaSessionToken := "placeholder_2fa_session_token_for_" + user.ID
+		tfaSessionToken, err := s.generateSecure2FAToken()
+		if err != nil {
+			log.Error().Err(err).Str("userID", user.ID).Msg("Login: Failed to generate 2FA session token")
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to generate 2FA session token: %w", err))
+		}
+		s.twoFactorSessions.Set(tfaSessionToken, user.ID, twoFactorSessionTTL)
 		return connect.NewResponse(&ssov1.LoginResponse{
 			TwoFactorRequired:     true,
 			TwoFactorSessionToken: tfaSessionToken,
@@ -217,13 +289,9 @@ func (s *AuthServer) completeLogin(ctx context.Context, user *domain.User) (*con
 func (s *AuthServer) Verify2FA(ctx context.Context, req *connect.Request[ssov1.Verify2FARequest]) (*connect.Response[ssov1.LoginResponse], error) {
 	log.Debug().Str("userID", req.Msg.UserId).Msg("Verify2FA attempt")
 
-	// SECURITY CRITICAL: Validate req.Msg.TwoFactorSessionToken robustly.
-	// The placeholder implementation below is NOT secure for production.
-	// It should involve validating a short-lived, server-generated token (e.g., JWT or opaque token).
-	expectedTFASessionTokenPrefix := "placeholder_2fa_session_token_for_"
-	if !strings.HasPrefix(req.Msg.TwoFactorSessionToken, expectedTFASessionTokenPrefix) ||
-		req.Msg.TwoFactorSessionToken != expectedTFASessionTokenPrefix+req.Msg.UserId {
-		log.Warn().Str("userID", req.Msg.UserId).Str("receivedToken", req.Msg.TwoFactorSessionToken).Msg("Verify2FA: Invalid or missing two_factor_session_token")
+	entry, valid := s.twoFactorSessions.GetAndDelete(req.Msg.TwoFactorSessionToken)
+	if !valid || entry.UserID != req.Msg.UserId {
+		log.Warn().Str("userID", req.Msg.UserId).Msg("Verify2FA: Invalid or expired 2FA session token")
 		audit.Log("AuthService", "Verify2FA", req.Msg.UserId, req.Msg.UserId, "Invalid or missing 2FA session token", false, errors.New("invalid or expired 2FA session"))
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid or expired 2FA session"))
 	}
@@ -630,119 +698,9 @@ func (s *AuthServer) DenyConsent(ctx context.Context, req *connect.Request[ssov1
 	return connect.NewResponse(response), nil
 }
 
+// DISABLED: WebAuthn login requires go-webauthn/webauthn library for proper cryptographic challenge verification.
 func (s *AuthServer) CompleteWebAuthnLogin(ctx context.Context, req *connect.Request[ssov1.VerifyWebAuthnAuthenticationRequest]) (*connect.Response[ssov1.VerifyWebAuthnAuthenticationResponse], error) {
-	authResponse := req.Msg.GetAuthenticationResponse()
-	if authResponse == nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("authentication_response is required"))
-	}
-
-	credentialID := authResponse.GetId()
-	if credentialID == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("credential_id is required"))
-	}
-
-	var userID string
-	if authResponse.GetResponse() != nil && authResponse.GetResponse().GetAuthenticatorAssertionResponse() != nil {
-		userID = authResponse.GetResponse().GetAuthenticatorAssertionResponse().GetUserHandle()
-	}
-
-	if userID == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("user_handle is required in authentication response"))
-	}
-
-	user, err := s.userRepo.GetUserByID(ctx, userID)
-	if err != nil {
-		if goerrors.Is(err, domain.ErrUserNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, errors.New("user not found"))
-		}
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to get user: %w", err))
-	}
-
-	if user.Status == domain.UserStatusLocked {
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("account is locked"))
-	}
-	if user.Status == domain.UserStatusPending {
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("account pending activation"))
-	}
-
-	if len(user.WebAuthnDevices) == 0 {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("no WebAuthn devices registered"))
-	}
-
-	var matchedDevice *domain.WebAuthnDevice
-	for i := range user.WebAuthnDevices {
-		if user.WebAuthnDevices[i].CredentialID == credentialID {
-			matchedDevice = &user.WebAuthnDevices[i]
-			break
-		}
-	}
-
-	if matchedDevice == nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("device not registered for this user"))
-	}
-
-	// TODO: Implement actual WebAuthn signature verification using go-webauthn library
-	// In production, use go-webauthn/webauthn.FinishLogin() to verify the assertion
-
-	matchedDevice.Counter++
-	user.UpdatedAt = time.Now()
-
-	if err := s.userRepo.UpdateUser(ctx, user); err != nil {
-		log.Warn().Err(err).Str("userID", user.ID).Msg("CompleteWebAuthnLogin: Failed to update device counter")
-	}
-
-	audit.Log("AuthService", "CompleteWebAuthnLogin", user.ID, user.ID, "WebAuthn login successful", true, nil)
-
-	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, "sso-default-client", user.ID, "openid profile email offline_access", 1*time.Hour)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("could not generate tokens: %w", err))
-	}
-
-	session := &domain.Session{
-		UserID:       user.ID,
-		RefreshToken: tokenPair.RefreshToken,
-		ExpiresAt:    time.Now().Add(30 * 24 * time.Hour),
-		IsRevoked:    false,
-	}
-	if err := s.sessionRepo.StoreSession(ctx, session); err != nil {
-		log.Error().Err(err).Str("userID", user.ID).Msg("CompleteWebAuthnLogin: Failed to store session")
-	}
-
-	now := time.Now()
-	user.LastLoginAt = &now
-	user.FailedLoginAttempts = 0
-	if err := s.userRepo.UpdateUser(ctx, user); err != nil {
-		log.Warn().Err(err).Str("userID", user.ID).Msg("CompleteWebAuthnLogin: Failed to update user LastLoginAt")
-	}
-
-	userInfoProto := &ssov1.User{
-		Id:        user.ID,
-		Email:     user.Email,
-		FirstName: user.FirstName,
-		LastName:  user.LastName,
-		Status:    mapDomainStatusToProto(user.Status),
-		Roles:     user.Roles,
-	}
-	if !user.CreatedAt.IsZero() {
-		userInfoProto.CreatedAt = timestamppb.New(user.CreatedAt)
-	}
-	if !user.UpdatedAt.IsZero() {
-		userInfoProto.UpdatedAt = timestamppb.New(user.UpdatedAt)
-	}
-	if user.LastLoginAt != nil && !user.LastLoginAt.IsZero() {
-		userInfoProto.LastLoginAt = timestamppb.New(*user.LastLoginAt)
-	}
-
-	return connect.NewResponse(&ssov1.VerifyWebAuthnAuthenticationResponse{
-		Verified:     true,
-		UserId:       user.ID,
-		AccessToken:  tokenPair.AccessToken,
-		RefreshToken: tokenPair.RefreshToken,
-		IdToken:      tokenPair.IDToken,
-		TokenType:    tokenPair.TokenType,
-		ExpiresIn:    int32(tokenPair.ExpiresIn),
-		UserInfo:     userInfoProto,
-	}), nil
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("WebAuthn login is not yet implemented - requires go-webauthn/webauthn library integration"))
 }
 
 // Ensure AuthServer implements ssov1connect.AuthServiceHandler

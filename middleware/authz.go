@@ -9,12 +9,10 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// TODO: this is a temporary solution.
+// GetRolesFromContext extracts user roles from the context.
+// The roles are set by the auth interceptor (middleware/auth.go) during authentication.
 func GetRolesFromContext(ctx context.Context) ([]string, bool) {
-	// This function should extract user roles from the context.
-	// It assumes that the authentication interceptor has already set the roles in the context.
-	// Adjust this according to your actual context structure.
-	if roles, ok := ctx.Value("user_roles").([]string); ok {
+	if roles, ok := ctx.Value(RolesContextKey).([]string); ok {
 		return roles, true
 	}
 	return nil, false
@@ -38,10 +36,9 @@ func NewAuthorizationInterceptor() connect.Interceptor {
 				return next(ctx, req)
 			}
 
-			userRoles, ok := GetRolesFromContext(ctx) // Use helper from authn.go
+			userRoles, ok := GetRolesFromContext(ctx)
 			if !ok {
-				// This should ideally not happen if authn interceptor ran and succeeded.
-				// If it does, it means user is authenticated but has no roles claim, or claim is malformed.
+				// This means auth interceptor did not set roles, or user is not authenticated.
 				log.Warn().Str("procedure", procedure).Msg("User authenticated but no roles found in context for authorization check.")
 				return nil, connect.NewError(connect.CodePermissionDenied, fmt.Errorf("permission denied: user roles not found in context"))
 			}

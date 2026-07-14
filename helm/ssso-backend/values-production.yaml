@@ -1,15 +1,37 @@
 # Production values for Shadow SSO Backend deployment
 # This file configures the application for production use with existing MongoDB
+#
+# REQUIRED KUBERNETES SECRETS (must be created before deployment):
+#
+# 1. sso-signing-key - RSA private key for JWT token signing
+#    kubectl create secret generic sso-signing-key --from-file=private.pem=<path-to-key>
+#    Keys: private.pem (RSA private key in PEM format)
+#
+# 2. ssso-initial-admin-credentials - Initial admin user credentials
+#    kubectl create secret generic ssso-initial-admin-credentials \
+#      --from-literal=SSSO_INITIAL_ADMIN_EMAIL=admin@pilab.hu \
+#      --from-literal=SSSO_INITIAL_ADMIN_PASSWORD=<strong-password> \
+#      --from-literal=SSSO_INITIAL_ADMIN_FIRST_NAME=Admin \
+#      --from-literal=SSSO_INITIAL_ADMIN_LAST_NAME=PiLab
+#    Keys: SSSO_INITIAL_ADMIN_EMAIL, SSSO_INITIAL_ADMIN_PASSWORD,
+#          SSSO_INITIAL_ADMIN_FIRST_NAME, SSSO_INITIAL_ADMIN_LAST_NAME
+#
+# 3. ssso-config - Application configuration secrets (MongoDB URI)
+#    kubectl create secret generic ssso-config \
+#      --from-literal=SSSO_MONGO_URI='mongodb://user:pass@host:27017/shadow_sso?authSource=shadow_sso'
+#    Keys: SSSO_MONGO_URI
+#
+# TODO: Migrate to OpenBao (op://sso/secrets) for secret management
 
 replicaCount: 2
 
+# Initial admin credentials - see header for required secret creation
 initialAdmin:
   enabled: true
-  createSecret: true
+  createSecret: false
   secretName: "ssso-initial-admin-credentials"
   credentials:
     email: "admin@pilab.hu"
-    password: "PilabSSO2025!"  # CHANGE THIS IMMEDIATELY AFTER FIRST LOGIN
     firstName: "Admin"
     lastName: "PiLab"
 
@@ -60,50 +82,19 @@ ingress:
       hosts:
         - sso.pilab.hu
 
-# Configuration for the SSSO application
+# SSSO_MONGO_URI must be provided via extraEnvFrom referencing ssso-config Secret
 config:
   SSSO_LOG_LEVEL: "info"
   SSSO_ISSUER_URL: "https://sso.pilab.hu"
-  SSSO_MONGO_URI: "mongodb://ssso_user:changeme_ssso_password_123!@mongodb.pishop-base.svc.cluster.local:27017/shadow_sso?authSource=shadow_sso"
   SSSO_MONGO_DB_NAME: "shadow_sso"
   SSSO_SIGNING_KEY_PATH: "/etc/sso/keys/private.pem"
   SSSO_KEY_ROTATION_INTERVAL: "24h"
-  SSSO_NEXTJS_LOGIN_URL: "https://sso.pilab.hu/login"  # Assuming login UI is on same domain
+  SSSO_NEXTJS_LOGIN_URL: "https://sso.pilab.hu/login"
 
-# Secret containing the RSA private key for signing tokens
+# Secret containing the RSA private key for signing tokens (see header for creation steps)
 signingKeySecretName: "sso-signing-key"
 
-# Create a secret for the signing key
-createSigningKeySecret: true
-signingKeyPrivatePem: |
-  -----BEGIN PRIVATE KEY-----
-  MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCtz1MtQg6QCRaR
-  3cHyjkNGGdrmXejA7RvJsTIHkpSy77Y9cO7ooUpxWpglikWob+R3SBLCzZhc7M4Uf
-  QYfWMB6WftJDFNd9m2eYnpenJj3YtaN6TnDtF8+cE8R3jbA7sJzk3tDeUyb/JQkb
-  ePIw91EiFglbaQlj5HCH3e5SLTkKJgjeVI7xotlg70ONv+b5Yt3QR4ih2aFGXbpe
-  7uImJSoek0JCh7jwC/QTxDKf3yBozESY9uN0kk7KqP3IQsOdUHv10U4vlhfbqlEL
-  DpKkMBtVHuTFRdHREHNMCGP3wa+/G+Fbmv9py9BbHQtOBZ1miko911JunWkux+l9
-  iwrVXOUdAgMBAAECggEATB4YwiBEumWQgZ8upn88k1OZUbJMPxmB/1W+KQEBR0fx
-  WaY6j4AmQXgzcfxW6Os/WQN+0wIpuF6GtTqAn5exPZ1Kvd/5w2N0ig0iQyxnN2nM
-  rzp9EAg2fpbVmrntbSaaf0zpUgQ+dsykYWilQDZ/TJsz+9lTKHEZqxbRUSHG8h8f
-  RsywpSTRApiyDPRAeREGXMU8HvAB20tNLf1Px9ixmkx6e72MNAks62/VrP6fWhC3
-  nHdvOEBmOIoFGaIQdqNpCrr5AgtdPtsn6PgrF4Azkt3IRCymcY/46uNs1myZqCia
-  7YGGyQRFIT3mAs22HNuKsiThaLQ6GAWBGaOnKL4aTQKBgQDW5tvtUHXBp+9pFLH0
-  foJ7rOj3Hzb7XJYJAn7ye00eSat/1iP0AQrKQX/WmTxJDKu9mZTny4i3hbEsTBtC
-  j2hAL5X4sX2QJ6uHVQUjfDid59vLnkw6OimhKQeLRFErBJ1yvIyBvs2GyonQ9BWq
-  MdiHICzKn+cUZvRt6+E7UPxlQwKBgQDPDLDtdxAVvSQGfCxyv8sdhZqf7DlNFvJ+
-  VrKVyuWFB9OIKLCoAt+5cECV43j6jN8tOscSM+sSqbrkXuogudCU6kH48XL0MtPj
-  EXhv/RQ10e8TLTFQ5CZwkSgc39iXT2BtDOxu9rOzZkmKkUbTwmS4Fc/Rdbvqp08b
-  R/sq6YW2HwKBgDtp8i3nS9cxndA4h4aoH10gDfycpa/TBiwRg5V4n3abOY4LXz9L
-  tnb6quRi0zcDCMxPlMqNDAxpKvWrSPIbAeCVB2qNb8CWJycwS05nPqPxgWQHLN4A
-  TJgg5tQLHEG/ceRR2qrYXKxCfN3HTeITC+E39QpEMTgDytpFF601k8JPAoGAOFex
-  xc0CmYfQx9r+lXNPqIb03tP/e9TkxDB/hHekIaFRlNnNyMqPavz69k7iWvv+t2Yp
-  SfDK5Vc+vmp9t84Yzo04yq+Zoo46Tq4wYfkyiLrKHiPMKcEMHNHDYqgfXn2BNeuw
-  YznLCOSq2oRSC8n4coes98jcDCzfQANEfBb0Be0CgYBjC2nB8nnNmCo3tpe5ACXI
-  nzGhIzeu1w+yVvqfR1jy2HarO4y6t2Tr47tfhBDiXZ4iYTWQgi27GYPZS3u7fQxK
-  cxyJJ0fbnKaimxVxce6oZluk2yi2PYTUaN08kk3VuqA6MMXxCXTOxR7yttjuLRCD
-  llpzAoQaQD/C2RA9fZziKw==
-  -----END PRIVATE KEY-----
+createSigningKeySecret: false
 
 resources:
   limits:
@@ -195,3 +186,16 @@ frontend:
 extraEnv: []
 
 extraEnvFrom: []
+
+# Expected Kubernetes Secrets (must be pre-created before deployment):
+# secrets:
+#   signingKey:
+#     secretName: "sso-signing-key"
+#     keys: ["private.pem"]
+#   adminCredentials:
+#     secretName: "ssso-initial-admin-credentials"
+#     keys: ["SSSO_INITIAL_ADMIN_EMAIL", "SSSO_INITIAL_ADMIN_PASSWORD",
+#            "SSSO_INITIAL_ADMIN_FIRST_NAME", "SSSO_INITIAL_ADMIN_LAST_NAME"]
+#   config:
+#     secretName: "ssso-config"
+#     keys: ["SSSO_MONGO_URI"]

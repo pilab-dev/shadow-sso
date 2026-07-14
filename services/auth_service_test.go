@@ -18,6 +18,21 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
+func TestWebAuthnLogin_ReturnsUnimplemented(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	authServer := services.NewAuthServer(nil, nil, nil, nil, nil, nil, nil)
+
+	_, err := authServer.CompleteWebAuthnLogin(context.Background(), connect.NewRequest(&ssov1.VerifyWebAuthnAuthenticationRequest{}))
+
+	require.Error(t, err)
+	var connectErr *connect.Error
+	require.ErrorAs(t, err, &connectErr)
+	assert.Equal(t, connect.CodeUnimplemented, connectErr.Code())
+	assert.Contains(t, connectErr.Message(), "not yet implemented")
+}
+
 func TestAuthServer_Login_UserNotFound(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
@@ -502,4 +517,257 @@ func TestAuthServer_DenyConsent_Success(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, resp.Msg.RedirectUrl)
 	assert.Contains(t, resp.Msg.RedirectUrl, "error=access_denied")
+}
+
+func loginFor2FA(t *testing.T, authServer *services.AuthServer, email, password string, user *domain.User) string {
+	t.Helper()
+	ctrl := gomock.NewController(t)
+	t.Cleanup(ctrl.Finish)
+
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockPasswordHasher := mock_domain.NewMockPasswordHasher(ctrl)
+
+	mockUserRepo.EXPECT().GetUserByEmail(gomock.Any(), email).Return(user, nil)
+	mockPasswordHasher.EXPECT().Verify(user.PasswordHash, password).Return(nil)
+
+	freshAuth := services.NewAuthServer(
+		mockUserRepo,
+		nil,
+		nil,
+		mockPasswordHasher,
+		nil,
+		nil,
+		nil,
+	)
+
+	ctx := context.Background()
+	resp, err := freshAuth.Login(ctx, connect.NewRequest(&ssov1.LoginRequest{
+		Email:    email,
+		Password: password,
+	}))
+	require.NoError(t, err)
+	require.True(t, resp.Msg.TwoFactorRequired)
+	return resp.Msg.TwoFactorSessionToken
+}
+
+func TestVerify2FA_ConsecutiveLoginsProduceDifferentTokens(t *testing.T) {
+	user := &domain.User{
+		ID:                 "user-1",
+		Email:              "test@example.com",
+		PasswordHash:       "hashed-password",
+		Status:             domain.UserStatusActive,
+		IsTwoFactorEnabled: true,
+		TwoFactorMethod:    "TOTP",
+	}
+
+	token1 := loginFor2FA(t, nil, "test@example.com", "pass", user)
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mockUserRepo2 := mock_domain.NewMockUserRepository(ctrl)
+	mockHasher2 := mock_domain.NewMockPasswordHasher(ctrl)
+	mockUserRepo2.EXPECT().GetUserByEmail(gomock.Any(), "test@example.com").Return(user, nil)
+	mockHasher2.EXPECT().Verify(user.PasswordHash, "pass").Return(nil)
+	auth2 := services.NewAuthServer(mockUserRepo2, nil, nil, mockHasher2, nil, nil, nil)
+	resp2, err := auth2.Login(context.Background(), connect.NewRequest(&ssov1.LoginRequest{
+		Email:    "test@example.com",
+		Password: "pass",
+	}))
+	require.NoError(t, err)
+	token2 := resp2.Msg.TwoFactorSessionToken
+
+	assert.NotEqual(t, token1, token2, "consecutive 2FA session tokens must differ")
+}
+
+func TestVerify2FA_TokenFromUserAFailsForUserB(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	userA := &domain.User{
+		ID:                 "user-a",
+		Email:              "a@example.com",
+		PasswordHash:       "hashed",
+		Status:             domain.UserStatusActive,
+		IsTwoFactorEnabled: true,
+		TwoFactorMethod:    "TOTP",
+		TwoFactorSecret:    "secret-a",
+	}
+
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockHasher := mock_domain.NewMockPasswordHasher(ctrl)
+
+	mockUserRepo.EXPECT().GetUserByEmail(gomock.Any(), "a@example.com").Return(userA, nil)
+	mockHasher.EXPECT().Verify(userA.PasswordHash, "pass").Return(nil)
+	auth := services.NewAuthServer(mockUserRepo, nil, nil, mockHasher, nil, nil, nil)
+
+	// Login as user A
+	resp, err := auth.Login(context.Background(), connect.NewRequest(&ssov1.LoginRequest{
+		Email:    "a@example.com",
+		Password: "pass",
+	}))
+	require.NoError(t, err)
+	tokenA := resp.Msg.TwoFactorSessionToken
+
+	_, err = auth.Verify2FA(context.Background(), connect.NewRequest(&ssov1.Verify2FARequest{
+		UserId:                 "user-b",
+		TwoFactorSessionToken: tokenA,
+		TotpCode:               "123456",
+	}))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid or expired 2FA session")
+}
+
+func TestVerify2FA_ExpiredTokenFails(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	user := &domain.User{
+		ID:                 "user-1",
+		Email:              "test@example.com",
+		PasswordHash:       "hashed",
+		Status:             domain.UserStatusActive,
+		IsTwoFactorEnabled: true,
+		TwoFactorMethod:    "TOTP",
+		TwoFactorSecret:    "secret",
+	}
+
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockHasher := mock_domain.NewMockPasswordHasher(ctrl)
+
+	mockUserRepo.EXPECT().GetUserByEmail(gomock.Any(), "test@example.com").Return(user, nil)
+	mockHasher.EXPECT().Verify(user.PasswordHash, "pass").Return(nil)
+	auth := services.NewAuthServer(mockUserRepo, nil, nil, mockHasher, nil, nil, nil)
+
+	_, err := auth.Login(context.Background(), connect.NewRequest(&ssov1.LoginRequest{
+		Email:    "test@example.com",
+		Password: "pass",
+	}))
+	require.NoError(t, err)
+
+	_, err = auth.Verify2FA(context.Background(), connect.NewRequest(&ssov1.Verify2FARequest{
+		UserId:                 "user-1",
+		TwoFactorSessionToken: "completely-fake-token-that-was-never-stored",
+		TotpCode:               "123456",
+	}))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid or expired 2FA session")
+}
+
+func TestVerify2FA_NeverExistingTokenFails(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	user := &domain.User{
+		ID:                 "user-1",
+		Email:              "test@example.com",
+		PasswordHash:       "hashed",
+		Status:             domain.UserStatusActive,
+		IsTwoFactorEnabled: true,
+		TwoFactorMethod:    "TOTP",
+		TwoFactorSecret:    "secret",
+	}
+
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockHasher := mock_domain.NewMockPasswordHasher(ctrl)
+
+	mockUserRepo.EXPECT().GetUserByEmail(gomock.Any(), "test@example.com").Return(user, nil)
+	mockHasher.EXPECT().Verify(user.PasswordHash, "pass").Return(nil)
+	auth := services.NewAuthServer(mockUserRepo, nil, nil, mockHasher, nil, nil, nil)
+
+	_, err := auth.Login(context.Background(), connect.NewRequest(&ssov1.LoginRequest{
+		Email:    "test@example.com",
+		Password: "pass",
+	}))
+	require.NoError(t, err)
+
+	_, err = auth.Verify2FA(context.Background(), connect.NewRequest(&ssov1.Verify2FARequest{
+		UserId:                 "user-1",
+		TwoFactorSessionToken: "totally-fake-token",
+		TotpCode:               "123456",
+	}))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid or expired 2FA session")
+}
+
+func TestVerify2FA_OldPlaceholderFormatRejected(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	user := &domain.User{
+		ID:                 "user-1",
+		Email:              "test@example.com",
+		PasswordHash:       "hashed",
+		Status:             domain.UserStatusActive,
+		IsTwoFactorEnabled: true,
+		TwoFactorMethod:    "TOTP",
+		TwoFactorSecret:    "secret",
+	}
+
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockHasher := mock_domain.NewMockPasswordHasher(ctrl)
+
+	mockUserRepo.EXPECT().GetUserByEmail(gomock.Any(), "test@example.com").Return(user, nil)
+	mockHasher.EXPECT().Verify(user.PasswordHash, "pass").Return(nil)
+	auth := services.NewAuthServer(mockUserRepo, nil, nil, mockHasher, nil, nil, nil)
+
+	_, err := auth.Login(context.Background(), connect.NewRequest(&ssov1.LoginRequest{
+		Email:    "test@example.com",
+		Password: "pass",
+	}))
+	require.NoError(t, err)
+
+	oldPlaceholder := "placeholder_2fa_session_token_for_user-1"
+	_, err = auth.Verify2FA(context.Background(), connect.NewRequest(&ssov1.Verify2FARequest{
+		UserId:                 "user-1",
+		TwoFactorSessionToken: oldPlaceholder,
+		TotpCode:               "123456",
+	}))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid or expired 2FA session")
+}
+
+func TestVerify2FA_TokenDeletedAfterUse(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	user := &domain.User{
+		ID:                 "user-1",
+		Email:              "test@example.com",
+		PasswordHash:       "hashed",
+		Status:             domain.UserStatusActive,
+		IsTwoFactorEnabled: true,
+		TwoFactorMethod:    "TOTP",
+		TwoFactorSecret:    "JBSWY3DPEHPK3PXP",
+	}
+
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockHasher := mock_domain.NewMockPasswordHasher(ctrl)
+
+	mockUserRepo.EXPECT().GetUserByEmail(gomock.Any(), "test@example.com").Return(user, nil)
+	mockHasher.EXPECT().Verify(user.PasswordHash, "pass").Return(nil)
+	auth := services.NewAuthServer(mockUserRepo, nil, nil, mockHasher, nil, nil, nil)
+
+	resp, err := auth.Login(context.Background(), connect.NewRequest(&ssov1.LoginRequest{
+		Email:    "test@example.com",
+		Password: "pass",
+	}))
+	require.NoError(t, err)
+	token := resp.Msg.TwoFactorSessionToken
+
+	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user-1").Return(user, nil)
+	_, err = auth.Verify2FA(context.Background(), connect.NewRequest(&ssov1.Verify2FARequest{
+		UserId:                 "user-1",
+		TwoFactorSessionToken: token,
+		TotpCode:               "wrong-code",
+	}))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid 2FA code")
+
+	_, err = auth.Verify2FA(context.Background(), connect.NewRequest(&ssov1.Verify2FARequest{
+		UserId:                 "user-1",
+		TwoFactorSessionToken: token,
+		TotpCode:               "123456",
+	}))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid or expired 2FA session")
 }
