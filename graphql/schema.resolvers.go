@@ -7,9 +7,12 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/pilab-dev/shadow-sso/domain"
+	"github.com/pilab-dev/shadow-sso/internal/auth/rbac"
 )
 
 type Resolver struct {
@@ -313,6 +316,10 @@ func (r *identityProviderResolver) SsoEndpoint(ctx context.Context, obj *domain.
 
 // CreateUser is the resolver for the createUser field.
 func (r *mutationResolver) CreateUser(ctx context.Context, input CreateUserInput) (*domain.User, error) {
+	if err := requireAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	user := &domain.User{
 		Email: input.Email,
 	}
@@ -359,6 +366,10 @@ func (r *mutationResolver) UpdateUser(ctx context.Context, id string, input Upda
 
 // DeleteUser is the resolver for the deleteUser field.
 func (r *mutationResolver) DeleteUser(ctx context.Context, id string) (bool, error) {
+	if err := requireAdmin(ctx); err != nil {
+		return false, err
+	}
+
 	err := r.UserRepo.DeleteUser(ctx, id)
 	return err == nil, err
 }
@@ -403,6 +414,10 @@ func (r *mutationResolver) SendPasswordResetEmail(ctx context.Context, userID st
 
 // ResetPassword is the resolver for the resetPassword field.
 func (r *mutationResolver) ResetPassword(ctx context.Context, userID string, newPassword string) (bool, error) {
+	if err := requireAdmin(ctx); err != nil {
+		return false, err
+	}
+
 	user, err := r.UserRepo.GetUserByID(ctx, userID)
 	if err != nil {
 		return false, err
@@ -429,6 +444,10 @@ func (r *mutationResolver) ExecuteActions(ctx context.Context, userID string, ac
 
 // CreateClient is the resolver for the createClient field.
 func (r *mutationResolver) CreateClient(ctx context.Context, input CreateClientInput) (*domain.Client, error) {
+	if err := requireAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	client := &domain.Client{
 		ID:                input.ClientID,
 		Name:              input.ClientName,
@@ -475,12 +494,20 @@ func (r *mutationResolver) UpdateClient(ctx context.Context, id string, input Up
 
 // DeleteClient is the resolver for the deleteClient field.
 func (r *mutationResolver) DeleteClient(ctx context.Context, id string) (bool, error) {
+	if err := requireAdmin(ctx); err != nil {
+		return false, err
+	}
+
 	err := r.ClientRepo.DeleteClient(ctx, id)
 	return err == nil, err
 }
 
 // GenerateClientSecret is the resolver for the generateClientSecret field.
 func (r *mutationResolver) GenerateClientSecret(ctx context.Context, clientID string) (string, error) {
+	if err := requireAdmin(ctx); err != nil {
+		return "", err
+	}
+
 	client, err := r.ClientRepo.GetClient(ctx, clientID)
 	if err != nil {
 		return "", err
@@ -685,6 +712,10 @@ func (r *mutationResolver) UpdateGroup(ctx context.Context, id string, input Upd
 
 // DeleteGroup is the resolver for the deleteGroup field.
 func (r *mutationResolver) DeleteGroup(ctx context.Context, id string) (bool, error) {
+	if err := requireAdmin(ctx); err != nil {
+		return false, err
+	}
+
 	err := r.GroupRepo.DeleteGroup(ctx, id)
 	return err == nil, err
 }
@@ -734,6 +765,10 @@ func (r *mutationResolver) CreateIdentityProvider(ctx context.Context, input Cre
 
 // UpdateIdentityProvider is the resolver for the updateIdentityProvider field.
 func (r *mutationResolver) UpdateIdentityProvider(ctx context.Context, id string, input UpdateIdentityProviderInput) (*domain.IdentityProvider, error) {
+	if err := requireAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	idp, err := r.IdPRepo.GetIdPByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -754,6 +789,10 @@ func (r *mutationResolver) UpdateIdentityProvider(ctx context.Context, id string
 
 // DeleteIdentityProvider is the resolver for the deleteIdentityProvider field.
 func (r *mutationResolver) DeleteIdentityProvider(ctx context.Context, id string) (bool, error) {
+	if err := requireAdmin(ctx); err != nil {
+		return false, err
+	}
+
 	err := r.IdPRepo.DeleteIdP(ctx, id)
 	return err == nil, err
 }
@@ -771,6 +810,10 @@ func (r *mutationResolver) RevokeSession(ctx context.Context, sessionID string) 
 
 // RevokeAllSessions is the resolver for the revokeAllSessions field.
 func (r *mutationResolver) RevokeAllSessions(ctx context.Context, userID string) (bool, error) {
+	if err := requireAdmin(ctx); err != nil {
+		return false, err
+	}
+
 	_, err := r.SessionRepo.DeleteSessionsByUserID(ctx, userID)
 	return err == nil, err
 }
@@ -783,6 +826,10 @@ func (r *mutationResolver) LogoutUser(ctx context.Context, userID string) (bool,
 
 // UpdateRealm is the resolver for the updateRealm field.
 func (r *mutationResolver) UpdateRealm(ctx context.Context, input UpdateRealmInput) (*domain.RealmSettings, error) {
+	if err := requireAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	settings, err := r.RealmSettingsRepo.GetRealmSettings(ctx)
 	if err != nil {
 		return nil, err
@@ -1038,6 +1085,10 @@ func (r *mutationResolver) UpdateAuthenticationExecutions(ctx context.Context, f
 
 // SetUserPassword is the resolver for the setUserPassword field.
 func (r *mutationResolver) SetUserPassword(ctx context.Context, userID string, password string, temporary bool) (bool, error) {
+	if err := requireAdmin(ctx); err != nil {
+		return false, err
+	}
+
 	user, err := r.UserRepo.GetUserByID(ctx, userID)
 	if err != nil {
 		return false, err
@@ -1842,6 +1893,17 @@ type roleResolver struct{ *Resolver }
 type sessionResolver struct{ *Resolver }
 type tokenIntrospectionResolver struct{ *Resolver }
 type userResolver struct{ *Resolver }
+
+func requireAdmin(ctx context.Context) error {
+	tokenInfo, ok := domain.GetAuthenticatedTokenFromContext(ctx)
+	if !ok || tokenInfo == nil {
+		return connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+	if !rbac.HasPermission(tokenInfo.Roles, rbac.PermUsersDeleteAll) {
+		return connect.NewError(connect.CodePermissionDenied, errors.New("admin role required"))
+	}
+	return nil
+}
 
 func contains(slice []string, val string) bool {
 	for _, v := range slice {

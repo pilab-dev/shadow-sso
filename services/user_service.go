@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/pilab-dev/shadow-sso/domain"
 	"github.com/pilab-dev/shadow-sso/internal/audit"
+	"github.com/pilab-dev/shadow-sso/internal/auth/rbac"
 	"github.com/pilab-dev/shadow-sso/internal/auth/totp"
 
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
@@ -38,6 +40,20 @@ func mapUserStatusToProto(ds domain.UserStatus) ssov1.UserStatus {
 	default:
 		return ssov1.UserStatus_USER_STATUS_UNSPECIFIED
 	}
+}
+
+// generateSecureOTP generates a cryptographically secure OTP of the given length.
+func generateSecureOTP(length int) string {
+	b := make([]byte, length)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback to zero-filled OTP on catastrophic rand failure (should never happen)
+		return "000000"
+	}
+	// Map each byte to a digit 0-9
+	for i := range b {
+		b[i] = byte('0' + (int(b[i]) % 10))
+	}
+	return string(b)
 }
 
 // NewUserServer creates a new UserServer.
@@ -352,9 +368,10 @@ func (s *UserServer) ChangePassword(ctx context.Context, req *connect.Request[ss
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("incorrect old password"))
 		}
 	} else {
-		// Admin changing password: TODO - check admin privileges
-		// For now, allow any authenticated user to change others' passwords
-		// In production, you'd check if actingUserID has admin role
+		tokenInfo, ok := domain.GetAuthenticatedTokenFromContext(ctx)
+		if !ok || !rbac.HasPermission(tokenInfo.Roles, rbac.PermUsersChangePasswordAll) {
+			return nil, connect.NewError(connect.CodePermissionDenied, fmt.Errorf("permission denied to change password for another user"))
+		}
 		audit.Log("UserService", "ChangePassword", actingUserID, targetUserID, "Admin password change", true, nil)
 	}
 
@@ -1038,7 +1055,7 @@ func (s *UserServer) SendSmsOtp(ctx context.Context, req *connect.Request[ssov1.
 		}), nil
 	}
 
-	otp := fmt.Sprintf("%06d", time.Now().UnixNano()%1000000)
+	otp := generateSecureOTP(6)
 	expiresAt := time.Now().Add(5 * time.Minute)
 
 	if err := s.userRepo.StoreLoginOtp(ctx, user.ID, otp, ssov1.MfaMethodType_MFA_METHOD_TYPE_SMS.String(), expiresAt); err != nil {
@@ -1067,7 +1084,7 @@ func (s *UserServer) SendEmailOtp(ctx context.Context, req *connect.Request[ssov
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to get user: %w", err))
 	}
 
-	otp := fmt.Sprintf("%06d", time.Now().UnixNano()%1000000)
+	otp := generateSecureOTP(6)
 	expiresAt := time.Now().Add(5 * time.Minute)
 
 	if err := s.userRepo.StoreLoginOtp(ctx, user.ID, otp, ssov1.MfaMethodType_MFA_METHOD_TYPE_EMAIL.String(), expiresAt); err != nil {

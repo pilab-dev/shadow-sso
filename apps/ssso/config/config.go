@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -172,8 +173,8 @@ func LoadConfig() (config Config, err error) {
 	viper.SetDefault("firebase_project_id", "")
 	viper.SetDefault("firebase_credentials_path", "")
 
-	// Default value for configuration service encryption key
-	viper.SetDefault("config_encryption_key", "your-32-byte-encryption-key-here!!")
+	// Explicitly bind config_encryption_key env var so viper.Unmarshal picks it up
+	viper.BindEnv("config_encryption_key")
 
 	if errRead := viper.ReadInConfig(); errRead != nil {
 		if _, ok := errRead.(viper.ConfigFileNotFoundError); ok {
@@ -188,6 +189,10 @@ func LoadConfig() (config Config, err error) {
 	err = viper.Unmarshal(&config)
 	if err != nil {
 		return
+	}
+
+	if config.ConfigEncryptionKey == "" || config.ConfigEncryptionKey == "your-32-byte-encryption-key-here!!" {
+		return Config{}, fmt.Errorf("FATAL: config_encryption_key is required. Set SSSO_CONFIG_ENCRYPTION_KEY environment variable")
 	}
 
 	// Viper doesn't automatically convert string to custom types like StorageType

@@ -254,6 +254,99 @@ func TestUserServer_IncrementFailedLoginAttempts(t *testing.T) {
 	assert.Equal(t, int32(3), resp.Msg.CurrentAttempts)
 }
 
+func TestOTPGeneration(t *testing.T) {
+	otp1 := generateSecureOTP(6)
+	otp2 := generateSecureOTP(6)
+
+	assert.Len(t, otp1, 6, "OTP should be 6 digits")
+	assert.Len(t, otp2, 6, "OTP should be 6 digits")
+
+	for _, ch := range otp1 {
+		assert.True(t, ch >= '0' && ch <= '9', "OTP should only contain digits")
+	}
+
+	assert.NotEqual(t, otp1, otp2, "Consecutive OTPs should be different (cryptographic randomness)")
+}
+
+func TestChangePasswordAuthorization(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	userRepo := mock_domain.NewMockUserRepository(ctrl)
+	hasher := mock_domain.NewMockPasswordHasher(ctrl)
+	service := NewUserServer(userRepo, hasher, nil)
+
+	t.Run("admin changes another user password succeeds", func(t *testing.T) {
+		adminCtx := context.WithValue(context.Background(), domain.TokenContextKey, &domain.TokenInfo{
+			UserID: "admin-user",
+			Roles:  []string{"ROLE_ADMIN"},
+		})
+
+		userRepo.EXPECT().GetUserByID(gomock.Any(), "target-user").Return(&domain.User{
+			ID:           "target-user",
+			Email:        "target@example.com",
+			PasswordHash: "old-hash",
+			Status:       domain.UserStatusActive,
+		}, nil)
+		hasher.EXPECT().Hash("new-password").Return("new-hash", nil)
+		userRepo.EXPECT().UpdateUser(gomock.Any(), gomock.Any()).Return(nil)
+
+		req := connect.NewRequest(&ssov1.ChangePasswordRequest{
+			UserId:      "target-user",
+			NewPassword: "new-password",
+		})
+		_, err := service.ChangePassword(adminCtx, req)
+		assert.NoError(t, err)
+	})
+
+	t.Run("non-admin changes another user password denied", func(t *testing.T) {
+		userCtx := context.WithValue(context.Background(), domain.TokenContextKey, &domain.TokenInfo{
+			UserID: "regular-user",
+			Roles:  []string{"ROLE_USER"},
+		})
+
+		userRepo.EXPECT().GetUserByID(gomock.Any(), "target-user").Return(&domain.User{
+			ID:           "target-user",
+			Email:        "target@example.com",
+			PasswordHash: "old-hash",
+			Status:       domain.UserStatusActive,
+		}, nil)
+
+		req := connect.NewRequest(&ssov1.ChangePasswordRequest{
+			UserId:      "target-user",
+			NewPassword: "new-password",
+		})
+		_, err := service.ChangePassword(userCtx, req)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "permission denied")
+	})
+
+	t.Run("self-change works without admin role", func(t *testing.T) {
+		selfCtx := context.WithValue(context.Background(), domain.TokenContextKey, &domain.TokenInfo{
+			UserID: "target-user",
+			Roles:  []string{"ROLE_USER"},
+		})
+
+		userRepo.EXPECT().GetUserByID(gomock.Any(), "target-user").Return(&domain.User{
+			ID:           "target-user",
+			Email:        "target@example.com",
+			PasswordHash: "old-hash",
+			Status:       domain.UserStatusActive,
+		}, nil)
+		hasher.EXPECT().Verify("old-hash", "current-password").Return(nil)
+		hasher.EXPECT().Hash("new-password").Return("new-hash", nil)
+		userRepo.EXPECT().UpdateUser(gomock.Any(), gomock.Any()).Return(nil)
+
+		req := connect.NewRequest(&ssov1.ChangePasswordRequest{
+			UserId:      "target-user",
+			OldPassword: "current-password",
+			NewPassword: "new-password",
+		})
+		_, err := service.ChangePassword(selfCtx, req)
+		assert.NoError(t, err)
+	})
+}
+
 func TestUserServer_ResetFailedLoginAttempts(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()

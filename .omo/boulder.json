@@ -1,0 +1,85 @@
+{
+  "schema_version": 2,
+  "active_work_id": "production-security-fixes-fb61b8a7",
+  "works": {
+    "production-security-fixes-fb61b8a7": {
+      "work_id": "production-security-fixes-fb61b8a7",
+      "active_plan": "/Users/paalgyula/Workspace/pilab/shadow-sso/.omo/plans/production-security-fixes.md",
+      "plan_name": "production-security-fixes",
+      "status": "active",
+      "started_at": "2026-07-14T11:15:57.775Z",
+      "updated_at": "2026-07-14T11:38:10.065Z",
+      "session_ids": [
+        "opencode:ses_09fa8c34fffeQ0V536f4Fd45X2"
+      ],
+      "session_origins": {
+        "opencode:ses_09fa8c34fffeQ0V536f4Fd45X2": "direct"
+      },
+      "agent": "atlas",
+      "task_sessions": {
+        "todo:0": {
+          "task_key": "todo:0",
+          "task_label": "0",
+          "task_title": "Rotate exposed MongoDB Atlas credentials and notify team",
+          "session_id": "opencode:ses_09f9bbe1dffeaUsZtetc3NEI04",
+          "agent": "Sisyphus-Junior",
+          "category": "deep",
+          "started_at": "2026-07-14T11:21:55.196Z",
+          "status": "running",
+          "updated_at": "2026-07-14T11:38:10.065Z"
+        },
+        "todo:1": {
+          "task_key": "todo:1",
+          "task_label": "1",
+          "task_title": "Replace predictable OTP generation (`time.Now().UnixNano()%1000000`) with `crypto/rand`-based generation",
+          "session_id": "opencode:ses_09f9ba082ffeto4Kmw1NDjUwKC",
+          "agent": "Sisyphus-Junior",
+          "category": "deep",
+          "updated_at": "2026-07-14T11:35:54.458Z",
+          "started_at": "2026-07-14T11:35:54.452Z",
+          "status": "completed",
+          "ended_at": "2026-07-14T11:35:54.454Z",
+          "elapsed_ms": 2
+        }
+      }
+    }
+  },
+  "active_plan": "/Users/paalgyula/Workspace/pilab/shadow-sso/.omo/plans/production-security-fixes.md",
+  "started_at": "2026-07-14T11:15:57.775Z",
+  "status": "active",
+  "updated_at": "2026-07-14T11:38:10.065Z",
+  "session_ids": [
+    "opencode:ses_09fa8c34fffeQ0V536f4Fd45X2"
+  ],
+  "session_origins": {
+    "opencode:ses_09fa8c34fffeQ0V536f4Fd45X2": "direct"
+  },
+  "plan_name": "production-security-fixes",
+  "task_sessions": {
+    "todo:0": {
+      "task_key": "todo:0",
+      "task_label": "0",
+      "task_title": "Rotate exposed MongoDB Atlas credentials and notify team",
+      "session_id": "opencode:ses_09f9bbe1dffeaUsZtetc3NEI04",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "started_at": "2026-07-14T11:21:55.196Z",
+      "status": "running",
+      "updated_at": "2026-07-14T11:38:10.065Z"
+    },
+    "todo:1": {
+      "task_key": "todo:1",
+      "task_label": "1",
+      "task_title": "Replace predictable OTP generation (`time.Now().UnixNano()%1000000`) with `crypto/rand`-based generation",
+      "session_id": "opencode:ses_09f9ba082ffeto4Kmw1NDjUwKC",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-07-14T11:35:54.458Z",
+      "started_at": "2026-07-14T11:35:54.452Z",
+      "status": "completed",
+      "ended_at": "2026-07-14T11:35:54.454Z",
+      "elapsed_ms": 2
+    }
+  },
+  "agent": "atlas"
+}

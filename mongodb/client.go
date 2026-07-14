@@ -3,6 +3,7 @@ package mongodb
 import (
 	"context"
 	"errors" // Added for errors.New
+	"net/url"
 	"sync"
 	"time"
 
@@ -39,7 +40,7 @@ var (
 func InitMongoDB(ctx context.Context, uri, dbName string) error {
 	var err error
 	clientOnce.Do(func() {
-		log.Info().Msgf("Initializing MongoDB client with URI: %s", uri)
+		log.Info().Str("uri", maskMongoURI(uri)).Msg("Initializing MongoDB client")
 		// Instrument the MongoDB client - currently incompatible with mongo-driver/v2
 		// clientOptions := options.Client().ApplyURI(uri).SetMonitor(otelmongo.NewMonitor())
 		clientOptions := options.Client().ApplyURI(uri)
@@ -134,4 +135,16 @@ func CloseMongoDB(ctx context.Context) {
 			log.Error().Err(err).Msg("Error closing MongoDB connection")
 		}
 	}
+}
+
+// maskMongoURI strips user:password credentials from a MongoDB URI for safe logging.
+func maskMongoURI(rawURI string) string {
+	parsed, err := url.Parse(rawURI)
+	if err != nil {
+		return "<invalid-uri>"
+	}
+	if parsed.User != nil {
+		parsed.User = url.User("****")
+	}
+	return parsed.String()
 }

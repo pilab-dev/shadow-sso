@@ -113,11 +113,6 @@ func main() {
 
 	// Get encryption key for configuration service from viper config
 	encryptionKey := cfg.ConfigEncryptionKey
-	if encryptionKey == "" {
-		// Use a default key for development - in production, this should be set
-		encryptionKey = "your-32-byte-encryption-key-here!!" // 32 bytes
-		log.Warn().Msg("config_encryption_key not set, using default key. Set this configuration in production!")
-	}
 
 	// Create SSOServerOptions
 	opts := ssso.SSOServerOptions{

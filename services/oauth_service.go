@@ -245,28 +245,14 @@ func (s *defaultOAuthService) DirectGrant(ctx context.Context,
 	if err := s.sessionRepo.StoreSession(ctx, session); err != nil {
 		log.Warn().Err(err).Msg("Failed to store session in OAuthService.DirectGrant")
 	}
-	// This direct grant in OAuthService still manually creates token strings.
-	// Ideally, it should also use tokenService.GenerateTokenPair like the Login method now does.
-	// For minimal changes to fix build, keeping manual token string generation for now.
-	accessTokenVal := uuid.NewString()
-	refreshTokenVal := uuid.NewString()
-
-	// Store the access token (minimal info, as actual signing/details are in GenerateTokenPair)
-	dbToken := &domain.Token{
-		ID: uuid.NewString(), TokenType: "access_token", TokenValue: accessTokenVal,
-		ClientID: clientID, UserID: user.ID, Scope: scope, ExpiresAt: time.Now().Add(time.Hour), CreatedAt: time.Now(),
-	}
-	if err := s.tokenRepo.StoreToken(ctx, dbToken); err != nil {
-		log.Error().Err(err).Msg("Failed to store access token in DirectGrant")
-		// continue without fatal error for token storage for now.
+	tokenTTL := 1 * time.Hour
+	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, user.ID, scope, tokenTTL)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to generate token pair in DirectGrant")
+		return nil, fmt.Errorf("could not generate tokens: %w", err)
 	}
 
-	return &api.TokenResponse{
-		AccessToken:  accessTokenVal,
-		TokenType:    "Bearer",
-		ExpiresIn:    3600,
-		RefreshToken: refreshTokenVal,
-	}, nil
+	return tokenPair, nil
 }
 
 func (s *defaultOAuthService) ClientCredentials(ctx context.Context,

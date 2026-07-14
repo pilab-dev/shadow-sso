@@ -644,14 +644,20 @@ func TestOAuthService_DirectGrant_Success(t *testing.T) {
 	mockClientRepo.EXPECT().GetClient(ctx, clientID).Return(client, nil)
 	mockUserRepo.EXPECT().GetUserByEmail(ctx, username).Return(user, nil)
 	mockSessionRepo.EXPECT().StoreSession(ctx, gomock.Any()).Return(nil)
-	mockTokenRepo.EXPECT().StoreToken(ctx, gomock.Any()).Return(nil)
+	mockTokenServiceInterface.EXPECT().GenerateTokenPair(ctx, clientID, user.ID, "openid", gomock.Any()).Return(&api.TokenResponse{
+		AccessToken:  "jwt-access-token",
+		TokenType:    "Bearer",
+		ExpiresIn:    3600,
+		RefreshToken: "jwt-refresh-token",
+	}, nil)
 
 	resp, err := oauthService.DirectGrant(ctx, clientID, clientSecret, username, password, "openid")
 
 	require.NoError(t, err)
 	assert.NotNil(t, resp)
-	assert.NotEmpty(t, resp.AccessToken)
-	assert.NotEmpty(t, resp.RefreshToken)
+	assert.Equal(t, "jwt-access-token", resp.AccessToken)
+	assert.Equal(t, "jwt-refresh-token", resp.RefreshToken)
+	assert.Equal(t, "Bearer", resp.TokenType)
 }
 
 func TestOAuthService_DirectGrant_InvalidGrantType(t *testing.T) {

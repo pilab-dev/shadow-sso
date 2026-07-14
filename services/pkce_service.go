@@ -53,14 +53,9 @@ func (s *defaultPKCEService) ValidateCodeVerifier(ctx context.Context, code, ver
 	return nil
 }
 
-// ValidatePKCEChallenge validates a code verifier against a code challenge
+// ValidatePKCEChallenge validates a code verifier against a code challenge using S256 only.
+// The "plain" method is not supported as it is insecure (RFC 7636 recommends S256).
 func ValidatePKCEChallenge(challenge, verifier string) bool {
-	// For plain method
-	if challenge == verifier {
-		return true
-	}
-
-	// For S256 method
 	h := sha256.New()
 	h.Write([]byte(verifier))
 	calculatedChallenge := base64.RawURLEncoding.EncodeToString(h.Sum(nil))
