@@ -98,17 +98,19 @@ func main() {
 
 	// Initialize TokenSigner (potentially from file/env)
 	tokenSigner := services.NewTokenSigner()
-	if cfg.TokenSigningKey != "" {
+	if cfg.SigningKeyPath != "" {
+		if err := tokenSigner.AddRSASigner(cfg.SigningKeyPath); err != nil {
+			log.Warn().Err(err).Str("path", cfg.SigningKeyPath).Msg("Failed to load RSA signing key, falling back to HS256")
+			tokenSigner.AddKeySigner("temporary-secret-for-hs256-change-me")
+		} else {
+			log.Info().Msg("RSA signing key loaded successfully (RS256)")
+		}
+	} else if cfg.TokenSigningKey != "" {
 		tokenSigner.AddKeySigner(cfg.TokenSigningKey)
-		log.Info().Msg("Token signing key loaded from config (plaintext).")
-	} else if cfg.TokenSigningKeyFile != "" {
-		// TODO: Implement robust RSA key loading from PEM file.
-		// For production, this should load a proper RSA private key for RS256/384/512.
-		log.Warn().Msgf("Token signing key file '%s' specified, but robust loading for RSA not implemented. Using placeholder.", cfg.TokenSigningKeyFile)
-		tokenSigner.AddKeySigner("temporary-secret-from-file-placeholder") // Fallback for HS256
+		log.Info().Msg("Token signing key loaded from config (HS256).")
 	} else {
 		log.Warn().Msg("No token signing key configured. Using placeholder - REPLACE IN PRODUCTION.")
-		tokenSigner.AddKeySigner("temporary-secret-for-hs256-change-me") // Fallback for HS256
+		tokenSigner.AddKeySigner("temporary-secret-for-hs256-change-me")
 	}
 
 	// Get encryption key for configuration service from viper config

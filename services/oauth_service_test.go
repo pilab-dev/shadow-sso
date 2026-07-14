@@ -1547,3 +1547,113 @@ func TestOAuthService_TokenExchange_ExpiredSubjectToken(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid subject token")
 }
+
+func TestOAuthService_TokenExchange_ScopeIntersection(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
+	mockAuthCodeRepo := mock_domain.NewMockAuthorizationCodeRepository(ctrl)
+	mockDeviceAuthRepo := mock_domain.NewMockDeviceAuthorizationRepository(ctrl)
+	mockClientRepo := mock_domain.NewMockClientRepository(ctrl)
+	mockSessionRepo := mock_domain.NewMockSessionRepository(ctrl)
+	mockTokenServiceInterface := mock_domain.NewMockTokenServiceInterface(ctrl)
+
+	oauthService := services.NewOAuthService(
+		mockTokenRepo,
+		mockAuthCodeRepo,
+		mockDeviceAuthRepo,
+		mockClientRepo,
+		mockUserRepo,
+		mockSessionRepo,
+		mockTokenServiceInterface,
+		"test-issuer",
+	)
+
+	ctx := context.Background()
+	subjectToken := "access-token"
+	subjectTokenType := "urn:ietf:params:oauth:token-type:access_token"
+	clientID := "client-id"
+
+	tests := []struct {
+		name            string
+		requestedScope  string
+		grantedScope    string
+		expectedScope   string
+		expectError     bool
+	}{
+		{
+			name:           "requested is subset of granted",
+			requestedScope: "openid",
+			grantedScope:   "openid profile email",
+			expectedScope:  "openid",
+			expectError:    false,
+		},
+		{
+			name:           "requested equals granted",
+			requestedScope: "openid profile",
+			grantedScope:   "openid profile",
+			expectedScope:  "openid profile",
+			expectError:    false,
+		},
+		{
+			name:           "requested exceeds granted - partial overlap",
+			requestedScope: "openid profile admin",
+			grantedScope:   "openid profile",
+			expectedScope:  "openid profile",
+			expectError:    false,
+		},
+		{
+			name:           "requested exceeds granted - no overlap",
+			requestedScope: "admin write",
+			grantedScope:   "openid profile",
+			expectedScope:  "",
+			expectError:    true,
+		},
+		{
+			name:           "empty requested uses granted",
+			requestedScope: "",
+			grantedScope:   "openid profile",
+			expectedScope:  "openid profile",
+			expectError:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &domain.Client{
+				ID:            clientID,
+				AllowedScopes: []string{"openid", "profile"},
+			}
+
+			mockTokenServiceInterface.EXPECT().ValidateAccessToken(ctx, subjectToken).Return(&domain.Token{
+				ID:        "token-id",
+				ClientID:  clientID,
+				UserID:    "user-id",
+				Scope:     tt.grantedScope,
+				ExpiresAt: time.Now().Add(time.Hour),
+				IsRevoked: false,
+			}, nil)
+			mockClientRepo.EXPECT().GetClient(ctx, clientID).Return(client, nil)
+
+			if !tt.expectError {
+				mockTokenServiceInterface.EXPECT().GenerateTokenPair(ctx, clientID, "user-id", tt.expectedScope, time.Hour).Return(&api.TokenResponse{
+					AccessToken: "exchanged-access-token",
+					TokenType:   "Bearer",
+					ExpiresIn:   3600,
+				}, nil)
+			}
+
+			resp, err := oauthService.TokenExchange(ctx, subjectToken, subjectTokenType, "", "", tt.requestedScope, clientID)
+
+			if tt.expectError {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "scope")
+			} else {
+				require.NoError(t, err)
+				assert.NotEmpty(t, resp.AccessToken)
+			}
+		})
+	}
+}

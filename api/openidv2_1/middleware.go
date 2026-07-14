@@ -8,56 +8,12 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/pilab-dev/shadow-sso/services"
 	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/otel"
 )
 
 const AuthUserIDKey = "auth-user-id"
-
-var ErrInvalidToken = errors.New("invalid JWT token")
-
-// ParseClaims parses the JWT and returns the claims.
-func ParseClaims(jwtToken string) (jwt.MapClaims, error) {
-	claims := make(jwt.MapClaims)
-
-	token, err := jwt.ParseWithClaims(jwtToken, claims, func(token *jwt.Token) (any, error) {
-		// Normally, you would validate the token's signature here.
-		// For example, return the public key for RS256.
-		return []byte("your-256-bit-secret"), nil
-	})
-	if err != nil {
-		if errors.Is(err, jwt.ErrTokenMalformed) {
-			return nil, err
-		} else {
-			err = fmt.Errorf("failed to parse JWT token: %w", err)
-
-			log.Error().Err(err).Type("errType", err).Send()
-
-			return nil, err
-		}
-	}
-
-	if token.Valid {
-		return claims, nil
-	}
-
-	switch {
-	case token.Valid:
-		fmt.Println("You look nice today")
-	case errors.Is(err, jwt.ErrTokenMalformed):
-		fmt.Println("That's not even a token")
-	case errors.Is(err, jwt.ErrTokenSignatureInvalid): // Invalid signature
-		fmt.Println("Invalid signature")
-	case errors.Is(err, jwt.ErrTokenExpired) || errors.Is(err, jwt.ErrTokenNotValidYet): // Token is either expired or not active yet
-		fmt.Println("Timing is everything")
-	default:
-		fmt.Println("Couldn't handle this token:", err)
-	}
-
-	return nil, ErrInvalidToken
-}
 
 // extractJWTFromHeader extracts the JWT from the Authorization header.
 func extractJWTFromHeader(bearerToken string) (string, error) {

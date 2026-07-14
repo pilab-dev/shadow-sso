@@ -374,24 +374,18 @@ func (s *defaultTokenService) GenerateTokenPair(ctx context.Context,
 	}, nil
 }
 
-// ValidateToken validates an access token and returns its information. If the token is revoked or expired,
-// it returns ErrTokenExpiredOrRevoked.
-// This version handles both Service Account JWTs and regular user tokens.
-func (s *defaultTokenService) ValidateAccessToken(ctx context.Context, tokenValue string) (*domain.Token, error) { // Changed return type
-	// This line needs to be at the package level of token_service.go, or passed in.
-	// var errMissingKidSAValidation = errors.New("missing kid header, not a service account token, try other validation")
-
+func (s *defaultTokenService) ValidateAccessToken(ctx context.Context, tokenValue string) (*domain.Token, error) {
 	parsedSAJWT, err := jwt.ParseWithClaims(tokenValue, &jwt.MapClaims{}, func(token *jwt.Token) (interface{}, error) {
 		kid, ok := token.Header["kid"].(string)
 		if !ok || kid == "" {
-			return nil, errMissingKidSAValidation // Use the package-level var
+			return nil, errMissingKidSAValidation
 		}
 		publicKeyInfo, errDb := s.pubKeyRepo.GetPublicKey(ctx, kid)
 		if errDb != nil {
 			log.Warn().Err(errDb).Str("kid", kid).Msg("Failed to get public key for SA JWT")
 			return nil, fmt.Errorf("SA key retrieval failed for kid %s: %w", kid, errDb)
 		}
-		if publicKeyInfo.Status != "ACTIVE" { // Assuming "ACTIVE" is status string
+		if publicKeyInfo.Status != "ACTIVE" {
 			return nil, fmt.Errorf("public key %s is not active", kid)
 		}
 		block, _ := pem.Decode([]byte(publicKeyInfo.PublicKey))
@@ -408,7 +402,7 @@ func (s *defaultTokenService) ValidateAccessToken(ctx context.Context, tokenValu
 		return nil, errors.New("public key is not RSA type")
 	})
 
-	if err == nil { // Implies parsedSAJWT is not nil
+	if err == nil {
 		if parsedSAJWT.Valid {
 			claims, ok := parsedSAJWT.Claims.(*jwt.MapClaims)
 			if !ok {
@@ -425,7 +419,7 @@ func (s *defaultTokenService) ValidateAccessToken(ctx context.Context, tokenValu
 				return nil, errors.New("SA JWT missing 'exp' claim")
 			}
 			if time.Now().After(expiresAt) {
-				return nil, domain.ErrTokenExpiredOrRevoked // Use domain
+				return nil, domain.ErrTokenExpiredOrRevoked
 			}
 			var issuedAt time.Time
 			if iat, okClaim := (*claims)["iat"].(float64); okClaim {
@@ -437,8 +431,8 @@ func (s *defaultTokenService) ValidateAccessToken(ctx context.Context, tokenValu
 			if scope, okClaim := (*claims)["scope"].(string); okClaim {
 				tokenScope = scope
 			}
-			jtiClaim, _ := (*claims)["jti"].(string) // JTI is optional for some SA JWTs, use if present for ID
-			return &domain.Token{                    // Changed to domain.Token
+			jtiClaim, _ := (*claims)["jti"].(string)
+			return &domain.Token{
 				ID:         jtiClaim,
 				TokenType:  "service_account_jwt",
 				TokenValue: tokenValue,
@@ -448,71 +442,136 @@ func (s *defaultTokenService) ValidateAccessToken(ctx context.Context, tokenValu
 				CreatedAt:  issuedAt,
 				IsRevoked:  false,
 				Issuer:     issuerClaim,
-				Roles:      []string{}, // Service Accounts do not have user roles in this model
+				Roles:      []string{},
 			}, nil
 		} else {
-			// This case should ideally not be reached if jwt-go behaves as expected:
-			// if err is nil, token should be valid.
 			return nil, fmt.Errorf("SA JWT parsed (err is nil) but token.Valid is false, unexpected state")
 		}
-	} // end if err == nil
+	}
 
-	// At this point, err != nil. Check if it's the signal to fallback.
-	// Also handle malformed token errors (not a valid JWT) - treat same as missing kid, fall back to user token validation
 	if errors.Is(err, errMissingKidSAValidation) || (err != nil && strings.Contains(err.Error(), "malformed")) {
 		log.Debug().Msg("Attempting user token validation (SA token 'kid' missing or error explicitly requesting fallback).")
-		// Fallback to user token validation (original logic from existing ValidateAccessToken)
-		// Ensure s.repo, s.cache, ErrTokenExpiredOrRevoked are accessible and correctly used
-		if entry, cacheErr := s.cache.Get(ctx, tokenValue); cacheErr == nil {
-			if !entry.IsRevoked && time.Now().Before(entry.ExpiresAt) {
-				userToken := fromCacheEntry(entry, tokenValue) // Use fromCacheEntry
-				// Populate missing fields for user token from repo if necessary, or ensure FromEntry is sufficient
-				// For user tokens, Issuer might be s.issuer if it's consistent
-				userToken.Issuer = s.issuer // Default issuer for user tokens
-				return userToken, nil
-			}
-			_ = s.cache.Delete(ctx, tokenValue)         // Delete expired/revoked from cache
-			return nil, domain.ErrTokenExpiredOrRevoked // Use domain
-		}
-		// Check repository (for user tokens)
-		userTokenDB, repoErr := s.repo.GetAccessToken(ctx, tokenValue) // Assumes s.repo is TokenRepository, returns *domain.Token
-		if repoErr != nil {
-			// If user token not found, and it wasn't an SA token, then it's truly not found or invalid.
-			return nil, fmt.Errorf("token not found or invalid: %w", repoErr)
-		}
-		if userTokenDB.IsRevoked || time.Now().After(userTokenDB.ExpiresAt) {
-			return nil, domain.ErrTokenExpiredOrRevoked // Use domain
-		}
-		// Ensure Issuer is set for user tokens from repo
-		if userTokenDB.Issuer == "" { // If not already set by repo (e.g. older tokens)
-			userTokenDB.Issuer = s.issuer
-		}
+		return s.validateUserToken(ctx, tokenValue)
+	}
 
-		// Cache valid user token
-		if cacheSetErr := s.cache.Set(ctx, toCacheEntry(userTokenDB)); cacheSetErr != nil { // Use toCacheEntry
-			log.Warn().Err(cacheSetErr).Msg("failed to cache user token")
-		}
-		return userTokenDB, nil
-	} // end if errors.Is(err, errMissingKidSAValidation)
-
-	// If error is not errMissingKidSAValidation, it's a genuine SA JWT processing/validation error
-	// or other jwt.ValidationError that occurred during ParseWithClaims.
-
-	// FIXME: fix this error check case
-	// var validationError *jwt.ValidationError
-	// if errors.As(err, &validationError) { // Check if it's a standard JWT validation error
-	// 	if validationError.Is(jwt.ErrTokenExpired) {
-	// 		return nil, ErrTokenExpiredOrRevoked // Map to our existing error
-	// 	}
-	// 	// Could map other validationError types like ErrTokenNotValidYet, ErrTokenSignatureInvalid
-	// 	return nil, fmt.Errorf("SA JWT validation failed: %w", err) // General SA JWT error
-	// }
-	// Other errors (e.g. from Keyfunc like DB error, PEM error, non-JWT error from ParseWithClaims)
 	return nil, fmt.Errorf("SA JWT processing error: %w", err)
 }
 
-// RevokeToken revokes an access token. This will invalidate the token and remove it from cache
-// This is a no-op if the token is already revoked. This is useful for logging out, for example.
+func (s *defaultTokenService) validateUserToken(ctx context.Context, tokenValue string) (*domain.Token, error) {
+	if s.signer.HasRSASigner() {
+		if token, err := s.validateRS256Token(tokenValue); err == nil {
+			return token, nil
+		}
+	}
+
+	if entry, cacheErr := s.cache.Get(ctx, tokenValue); cacheErr == nil {
+		if !entry.IsRevoked && time.Now().Before(entry.ExpiresAt) {
+			userToken := fromCacheEntry(entry, tokenValue)
+			userToken.Issuer = s.issuer
+			return userToken, nil
+		}
+		_ = s.cache.Delete(ctx, tokenValue)
+		return nil, domain.ErrTokenExpiredOrRevoked
+	}
+
+	userTokenDB, repoErr := s.repo.GetAccessToken(ctx, tokenValue)
+	if repoErr != nil {
+		return nil, fmt.Errorf("token not found or invalid: %w", repoErr)
+	}
+	if userTokenDB.IsRevoked || time.Now().After(userTokenDB.ExpiresAt) {
+		return nil, domain.ErrTokenExpiredOrRevoked
+	}
+	if userTokenDB.Issuer == "" {
+		userTokenDB.Issuer = s.issuer
+	}
+
+	if cacheSetErr := s.cache.Set(ctx, toCacheEntry(userTokenDB)); cacheSetErr != nil {
+		log.Warn().Err(cacheSetErr).Msg("failed to cache user token")
+	}
+	return userTokenDB, nil
+}
+
+func (s *defaultTokenService) validateRS256Token(tokenValue string) (*domain.Token, error) {
+	pubKey := s.signer.GetRSAPublicKey()
+	if pubKey == nil {
+		return nil, errors.New("no RSA public key available for validation")
+	}
+
+	token, err := jwt.ParseWithClaims(tokenValue, &jwt.MapClaims{}, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return pubKey, nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("RS256 token validation failed: %w", err)
+	}
+
+	if !token.Valid {
+		return nil, errors.New("RS256 token is invalid")
+	}
+
+	claims, ok := token.Claims.(*jwt.MapClaims)
+	if !ok {
+		return nil, errors.New("invalid claims type in RS256 token")
+	}
+
+	userID, _ := (*claims)["sub"].(string)
+	if userID == "" {
+		return nil, errors.New("RS256 token missing 'sub' claim")
+	}
+
+	var expiresAt time.Time
+	if exp, ok := (*claims)["exp"].(float64); ok {
+		expiresAt = time.Unix(int64(exp), 0)
+	} else {
+		return nil, errors.New("RS256 token missing 'exp' claim")
+	}
+
+	if time.Now().After(expiresAt) {
+		return nil, domain.ErrTokenExpiredOrRevoked
+	}
+
+	var issuedAt time.Time
+	if iat, ok := (*claims)["iat"].(float64); ok {
+		issuedAt = time.Unix(int64(iat), 0)
+	}
+
+	jtiClaim, _ := (*claims)["jti"].(string)
+	issuerClaim, _ := (*claims)["iss"].(string)
+	var tokenScope string
+	if scope, ok := (*claims)["scope"].(string); ok {
+		tokenScope = scope
+	}
+
+	var roles []string
+	if rolesRaw, ok := (*claims)["roles"].([]interface{}); ok {
+		for _, r := range rolesRaw {
+			if roleStr, ok := r.(string); ok {
+				roles = append(roles, roleStr)
+			}
+		}
+	}
+
+	if issuerClaim == "" {
+		issuerClaim = s.issuer
+	}
+
+	return &domain.Token{
+		ID:         jtiClaim,
+		TokenType:  "access_token",
+		TokenValue: tokenValue,
+		UserID:     userID,
+		Scope:      tokenScope,
+		ExpiresAt:  expiresAt,
+		CreatedAt:  issuedAt,
+		IsRevoked:  false,
+		Issuer:     issuerClaim,
+		Roles:      roles,
+	}, nil
+}
+
 func (s *defaultTokenService) RevokeToken(ctx context.Context, token string) error {
 	if err := s.cache.Delete(ctx, token); err != nil {
 		log.Warn().Err(err).Msg("failed to delete token from cache")
