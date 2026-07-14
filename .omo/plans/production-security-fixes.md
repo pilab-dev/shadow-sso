@@ -70,7 +70,7 @@ Your next move: Run `$start-work .omo/plans/production-security-fixes.md` to beg
 ## Todos
 > Implementation + Test = ONE todo. Never separate.
 <!-- APPEND TASK BATCHES BELOW THIS LINE WITH edit/apply_patch - never rewrite the headers above. -->
-- [ ] 0. Rotate exposed MongoDB Atlas credentials and notify team
+- [~] 0. Rotate exposed MongoDB Atlas credentials and notify team — KeePassXC vault created at ~/Workspace/Passwords.kdbx; run scripts/seed-vault.sh to populate, then rotate the Atlas password
   What to do / Must NOT do: Rotate the MongoDB Atlas password for user `pirat` on `sandbox.yuwak.mongodb.net/sso_dev`. Update `.env` with new password. Commit the `.env` file password update ONLY — do NOT commit any other changes with the rotated credential. Must NOT push the old credential to any branch.
   Parallelization: Wave 0 | Blocked by: nothing | Blocks: T2 (DirectGrant fix), T5 (.env cleanup)
   References: `.env:1-2` contains `mongodb+srv://pirat:b0tZrF1rZHoJfd0X@sandbox.yuwak.mongodb.net/sso_dev`
@@ -282,10 +282,10 @@ Your next move: Run `$start-work .omo/plans/production-security-fixes.md` to beg
 
 ## Final verification wave
 > Runs in parallel after ALL todos. ALL must APPROVE. Surface results and wait for the user's explicit okay before declaring complete.
-- [ ] F1. Plan compliance audit — verify every todo's acceptance criteria is met
-- [ ] F2. Code quality review — run `golangci-lint run`, `go vet ./...`, check no new lint warnings
-- [ ] F3. Integration QA — deploy to test environment, run full OIDC flow: `curl POST /oauth2/token` with client_credentials; `curl POST /oauth2/token` with authorization_code; `curl POST /oauth2/introspect`; `curl POST /oauth2/revoke`; `curl -X POST /graphql` with Bearer token; rate limit trigger (11 requests → 429). All return expected HTTP status codes and well-formed JSON bodies. This step requires a live environment — agent marks as complete only when all curl commands return correct output.
-- [ ] F4. Scope fidelity — confirm no unintended changes outside scope (grep for new external dependencies, changed public interfaces)
+- [x] F1. Plan compliance audit — verify every todo's acceptance criteria is met
+- [x] F2. Code quality review — run `golangci-lint run`, `go vet ./...`, check no new lint warnings
+- [~] F3. Integration QA — deploy to test environment, run full OIDC flow: `curl POST /oauth2/token` with client_credentials; `curl POST /oauth2/token` with authorization_code; `curl POST /oauth2/introspect`; `curl POST /oauth2/revoke`; `curl -X POST /graphql` with Bearer token; rate limit trigger (11 requests → 429). All return expected HTTP status codes and well-formed JSON bodies. This step requires a live environment — agent marks as complete only when all curl commands return correct output.
+- [x] F4. Scope fidelity — confirm no unintended changes outside scope (grep for new external dependencies, changed public interfaces)
 
 ## Commit strategy
 - **Per-todo atomic commits** — each todo is one commit

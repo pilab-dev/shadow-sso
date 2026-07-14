@@ -464,6 +464,17 @@ Our goal with Shadow SSO is not only powerful functionality but also unmatched s
 - **🔎 Token Introspection**: Real-time token validation with detailed metadata exposure control
 - **📊 Security Metrics**: Prometheus metrics for monitoring authentication patterns and anomalies
 
+## 🔐 Secret Management
+
+Operational secrets (database credentials, API keys, signing keys, admin passwords) are stored in a **KeePassXC** vault rather than in files or environment variables.
+
+- **Vault path**: `~/Workspace/Passwords.kdbx`
+- **Organization**: Entries grouped under `shadow-sso/`
+- **CLI access**: `keepassxc-cli show ~/Workspace/Passwords.kdbx shadow-sso/<entry-name> -p`
+- **Scripts**: See `scripts/seed-vault.sh` to populate entries
+
+> **Never commit secrets to git.** Environment files (`.env`) are gitignored. Use the vault as the source of truth for all sensitive values, and reference them via your shell/init scripts using `keepassxc-cli`.
+
 ## ⚙️ Configuration Reference
 
 Shadow SSO provides extensive configuration options through the `api.OpenIDProviderConfig` struct:

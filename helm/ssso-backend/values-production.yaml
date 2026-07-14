@@ -21,7 +21,8 @@
 #      --from-literal=SSSO_MONGO_URI='mongodb://user:pass@host:27017/shadow_sso?authSource=shadow_sso'
 #    Keys: SSSO_MONGO_URI
 #
-# TODO: Migrate to OpenBao (op://sso/secrets) for secret management
+# Secrets are stored in KeePassXC vault at ~/Workspace/Passwords.kdbx (group: shadow-sso/)
+# TODO: Evaluate OpenBao for dynamic secret management if scale demands it
 
 replicaCount: 2
 
