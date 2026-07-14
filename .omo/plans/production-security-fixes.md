@@ -176,7 +176,7 @@ Your next move: Run `$start-work .omo/plans/production-security-fixes.md` to beg
   QA scenarios: Happy: normal requests pass through. Failure: excessive requests blocked with 429. Happy: rate limit resets after window expires. Evidence: `.omo/evidence/wave-2-task-12-rate-limit.log`
   Commit: Y | `feat(security): add Redis-based rate limiting to auth endpoints`
 
-- [ ] 13. Remove TOTP secret from API responses
+- [x] 13. Remove TOTP secret from API responses
   What to do / Must NOT do: In `services/two_factor_service.go:76-80`, remove the `Secret: otpKey.Secret()` line from `InitiateTOTPSetupResponse`. The QR code URI is sufficient for setup with authenticator apps. Also check `services/user_service.go:1165-1169` (SetupTotp) for the same issue. Must NOT remove the `QrCodeUri` field — that's needed for app setup.
   Parallelization: Wave 3 | Blocked by: 0 | Blocks: nothing
   References: `services/two_factor_service.go:76-80` (InitiateTOTPSetupResponse), `services/user_service.go:1165-1169` (SetupTotpResponse)
@@ -200,7 +200,7 @@ Your next move: Run `$start-work .omo/plans/production-security-fixes.md` to beg
   QA scenarios: Happy: no config set → TLS verification enabled. Failure: TLS verification explicitly disabled → warning log but connection proceeds. Evidence: `.omo/evidence/wave-3-task-15-ldap-tls.log`
   Commit: Y | `fix(security): default LDAP TLS verification to required`
 
-- [ ] 16. Pin Docker base image version
+- [x] 16. Pin Docker base image version
   What to do / Must NOT do: Change `FROM alpine:latest` in `Dockerfile:26` to `FROM alpine:3.21` (or the latest stable version). Must NOT use `latest` tag or any mutable tag. Must NOT change the builder stage image (`FROM golang:1.25-alpine`).
   Parallelization: Wave 3 | Blocked by: 0 | Blocks: nothing
   References: `Dockerfile:26` (alpine:latest), `Dockerfile:2` (golang:1.25-alpine)

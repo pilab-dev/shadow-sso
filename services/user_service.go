@@ -1181,7 +1181,6 @@ func (s *UserServer) SetupTotp(ctx context.Context, req *connect.Request[ssov1.S
 
 	return connect.NewResponse(&ssov1.SetupTotpResponse{
 		Success:   true,
-		Secret:    otpKey.Secret(),
 		QrCodeUri: otpAuthURI,
 		MethodId:  methodID,
 	}), nil

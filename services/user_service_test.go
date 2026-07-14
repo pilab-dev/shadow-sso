@@ -254,6 +254,31 @@ func TestUserServer_IncrementFailedLoginAttempts(t *testing.T) {
 	assert.Equal(t, int32(3), resp.Msg.CurrentAttempts)
 }
 
+func TestTwoFactorServer_InitiateTOTPSetup_SecretNotReturned(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	userRepo := mock_domain.NewMockUserRepository(ctrl)
+	service := NewTwoFactorServer(userRepo, nil, nil, nil, "ShadowSSO")
+
+	existingUser := &domain.User{
+		ID:    "user-123",
+		Email: "test@example.com",
+	}
+
+	userRepo.EXPECT().GetUserByID(gomock.Any(), "user-123").Return(existingUser, nil)
+	userRepo.EXPECT().UpdateUser(gomock.Any(), gomock.Any()).Return(nil)
+
+	req := connect.NewRequest(&ssov1.InitiateTOTPSetupRequest{})
+	ctx := createAuthenticatedContext(context.Background(), "user-123")
+	resp, err := service.InitiateTOTPSetup(ctx, req)
+
+	require.NoError(t, err)
+	require.NotNil(t, resp.Msg)
+	assert.Empty(t, resp.Msg.Secret, "TOTP secret must not be returned in API response")
+	assert.NotEmpty(t, resp.Msg.QrCodeUri, "QR code URI must be returned")
+}
+
 func TestOTPGeneration(t *testing.T) {
 	otp1 := generateSecureOTP(6)
 	otp2 := generateSecureOTP(6)
@@ -552,8 +577,8 @@ func TestUserServer_SetupTotp(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, resp.Msg)
-	assert.NotEmpty(t, resp.Msg.Secret)
-	assert.NotEmpty(t, resp.Msg.QrCodeUri)
+	assert.Empty(t, resp.Msg.Secret, "Secret must not be returned in API response")
+	assert.NotEmpty(t, resp.Msg.QrCodeUri, "QrCodeUri must still be returned")
 }
 
 func TestUserServer_VerifyEmail(t *testing.T) {

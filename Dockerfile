@@ -23,7 +23,7 @@ COPY . .
 RUN go build -ldflags="-w -s" -o /ssso ./apps/ssso/
 
 # Stage 2: Create the final lightweight image
-FROM alpine:latest
+FROM alpine:3.21
 
 LABEL org.opencontainers.image.authors="Paal Gyula <gyula@pilab.hu>"
 LABEL org.opencontainers.image.source="https://github.com/pilab-dev/shadow-sso"
