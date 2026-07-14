@@ -245,6 +245,14 @@ tolerations: []
 
 affinity: {}
 
+# Network policy configuration
+networkPolicy:
+  enabled: false
+  egress:
+    # CIDR blocks for MongoDB egress. If empty, allows all egress to port 27017.
+    mongoCIDRs: []
+    # - "10.0.0.0/8"
+
 # Extra environment variables to be passed to the application container
 extraEnv: []
 #  - name: MY_CUSTOM_ENV_VAR

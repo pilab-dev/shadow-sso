@@ -452,7 +452,7 @@ func (s *defaultOAuthService) GenerateAuthCode(
 		log.Error().Err(err).Str("clientID", clientID).Str("userID", userID).Msg("Failed to save authorization code")
 		return "", fmt.Errorf("failed to save auth code: %w", err)
 	}
-	log.Info().Str("clientID", clientID).Str("userID", userID).Str("code", code).Msg("Authorization code generated and saved")
+	log.Info().Str("clientID", clientID).Str("userID", userID).Msg("Authorization code generated and saved")
 	return code, nil
 }
 
@@ -579,6 +579,38 @@ func (s *defaultOAuthService) IssueTokenForDeviceFlow(ctx context.Context, devic
 // Removed local definitions of Token, UserSession, AuthCode, DeviceCode, TokenIntrospection, etc.
 // All repository interfaces are now from domain package.
 
+// intersectScopes returns the space-delimited intersection of requested and
+// granted scopes. If requested is empty it returns granted verbatim (no
+// restriction). When the intersection is empty the exchange is denied.
+func intersectScopes(requested, granted string) (string, error) {
+	if requested == "" {
+		return granted, nil
+	}
+
+	grantedSet := make(map[string]struct{}, len(strings.Split(granted, " ")))
+	for _, s := range strings.Split(granted, " ") {
+		if s != "" {
+			grantedSet[s] = struct{}{}
+		}
+	}
+
+	var intersected []string
+	for _, s := range strings.Split(requested, " ") {
+		if s == "" {
+			continue
+		}
+		if _, ok := grantedSet[s]; ok {
+			intersected = append(intersected, s)
+		}
+	}
+
+	if len(intersected) == 0 {
+		return "", domain.NewInvalidScope("requested scope exceeds granted scope")
+	}
+
+	return strings.Join(intersected, " "), nil
+}
+
 func (s *defaultOAuthService) TokenExchange(ctx context.Context, subjectToken, subjectTokenType, requestedTokenType, resource, scope, clientID string) (*api.TokenResponse, error) {
 	if subjectTokenType != "urn:ietf:params:oauth:token-type:access_token" && subjectTokenType != "urn:ietf:params:oauth:token-type:jwt" {
 		return nil, domain.NewInvalidRequest("unsupported subject_token_type")
@@ -603,9 +635,13 @@ func (s *defaultOAuthService) TokenExchange(ctx context.Context, subjectToken, s
 		_ = client
 	}
 
-	if scope == "" {
-		scope = tokenInfo.Scope
+	// RFC 8693 §2: the exchanged token's scope is the intersection of the
+	// requested scope and the original token's scope. Never grant broader
+	// scopes than the subject token carried.
+	effectiveScope, err := intersectScopes(scope, tokenInfo.Scope)
+	if err != nil {
+		return nil, err
 	}
 
-	return s.tokenService.GenerateTokenPair(ctx, clientID, tokenInfo.UserID, scope, time.Hour)
+	return s.tokenService.GenerateTokenPair(ctx, clientID, tokenInfo.UserID, effectiveScope, time.Hour)
 }

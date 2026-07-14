@@ -3,7 +3,10 @@ package openidv2_1
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
 	goerrors "errors" // Standard Go errors package
+	"encoding/hex"
 	"fmt"
 	"html/template" // Added for HTML rendering
 	"net/http"
@@ -531,6 +534,14 @@ func (oa *OAuth2API) tryHandleWithExistingSession(c *gin.Context, data *authoriz
 				SameSite: http.SameSiteLaxMode,
 			})
 
+			csrfToken, csrfErr := generateCSRFToken()
+			if csrfErr != nil {
+				log.Error().Err(csrfErr).Msg("AuthorizeHandler: Failed to generate CSRF token for consent flow")
+				oa.sendJSONError(c, http.StatusInternalServerError, domain.NewServerError("failed to initiate consent flow"))
+				return true, csrfErr
+			}
+			setCSRFCookie(c, csrfToken, 10*time.Minute)
+
 			// Redirect to consent screen
 			consentURL := oa.config.NextJSLoginURL + "/consent?flow_id=" + url.QueryEscape(flowID)
 			log.Info().Str("userID", userSession.UserID).Str("clientID", data.clientID).Str("consentURL", consentURL).Msg("AuthorizeHandler: User authenticated but consent required, redirecting to consent screen.")
@@ -601,8 +612,6 @@ func (oa *OAuth2API) initiateExternalLoginFlow(c *gin.Context, data *authorizeRe
 		return ssoErr
 	}
 
-	// TODO: Consider CSRF cookie for the redirect to Next.js UI if Next.js calls back with sensitive actions.
-
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     "sso_oidc_flow_id",
 		Value:    flowID,
@@ -612,6 +621,15 @@ func (oa *OAuth2API) initiateExternalLoginFlow(c *gin.Context, data *authorizeRe
 		Secure:   c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https"),
 		SameSite: http.SameSiteLaxMode,
 	})
+
+	csrfToken, csrfErr := generateCSRFToken()
+	if csrfErr != nil {
+		log.Error().Err(csrfErr).Msg("AuthorizeHandler: Failed to generate CSRF token for login flow")
+		ssoErr := domain.NewServerError("failed to initiate login flow")
+		oa.sendJSONError(c, http.StatusInternalServerError, ssoErr)
+		return ssoErr
+	}
+	setCSRFCookie(c, csrfToken, 10*time.Minute)
 
 	nextJSLoginURLParsed, parseErr := url.Parse(oa.config.NextJSLoginURL)
 	if parseErr != nil {
@@ -670,6 +688,42 @@ func (oa *OAuth2API) clearUserSessionCookie(c *gin.Context) {
 		Secure:   c.Request.TLS != nil,
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+// generateCSRFToken creates a cryptographically random hex-encoded CSRF token.
+func generateCSRFToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("failed to generate CSRF token: %w", err)
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// setCSRFCookie sets an HttpOnly, SameSite CSRF cookie on the response.
+func setCSRFCookie(c *gin.Context, token string, maxAge time.Duration) {
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     CSRFCookieName,
+		Value:    token,
+		Path:     "/",
+		MaxAge:   int(maxAge.Seconds()),
+		HttpOnly: true,
+		Secure:   c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https"),
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
+// validateCSRFToken compares the CSRF token from the header against the cookie
+// using constant-time comparison to prevent timing attacks.
+func validateCSRFToken(c *gin.Context) bool {
+	cookieVal, err := c.Cookie(CSRFCookieName)
+	if err != nil || cookieVal == "" {
+		return false
+	}
+	headerVal := c.GetHeader(CSRFHeaderName)
+	if headerVal == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(cookieVal), []byte(headerVal)) == 1
 }
 
 // extractOriginalOIDCParams extracts all query parameters from the request.
@@ -1424,7 +1478,6 @@ type AuthenticateUserRequest struct {
 	FlowID   string `json:"flow_id" binding:"required"`
 	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required"`
-	// CSRFToken string `json:"csrf_token" binding:"required"` // Add if CSRF token is sent in body
 }
 
 // AuthenticateUserHandler handles the user's login submission from the Next.js UI.
@@ -1438,21 +1491,11 @@ func (oa *OAuth2API) AuthenticateUserHandler(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	// TODO: Implement CSRF Protection check here.
-	// Example:
-	// csrfCookie, err := c.Cookie(CSRFCookieName)
-	// if err != nil || csrfCookie == "" || csrfCookie != c.GetHeader(CSRFHeaderName) { // or req.CSRFToken if in body
-	// 	c.JSON(http.StatusForbidden, gin.H{"error": "invalid_csrf", "error_description": "CSRF token mismatch or missing."})
-	//	return
-	// }
-
-	// Use goerrors imported as "errors" alias at the top of the file is fine.
-	// The issue was that some handlers (GetFlowDetailsHandler, AuthenticateUserHandler)
-	// were calling errors.Is without having "errors" (the standard library one) explicitly imported
-	// within their scope if the top-level import was `goerrors "errors"`.
-	// It's better to consistently use `goerrors.Is` if that's the chosen alias, or import "errors" directly.
-	// The previous change to use goerrors.Is in GetFlowDetailsHandler was correct.
-	// Let's ensure AuthenticateUserHandler also uses goerrors.Is for consistency.
+	if !validateCSRFToken(c) {
+		log.Warn().Msg("AuthenticateUserHandler: CSRF token mismatch or missing")
+		c.JSON(http.StatusForbidden, gin.H{"error": "invalid_csrf", "error_description": "CSRF token mismatch or missing."})
+		return
+	}
 
 	flowState, err := oa.flowStore.GetFlow(req.FlowID)
 	if err != nil {

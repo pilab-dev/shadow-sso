@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/pilab-dev/shadow-sso/domain"
@@ -92,10 +93,11 @@ func (s *ClientRepository) ListClients(ctx context.Context, filter domain.Client
 		mongoFilter["is_active"] = true
 	}
 	if filter.Search != "" {
+		escaped := regexp.QuoteMeta(filter.Search)
 		mongoFilter["$or"] = []bson.M{
-			{"client_id": bson.M{"$regex": filter.Search, "$options": "i"}},
-			{"client_name": bson.M{"$regex": filter.Search, "$options": "i"}},
-			{"description": bson.M{"$regex": filter.Search, "$options": "i"}},
+			{"client_id": bson.M{"$regex": escaped, "$options": "i"}},
+			{"client_name": bson.M{"$regex": escaped, "$options": "i"}},
+			{"description": bson.M{"$regex": escaped, "$options": "i"}},
 		}
 	}
 

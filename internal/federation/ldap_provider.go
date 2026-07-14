@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-ldap/ldap/v3"
 	"github.com/pilab-dev/shadow-sso/domain"
+	"github.com/rs/zerolog/log"
 	"golang.org/x/oauth2" // Required for the interface, but not heavily used by LDAP
 )
 
@@ -75,6 +76,13 @@ func (p *LDAPProvider) AuthenticateAndFetchUser(ctx context.Context, username, p
 
 	if p.ldapClient == nil {
 		p.ldapClient = NewRealLDAPClient()
+	}
+
+	if p.Config.LDAP.SkipTLSVerify {
+		log.Warn().
+			Str("provider", p.Config.Name).
+			Str("server_url", p.Config.LDAP.ServerURL).
+			Msg("LDAP TLS verification is disabled (skip_tls_verify=true). This is insecure and should not be used in production.")
 	}
 
 	err := p.ldapClient.Connect(p.Config.LDAP.ServerURL, p.Config.LDAP.StartTLS, p.Config.LDAP.SkipTLSVerify)

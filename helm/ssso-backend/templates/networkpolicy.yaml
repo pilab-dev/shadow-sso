@@ -1,0 +1,49 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "ssso-backend.fullname" . }}
+  labels:
+    {{- include "ssso-backend.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "ssso-backend.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow ingress from the ingress controller on the service port
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: ingress-controller
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.targetPort }}
+  egress:
+    # Allow DNS resolution (UDP port 53)
+    - to: []
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow egress to MongoDB
+    {{- if .Values.networkPolicy.egress.mongoCIDRs }}
+    - to:
+        {{- range .Values.networkPolicy.egress.mongoCIDRs }}
+        - ipBlock:
+            cidr: {{ . }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 27017
+    {{- else }}
+    # If no CIDRs specified, allow egress to all (for external MongoDB)
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 27017
+    {{- end }}
+{{- end }}

@@ -120,6 +120,11 @@ tolerations: []
 
 affinity: {}
 
+networkPolicy:
+  enabled: true
+  egress:
+    mongoCIDRs: []
+
 # Frontend configuration
 frontend:
   enabled: true
