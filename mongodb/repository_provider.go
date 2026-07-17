@@ -155,7 +155,17 @@ func (p *MongoRepositoryProvider) IdPRepository(ctx context.Context) domain.IdPR
 }
 
 func (p *MongoRepositoryProvider) ClientRepository(ctx context.Context) domain.ClientRepository {
+	if p.clientRepo == nil && p.db != nil {
+		p.clientRepo = NewClientRepository(p.db)
+	}
 	return p.clientRepo
+}
+
+// Database returns the underlying MongoDB database instance.
+// This is used for direct database access by subsystems that need it
+// (e.g., GraphQL resolver creation).
+func (p *MongoRepositoryProvider) Database() *mongo.Database {
+	return p.db
 }
 
 // ConfigurationRepository returns a MongoDB-backed ConfigurationRepository.
