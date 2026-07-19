@@ -970,11 +970,12 @@ func TestUserInfoHandler_Success_GET(t *testing.T) {
 		TokenType: "access_token",
 	}, nil)
 	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user1").Return(&domain.User{
-		ID:        "user1",
-		Email:     email,
-		FirstName: firstName,
-		LastName:  lastName,
-		Status:    domain.UserStatusActive,
+		ID:             "user1",
+		Email:          email,
+		FirstName:      firstName,
+		LastName:       lastName,
+		Status:         domain.UserStatusActive,
+		IsEmailVerified: true,
 	}, nil)
 
 	req := httptest.NewRequest("GET", "/oauth2/userinfo", nil)
@@ -1016,11 +1017,12 @@ func TestUserInfoHandler_Success_POST(t *testing.T) {
 		TokenType: "access_token",
 	}, nil)
 	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user1").Return(&domain.User{
-		ID:        "user1",
-		Email:     email,
-		FirstName: firstName,
-		LastName:  lastName,
-		Status:    domain.UserStatusActive,
+		ID:             "user1",
+		Email:          email,
+		FirstName:      firstName,
+		LastName:       lastName,
+		Status:         domain.UserStatusActive,
+		IsEmailVerified: true,
 	}, nil)
 
 	req := httptest.NewRequest("POST", "/oauth2/userinfo", nil)

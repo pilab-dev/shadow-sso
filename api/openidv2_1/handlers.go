@@ -942,7 +942,7 @@ func (oa *OAuth2API) UserInfoHandler(c *gin.Context) {
 
 		email := user.Email
 		preferredUsername := user.Email
-		emailVerified := user.Status == domain.UserStatusActive
+		emailVerified := user.IsEmailVerified
 
 		userInfo = sssoapi.UserInfo{
 			Sub:               user.ID,
