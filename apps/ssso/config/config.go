@@ -50,6 +50,17 @@ type Config struct {
 	// Token signing
 	TokenSigningKey     string `mapstructure:"token_signing_key"`
 	TokenSigningKeyFile string `mapstructure:"token_signing_key_file"`
+
+	// Initial admin bootstrap
+	InitialAdminEnabled      bool   `mapstructure:"initial_admin_enabled"`
+	InitialAdminEmail        string `mapstructure:"initial_admin_email"`
+	InitialAdminPassword     string `mapstructure:"initial_admin_password"`
+	InitialAdminFirstName    string `mapstructure:"initial_admin_first_name"`
+	InitialAdminLastName     string `mapstructure:"initial_admin_last_name"`
+	InitialAdminClientSecret string `mapstructure:"initial_admin_client_secret"`
+
+	// JSON logging (false = pretty console for local dev)
+	JSONLog bool `mapstructure:"json_log"`
 }
 
 // StorageType defines the type of storage backend to use.
@@ -87,6 +98,7 @@ func (c *Config) ToOpenIDProviderConfig() *api.OpenIDProviderConfig {
 			AuthorizationCode: true,
 			RefreshToken:      true,
 			ClientCredentials: true,
+			Password:          true,
 			DeviceCode:        true,
 		},
 		SecurityConfig: api.SecurityConfig{
@@ -173,8 +185,25 @@ func LoadConfig() (config Config, err error) {
 	viper.SetDefault("firebase_project_id", "")
 	viper.SetDefault("firebase_credentials_path", "")
 
-	// Explicitly bind config_encryption_key env var so viper.Unmarshal picks it up
+	viper.SetDefault("initial_admin_enabled", false)
+	viper.SetDefault("initial_admin_email", "")
+	viper.SetDefault("initial_admin_password", "")
+	viper.SetDefault("initial_admin_first_name", "Admin")
+	viper.SetDefault("initial_admin_last_name", "User")
+	viper.SetDefault("initial_admin_client_secret", "")
+	viper.SetDefault("json_log", false)
+
+	// Explicitly bind env vars so viper.Unmarshal picks them up
 	viper.BindEnv("config_encryption_key")
+	viper.BindEnv("signing_key_path")
+	viper.BindEnv("token_signing_key")
+	viper.BindEnv("initial_admin_enabled")
+	viper.BindEnv("initial_admin_email")
+	viper.BindEnv("initial_admin_password")
+	viper.BindEnv("initial_admin_first_name")
+	viper.BindEnv("initial_admin_last_name")
+	viper.BindEnv("initial_admin_client_secret")
+	viper.BindEnv("json_log")
 
 	if errRead := viper.ReadInConfig(); errRead != nil {
 		if _, ok := errRead.(viper.ConfigFileNotFoundError); ok {
