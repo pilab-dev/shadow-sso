@@ -25,6 +25,7 @@ import (
 	"github.com/pilab-dev/shadow-sso/internal/oidcflow"
 	pkgauth "github.com/pilab-dev/shadow-sso/pkg/auth"
 	"github.com/pilab-dev/shadow-sso/services"
+	services_mocks "github.com/pilab-dev/shadow-sso/services/mocks"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
@@ -935,3 +936,262 @@ func CalculateS256Challenge(verifier string) string {
 }
 
 // [end of api/gin/handlers_test.go]
+
+func setupUserInfoTest(t *testing.T) (*gin.Engine, *gomock.Controller, *services_mocks.MockTokenService, *mock_domain.MockUserRepository) {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	mockTokenSvc := services_mocks.NewMockTokenService(ctrl)
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+
+	api := sssogin.NewOAuth2API(&sssogin.OAuth2APIOptions{
+		TokenService: mockTokenSvc,
+		UserRepo:     mockUserRepo,
+		Config: &sssoapi.OpenIDProviderConfig{
+			NextJSLoginURL: "http://localhost:3000/login",
+		},
+	})
+
+	router := gin.New()
+	api.RegisterRoutes(router)
+	return router, ctrl, mockTokenSvc, mockUserRepo
+}
+
+func TestUserInfoHandler_Success_GET(t *testing.T) {
+	router, ctrl, mockTokenSvc, mockUserRepo := setupUserInfoTest(t)
+	defer ctrl.Finish()
+
+	firstName := "Test"
+	lastName := "User"
+	email := "test@test.com"
+
+	mockTokenSvc.EXPECT().ValidateAccessToken(gomock.Any(), "valid-token").Return(&domain.Token{
+		UserID:    "user1",
+		TokenType: "access_token",
+	}, nil)
+	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user1").Return(&domain.User{
+		ID:             "user1",
+		Email:          email,
+		FirstName:      firstName,
+		LastName:       lastName,
+		Status:         domain.UserStatusActive,
+		IsEmailVerified: true,
+	}, nil)
+
+	req := httptest.NewRequest("GET", "/oauth2/userinfo", nil)
+	req.Header.Set("Authorization", "Bearer valid-token")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
+
+	var resp sssoapi.UserInfo
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "user1", resp.Sub)
+	require.NotNil(t, resp.Email)
+	assert.Equal(t, "test@test.com", *resp.Email)
+	require.NotNil(t, resp.Name)
+	assert.Equal(t, "Test User", *resp.Name)
+	require.NotNil(t, resp.GivenName)
+	assert.Equal(t, "Test", *resp.GivenName)
+	require.NotNil(t, resp.FamilyName)
+	assert.Equal(t, "User", *resp.FamilyName)
+	require.NotNil(t, resp.PreferredUsername)
+	assert.Equal(t, "test@test.com", *resp.PreferredUsername)
+	require.NotNil(t, resp.EmailVerified)
+	assert.True(t, *resp.EmailVerified)
+}
+
+func TestUserInfoHandler_Success_POST(t *testing.T) {
+	router, ctrl, mockTokenSvc, mockUserRepo := setupUserInfoTest(t)
+	defer ctrl.Finish()
+
+	firstName := "Test"
+	lastName := "User"
+	email := "test@test.com"
+
+	mockTokenSvc.EXPECT().ValidateAccessToken(gomock.Any(), "valid-token").Return(&domain.Token{
+		UserID:    "user1",
+		TokenType: "access_token",
+	}, nil)
+	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user1").Return(&domain.User{
+		ID:             "user1",
+		Email:          email,
+		FirstName:      firstName,
+		LastName:       lastName,
+		Status:         domain.UserStatusActive,
+		IsEmailVerified: true,
+	}, nil)
+
+	req := httptest.NewRequest("POST", "/oauth2/userinfo", nil)
+	req.Header.Set("Authorization", "Bearer valid-token")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
+
+	var resp sssoapi.UserInfo
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "user1", resp.Sub)
+	require.NotNil(t, resp.Email)
+	assert.Equal(t, "test@test.com", *resp.Email)
+	require.NotNil(t, resp.Name)
+	assert.Equal(t, "Test User", *resp.Name)
+}
+
+func TestUserInfoHandler_MissingToken(t *testing.T) {
+	router, ctrl, _, _ := setupUserInfoTest(t)
+	defer ctrl.Finish()
+
+	req := httptest.NewRequest("GET", "/oauth2/userinfo", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+
+	var resp map[string]string
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "missing_token", resp["error"])
+}
+
+func TestUserInfoHandler_InvalidAuthFormat(t *testing.T) {
+	router, ctrl, _, _ := setupUserInfoTest(t)
+	defer ctrl.Finish()
+
+	req := httptest.NewRequest("GET", "/oauth2/userinfo", nil)
+	req.Header.Set("Authorization", "NotBearer token")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+
+	var resp map[string]string
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "invalid_token", resp["error"])
+}
+
+func TestUserInfoHandler_InvalidToken(t *testing.T) {
+	router, ctrl, mockTokenSvc, _ := setupUserInfoTest(t)
+	defer ctrl.Finish()
+
+	mockTokenSvc.EXPECT().ValidateAccessToken(gomock.Any(), "bad-token").Return(nil, errors.New("invalid"))
+
+	req := httptest.NewRequest("GET", "/oauth2/userinfo", nil)
+	req.Header.Set("Authorization", "Bearer bad-token")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+
+	var resp map[string]string
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "invalid_token", resp["error"])
+}
+
+func TestUserInfoHandler_UserNotFound(t *testing.T) {
+	router, ctrl, mockTokenSvc, mockUserRepo := setupUserInfoTest(t)
+	defer ctrl.Finish()
+
+	mockTokenSvc.EXPECT().ValidateAccessToken(gomock.Any(), "valid-token").Return(&domain.Token{
+		UserID:    "user1",
+		TokenType: "access_token",
+	}, nil)
+	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user1").Return(nil, errors.New("not found"))
+
+	req := httptest.NewRequest("GET", "/oauth2/userinfo", nil)
+	req.Header.Set("Authorization", "Bearer valid-token")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+
+	var resp map[string]string
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "invalid_token", resp["error"])
+}
+
+func TestUserInfoHandler_LockedUser(t *testing.T) {
+	router, ctrl, mockTokenSvc, mockUserRepo := setupUserInfoTest(t)
+	defer ctrl.Finish()
+
+	mockTokenSvc.EXPECT().ValidateAccessToken(gomock.Any(), "valid-token").Return(&domain.Token{
+		UserID:    "user1",
+		TokenType: "access_token",
+	}, nil)
+	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user1").Return(&domain.User{
+		ID:     "user1",
+		Email:  "locked@test.com",
+		Status: domain.UserStatusLocked,
+	}, nil)
+
+	req := httptest.NewRequest("GET", "/oauth2/userinfo", nil)
+	req.Header.Set("Authorization", "Bearer valid-token")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+
+	var resp map[string]string
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "invalid_token", resp["error"])
+}
+
+func TestUserInfoHandler_PendingUser(t *testing.T) {
+	router, ctrl, mockTokenSvc, mockUserRepo := setupUserInfoTest(t)
+	defer ctrl.Finish()
+
+	mockTokenSvc.EXPECT().ValidateAccessToken(gomock.Any(), "valid-token").Return(&domain.Token{
+		UserID:    "user1",
+		TokenType: "access_token",
+	}, nil)
+	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user1").Return(&domain.User{
+		ID:     "user1",
+		Email:  "pending@test.com",
+		Status: domain.UserStatusPending,
+	}, nil)
+
+	req := httptest.NewRequest("GET", "/oauth2/userinfo", nil)
+	req.Header.Set("Authorization", "Bearer valid-token")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+
+	var resp map[string]string
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "invalid_token", resp["error"])
+}
+
+func TestUserInfoHandler_SAToken(t *testing.T) {
+	router, ctrl, mockTokenSvc, _ := setupUserInfoTest(t)
+	defer ctrl.Finish()
+
+	mockTokenSvc.EXPECT().ValidateAccessToken(gomock.Any(), "sa-token").Return(&domain.Token{
+		UserID:    "sa-issuer",
+		TokenType: "service_account_jwt",
+	}, nil)
+
+	req := httptest.NewRequest("GET", "/oauth2/userinfo", nil)
+	req.Header.Set("Authorization", "Bearer sa-token")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
+
+	var resp sssoapi.UserInfo
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "sa-issuer", resp.Sub)
+	assert.Nil(t, resp.Email, "SA token should not have email field")
+}

@@ -109,6 +109,7 @@ func (oa *OAuth2API) RegisterRoutes(e *gin.Engine) {
 	e.GET("/oauth2/authorize", oa.AuthorizeHandler)
 	e.POST("/oauth2/device_authorization", oa.DeviceAuthorizationHandler)
 	e.GET("/oauth2/userinfo", oa.UserInfoHandler)
+	e.POST("/oauth2/userinfo", oa.UserInfoHandler)
 	e.POST("/oauth2/revoke", oa.RevokeHandler)
 	e.POST("/oauth2/introspect", oa.IntrospectHandler)
 
@@ -895,30 +896,67 @@ func (oa *OAuth2API) UserInfoHandler(c *gin.Context) {
 		return
 	}
 
-	// ctx := c.Request.Context() // Removed unused ctx
-
-	// Get bearer token
 	tokenParts := strings.Split(authHeader, " ")
 	if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
 		return
 	}
-	// token := tokenParts[1] // Removed unused token
 
-	// Validate token, and get user info
-	// TODO: Implement UserInfo endpoint correctly.
-	// This should involve validating the token and then fetching claims.
-	// The OAuthService.GetUserInfo method was removed as it was a stub.
-	// This functionality likely belongs in AuthService or a dedicated UserInfoService.
-	// For now, returning a placeholder or an error.
-	// userInfo, err := oa.service.GetUserInfo(ctx, token)
-	// if err != nil {
-	// 	c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
-	// 	return
-	// }
-	// c.JSON(http.StatusOK, userInfo)
-	log.Error().Msg("UserInfoHandler: GetUserInfo not implemented")
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "not_implemented", "error_description": "Userinfo endpoint is not yet fully implemented."})
+	token := tokenParts[1]
+	ctx := c.Request.Context()
+
+	tokenInfo, err := oa.tokenService.ValidateAccessToken(ctx, token)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
+		return
+	}
+
+	var userInfo sssoapi.UserInfo
+	if tokenInfo.TokenType == "service_account_jwt" {
+		userInfo = sssoapi.UserInfo{
+			Sub: tokenInfo.UserID,
+		}
+	} else {
+		user, err := oa.userRepo.GetUserByID(ctx, tokenInfo.UserID)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
+			return
+		}
+
+		if user.Status != domain.UserStatusActive {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
+			return
+		}
+
+		var name, givenName, familyName *string
+		fullName := strings.TrimSpace(user.FirstName + " " + user.LastName)
+		if fullName != "" {
+			name = &fullName
+		}
+		if user.FirstName != "" {
+			givenName = &user.FirstName
+		}
+		if user.LastName != "" {
+			familyName = &user.LastName
+		}
+
+		email := user.Email
+		preferredUsername := user.Email
+		emailVerified := user.IsEmailVerified
+
+		userInfo = sssoapi.UserInfo{
+			Sub:               user.ID,
+			Name:              name,
+			GivenName:         givenName,
+			FamilyName:        familyName,
+			PreferredUsername: &preferredUsername,
+			Email:             &email,
+			EmailVerified:     &emailVerified,
+		}
+	}
+
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, userInfo)
 }
 
 // RevokeHandler handles token revocation requests according to RFC 7009.
