@@ -9,6 +9,7 @@ spec:
   podSelector:
     matchLabels:
       {{- include "ssso-backend.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: backend
   policyTypes:
     - Ingress
     - Egress
@@ -18,6 +19,15 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/component: ingress-controller
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.targetPort }}
+    # Allow ingress from frontend pods on the service port (api traffic)
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "ssso-backend.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: frontend
       ports:
         - protocol: TCP
           port: {{ .Values.service.targetPort }}
@@ -46,4 +56,48 @@ spec:
         - protocol: TCP
           port: 27017
     {{- end }}
+---
+{{- if .Values.frontend.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "ssso-backend.fullname" . }}-frontend
+  labels:
+    {{- include "ssso-backend.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "ssso-backend.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: frontend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow ingress from the ingress controller on the frontend port
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: ingress-controller
+      ports:
+        - protocol: TCP
+          port: {{ .Values.frontend.service.targetPort }}
+  egress:
+    # Allow DNS resolution
+    - to: []
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow egress to the backend service
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "ssso-backend.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: backend
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.targetPort }}
+{{- end }}
 {{- end }}

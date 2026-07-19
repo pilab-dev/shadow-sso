@@ -8,4 +8,6 @@
 
 ## Reporting a Vulnerability
 
-You can report any vulnerabilities directly to the author: `gyula@pilab.hu`
+You can report any vulnerabilities directly to the author(s):
+
+- Paál Gyula: `gyula@pilab.hu`

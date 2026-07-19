@@ -34,6 +34,7 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      terminationGracePeriodSeconds: 30
       containers:
         - name: frontend
           securityContext:
@@ -77,6 +78,18 @@ spec:
           envFrom:
             {{- toYaml .Values.frontend.extraEnvFrom | nindent 12 }}
           {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
           resources:
             {{- toYaml .Values.frontend.resources | nindent 12 }}
           volumeMounts:
