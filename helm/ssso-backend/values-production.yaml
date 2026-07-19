@@ -39,7 +39,7 @@ initialAdmin:
 image:
   repository: ghcr.io/pilab-dev/shadow-sso-backend
   pullPolicy: Always
-  tag: "v1"
+  tag: "v1-admin-bootstrap-mw2"
 
 imagePullSecrets:
   - name: ghcr-secret
@@ -56,10 +56,13 @@ podSecurityContext:
   runAsNonRoot: true
 
 securityContext:
+  allowPrivilegeEscalation: false
   capabilities:
     drop:
     - ALL
   readOnlyRootFilesystem: true
+  seccompProfile:
+    type: RuntimeDefault
 
 service:
   type: ClusterIP
@@ -68,10 +71,9 @@ service:
 
 ingress:
   enabled: true
-  className: "traefik"  # Adjust based on your ingress controller
+  className: "nginx"
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
-    traefik.ingress.kubernetes.io/redirect-to-https: "true"
     nginx.ingress.kubernetes.io/rewrite-target: "/"
   hosts:
     - host: sso.pilab.hu
@@ -86,8 +88,9 @@ ingress:
 # SSSO_MONGO_URI must be provided via extraEnvFrom referencing ssso-config Secret
 config:
   SSSO_LOG_LEVEL: "info"
+  SSSO_JSON_LOG: "true"
   SSSO_ISSUER_URL: "https://sso.pilab.hu"
-  SSSO_MONGO_DB_NAME: "shadow_sso"
+  SSSO_MONGO_DB_NAME: "sso_dev"
   SSSO_SIGNING_KEY_PATH: "/etc/sso/keys/private.pem"
   SSSO_KEY_ROTATION_INTERVAL: "24h"
   SSSO_NEXTJS_LOGIN_URL: "https://sso.pilab.hu/login"
@@ -117,7 +120,10 @@ mongodb:
 
 nodeSelector: {}
 
-tolerations: []
+tolerations:
+  - key: node.kubernetes.io/disk-pressure
+    operator: Exists
+    effect: NoSchedule
 
 affinity: {}
 
@@ -143,10 +149,15 @@ frontend:
   podSecurityContext: {}
   
   securityContext:
+    allowPrivilegeEscalation: false
+    runAsNonRoot: true
+    runAsUser: 1001
     capabilities:
       drop:
       - ALL
     readOnlyRootFilesystem: false
+    seccompProfile:
+      type: RuntimeDefault
   
   service:
     type: ClusterIP
@@ -174,11 +185,7 @@ frontend:
       memory: 128Mi
   
   persistence:
-    enabled: true
-    storageClassName: ""
-    accessModes:
-      - ReadWriteOnce
-    size: 1Gi
+    enabled: false
   
   autoscaling:
     enabled: false
@@ -186,12 +193,18 @@ frontend:
     maxReplicas: 5
     targetCPUUtilizationPercentage: 80
   
+  tolerations:
+    - key: node.kubernetes.io/disk-pressure
+      operator: Exists
+      effect: NoSchedule
   extraEnv: []
   extraEnvFrom: []
 
 extraEnv: []
 
-extraEnvFrom: []
+extraEnvFrom:
+  - secretRef:
+      name: ssso-config
 
 # Expected Kubernetes Secrets (must be pre-created before deployment):
 # secrets:

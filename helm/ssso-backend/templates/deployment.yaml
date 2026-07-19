@@ -46,8 +46,12 @@ spec:
               value: {{ .Values.config.SSSO_KEY_ROTATION_INTERVAL | quote }}
             - name: SSSO_NEXTJS_LOGIN_URL
               value: {{ .Values.config.SSSO_NEXTJS_LOGIN_URL | quote }}
+            - name: SSSO_JSON_LOG
+              value: {{ .Values.config.SSSO_JSON_LOG | quote }}
+            {{- if include "ssso-backend.mongodb.uri" . }}
             - name: SSSO_MONGO_URI
               value: {{ include "ssso-backend.mongodb.uri" . | quote }}
+            {{- end }}
             - name: SSSO_MONGO_DB_NAME
               value: {{ include "ssso-backend.mongodb.databaseName" . | quote }}
             {{- if .Values.initialAdmin.enabled }}
@@ -57,23 +61,22 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.initialAdmin.secretName }}
-                  key: INITIAL_ADMIN_EMAIL
+                  key: SSSO_INITIAL_ADMIN_EMAIL
             - name: SSSO_INITIAL_ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.initialAdmin.secretName }}
-                  key: INITIAL_ADMIN_PASSWORD
+                  key: SSSO_INITIAL_ADMIN_PASSWORD
             - name: SSSO_INITIAL_ADMIN_FIRST_NAME
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.initialAdmin.secretName }}
-                  key: INITIAL_ADMIN_FIRST_NAME
-                  optional: true # Server provides default if key is missing in secret
+                  key: SSSO_INITIAL_ADMIN_FIRST_NAME
             - name: SSSO_INITIAL_ADMIN_LAST_NAME
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.initialAdmin.secretName }}
-                  key: INITIAL_ADMIN_LAST_NAME
+                  key: SSSO_INITIAL_ADMIN_LAST_NAME
                   optional: true # Server provides default if key is missing in secret
             {{- end }}
             {{- with .Values.extraEnv }}
