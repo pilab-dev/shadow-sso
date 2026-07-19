@@ -13,7 +13,10 @@ import (
 	"github.com/pilab-dev/shadow-sso/apps/ssso/config" // For config.Config
 	"github.com/pilab-dev/shadow-sso/cache" // For cache.NewMemoryTokenStore
 	"github.com/pilab-dev/shadow-sso/domain"
+	"github.com/pilab-dev/shadow-sso/graphql"
+	"github.com/pilab-dev/shadow-sso/internal/notifications"
 	"github.com/pilab-dev/shadow-sso/internal/oidcflow" // Still needed for concrete in-memory store instantiation
+	"github.com/pilab-dev/shadow-sso/middleware"
 	"github.com/pilab-dev/shadow-sso/mongodb" // For mongodb.NewMongoRepositoryProvider
 	pkgAuth "github.com/pilab-dev/shadow-sso/pkg/auth" // For auth.NewBcryptPasswordHasher
 	"github.com/pilab-dev/shadow-sso/services" // For services.NewTokenSigner, services.NewDefaultServiceProvider
@@ -96,6 +99,8 @@ type SSOServerOptions struct {
 
 // NewSSOServer initializes and returns a configured Gin engine for the SSO server.
 func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
+	gin.SetMode(gin.ReleaseMode)
+
 	if opts.Config == nil {
 		return nil, errors.New("OpenIDProviderConfig is required")
 	}
@@ -187,7 +192,9 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 	})
 
 	// Setup Gin server
-	router := gin.Default()
+	router := gin.New()
+	router.Use(gin.Recovery())
+	router.Use(middleware.ZerologLogger())
 	oauth2API.RegisterRoutes(router)
 
 	// Add health check endpoint
@@ -210,6 +217,63 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 		// If we got here, MongoDB is accessible (or not using MongoDB)
 		c.String(200, "OK")
 	})
+
+	// --- GraphQL API wiring ---
+	if mongoRp, ok := repoProvider.(*mongodb.MongoRepositoryProvider); ok {
+		db := mongoRp.Database()
+		gqlCtx := context.Background()
+
+		userRepo, _ := mongodb.NewUserRepository(gqlCtx, db)
+		clientRepo := mongodb.NewClientRepository(db)
+		sessionRepo, _ := mongodb.NewSessionRepositoryMongo(gqlCtx, db)
+		idpRepo, _ := mongodb.NewIdPRepositoryMongo(gqlCtx, db)
+		groupRepo, _ := mongodb.NewGroupRepository(gqlCtx, db)
+		roleRepo, _ := mongodb.NewRoleRepository(gqlCtx, db)
+		protocolMapperRepo, _ := mongodb.NewProtocolMapperRepository(gqlCtx, db)
+		authFlowRepo, _ := mongodb.NewAuthenticationFlowRepository(gqlCtx, db)
+		clientScopeRepo, _ := mongodb.NewClientScopeRepository(gqlCtx, db)
+		realmSettingsRepo, _ := mongodb.NewRealmSettingsRepository(gqlCtx, db)
+		realmKeysRepo, _ := mongodb.NewRealmKeysRepository(gqlCtx, db)
+		userAttrRepo, _ := mongodb.NewUserAttributeRepository(gqlCtx, db)
+		userAttrMapperRepo, _ := mongodb.NewUserAttributeMapperRepository(gqlCtx, db)
+
+		var emailService domain.EmailService
+		if opts.AppConfig != nil {
+			emailService = notifications.NewResendEmailService(
+				opts.AppConfig.ResendAPIKey,
+				opts.AppConfig.FromEmail,
+				opts.AppConfig.NextPublicBaseURL,
+			)
+		} else {
+			emailService = notifications.NewResendEmailService("", "", "")
+		}
+
+		resolver := &graphql.Resolver{
+			UserRepo:                userRepo,
+			UserAttributeRepo:       userAttrRepo,
+			UserAttributeMapperRepo: userAttrMapperRepo,
+			ClientRepo:              clientRepo,
+			SessionRepo:             sessionRepo,
+			IdPRepo:                 idpRepo,
+			GroupRepo:               groupRepo,
+			RoleRepo:                roleRepo,
+			ProtocolMapperRepo:      protocolMapperRepo,
+			AuthFlowRepo:            authFlowRepo,
+			ClientScopeRepo:         clientScopeRepo,
+			RealmSettingsRepo:       realmSettingsRepo,
+			RealmKeysRepo:           realmKeysRepo,
+			EmailService:            emailService,
+			PasswordHasher:          passwordHasher,
+		}
+
+		graphqlHandler := graphql.AuthMiddleware(
+			serviceProvider.TokenService(),
+			graphql.NewHandler(resolver, "/graphql", graphql.GraphQLConfig{IsDevelopment: true}),
+		)
+
+		router.POST("/graphql", gin.WrapH(graphqlHandler))
+		router.GET("/sandbox", gin.WrapH(graphql.SandboxHandler("/graphql")))
+	}
 
 	return router, nil
 }
