@@ -102,55 +102,96 @@ func (p *MongoRepositoryProvider) Ping(ctx context.Context) error {
 
 // UserRepository returns a MongoDB-backed UserRepository.
 func (p *MongoRepositoryProvider) UserRepository(ctx context.Context) domain.UserRepository {
-	// To make these singletons, initialize in NewMongoRepositoryProvider and return cached instance.
-	// For now, direct instantiation per call (original behavior of connectrpc_server.go's manual setup):
-	return p.userRepo // Assumes NewMongoUserRepository is exported, or use existing NewUserRepositoryMongo
+	if p.userRepo == nil && p.db != nil {
+		repo, err := NewUserRepository(ctx, p.db)
+		if err == nil {
+			p.userRepo = repo
+		}
+	}
+	return p.userRepo
 }
 
 // SessionRepository returns a MongoDB-backed SessionRepository.
 func (p *MongoRepositoryProvider) SessionRepository(ctx context.Context) domain.SessionRepository {
-	return p.sessionRepo // Assumes NewMongoSessionRepository is exported
+	if p.sessionRepo == nil && p.db != nil {
+		repo, err := NewSessionRepositoryMongo(ctx, p.db)
+		if err == nil {
+			p.sessionRepo = repo
+		}
+	}
+	return p.sessionRepo
 }
 
 // UserFederatedIdentityRepository returns a MongoDB-backed UserFederatedIdentityRepository.
 func (p *MongoRepositoryProvider) UserFederatedIdentityRepository(ctx context.Context) domain.UserFederatedIdentityRepository {
+	if p.fedIDRepo == nil && p.db != nil {
+		idpRepo := p.IdPRepository(ctx)
+		repo, err := NewUserFederatedIdentityRepositoryMongo(ctx, p.db, idpRepo)
+		if err == nil {
+			p.fedIDRepo = repo
+		}
+	}
 	return p.fedIDRepo
 }
 
 // TokenRepository returns a MongoDB-backed TokenRepository.
 func (p *MongoRepositoryProvider) TokenRepository(ctx context.Context) domain.TokenRepository {
+	if p.tokenRepo == nil && p.db != nil {
+		p.tokenRepo = NewTokenRepository(p.db)
+	}
 	return p.tokenRepo
 }
 
 // AuthorizationCodeRepository returns a MongoDB-backed AuthorizationCodeRepository.
 func (p *MongoRepositoryProvider) AuthorizationCodeRepository(ctx context.Context) domain.AuthorizationCodeRepository {
+	if p.authCodeRepo == nil && p.db != nil {
+		p.authCodeRepo = NewAuthCodeRepository(p.db)
+	}
 	return p.authCodeRepo
 }
 
-// PkceRepository returns a MongoDB-backed PkceRepository.
-// Assuming a NewMongoPkceRepository exists or needs to be created.
-// For now, this will be a placeholder if it doesn't exist.
 func (p *MongoRepositoryProvider) PkceRepository(ctx context.Context) domain.PkceRepository {
 	return p.pkceRepo
 }
 
 // DeviceAuthorizationRepository returns a MongoDB-backed DeviceAuthorizationRepository.
 func (p *MongoRepositoryProvider) DeviceAuthorizationRepository(ctx context.Context) domain.DeviceAuthorizationRepository {
+	if p.deviceAuthRepo == nil && p.db != nil {
+		p.deviceAuthRepo = NewDeviceAuthRepository(p.db)
+	}
 	return p.deviceAuthRepo
 }
 
 // PublicKeyRepository returns a MongoDB-backed PublicKeyRepository.
 func (p *MongoRepositoryProvider) PublicKeyRepository(ctx context.Context) domain.PublicKeyRepository {
+	if p.pubKeyRepo == nil && p.db != nil {
+		repo, err := NewPublicKeyRepositoryMongo(p.db)
+		if err == nil {
+			p.pubKeyRepo = repo
+		}
+	}
 	return p.pubKeyRepo
 }
 
 // ServiceAccountRepository returns a MongoDB-backed ServiceAccountRepository.
 func (p *MongoRepositoryProvider) ServiceAccountRepository(ctx context.Context) domain.ServiceAccountRepository {
+	if p.saRepo == nil && p.db != nil {
+		repo, err := NewServiceAccountRepositoryMongo(p.db)
+		if err == nil {
+			p.saRepo = repo
+		}
+	}
 	return p.saRepo
 }
 
 // IdPRepository returns a MongoDB-backed IdPRepository.
 func (p *MongoRepositoryProvider) IdPRepository(ctx context.Context) domain.IdPRepository {
+	if p.idpRepo == nil && p.db != nil {
+		repo, err := NewIdPRepositoryMongo(ctx, p.db)
+		if err == nil {
+			p.idpRepo = repo
+		}
+	}
 	return p.idpRepo
 }
 

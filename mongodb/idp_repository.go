@@ -26,10 +26,6 @@ func NewIdPRepositoryMongo(ctx context.Context, db *mongo.Database) (domain.IdPR
 
 	indexModels := []mongo.IndexModel{
 		{
-			Keys:    bson.D{{Key: "_id", Value: 1}}, // IdP Configuration ID
-			Options: options.Index().SetUnique(true),
-		},
-		{
 			Keys:    bson.D{{Key: "name", Value: 1}}, // IdP Name should be unique
 			Options: options.Index().SetUnique(true),
 		},

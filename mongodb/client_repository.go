@@ -25,7 +25,7 @@ type ClientRepository struct {
 // NewClientRepository creates a new MongoStore instance.
 func NewClientRepository(db *mongo.Database) *ClientRepository {
 	return &ClientRepository{
-		coll: db.Collection("oauth_clients"),
+		coll: db.Collection("clients"),
 	}
 }
 
