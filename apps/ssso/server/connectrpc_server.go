@@ -116,10 +116,13 @@ func Start(cfg ServerConfig, repoProvider services.RepositoryProvider) error {
 	router := gin.New()
 
 	saPath, saHandler := ssov1connect.NewServiceAccountServiceHandler(saServer, interceptors)
+	router.Any(saPath, gin.WrapH(saHandler))
 	router.Any(saPath+"/", gin.WrapH(saHandler))
 	userPath, userHandler := ssov1connect.NewUserServiceHandler(userServer, interceptors)
+	router.Any(userPath, gin.WrapH(userHandler))
 	router.Any(userPath+"/", gin.WrapH(userHandler))
 	authPath, authHandler := ssov1connect.NewAuthServiceHandler(authServer, interceptors)
+	router.Any(authPath, gin.WrapH(authHandler))
 	router.Any(authPath+"/", gin.WrapH(authHandler))
 
 	twoFactorServer := services.NewTwoFactorServer(
@@ -130,6 +133,7 @@ func Start(cfg ServerConfig, repoProvider services.RepositoryProvider) error {
 		"ShadowSSO",
 	)
 	twoFactorPath, twoFactorHandler := ssov1connect.NewTwoFactorServiceHandler(twoFactorServer, interceptors)
+	router.Any(twoFactorPath, gin.WrapH(twoFactorHandler))
 	router.Any(twoFactorPath+"/", gin.WrapH(twoFactorHandler))
 
 	clientManagementServer := services.NewClientManagementServer(
@@ -137,12 +141,14 @@ func Start(cfg ServerConfig, repoProvider services.RepositoryProvider) error {
 		passwordHasher,
 	)
 	clientPath, clientHandler := ssov1connect.NewClientManagementServiceHandler(clientManagementServer, interceptors)
+	router.Any(clientPath, gin.WrapH(clientHandler))
 	router.Any(clientPath+"/", gin.WrapH(clientHandler))
 
 	idpManagementServer := services.NewIdPManagementServer(
 		repoProvider.IdPRepository(ctx),
 	)
 	idpPath, idpHandler := ssov1connect.NewIdPManagementServiceHandler(idpManagementServer, interceptors)
+	router.Any(idpPath, gin.WrapH(idpHandler))
 	router.Any(idpPath+"/", gin.WrapH(idpHandler))
 
 	federationServer := services.NewFederationServer(
@@ -155,6 +161,7 @@ func Start(cfg ServerConfig, repoProvider services.RepositoryProvider) error {
 		passwordHasher,
 	)
 	federationPath, federationHandler := ssov1connect.NewFederationServiceHandler(federationServer, interceptors)
+	router.Any(federationPath, gin.WrapH(federationHandler))
 	router.Any(federationPath+"/", gin.WrapH(federationHandler))
 
 	// * Add health check endpoints
