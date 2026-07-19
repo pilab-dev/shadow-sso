@@ -6,3 +6,4 @@ tools
 /sso_config.yaml
 /coverage.out
 .env
+.omo/
