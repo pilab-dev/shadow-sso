@@ -464,7 +464,7 @@ func (s *defaultTokenService) validateUserToken(ctx context.Context, tokenValue 
 		}
 	}
 
-	if entry, cacheErr := s.cache.Get(ctx, tokenValue); cacheErr == nil {
+	if entry, cacheErr := s.cache.Get(ctx, tokenValue); cacheErr == nil && entry != nil {
 		if !entry.IsRevoked && time.Now().Before(entry.ExpiresAt) {
 			userToken := fromCacheEntry(entry, tokenValue)
 			userToken.Issuer = s.issuer

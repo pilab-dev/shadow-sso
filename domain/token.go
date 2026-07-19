@@ -32,7 +32,7 @@ type Token struct {
 	ExpiresAt  time.Time `bson:"expires_at" json:"expires_at"`
 	CreatedAt  time.Time `bson:"created_at" json:"created_at"`
 	LastUsedAt time.Time `bson:"last_used_at" json:"last_used_at"`
-	IsRevoked  bool      `bson:"is_revoked,omitempty" json:"is_revoked,omitempty"`
+	IsRevoked  bool      `bson:"is_revoked" json:"is_revoked"`
 	Issuer     string    `bson:"issuer,omitempty" json:"issuer,omitempty"`
 	Roles      []string  `bson:"roles,omitempty" json:"roles,omitempty"`
 }
