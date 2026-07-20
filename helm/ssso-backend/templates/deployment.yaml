@@ -81,6 +81,20 @@ spec:
                   key: SSSO_INITIAL_ADMIN_LAST_NAME
                   optional: true # Server provides default if key is missing in secret
             {{- end }}
+            {{- if .Values.tracing.enabled }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.tracing.otlpEndpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              value: {{ .Values.tracing.serviceName | quote }}
+            {{- if .Values.tracing.otlpHeaders }}
+            - name: OTEL_EXPORTER_OTLP_HEADERS
+              value: {{ .Values.tracing.otlpHeaders | quote }}
+            {{- end }}
+            {{- if .Values.tracing.otlpProtocol }}
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: {{ .Values.tracing.otlpProtocol | quote }}
+            {{- end }}
+            {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

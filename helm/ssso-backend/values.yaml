@@ -258,6 +258,14 @@ networkPolicy:
     mongoCIDRs: []
     # - "10.0.0.0/8"
 
+# OpenTelemetry tracing configuration
+tracing:
+  enabled: false
+  otlpEndpoint: "http://tempo.observability:4317"
+  serviceName: "shadow-sso"
+  # otlpHeaders: "Authorization=Bearer ..."
+  # otlpProtocol: "grpc" # grpc (default) or http/protobuf
+
 # Extra environment variables to be passed to the application container
 extraEnv: []
 #  - name: MY_CUSTOM_ENV_VAR

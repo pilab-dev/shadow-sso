@@ -2,22 +2,66 @@ package telemetry
 
 import (
 	"context"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	prometheusexporter "go.opentelemetry.io/otel/exporters/prometheus"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
 )
 
-// InitTracer initializes the OpenTelemetry tracer provider.
-func InitTracer() (*trace.TracerProvider, error) {
-	// For this example, we'll use a simple setup.
-	// In a production environment, you would configure exporters (e.g., Jaeger, OTLP).
-	tp := trace.NewTracerProvider()
+// InitTracer initializes the OpenTelemetry tracer provider with an OTLP gRPC exporter.
+// Configuration is read from standard OTEL_* environment variables:
+//   - OTEL_EXPORTER_OTLP_ENDPOINT    (default: http://localhost:4317)
+//   - OTEL_EXPORTER_OTLP_HEADERS     (e.g. "Authorization=Bearer ...")
+//   - OTEL_SERVICE_NAME              (overridden by serviceName parameter)
+//   - OTEL_RESOURCE_ATTRIBUTES       (e.g. "deployment.environment=production")
+//
+// Pass an empty serviceName to rely solely on OTEL_SERVICE_NAME.
+func InitTracer(ctx context.Context, serviceName string) (*trace.TracerProvider, error) {
+	exporter, err := otlptracegrpc.New(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := resource.New(ctx,
+		resource.WithFromEnv(), // pick up OTEL_RESOURCE_ATTRIBUTES
+		resource.WithProcess(),
+		resource.WithOS(),
+	)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to create OTel resource, using defaults")
+		res = resource.Default()
+	}
+
+	if serviceName != "" {
+		res, err = resource.Merge(res, resource.NewSchemaless(
+			attribute.String("service.name", serviceName),
+		))
+		if err != nil {
+			log.Warn().Err(err).Msg("Failed to merge service name into resource")
+		}
+	}
+
+	bsp := trace.NewBatchSpanProcessor(exporter,
+		trace.WithBatchTimeout(5*time.Second),
+		trace.WithMaxExportBatchSize(512),
+	)
+
+	tp := trace.NewTracerProvider(
+		trace.WithResource(res),
+		trace.WithSpanProcessor(bsp),
+	)
 	otel.SetTracerProvider(tp)
-	log.Info().Msg("OpenTelemetry TracerProvider initialized")
+
+	log.Info().
+		Str("service_name", serviceName).
+		Msg("OpenTelemetry TracerProvider initialized with OTLP gRPC exporter")
 	return tp, nil
 }
 
