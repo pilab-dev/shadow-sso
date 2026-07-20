@@ -200,6 +200,12 @@ frontend:
   extraEnv: []
   extraEnvFrom: []
 
+# OpenTelemetry tracing — send traces to Grafana Alloy
+tracing:
+  enabled: true
+  otlpEndpoint: "http://tempo.observability:4317"
+  serviceName: "shadow-sso"
+
 extraEnv: []
 
 extraEnvFrom:

@@ -22,6 +22,9 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/rs/zerolog/pkgerrors"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -55,7 +58,13 @@ func main() {
 	log.Info().Msg(fmt.Sprintf("Shadow SSO server starting on %s", cfg.HTTPAddr))
 
 	// Initialize OpenTelemetry
-	tracerProvider, err := telemetry.InitTracer()
+	otel.SetTextMapPropagator(
+		propagation.NewCompositeTextMapPropagator(
+			propagation.TraceContext{},
+			propagation.Baggage{},
+		),
+	)
+	tracerProvider, err := telemetry.InitTracer(context.Background(), "shadow-sso")
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to initialize OpenTelemetry TracerProvider")
 	}
@@ -206,6 +215,8 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to initialize SSO server")
 	}
+
+	router.Use(otelgin.Middleware("shadow-sso"))
 
 	// Add Prometheus metrics handler to the router.
 	// This is done after NewSSOServer to ensure that any handlers registered by NewSSOServer are not overwritten.
