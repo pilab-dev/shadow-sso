@@ -39,7 +39,7 @@ initialAdmin:
 image:
   repository: ghcr.io/pilab-dev/shadow-sso-backend
   pullPolicy: Always
-  tag: "v1-connect-rpc"
+  tag: "v1"
 
 imagePullSecrets:
   - name: ghcr-secret
