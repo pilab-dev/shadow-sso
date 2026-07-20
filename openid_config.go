@@ -7,12 +7,15 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/gin-gonic/gin" // For *gin.Engine
-	"github.com/pilab-dev/shadow-sso/api" // For api.OpenIDProviderConfig
-	"github.com/pilab-dev/shadow-sso/api/openidv2_1" // For api.NewOAuth2API
-	"github.com/pilab-dev/shadow-sso/apps/ssso/config" // For config.Config
-	"github.com/pilab-dev/shadow-sso/cache" // For cache.NewMemoryTokenStore
+	"connectrpc.com/connect"                                                   // For connect.WithInterceptors
+	"connectrpc.com/otelconnect"                                               // For OpenTelemetry Connect interceptor
+	"github.com/gin-gonic/gin"                                                 // For *gin.Engine
+	"github.com/pilab-dev/shadow-sso/api"                                      // For api.OpenIDProviderConfig
+	"github.com/pilab-dev/shadow-sso/api/openidv2_1"                           // For api.NewOAuth2API
+	"github.com/pilab-dev/shadow-sso/apps/ssso/config"                         // For config.Config
+	"github.com/pilab-dev/shadow-sso/cache"                                    // For cache.NewMemoryTokenStore
 	"github.com/pilab-dev/shadow-sso/domain"
+	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"           // For Connect-RPC service handlers
 	"github.com/pilab-dev/shadow-sso/graphql"
 	"github.com/pilab-dev/shadow-sso/internal/notifications"
 	"github.com/pilab-dev/shadow-sso/internal/oidcflow" // Still needed for concrete in-memory store instantiation
@@ -20,6 +23,7 @@ import (
 	"github.com/pilab-dev/shadow-sso/mongodb" // For mongodb.NewMongoRepositoryProvider
 	pkgAuth "github.com/pilab-dev/shadow-sso/pkg/auth" // For auth.NewBcryptPasswordHasher
 	"github.com/pilab-dev/shadow-sso/services" // For services.NewTokenSigner, services.NewDefaultServiceProvider
+	"github.com/rs/zerolog/log"
 	"sync" // For InMemoryPkceRepository
 )
 
@@ -196,6 +200,96 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 	router.Use(gin.Recovery())
 	router.Use(middleware.ZerologLogger())
 	oauth2API.RegisterRoutes(router)
+
+	// ---------- Connect-RPC handlers ----------
+	ctx := context.Background()
+
+	tokenService := serviceProvider.TokenService()
+	authInterceptor := middleware.NewAuthInterceptor(tokenService)
+	authzInterceptor := middleware.NewAuthorizationInterceptor()
+	otelConnectInterceptor, err := otelconnect.NewInterceptor()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create OpenTelemetry Connect interceptor: %w", err)
+	}
+
+	interceptors := connect.WithInterceptors(
+		otelConnectInterceptor, authInterceptor, authzInterceptor)
+
+	connectPasswordHasher := pkgAuth.NewBcryptPasswordHasher(0)
+
+	// Auth Service — used by frontend login
+	authServer := services.NewAuthServer(
+		opts.RepositoryProvider.UserRepository(ctx),
+		opts.RepositoryProvider.SessionRepository(ctx),
+		tokenService,
+		connectPasswordHasher,
+		serviceProvider.FlowStore(),
+		serviceProvider.OAuthService(),
+		serviceProvider.ClientService(),
+	)
+	authPath, authHandler := ssov1connect.NewAuthServiceHandler(authServer, interceptors)
+	router.Any(authPath+"*action", gin.WrapH(authHandler))
+
+	// User Service
+	userServer := services.NewUserServer(
+		opts.RepositoryProvider.UserRepository(ctx),
+		connectPasswordHasher,
+		nil,
+	)
+	userPath, userHandler := ssov1connect.NewUserServiceHandler(userServer, interceptors)
+	router.Any(userPath+"*action", gin.WrapH(userHandler))
+
+	// TwoFactor Service
+	twoFactorServer := services.NewTwoFactorServer(
+		opts.RepositoryProvider.UserRepository(ctx),
+		connectPasswordHasher,
+		serviceProvider.MFAService(),
+		serviceProvider.PushMFAService(),
+		"ShadowSSO",
+	)
+	twoFactorPath, twoFactorHandler := ssov1connect.NewTwoFactorServiceHandler(twoFactorServer, interceptors)
+	router.Any(twoFactorPath+"*action", gin.WrapH(twoFactorHandler))
+
+	// Client Management Service
+	clientManagementServer := services.NewClientManagementServer(
+		opts.RepositoryProvider.ClientRepository(ctx),
+		connectPasswordHasher,
+	)
+	clientPath, clientHandler := ssov1connect.NewClientManagementServiceHandler(clientManagementServer, interceptors)
+	router.Any(clientPath+"*action", gin.WrapH(clientHandler))
+
+	// IDP Management Service
+	idpManagementServer := services.NewIdPManagementServer(
+		opts.RepositoryProvider.IdPRepository(ctx),
+	)
+	idpPath, idpHandler := ssov1connect.NewIdPManagementServiceHandler(idpManagementServer, interceptors)
+	router.Any(idpPath+"*action", gin.WrapH(idpHandler))
+
+	// Service Account Service
+	defaultKeyGen := &services.DefaultSAKeyGenerator{}
+	saServer := services.NewServiceAccountServer(
+		defaultKeyGen,
+		opts.RepositoryProvider.ServiceAccountRepository(ctx),
+		opts.RepositoryProvider.PublicKeyRepository(ctx),
+	)
+	saPath, saHandler := ssov1connect.NewServiceAccountServiceHandler(saServer, interceptors)
+	router.Any(saPath+"*action", gin.WrapH(saHandler))
+
+	// Federation Service
+	federationServer := services.NewFederationServer(
+		serviceProvider.FederationService(),
+		opts.RepositoryProvider.UserRepository(ctx),
+		opts.RepositoryProvider.UserFederatedIdentityRepository(ctx),
+		opts.RepositoryProvider.IdPRepository(ctx),
+		tokenService,
+		opts.RepositoryProvider.SessionRepository(ctx),
+		connectPasswordHasher,
+	)
+	federationPath, federationHandler := ssov1connect.NewFederationServiceHandler(federationServer, interceptors)
+	router.Any(federationPath+"*action", gin.WrapH(federationHandler))
+
+	log.Info().Msg("Connect-RPC handlers registered successfully")
+	// ---------- End Connect-RPC handlers ----------
 
 	// Add health check endpoint
 	router.GET("/healthz", func(c *gin.Context) {

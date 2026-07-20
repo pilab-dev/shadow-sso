@@ -10,6 +10,7 @@ import (
 	"github.com/pilab-dev/shadow-sso/domain"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var (
@@ -134,8 +135,8 @@ func (s *ClientRepository) ValidateClient(ctx context.Context, clientID string, 
 		return &cli, nil
 	}
 
-	// For confidential clients, check the secret
-	if cli.Secret == clientSecret {
+	// For confidential clients, verify the secret against stored bcrypt hash
+	if err := bcrypt.CompareHashAndPassword([]byte(cli.Secret), []byte(clientSecret)); err == nil {
 		return &cli, nil
 	}
 

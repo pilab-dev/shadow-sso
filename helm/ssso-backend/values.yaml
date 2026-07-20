@@ -204,7 +204,7 @@ frontend:
     targetPort: 3000
   
   config:
-    NEXT_PUBLIC_USE_REAL_BACKEND: "true"
+    NEXT_PUBLIC_USE_MOCK_BACKEND: "false"
     NEXT_PUBLIC_RP_ID: "" # e.g., "sso.pilab.hu"
     NEXT_PUBLIC_RP_NAME: "" # e.g., "Shadow SSO"
     NEXT_PUBLIC_EXPECTED_ORIGIN: "" # e.g., "https://sso.pilab.hu"
@@ -214,6 +214,11 @@ frontend:
     secretName: "shadow-sso-frontend-secrets"
     createSecret: false
     cookieSecret: "" # Only used if createSecret is true
+    clientId: "" # OAuth2 client ID for BFF authentication
+    clientSecret: "" # OAuth2 client secret for BFF authentication
+    kvUrl: "" # Upstash KV REST URL for session storage
+    kvRestApiUrl: "" # Upstash KV REST API URL
+    kvRestApiToken: "" # Upstash KV REST API token
   
   resources:
     limits:

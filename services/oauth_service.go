@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"crypto/rand"
-	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -206,7 +205,7 @@ func (s *defaultOAuthService) ValidateClient(ctx context.Context, clientID, clie
 	if err != nil {
 		return nil, fmt.Errorf("client not found: %w", err)
 	}
-	if subtle.ConstantTimeCompare([]byte(cli.Secret), []byte(clientSecret)) != 1 {
+	if err := bcrypt.CompareHashAndPassword([]byte(cli.Secret), []byte(clientSecret)); err != nil {
 		return nil, domain.ErrInvalidClientCredentials
 	}
 	return cli, nil

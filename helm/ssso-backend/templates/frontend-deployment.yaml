@@ -48,17 +48,25 @@ spec:
           env:
             - name: NEXT_PUBLIC_API_BASE
               value: "http://{{ include "ssso-backend.fullname" . }}:{{ .Values.service.port }}/api"
-            - name: NEXT_PUBLIC_USE_REAL_BACKEND
-              value: {{ .Values.frontend.config.NEXT_PUBLIC_USE_REAL_BACKEND | quote }}
+            - name: NEXT_PUBLIC_USE_MOCK_BACKEND
+              value: {{ .Values.frontend.config.NEXT_PUBLIC_USE_MOCK_BACKEND | quote }}
             - name: NEXT_PUBLIC_SSO_BACKEND_URL
               value: "http://{{ include "ssso-backend.fullname" . }}:{{ .Values.service.port }}"
-            {{- if .Values.frontend.config.SECRET_COOKIE_PASSWORD }}
             - name: SECRET_COOKIE_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.frontend.secrets.secretName }}
                   key: cookie-secret
-            {{- end }}
+            - name: CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.frontend.secrets.secretName }}
+                  key: client-id
+            - name: CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.frontend.secrets.secretName }}
+                  key: client-secret
             {{- if .Values.frontend.config.NEXT_PUBLIC_RP_ID }}
             - name: NEXT_PUBLIC_RP_ID
               value: {{ .Values.frontend.config.NEXT_PUBLIC_RP_ID | quote }}

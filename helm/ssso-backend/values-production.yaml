@@ -39,7 +39,7 @@ initialAdmin:
 image:
   repository: ghcr.io/pilab-dev/shadow-sso-backend
   pullPolicy: Always
-  tag: "v1-admin-bootstrap-mw2"
+  tag: "v1-connect-rpc"
 
 imagePullSecrets:
   - name: ghcr-secret
@@ -165,7 +165,7 @@ frontend:
     targetPort: 3000
   
   config:
-    NEXT_PUBLIC_USE_REAL_BACKEND: "true"
+    NEXT_PUBLIC_USE_MOCK_BACKEND: "false"
     NEXT_PUBLIC_RP_ID: "sso.pilab.hu"
     NEXT_PUBLIC_RP_NAME: "Shadow SSO"
     NEXT_PUBLIC_EXPECTED_ORIGIN: "https://sso.pilab.hu"
