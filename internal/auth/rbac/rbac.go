@@ -131,7 +131,7 @@ var MethodPermissions = map[string]string{
 	"/sso.v1.UserService/ActivateUser":           PermUsersActivateAll,
 	"/sso.v1.UserService/LockUser":               PermUsersLockAll,
 	"/sso.v1.UserService/ListUsers":              PermUsersReadAll,
-	"/sso.v1.UserService/GetUser":                PermUsersReadAll, // Service logic could allow PermUsersReadSelf too
+	"/sso.v1.UserService/GetUser":                "", // AuthZ handled in service logic (user can read self, admin can read all)
 	"/sso.v1.UserService/ChangePassword":         "",               // Complex: self (PermUsersChangePasswordSelf) vs admin (PermUsersChangePasswordAll) - handled in service
 
 	// AuthService - Login is public (no entry). Logout is authenticated but simple (revokes own session).
