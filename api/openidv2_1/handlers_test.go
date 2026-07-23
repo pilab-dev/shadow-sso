@@ -1195,3 +1195,325 @@ func TestUserInfoHandler_SAToken(t *testing.T) {
 	assert.Equal(t, "sa-issuer", resp.Sub)
 	assert.Nil(t, resp.Email, "SA token should not have email field")
 }
+
+func TestUserInfoHandler_AliasRoute(t *testing.T) {
+	router, ctrl, mockTokenSvc, mockUserRepo := setupUserInfoTest(t)
+	defer ctrl.Finish()
+
+	mockTokenSvc.EXPECT().ValidateAccessToken(gomock.Any(), "valid-token").Return(&domain.Token{
+		UserID:    "user1",
+		TokenType: "access_token",
+	}, nil)
+	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user1").Return(&domain.User{
+		ID:        "user1",
+		Email:     "test@test.com",
+		FirstName: "Test",
+		LastName:  "User",
+		Status:    domain.UserStatusActive,
+	}, nil)
+
+	req := httptest.NewRequest("GET", "/userinfo", nil)
+	req.Header.Set("Authorization", "Bearer valid-token")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp sssoapi.UserInfo
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "user1", resp.Sub)
+}
+
+func TestJWKSHandler_AliasRoute(t *testing.T) {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	jwksService, err := services.NewJWKSService(time.Hour * 24 * 365)
+	require.NoError(t, err)
+
+	api := sssogin.NewOAuth2API(&sssogin.OAuth2APIOptions{
+		JSKSService: jwksService,
+		Config: &sssoapi.OpenIDProviderConfig{
+			NextJSLoginURL: "http://localhost:3000/login",
+		},
+	})
+
+	router := gin.New()
+	api.RegisterRoutes(router)
+
+	req := httptest.NewRequest("GET", "/jwks", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	err = json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Contains(t, resp, "keys")
+}
+
+func setupCallbackTest(t *testing.T) (*gin.Engine, *gomock.Controller, *services_mocks.MockFederationService) {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	mockFedSvc := services_mocks.NewMockFederationService(ctrl)
+
+	api := sssogin.NewOAuth2API(&sssogin.OAuth2APIOptions{
+		FederationService: mockFedSvc,
+		Config: &sssoapi.OpenIDProviderConfig{
+			NextJSLoginURL: "http://localhost:3000/login",
+		},
+	})
+
+	router := gin.New()
+	api.RegisterRoutes(router)
+	return router, ctrl, mockFedSvc
+}
+
+func TestFederatedCallbackHandler_Success(t *testing.T) {
+	router, ctrl, mockFedSvc := setupCallbackTest(t)
+	defer ctrl.Finish()
+
+	mockFedSvc.EXPECT().HandleFederatedCallback(
+		gomock.Any(),
+		"google",
+		"valid-state",
+		"valid-state",
+		"auth-code-123",
+	).Return(&services.FederationCallbackResult{
+		Status:       services.FederationStatusLoginSuccessful,
+		Message:      "Login successful",
+		AccessToken:  "access-token-123",
+		RefreshToken: "refresh-token-123",
+		TokenType:    "Bearer",
+		ExpiresIn:    3600,
+		UserInfo:     &domain.User{ID: "user-1", Email: "test@example.com"},
+	}, nil)
+
+	req := httptest.NewRequest("GET", "/callback/google?code=auth-code-123&state=valid-state", nil)
+	req.AddCookie(&http.Cookie{Name: "sso_federation_state", Value: "valid-state"})
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "login_successful", resp["status"])
+	assert.Equal(t, "access-token-123", resp["access_token"])
+	assert.Equal(t, "refresh-token-123", resp["refresh_token"])
+}
+
+func TestFederatedCallbackHandler_MissingStateCookie(t *testing.T) {
+	router, ctrl, _ := setupCallbackTest(t)
+	defer ctrl.Finish()
+
+	req := httptest.NewRequest("GET", "/callback/google?code=auth-code-123&state=valid-state", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var resp map[string]string
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "missing_state_cookie", resp["error"])
+}
+
+func TestFederatedCallbackHandler_StateMismatch(t *testing.T) {
+	router, ctrl, _ := setupCallbackTest(t)
+	defer ctrl.Finish()
+
+	req := httptest.NewRequest("GET", "/callback/google?code=auth-code-123&state=wrong-state", nil)
+	req.AddCookie(&http.Cookie{Name: "sso_federation_state", Value: "valid-state"})
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var resp map[string]string
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "state_mismatch", resp["error"])
+}
+
+func TestFederatedCallbackHandler_MissingCode(t *testing.T) {
+	router, ctrl, _ := setupCallbackTest(t)
+	defer ctrl.Finish()
+
+	req := httptest.NewRequest("GET", "/callback/google?state=valid-state", nil)
+	req.AddCookie(&http.Cookie{Name: "sso_federation_state", Value: "valid-state"})
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var resp map[string]string
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "missing_code", resp["error"])
+}
+
+func TestFederatedCallbackHandler_MissingStateParam(t *testing.T) {
+	router, ctrl, _ := setupCallbackTest(t)
+	defer ctrl.Finish()
+
+	req := httptest.NewRequest("GET", "/callback/google?code=auth-code-123", nil)
+	req.AddCookie(&http.Cookie{Name: "sso_federation_state", Value: "valid-state"})
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var resp map[string]string
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "missing_state_param", resp["error"])
+}
+
+func TestFederatedCallbackHandler_ProviderError(t *testing.T) {
+	router, ctrl, _ := setupCallbackTest(t)
+	defer ctrl.Finish()
+
+	req := httptest.NewRequest("GET", "/callback/google?error=access_denied&error_description=User+denied+access&state=valid-state", nil)
+	req.AddCookie(&http.Cookie{Name: "sso_federation_state", Value: "valid-state"})
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var resp map[string]string
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "provider_error", resp["error"])
+}
+
+func TestFederatedCallbackHandler_MergeRequired(t *testing.T) {
+	router, ctrl, mockFedSvc := setupCallbackTest(t)
+	defer ctrl.Finish()
+
+	mockFedSvc.EXPECT().HandleFederatedCallback(
+		gomock.Any(),
+		"github",
+		"valid-state",
+		"valid-state",
+		"auth-code-gh",
+	).Return(&services.FederationCallbackResult{
+		Status:            services.FederationStatusMergeRequired,
+		Message:           "Account merge required",
+		ProviderName:      "github",
+		ProviderEmail:     "existing@example.com",
+		ContinuationToken: "merge-token-123",
+	}, nil)
+
+	req := httptest.NewRequest("GET", "/callback/github?code=auth-code-gh&state=valid-state", nil)
+	req.AddCookie(&http.Cookie{Name: "sso_federation_state", Value: "valid-state"})
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "merge_required", resp["status"])
+	assert.Equal(t, "merge-token-123", resp["continuation_token"])
+}
+
+func TestFederatedCallbackHandler_RegistrationNeeded(t *testing.T) {
+	router, ctrl, mockFedSvc := setupCallbackTest(t)
+	defer ctrl.Finish()
+
+	mockFedSvc.EXPECT().HandleFederatedCallback(
+		gomock.Any(),
+		"microsoft",
+		"valid-state",
+		"valid-state",
+		"auth-code-ms",
+	).Return(&services.FederationCallbackResult{
+		Status:            services.FederationStatusRegistrationNeeded,
+		Message:           "Registration required",
+		ProviderName:      "microsoft",
+		ProviderEmail:     "new@example.com",
+		ContinuationToken: "reg-token-456",
+	}, nil)
+
+	req := httptest.NewRequest("GET", "/callback/microsoft?code=auth-code-ms&state=valid-state", nil)
+	req.AddCookie(&http.Cookie{Name: "sso_federation_state", Value: "valid-state"})
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "registration_needed", resp["status"])
+	assert.Equal(t, "reg-token-456", resp["continuation_token"])
+}
+
+func TestFederatedCallbackHandler_ApplePostCallback(t *testing.T) {
+	router, ctrl, mockFedSvc := setupCallbackTest(t)
+	defer ctrl.Finish()
+
+	mockFedSvc.EXPECT().HandleFederatedCallback(
+		gomock.Any(),
+		"apple",
+		"valid-state",
+		"valid-state",
+		"auth-code-apple",
+	).Return(&services.FederationCallbackResult{
+		Status:       services.FederationStatusLoginSuccessful,
+		Message:      "Login successful",
+		AccessToken:  "apple-access-token",
+		RefreshToken: "apple-refresh-token",
+		TokenType:    "Bearer",
+		ExpiresIn:    3600,
+		UserInfo:     &domain.User{ID: "apple-user-1", Email: "apple@example.com"},
+	}, nil)
+
+	body := "code=auth-code-apple&state=valid-state"
+	req := httptest.NewRequest("POST", "/callback/apple", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: "sso_federation_state", Value: "valid-state"})
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "login_successful", resp["status"])
+	assert.Equal(t, "apple-access-token", resp["access_token"])
+}
+
+func TestFederatedCallbackHandler_GServiceError(t *testing.T) {
+	router, ctrl, mockFedSvc := setupCallbackTest(t)
+	defer ctrl.Finish()
+
+	mockFedSvc.EXPECT().HandleFederatedCallback(
+		gomock.Any(),
+		"google",
+		"valid-state",
+		"valid-state",
+		"auth-code-123",
+	).Return(nil, errors.New("gRPC error"))
+
+	req := httptest.NewRequest("GET", "/callback/google?code=auth-code-123&state=valid-state", nil)
+	req.AddCookie(&http.Cookie{Name: "sso_federation_state", Value: "valid-state"})
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	var resp map[string]string
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "callback_processing_failed", resp["error"])
+}

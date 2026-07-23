@@ -117,6 +117,14 @@ func (oa *OAuth2API) RegisterRoutes(e *gin.Engine) {
 	e.GET("/.well-known/openid-configuration", oa.OpenIDConfigurationHandler)
 	e.GET("/.well-known/jwks.json", oa.JWKSHandler)
 
+	// Convenience aliases for standard endpoints
+	e.GET("/userinfo", oa.UserInfoHandler) // Alias for /oauth2/userinfo
+	e.GET("/jwks", oa.JWKSHandler)         // Alias for /.well-known/jwks.json
+
+	// Federation callback endpoints (top-level, for IdP redirects)
+	e.GET("/callback/:provider", oa.FederatedCallbackHandler)
+	e.POST("/callback/:provider", oa.FederatedCallbackHandler) // Apple sends POST
+
 	// Client JWKS endpoints
 	e.GET("/clients/:clientId/jwks", oa.ClientJWKSHandler)
 
@@ -736,6 +744,123 @@ func (oa *OAuth2API) extractOriginalOIDCParams(c *gin.Context) map[string]string
 		}
 	}
 	return params
+}
+
+// FederatedCallbackHandler handles the redirect from an external identity provider.
+func (oa *OAuth2API) FederatedCallbackHandler(c *gin.Context) {
+	providerName := c.Param("provider")
+	if providerName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "provider_name_missing", "message": "Provider name is missing in callback path."})
+		return
+	}
+
+	stateCookie, err := c.Cookie(federationStateCookieName)
+	if err != nil {
+		log.Warn().Err(err).Msg("FederatedCallbackHandler: State cookie not found during callback")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_state_cookie", "message": "Authentication session expired or invalid."})
+		return
+	}
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     federationStateCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		Secure:   c.Request.TLS != nil,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	var code, queryState string
+
+	if c.Request.Method == http.MethodPost && providerName == "apple" {
+		if parseErr := c.Request.ParseForm(); parseErr != nil {
+			log.Warn().Err(parseErr).Str("provider", providerName).Msg("Failed to parse form POST for Apple callback")
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_apple_callback", "message": "Could not parse Apple callback data."})
+			return
+		}
+		code = c.Request.PostFormValue("code")
+		queryState = c.Request.PostFormValue("state")
+	} else {
+		code = c.Query("code")
+		queryState = c.Query("state")
+
+		oauthError := c.Query("error")
+		if oauthError != "" {
+			oauthErrorDesc := c.Query("error_description")
+			log.Warn().Str("provider", providerName).Str("error", oauthError).Str("desc", oauthErrorDesc).Msg("OAuth error in callback from provider")
+			c.JSON(http.StatusBadRequest, gin.H{"error": "provider_error", "message": fmt.Sprintf("Error from %s: %s (%s)", providerName, oauthError, oauthErrorDesc)})
+			return
+		}
+	}
+
+	if queryState == "" {
+		log.Warn().Str("provider", providerName).Msg("State parameter missing in callback query")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_state_param", "message": "State parameter missing in callback."})
+		return
+	}
+
+	if code == "" {
+		log.Warn().Str("provider", providerName).Msg("Authorization code missing in callback query")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_code", "message": "Authorization code missing in callback."})
+		return
+	}
+
+	if queryState != stateCookie {
+		log.Warn().Str("provider", providerName).Str("queryState", queryState).Str("cookieState", stateCookie).Msg("State mismatch in callback")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "state_mismatch", "message": "Invalid session state. Please try logging in again."})
+		return
+	}
+
+	result, err := oa.federationService.HandleFederatedCallback(
+		c.Request.Context(),
+		providerName,
+		queryState,
+		stateCookie,
+		code,
+	)
+	if err != nil {
+		log.Error().Err(err).Str("provider", providerName).Msg("FederatedCallbackHandler: HandleFederatedCallback failed")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "callback_processing_failed", "message": "Failed to process login with provider."})
+		return
+	}
+
+	switch result.Status {
+	case services.FederationStatusLoginSuccessful, services.FederationStatusAccountLinked:
+		log.Info().Str("provider", providerName).Str("userID", result.UserInfo.ID).Msg("Federated login/link successful")
+		c.JSON(http.StatusOK, gin.H{
+			"status":        string(result.Status),
+			"message":       result.Message,
+			"access_token":  result.AccessToken,
+			"refresh_token": result.RefreshToken,
+			"token_type":    result.TokenType,
+			"expires_in":    result.ExpiresIn,
+			"user_info":     result.UserInfo,
+		})
+
+	case services.FederationStatusMergeRequired:
+		log.Info().Str("provider", providerName).Str("email", result.ProviderEmail).Msg("Federated login requires account merge.")
+		c.JSON(http.StatusOK, gin.H{
+			"status":             string(result.Status),
+			"message":            result.Message,
+			"provider_name":      result.ProviderName,
+			"provider_email":     result.ProviderEmail,
+			"continuation_token": result.ContinuationToken,
+		})
+
+	case services.FederationStatusRegistrationNeeded:
+		log.Info().Str("provider", providerName).Str("email", result.ProviderEmail).Msg("Federated login requires new user registration completion.")
+		c.JSON(http.StatusOK, gin.H{
+			"status":             string(result.Status),
+			"message":            result.Message,
+			"provider_name":      result.ProviderName,
+			"provider_email":     result.ProviderEmail,
+			"continuation_token": result.ContinuationToken,
+		})
+
+	default:
+		log.Error().Str("provider", providerName).Str("status", string(result.Status)).Msg("Unhandled status from HandleFederatedCallback")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "unhandled_callback_status", "message": result.Message})
+	}
 }
 
 // GrantType enumeration for OAuth2 grant types.
