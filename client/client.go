@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/pilab-dev/shadow-sso/domain"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // ClientService handles client management operations
@@ -39,9 +41,15 @@ func generateRandomString(length int) string {
 func (s *ClientService) CreateConfidentialClient(ctx context.Context,
 	name string, redirectURIs []string, allowedScopes []string,
 ) (*domain.Client, error) {
+	plaintextSecret := generateRandomString(32)
+	hashedSecret, err := bcrypt.GenerateFromPassword([]byte(plaintextSecret), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, fmt.Errorf("failed to hash client secret: %w", err)
+	}
+
 	client := &domain.Client{
 		ID:            uuid.NewString(),
-		Secret:        generateRandomString(32), // Generate a 32-character random string
+		Secret:        string(hashedSecret),
 		Type:          domain.ClientTypeConfidential,
 		Name:          name,
 		RedirectURIs:  redirectURIs,
@@ -63,6 +71,8 @@ func (s *ClientService) CreateConfidentialClient(ctx context.Context,
 		return nil, err
 	}
 
+	// Return the plaintext secret so it can be displayed to the caller once.
+	client.Secret = plaintextSecret
 	return client, nil
 }
 
@@ -168,10 +178,27 @@ func (s *ClientService) ValidateClient(ctx context.Context, clientID, clientSecr
 	return s.store.ValidateClient(ctx, clientID, clientSecret)
 }
 
-// CreateClient creates a new client
+// CreateClient creates a new client. If the client has a plaintext secret, it is
+// hashed before storage; the returned client retains the original secret.
 func (s *ClientService) CreateClient(ctx context.Context, client *domain.Client) (*domain.Client, error) {
+	plaintextSecret := client.Secret
+	if plaintextSecret != "" && !isBcryptHash(plaintextSecret) {
+		hashedSecret, err := bcrypt.GenerateFromPassword([]byte(plaintextSecret), bcrypt.DefaultCost)
+		if err != nil {
+			return nil, fmt.Errorf("failed to hash client secret: %w", err)
+		}
+		client.Secret = string(hashedSecret)
+	}
+
 	if err := s.store.CreateClient(ctx, client); err != nil {
 		return nil, err
 	}
+
+	client.Secret = plaintextSecret
 	return client, nil
+}
+
+// isBcryptHash reports whether s looks like a bcrypt hash.
+func isBcryptHash(s string) bool {
+	return strings.HasPrefix(s, "$2a$") || strings.HasPrefix(s, "$2b$") || strings.HasPrefix(s, "$2y$")
 }
