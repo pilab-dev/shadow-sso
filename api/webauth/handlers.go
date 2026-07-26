@@ -224,21 +224,15 @@ func (wa *WebAuth) ConsentSubmitHandler(c *gin.Context) {
 		log.Error().Err(setErr).Msg("consent: failed to update SSO session cookie")
 	}
 
-	parsedRedirectURI, err := url.Parse(flowState.RedirectURI)
+	redirectURL, err := RedirectURIForFlow(flowState.RedirectURI, authCode, flowState.State)
 	if err != nil {
-		log.Error().Err(err).Str("redirect_uri", flowState.RedirectURI).Msg("consent: failed to parse redirect URI")
+		log.Error().Err(err).Str("redirect_uri", flowState.RedirectURI).Msg("consent: failed to build redirect URI")
 		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
 			"PageTitle": "Error",
 			"Message":   "Internal error.",
 		})
 		return
 	}
-	params := url.Values{}
-	params.Set("code", authCode)
-	if flowState.State != "" {
-		params.Set("state", flowState.State)
-	}
-	parsedRedirectURI.RawQuery = params.Encode()
 
 	log.Info().
 		Str("flow_id", flowID).
@@ -246,7 +240,7 @@ func (wa *WebAuth) ConsentSubmitHandler(c *gin.Context) {
 		Str("user_id", flowState.UserID).
 		Msg("consent: authorization approved")
 
-	c.Redirect(http.StatusFound, parsedRedirectURI.String())
+	c.Redirect(http.StatusFound, redirectURL)
 }
 
 // RedirectURIForFlow builds a redirect URI with code and state query params.

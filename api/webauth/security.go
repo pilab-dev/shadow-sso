@@ -2,7 +2,6 @@ package webauth
 
 import (
 	"crypto/rand"
-	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
 	"net/http"
@@ -120,25 +119,6 @@ func setCSRFCookie(w http.ResponseWriter, token string, maxAge time.Duration, is
 		Secure:   isSecure,
 		SameSite: http.SameSiteStrictMode,
 	})
-}
-
-// validateCSRFToken performs a constant-time comparison of the CSRF cookie
-// value against the X-CSRF-Token header.
-func validateCSRFToken(r *http.Request) bool {
-	cookieVal := ""
-	if c, err := r.Cookie(CSRFCookieName); err == nil {
-		cookieVal = c.Value
-	}
-	if cookieVal == "" {
-		return false
-	}
-
-	headerVal := r.Header.Get(CSRFHeaderName)
-	if headerVal == "" {
-		return false
-	}
-
-	return subtle.ConstantTimeCompare([]byte(cookieVal), []byte(headerVal)) == 1
 }
 
 // ---------------------------------------------------------------------------

@@ -127,32 +127,6 @@ func TestSetCSRFCookie_Insecure(t *testing.T) {
 	assert.False(t, cookies[0].Secure)
 }
 
-func TestValidateCSRFToken_Valid(t *testing.T) {
-	req := httptest.NewRequest("GET", "/", nil)
-	req.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: "secrettoken"})
-	req.Header.Set(CSRFHeaderName, "secrettoken")
-	assert.True(t, validateCSRFToken(req))
-}
-
-func TestValidateCSRFToken_Mismatch(t *testing.T) {
-	req := httptest.NewRequest("GET", "/", nil)
-	req.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: "token-a"})
-	req.Header.Set(CSRFHeaderName, "token-b")
-	assert.False(t, validateCSRFToken(req))
-}
-
-func TestValidateCSRFToken_MissingHeader(t *testing.T) {
-	req := httptest.NewRequest("GET", "/", nil)
-	req.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: "tok"})
-	assert.False(t, validateCSRFToken(req))
-}
-
-func TestValidateCSRFToken_MissingCookie(t *testing.T) {
-	req := httptest.NewRequest("GET", "/", nil)
-	req.Header.Set(CSRFHeaderName, "tok")
-	assert.False(t, validateCSRFToken(req))
-}
-
 func TestCSRFCookieNameConstant(t *testing.T) {
 	assert.Equal(t, "sso_csrf_token", CSRFCookieName)
 }
