@@ -1,0 +1,52 @@
+{{template "base_start" .}}
+<div class="mfa-icon">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        <path d="M9 12l2 2 4-4"/>
+    </svg>
+</div>
+
+<h2 class="page-title">Two-Factor Authentication</h2>
+<p class="page-subtitle">Enter the 6-digit code from your authenticator app</p>
+
+{{if .Error}}
+<div class="alert alert-error" role="alert">
+    {{.Error}}
+</div>
+{{end}}
+
+<form method="POST" action="/mfa">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input type="hidden" name="flow_id" value="{{.FlowID}}">
+
+    <div class="form-group">
+        <label for="otp" class="form-label">Verification Code</label>
+        <input 
+            type="text" 
+            id="otp" 
+            name="otp" 
+            class="form-input otp-input{{if .Error}} error{{end}}" 
+            autocomplete="one-time-code" 
+            placeholder="000000"
+            pattern="[0-9]{6}"
+            maxlength="6"
+            inputmode="numeric"
+            required
+            autofocus
+        >
+    </div>
+
+    <button type="submit" class="btn btn-primary">Verify</button>
+</form>
+
+<div style="margin-top: var(--spacing-lg); padding-top: var(--spacing-md); border-top: 1px solid var(--border-color);">
+    <p style="font-size: 0.8125rem; color: var(--text-muted); text-align: center; margin-bottom: var(--spacing-sm);">
+        Having trouble?
+    </p>
+    <div style="display: flex; gap: var(--spacing-sm); justify-content: center;">
+        <a href="/mfa/recovery" class="link">Use recovery code</a>
+        <span style="color: var(--border-color);">&bull;</span>
+        <a href="/login?flow_id={{.FlowID}}" class="link">Sign in differently</a>
+    </div>
+</div>
+{{template "base_end" .}}

@@ -1,0 +1,57 @@
+{{template "base_start" .}}
+<div class="mfa-icon" style="background: var(--warning-bg);">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--warning-color);">
+        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+    </svg>
+</div>
+
+<h2 class="page-title">Account Linking Required</h2>
+<p class="page-subtitle">We found an existing account with this email address</p>
+
+<div class="alert alert-warning" role="alert">
+    <strong>Account already exists</strong>
+    <p style="margin-top: var(--spacing-xs); margin-bottom: 0;">
+        An account with the email <strong>{{.Email}}</strong> already exists in our system.
+    </p>
+</div>
+
+<div style="background: var(--bg-color); border-radius: var(--radius-md); padding: var(--spacing-md); margin-bottom: var(--spacing-md); border: 1px solid var(--border-color);">
+    <p style="font-size: 0.875rem; color: var(--text-color); margin-bottom: var(--spacing-sm);">
+        <strong>Provider:</strong> {{.ProviderName}}
+    </p>
+    <p style="font-size: 0.875rem; color: var(--text-color); margin: 0;">
+        <strong>Email:</strong> {{.Email}}
+    </p>
+</div>
+
+<div style="background: var(--card-bg); border-radius: var(--radius-md); padding: var(--spacing-md); margin-bottom: var(--spacing-lg); border: 1px solid var(--border-color);">
+    <h3 style="font-size: 0.9375rem; font-weight: 600; color: var(--text-color); margin-bottom: var(--spacing-sm);">
+        What would you like to do?
+    </h3>
+    <ul style="font-size: 0.875rem; color: var(--text-muted); margin: 0; padding-left: var(--spacing-lg);">
+        <li style="margin-bottom: var(--spacing-xs);">
+            <strong>Sign in with your existing account</strong> — Use your email and password to sign in normally
+        </li>
+        <li style="margin-bottom: var(--spacing-xs);">
+            <strong>Contact your administrator</strong> — Request to link your accounts manually
+        </li>
+        <li>
+            <strong>Use a different email</strong> — Sign in with a different social account
+        </li>
+    </ul>
+</div>
+
+<div class="actions" style="flex-direction: column; gap: var(--spacing-sm);">
+    <a href="/login?flow_id={{.FlowID}}" class="btn btn-primary" style="text-decoration: none;">
+        Sign in with Email &amp; Password
+    </a>
+    <a href="/login?flow_id={{.FlowID}}" class="btn btn-secondary" style="text-decoration: none;">
+        Use Different Account
+    </a>
+</div>
+
+<p style="font-size: 0.75rem; color: var(--text-muted); text-align: center; margin-top: var(--spacing-md);">
+    Need help? Contact your administrator for account linking assistance.
+</p>
+{{template "base_end" .}}

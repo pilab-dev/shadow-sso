@@ -1,0 +1,62 @@
+{{template "base_start" .}}
+<h2 class="page-title">Authorization Required</h2>
+<p class="page-subtitle">An application is requesting access to your account</p>
+
+{{if .Error}}
+<div class="alert alert-error" role="alert">
+    {{.Error}}
+</div>
+{{end}}
+
+<div class="client-info">
+    {{if .ClientLogo}}
+    <img src="{{.ClientLogo}}" alt="{{.ClientName}}" class="client-logo">
+    {{else}}
+    <div class="client-logo" style="display: flex; align-items: center; justify-content: center; background: var(--primary-color); color: white; font-weight: bold; font-size: 1.25rem;">
+        {{if .ClientName}}{{index .ClientName 0}}{{else}}?{{end}}
+    </div>
+    {{end}}
+    <div class="client-details">
+        <h3 class="client-name">{{if .ClientName}}{{.ClientName}}{{else}}Unknown Application{{end}}</h3>
+        {{if .ClientDescription}}<p class="client-description">{{.ClientDescription}}</p>{{end}}
+    </div>
+</div>
+
+<div class="alert alert-warning" role="alert">
+    <strong>Review the permissions</strong> this application is requesting before you approve.
+</div>
+
+{{if .Scopes}}
+<p style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: var(--spacing-sm);">This application will be able to:</p>
+<ul class="scope-list">
+    {{range .Scopes}}
+    <li class="scope-item">
+        <span class="scope-icon">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
+            </svg>
+        </span>
+        <span>{{.Description}}</span>
+    </li>
+    {{end}}
+</ul>
+{{else}}
+<p style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: var(--spacing-md);">
+    This application is requesting access to your basic profile information.
+</p>
+{{end}}
+
+<form method="POST" action="/consent">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input type="hidden" name="flow_id" value="{{.FlowID}}">
+
+    <div class="actions">
+        <button type="submit" name="action" value="deny" class="btn btn-secondary">Deny</button>
+        <button type="submit" name="action" value="approve" class="btn btn-primary">Allow Access</button>
+    </div>
+</form>
+
+<p style="font-size: 0.75rem; color: var(--text-muted); text-align: center; margin-top: var(--spacing-md);">
+    Only approve this if you trust the application.
+</p>
+{{template "base_end" .}}
