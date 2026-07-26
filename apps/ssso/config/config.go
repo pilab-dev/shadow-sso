@@ -31,9 +31,9 @@ type Config struct {
 	DTSDefaultPKCETTL time.Duration `mapstructure:"dts_default_pkce_ttl"`
 
 	// SMS configuration
-	TwilioAccountSID   string `mapstructure:"twilio_account_sid"`
-	TwilioAuthToken    string `mapstructure:"twilio_auth_token"`
-	TwilioPhoneNumber  string `mapstructure:"twilio_phone_number"`
+	TwilioAccountSID  string `mapstructure:"twilio_account_sid"`
+	TwilioAuthToken   string `mapstructure:"twilio_auth_token"`
+	TwilioPhoneNumber string `mapstructure:"twilio_phone_number"`
 
 	// Email service configuration
 	ResendAPIKey      string `mapstructure:"resend_api_key"`
@@ -61,6 +61,15 @@ type Config struct {
 
 	// JSON logging (false = pretty console for local dev)
 	JSONLog bool `mapstructure:"json_log"`
+
+	// Brand customization
+	BrandLogoURL          string `mapstructure:"brand_logo_url"`
+	BrandOrganizationName string `mapstructure:"brand_organization_name"`
+	BrandPrimaryColor     string `mapstructure:"brand_primary_color"`
+
+	// Rate limiting
+	RateLimitMaxAttempts      int           `mapstructure:"rate_limit_max_attempts"`
+	RateLimitLockoutDuration  time.Duration `mapstructure:"rate_limit_lockout_duration"`
 }
 
 // StorageType defines the type of storage backend to use.
@@ -77,11 +86,11 @@ func (c *Config) ToOpenIDProviderConfig() *api.OpenIDProviderConfig {
 	// Create a default config - NewDefaultConfig was removed, so we initialize manually
 	oidcConfig := &api.OpenIDProviderConfig{
 		Issuer:            c.IssuerURL,
-		AccessTokenTTL:    15 * time.Minute,  // Default
-		RefreshTokenTTL:   24 * time.Hour,     // Default
-		AuthCodeTTL:       10 * time.Minute,  // Default
-		IDTokenTTL:        15 * time.Minute,  // Default
-		SessionTTL:        24 * time.Hour,     // Default
+		AccessTokenTTL:    15 * time.Minute, // Default
+		RefreshTokenTTL:   24 * time.Hour,   // Default
+		AuthCodeTTL:       10 * time.Minute, // Default
+		IDTokenTTL:        15 * time.Minute, // Default
+		SessionTTL:        24 * time.Hour,   // Default
 		KeyRotationPeriod: c.KeyRotationInterval,
 		NextJSLoginURL:    c.NextJSLoginURL,
 		// Set default enabled endpoints, grant types, etc.
@@ -106,7 +115,7 @@ func (c *Config) ToOpenIDProviderConfig() *api.OpenIDProviderConfig {
 			PasswordHashingCost: 10,
 		},
 		TokenConfig: api.TokenConfig{
-			AccessTokenFormat: "jwt",
+			AccessTokenFormat:      "jwt",
 			SupportedResponseTypes: []string{"code"},
 		},
 		PKCEConfig: api.PKCEConfig{
@@ -116,9 +125,9 @@ func (c *Config) ToOpenIDProviderConfig() *api.OpenIDProviderConfig {
 	}
 
 	// Override defaults with values from the app's config
-	oidcConfig.AccessTokenTTL = c.TokenCacheDefaultTTL // Assuming this is the desired mapping
+	oidcConfig.AccessTokenTTL = c.TokenCacheDefaultTTL            // Assuming this is the desired mapping
 	oidcConfig.RefreshTokenTTL = c.TokenCacheDefaultTTL * 24 * 30 // Example mapping, adjust as needed
-	oidcConfig.AuthCodeTTL = 10 * time.Minute // Hardcoded default, can be from config if exposed
+	oidcConfig.AuthCodeTTL = 10 * time.Minute                     // Hardcoded default, can be from config if exposed
 	oidcConfig.IDTokenTTL = c.TokenCacheDefaultTTL
 	oidcConfig.SessionTTL = c.KeyRotationInterval // Assuming session TTL can be linked to this or another config entry
 	oidcConfig.KeyRotationPeriod = c.KeyRotationInterval
@@ -192,6 +201,12 @@ func LoadConfig() (config Config, err error) {
 	viper.SetDefault("initial_admin_last_name", "User")
 	viper.SetDefault("initial_admin_client_secret", "")
 	viper.SetDefault("json_log", false)
+
+	viper.SetDefault("brand_logo_url", "")
+	viper.SetDefault("brand_organization_name", "")
+	viper.SetDefault("brand_primary_color", "")
+	viper.SetDefault("rate_limit_max_attempts", 5)
+	viper.SetDefault("rate_limit_lockout_duration", "15m")
 
 	// Explicitly bind env vars so viper.Unmarshal picks them up
 	viper.BindEnv("config_encryption_key")

@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"                                                 // For *gin.Engine
 	"github.com/pilab-dev/shadow-sso/api"                                      // For api.OpenIDProviderConfig
 	"github.com/pilab-dev/shadow-sso/api/openidv2_1"                           // For api.NewOAuth2API
+	"github.com/pilab-dev/shadow-sso/api/webauth"                              // For webauth.New, WebAuth login UI
 	"github.com/pilab-dev/shadow-sso/apps/ssso/config"                         // For config.Config
 	"github.com/pilab-dev/shadow-sso/cache"                                    // For cache.NewMemoryTokenStore
 	"github.com/pilab-dev/shadow-sso/domain"
@@ -99,6 +100,7 @@ type SSOServerOptions struct {
 	FlowStore          domain.FlowStore
 	UserSessionStore   domain.UserSessionStore
 	EncryptionKey      string // For configuration service encryption
+	CookieSigningSecret string // Secret for signing SSO session cookies
 }
 
 // NewSSOServer initializes and returns a configured Gin engine for the SSO server.
@@ -200,6 +202,46 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 	router.Use(gin.Recovery())
 	router.Use(middleware.ZerologLogger())
 	oauth2API.RegisterRoutes(router)
+
+	// --- WebAuth login UI routes ---
+	webauthConfig := &webauth.Config{
+		BrandLogoURL:             "",
+		BrandOrganizationName:    "",
+		BrandPrimaryColor:        "",
+		RateLimitMaxAttempts:     5,
+		RateLimitLockoutDuration: 15 * time.Minute,
+	}
+	if opts.AppConfig != nil {
+		webauthConfig.BrandLogoURL = opts.AppConfig.BrandLogoURL
+		webauthConfig.BrandOrganizationName = opts.AppConfig.BrandOrganizationName
+		webauthConfig.BrandPrimaryColor = opts.AppConfig.BrandPrimaryColor
+		if opts.AppConfig.RateLimitMaxAttempts > 0 {
+			webauthConfig.RateLimitMaxAttempts = opts.AppConfig.RateLimitMaxAttempts
+		}
+		if opts.AppConfig.RateLimitLockoutDuration > 0 {
+			webauthConfig.RateLimitLockoutDuration = opts.AppConfig.RateLimitLockoutDuration
+		}
+	}
+
+	webauthAPI := webauth.New(&webauth.Options{
+		UserRepo:          repoProvider.UserRepository(context.Background()),
+		PasswordHasher:    passwordHasher,
+		FlowStore:         serviceProvider.FlowStore(),
+		UserSessionStore:  serviceProvider.UserSessionStore(),
+		IdPRepository:     repoProvider.IdPRepository(context.Background()),
+		FederationService: serviceProvider.FederationService(),
+		OAuthService:      serviceProvider.OAuthService(),
+		TokenService:      serviceProvider.TokenService(),
+		ClientService:     serviceProvider.ClientService(),
+		Config:            webauthConfig,
+		SSOCookieSecret:   opts.CookieSigningSecret,
+	})
+
+	router.GET("/login", webauthAPI.LoginPageHandler)
+	router.POST("/login", webauthAPI.LoginSubmitHandler)
+	router.GET("/login/:provider", webauthAPI.SocialLoginHandler)
+	router.GET("/consent", webauthAPI.ConsentPageHandler)
+	router.POST("/consent", webauthAPI.ConsentSubmitHandler)
 
 	// ---------- Connect-RPC handlers ----------
 	ctx := context.Background()
