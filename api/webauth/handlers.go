@@ -46,7 +46,7 @@ func (wa *WebAuth) renderTemplate(c *gin.Context, templateName string, data gin.
 
 // ConsentPageHandler renders the OAuth consent screen.
 func (wa *WebAuth) ConsentPageHandler(c *gin.Context) {
-	flowID := c.Query("flow_id")
+	flowID := GetFlowIDFromCookie(c.Request)
 	if flowID == "" {
 		c.HTML(http.StatusBadRequest, "error.html", gin.H{
 			"PageTitle": "Error",
@@ -109,7 +109,7 @@ func (wa *WebAuth) ConsentSubmitHandler(c *gin.Context) {
 		return
 	}
 
-	flowID := c.PostForm("flow_id")
+	flowID := GetFlowIDFromCookie(c.Request)
 	decision := c.PostForm("decision")
 
 	if flowID == "" {

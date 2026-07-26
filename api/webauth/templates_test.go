@@ -75,9 +75,6 @@ func TestLoginTemplate(t *testing.T) {
 	if !contains(output, "Test Org") {
 		t.Errorf("Expected brand name in output")
 	}
-	if !contains(output, "test-flow-123") {
-		t.Errorf("Expected flow ID in output")
-	}
 	if !contains(output, "test-csrf-token") {
 		t.Errorf("Expected CSRF token in output")
 	}
@@ -125,9 +122,6 @@ func TestConsentTemplate(t *testing.T) {
 	output := buf.String()
 	if !contains(output, "Test Org") {
 		t.Errorf("Expected brand name in output")
-	}
-	if !contains(output, "test-flow-123") {
-		t.Errorf("Expected flow ID in output")
 	}
 	if !contains(output, "test-csrf-token") {
 		t.Errorf("Expected CSRF token in output")

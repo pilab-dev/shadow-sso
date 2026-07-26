@@ -48,7 +48,6 @@
 
 <form method="POST" action="/consent">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-    <input type="hidden" name="flow_id" value="{{.FlowID}}">
 
     <div class="actions">
         <button type="submit" name="action" value="deny" class="btn btn-secondary">Deny</button>

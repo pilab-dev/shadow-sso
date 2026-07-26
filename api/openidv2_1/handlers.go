@@ -649,7 +649,7 @@ func (oa *OAuth2API) tryHandleWithExistingSession(c *gin.Context, data *authoriz
 			setCSRFCookie(c, csrfToken, 10*time.Minute)
 
 			// Redirect to consent screen
-			consentURL := oa.config.NextJSLoginURL + "/consent?flow_id=" + url.QueryEscape(flowID)
+			consentURL := "/consent"
 			log.Info().Str("userID", userSession.UserID).Str("clientID", data.clientID).Str("consentURL", consentURL).Msg("AuthorizeHandler: User authenticated but consent required, redirecting to consent screen.")
 			c.Redirect(http.StatusFound, consentURL)
 			return true, nil
@@ -730,9 +730,9 @@ func (oa *OAuth2API) initiateExternalLoginFlow(c *gin.Context, data *authorizeRe
 	}
 	setCSRFCookie(c, csrfToken, 10*time.Minute)
 
-	loginURL := fmt.Sprintf("/login?flow_id=%s", url.QueryEscape(flowID))
-	log.Info().Str("sessionId", flowID).Str("login_url", loginURL).Msg("AuthorizeHandler: Redirecting user to login flow.")
-	c.Redirect(http.StatusFound, loginURL)
+		loginURL := "/login"
+		log.Info().Str("flow_id", flowID).Str("login_url", loginURL).Msg("AuthorizeHandler: Redirecting user to login flow.")
+		c.Redirect(http.StatusFound, loginURL)
 	return nil
 }
 
@@ -937,7 +937,7 @@ func (oa *OAuth2API) FederatedCallbackHandler(c *gin.Context) {
 				return
 			}
 
-			redirectURL := fmt.Sprintf("/oauth2/authorize?flow_id=%s", url.QueryEscape(flowID))
+			redirectURL := "/oauth2/authorize"
 			c.Redirect(http.StatusFound, redirectURL)
 			return
 		}

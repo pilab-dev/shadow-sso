@@ -17,6 +17,9 @@ const (
 	CSRFCookieName = "sso_csrf_token"
 	// CSRFHeaderName is the name of the HTTP header carrying the CSRF token.
 	CSRFHeaderName = "X-CSRF-Token"
+	// FlowCookieName is the name of the cookie carrying the server-side flow ID.
+	// The client never sees this value — it is only read from the cookie.
+	FlowCookieName = "sso_oidc_flow_id"
 )
 
 // ---------------------------------------------------------------------------
@@ -157,4 +160,14 @@ func ClearSSOSession(w http.ResponseWriter) {
 // (directly or via a trusted reverse proxy).
 func IsSecureRequest(r *http.Request) bool {
 	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+}
+
+// GetFlowIDFromCookie extracts the flow ID from the sso_oidc_flow_id cookie.
+// Returns empty string if the cookie is missing or empty.
+func GetFlowIDFromCookie(r *http.Request) string {
+	cookie, err := r.Cookie(FlowCookieName)
+	if err != nil || cookie.Value == "" {
+		return ""
+	}
+	return cookie.Value
 }

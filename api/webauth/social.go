@@ -18,7 +18,7 @@ import (
 // Supported providers include OIDC (Google, Apple) and plain OAuth (GitHub).
 func (wa *WebAuth) SocialLoginHandler(c *gin.Context) {
 	providerName := c.Param("provider")
-	flowID := c.Query("flow_id")
+	flowID := GetFlowIDFromCookie(c.Request)
 
 	// 1. Validate the login flow if a flow_id was provided.
 	if flowID != "" {

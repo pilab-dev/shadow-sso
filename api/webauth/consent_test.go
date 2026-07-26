@@ -80,7 +80,8 @@ func TestConsentPage_Success(t *testing.T) {
 		RequireConsent: true,
 	}, nil)
 
-	req := httptest.NewRequest("GET", "/consent?flow_id=valid-flow", nil)
+	req := httptest.NewRequest("GET", "/consent", nil)
+	req.AddCookie(&http.Cookie{Name: "sso_oidc_flow_id", Value: "valid-flow"})
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -106,7 +107,8 @@ func TestConsentPage_InvalidFlow(t *testing.T) {
 
 	mockFlowStore.EXPECT().GetFlow("invalid-flow").Return(nil, errors.New("flow not found"))
 
-	req := httptest.NewRequest("GET", "/consent?flow_id=invalid-flow", nil)
+	req := httptest.NewRequest("GET", "/consent", nil)
+	req.AddCookie(&http.Cookie{Name: "sso_oidc_flow_id", Value: "invalid-flow"})
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -126,7 +128,8 @@ func TestConsentPage_ExpiredFlow(t *testing.T) {
 	mockFlowStore.EXPECT().GetFlow("expired-flow").Return(flowState, nil)
 	mockFlowStore.EXPECT().DeleteFlow("expired-flow").Return(nil)
 
-	req := httptest.NewRequest("GET", "/consent?flow_id=expired-flow", nil)
+	req := httptest.NewRequest("GET", "/consent", nil)
+	req.AddCookie(&http.Cookie{Name: "sso_oidc_flow_id", Value: "expired-flow"})
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -146,7 +149,8 @@ func TestConsentPage_ClientServiceError(t *testing.T) {
 	mockFlowStore.EXPECT().GetFlow("valid-flow").Return(flowState, nil)
 	mockClientService.EXPECT().GetClient(gomock.Any(), "test-client").Return(nil, errors.New("client not found"))
 
-	req := httptest.NewRequest("GET", "/consent?flow_id=valid-flow", nil)
+	req := httptest.NewRequest("GET", "/consent", nil)
+	req.AddCookie(&http.Cookie{Name: "sso_oidc_flow_id", Value: "valid-flow"})
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -184,13 +188,13 @@ func TestConsentSubmit_Approve(t *testing.T) {
 	mockFlowStore.EXPECT().DeleteFlow("valid-flow").Return(nil)
 
 	form := url.Values{}
-	form.Set("flow_id", "valid-flow")
 	form.Set("decision", "approve")
 	form.Set("csrf_token", "test-csrf")
 
 	req := httptest.NewRequest("POST", "/consent", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(&http.Cookie{Name: "sso_csrf_token", Value: "test-csrf"})
+	req.AddCookie(&http.Cookie{Name: "sso_oidc_flow_id", Value: "valid-flow"})
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -216,13 +220,13 @@ func TestConsentSubmit_Deny(t *testing.T) {
 	mockFlowStore.EXPECT().DeleteFlow("valid-flow").Return(nil)
 
 	form := url.Values{}
-	form.Set("flow_id", "valid-flow")
 	form.Set("decision", "deny")
 	form.Set("csrf_token", "test-csrf")
 
 	req := httptest.NewRequest("POST", "/consent", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(&http.Cookie{Name: "sso_csrf_token", Value: "test-csrf"})
+	req.AddCookie(&http.Cookie{Name: "sso_oidc_flow_id", Value: "valid-flow"})
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -237,7 +241,6 @@ func TestConsentSubmit_MissingCSRF(t *testing.T) {
 	defer ctrl.Finish()
 
 	form := url.Values{}
-	form.Set("flow_id", "valid-flow")
 	form.Set("decision", "approve")
 
 	req := httptest.NewRequest("POST", "/consent", strings.NewReader(form.Encode()))
@@ -274,13 +277,13 @@ func TestConsentSubmit_InvalidFlow(t *testing.T) {
 	mockFlowStore.EXPECT().GetFlow("invalid-flow").Return(nil, errors.New("flow not found"))
 
 	form := url.Values{}
-	form.Set("flow_id", "invalid-flow")
 	form.Set("decision", "approve")
 	form.Set("csrf_token", "test-csrf")
 
 	req := httptest.NewRequest("POST", "/consent", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(&http.Cookie{Name: "sso_csrf_token", Value: "test-csrf"})
+	req.AddCookie(&http.Cookie{Name: "sso_oidc_flow_id", Value: "invalid-flow"})
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -301,13 +304,13 @@ func TestConsentSubmit_ExpiredFlow(t *testing.T) {
 	mockFlowStore.EXPECT().DeleteFlow("expired-flow").Return(nil)
 
 	form := url.Values{}
-	form.Set("flow_id", "expired-flow")
 	form.Set("decision", "approve")
 	form.Set("csrf_token", "test-csrf")
 
 	req := httptest.NewRequest("POST", "/consent", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(&http.Cookie{Name: "sso_csrf_token", Value: "test-csrf"})
+	req.AddCookie(&http.Cookie{Name: "sso_oidc_flow_id", Value: "expired-flow"})
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -328,13 +331,13 @@ func TestConsentSubmit_DenyNoRedirectURI(t *testing.T) {
 	mockFlowStore.EXPECT().DeleteFlow("valid-flow").Return(nil)
 
 	form := url.Values{}
-	form.Set("flow_id", "valid-flow")
 	form.Set("decision", "deny")
 	form.Set("csrf_token", "test-csrf")
 
 	req := httptest.NewRequest("POST", "/consent", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(&http.Cookie{Name: "sso_csrf_token", Value: "test-csrf"})
+	req.AddCookie(&http.Cookie{Name: "sso_oidc_flow_id", Value: "valid-flow"})
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 

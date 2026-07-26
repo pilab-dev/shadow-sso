@@ -107,7 +107,8 @@ func TestSocialLoginHandler_ValidProvider_WithFlowID(t *testing.T) {
 	)
 
 	// When
-	req := httptest.NewRequest("GET", "/login/google?flow_id=test-flow", nil)
+	req := httptest.NewRequest("GET", "/login/google", nil)
+	req.AddCookie(&http.Cookie{Name: "sso_oidc_flow_id", Value: "test-flow"})
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -161,7 +162,8 @@ func TestSocialLoginHandler_InvalidFlowID(t *testing.T) {
 	mockFlowStore.EXPECT().GetFlow("bad-flow").Return(nil, errors.New("flow not found"))
 
 	// When
-	req := httptest.NewRequest("GET", "/login/google?flow_id=bad-flow", nil)
+	req := httptest.NewRequest("GET", "/login/google", nil)
+	req.AddCookie(&http.Cookie{Name: "sso_oidc_flow_id", Value: "bad-flow"})
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 

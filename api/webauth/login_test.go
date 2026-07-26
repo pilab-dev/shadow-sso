@@ -90,7 +90,8 @@ func TestLoginPage_InvalidFlow(t *testing.T) {
 	mockFlowStore.EXPECT().GetFlow("invalid-flow").Return(nil, errors.New("flow not found"))
 
 	// When
-	req := httptest.NewRequest("GET", "/login?flow_id=invalid-flow", nil)
+	req := httptest.NewRequest("GET", "/login", nil)
+	req.AddCookie(&http.Cookie{Name: "sso_oidc_flow_id", Value: "invalid-flow"})
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -114,14 +115,14 @@ func TestLoginPage_Success(t *testing.T) {
 	}, nil)
 
 	// When
-	req := httptest.NewRequest("GET", "/login?flow_id=valid-flow", nil)
+	req := httptest.NewRequest("GET", "/login", nil)
+	req.AddCookie(&http.Cookie{Name: "sso_oidc_flow_id", Value: "valid-flow"})
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
 	// Then
 	require.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), "Sign in to your account")
-	assert.Contains(t, w.Body.String(), "valid-flow")
 }
 
 func TestLoginSubmit_MissingFields(t *testing.T) {
@@ -131,15 +132,14 @@ func TestLoginSubmit_MissingFields(t *testing.T) {
 
 	// When - POST with empty fields
 	form := url.Values{}
-	form.Set("flow_id", "valid-flow")
 	form.Set("csrf_token", "test-csrf")
 	form.Set("email", "")
 	form.Set("password", "")
 
 	req := httptest.NewRequest("POST", "/login", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	// Add CSRF cookie to match the form token
 	req.AddCookie(&http.Cookie{Name: "sso_csrf_token", Value: "test-csrf"})
+	req.AddCookie(&http.Cookie{Name: "sso_oidc_flow_id", Value: "valid-flow"})
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -155,12 +155,12 @@ func TestLoginSubmit_MissingCSRF(t *testing.T) {
 
 	// When - POST without CSRF token
 	form := url.Values{}
-	form.Set("flow_id", "valid-flow")
 	form.Set("email", "test@example.com")
 	form.Set("password", "password123")
 
 	req := httptest.NewRequest("POST", "/login", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: "sso_oidc_flow_id", Value: "valid-flow"})
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -192,7 +192,6 @@ func TestLoginSubmit_RateLimited(t *testing.T) {
 	// When - Make multiple failed attempts to trigger rate limiting
 	for i := 0; i < 5; i++ {
 		form := url.Values{}
-		form.Set("flow_id", "valid-flow")
 		form.Set("csrf_token", "test-csrf")
 		form.Set("email", "test@example.com")
 		form.Set("password", "wrong")
@@ -200,13 +199,13 @@ func TestLoginSubmit_RateLimited(t *testing.T) {
 		req := httptest.NewRequest("POST", "/login", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		req.AddCookie(&http.Cookie{Name: "sso_csrf_token", Value: "test-csrf"})
+		req.AddCookie(&http.Cookie{Name: "sso_oidc_flow_id", Value: "valid-flow"})
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 	}
 
 	// Then - Next attempt should be rate limited
 	form := url.Values{}
-	form.Set("flow_id", "valid-flow")
 	form.Set("csrf_token", "test-csrf")
 	form.Set("email", "test@example.com")
 	form.Set("password", "password")
@@ -214,6 +213,7 @@ func TestLoginSubmit_RateLimited(t *testing.T) {
 	req := httptest.NewRequest("POST", "/login", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(&http.Cookie{Name: "sso_csrf_token", Value: "test-csrf"})
+	req.AddCookie(&http.Cookie{Name: "sso_oidc_flow_id", Value: "valid-flow"})
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -235,7 +235,6 @@ func TestLoginSubmit_UnknownEmail(t *testing.T) {
 
 	// When
 	form := url.Values{}
-	form.Set("flow_id", "valid-flow")
 	form.Set("csrf_token", "test-csrf")
 	form.Set("email", "unknown@example.com")
 	form.Set("password", "password123")
@@ -243,6 +242,7 @@ func TestLoginSubmit_UnknownEmail(t *testing.T) {
 	req := httptest.NewRequest("POST", "/login", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(&http.Cookie{Name: "sso_csrf_token", Value: "test-csrf"})
+	req.AddCookie(&http.Cookie{Name: "sso_oidc_flow_id", Value: "valid-flow"})
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -273,7 +273,6 @@ func TestLoginSubmit_WrongPassword(t *testing.T) {
 
 	// When
 	form := url.Values{}
-	form.Set("flow_id", "valid-flow")
 	form.Set("csrf_token", "test-csrf")
 	form.Set("email", "test@example.com")
 	form.Set("password", "wrong-password")
@@ -281,6 +280,7 @@ func TestLoginSubmit_WrongPassword(t *testing.T) {
 	req := httptest.NewRequest("POST", "/login", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(&http.Cookie{Name: "sso_csrf_token", Value: "test-csrf"})
+	req.AddCookie(&http.Cookie{Name: "sso_oidc_flow_id", Value: "valid-flow"})
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -318,7 +318,6 @@ func TestLoginSubmit_Success(t *testing.T) {
 
 	// When
 	form := url.Values{}
-	form.Set("flow_id", "valid-flow")
 	form.Set("csrf_token", "test-csrf")
 	form.Set("email", "test@example.com")
 	form.Set("password", "correct-password")
@@ -326,6 +325,7 @@ func TestLoginSubmit_Success(t *testing.T) {
 	req := httptest.NewRequest("POST", "/login", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(&http.Cookie{Name: "sso_csrf_token", Value: "test-csrf"})
+	req.AddCookie(&http.Cookie{Name: "sso_oidc_flow_id", Value: "valid-flow"})
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -348,7 +348,6 @@ func TestLoginSubmit_ExpiredFlow(t *testing.T) {
 
 	// When
 	form := url.Values{}
-	form.Set("flow_id", "expired-flow")
 	form.Set("csrf_token", "test-csrf")
 	form.Set("email", "test@example.com")
 	form.Set("password", "password")
@@ -356,6 +355,7 @@ func TestLoginSubmit_ExpiredFlow(t *testing.T) {
 	req := httptest.NewRequest("POST", "/login", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(&http.Cookie{Name: "sso_csrf_token", Value: "test-csrf"})
+	req.AddCookie(&http.Cookie{Name: "sso_oidc_flow_id", Value: "expired-flow"})
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -386,7 +386,6 @@ func TestLoginSubmit_InactiveAccount(t *testing.T) {
 
 	// When
 	form := url.Values{}
-	form.Set("flow_id", "valid-flow")
 	form.Set("csrf_token", "test-csrf")
 	form.Set("email", "locked@example.com")
 	form.Set("password", "password")
@@ -394,6 +393,7 @@ func TestLoginSubmit_InactiveAccount(t *testing.T) {
 	req := httptest.NewRequest("POST", "/login", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(&http.Cookie{Name: "sso_csrf_token", Value: "test-csrf"})
+	req.AddCookie(&http.Cookie{Name: "sso_oidc_flow_id", Value: "valid-flow"})
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 

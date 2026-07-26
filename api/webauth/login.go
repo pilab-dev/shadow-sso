@@ -53,7 +53,7 @@ func (wa *WebAuth) renderLoginPage(c *gin.Context, flowID string, providers []*d
 // LoginPageHandler serves the GET /login page.
 // It validates the flow, loads social providers, and renders the login form.
 func (wa *WebAuth) LoginPageHandler(c *gin.Context) {
-	flowID := c.Query("flow_id")
+	flowID := GetFlowIDFromCookie(c.Request)
 	if flowID == "" {
 		c.HTML(http.StatusBadRequest, "error.html", gin.H{
 			"PageTitle": "Error",
@@ -104,7 +104,7 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 		return
 	}
 
-	flowID := c.PostForm("flow_id")
+	flowID := GetFlowIDFromCookie(c.Request)
 	email := c.PostForm("email")
 	password := c.PostForm("password")
 
