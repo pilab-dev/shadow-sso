@@ -83,9 +83,7 @@ func NewOAuth2API(
 		return nil
 	}
 	if opts.Config.NextJSLoginURL == "" {
-		// A default or a panic might be appropriate if this is critical and not set.
-		// For now, we'll allow it to be empty, but handlers using it will need to check.
-		log.Warn().Msg("NextJSLoginURL is not configured in OpenIDProviderConfig. Redirects to Next.js UI will not work.")
+		log.Debug().Msg("NextJSLoginURL is not configured; server-rendered /login flow does not require it.")
 	}
 	return &OAuth2API{
 		service:           opts.OAuthService,

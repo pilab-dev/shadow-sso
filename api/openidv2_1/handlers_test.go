@@ -559,8 +559,8 @@ func TestTokenHandler_ClientCredentialsGrant_Success(t *testing.T) {
 	scope := "read write"
 	mockReturnedClient := &domain.Client{ID: clientID, Secret: clientSecret, AllowedGrantTypes: []string{"client_credentials"}, AllowedScopes: []string{"read", "write", "admin"}}
 
-	mockClientStore.EXPECT().ValidateClient(gomock.Any(), clientID, clientSecret).Return(mockReturnedClient, nil)
-	mockClientStore.EXPECT().GetClient(gomock.Any(), clientID).Times(2).Return(mockReturnedClient, nil)
+	mockClientStore.EXPECT().ValidateClient(gomock.Any(), clientID, clientSecret).Return(mockReturnedClient, nil).Times(2)
+	mockClientStore.EXPECT().GetClient(gomock.Any(), clientID).Times(1).Return(mockReturnedClient, nil)
 	mockTokenRepo.EXPECT().StoreToken(gomock.Any(), gomock.Any()).Return(nil)
 	mockTokenCache.EXPECT().Set(gomock.Any(), gomock.Any()).Return(nil)
 
@@ -765,9 +765,8 @@ func TestTokenHandler_AuthorizationCodeGrant_ExchangeError(t *testing.T) {
 
 	mockReturnedClient := &domain.Client{ID: clientID, Secret: clientSecret, AllowedGrantTypes: []string{"authorization_code"}, RedirectURIs: []string{redirectURI}, RequirePKCE: false}
 
-	mockClientStore.EXPECT().ValidateClient(context.Background(), clientID, clientSecret).Return(mockReturnedClient, nil)
+	mockClientStore.EXPECT().ValidateClient(context.Background(), clientID, clientSecret).Return(mockReturnedClient, nil).Times(2)
 	mockClientStore.EXPECT().GetClient(context.Background(), clientID).Times(2).Return(mockReturnedClient, nil)
-	mockClientStore.EXPECT().GetClient(context.Background(), clientID).Return(mockReturnedClient, nil)
 	mockAuthCodeRepo.EXPECT().GetAuthCode(context.Background(), authCodeVal).Return(nil, domain.NewInvalidGrant("exchange failed"))
 
 	data := url.Values{}
@@ -810,6 +809,7 @@ func TestTokenHandler_PublicClient_NoSecretProvided(t *testing.T) {
 	mockChallenge := CalculateS256Challenge(codeVerifier)
 	authCodeDomain := &domain.AuthCode{Code: authCodeVal, ClientID: clientID, UserID: userID, RedirectURI: redirectURI, Scope: scope, ExpiresAt: time.Now().Add(10 * time.Minute), Used: false, CodeChallenge: mockChallenge, CodeChallengeMethod: "S256"}
 
+	mockClientStore.EXPECT().ValidateClient(gomock.Any(), clientID, "").Return(mockReturnedClient, nil).Times(1)
 	mockClientStore.EXPECT().GetClient(gomock.Any(), clientID).AnyTimes().Return(mockReturnedClient, nil)
 	mockPkceRepo.EXPECT().GetCodeChallenge(context.Background(), authCodeVal).Return(mockChallenge, nil)
 	mockPkceRepo.EXPECT().DeleteCodeChallenge(context.Background(), authCodeVal).Return(nil)
@@ -887,10 +887,8 @@ func TestTokenHandler_InternalServerError(t *testing.T) {
 
 	mockReturnedClient := &domain.Client{ID: clientID, Secret: clientSecret, AllowedGrantTypes: []string{"authorization_code"}, RedirectURIs: []string{redirectURI}, RequirePKCE: false}
 
+	mockClientStore.EXPECT().ValidateClient(context.Background(), clientID, clientSecret).Return(mockReturnedClient, nil).Times(2)
 	mockClientStore.EXPECT().GetClient(gomock.Any(), clientID).AnyTimes().Return(mockReturnedClient, nil)
-
-	mockClientStore.EXPECT().ValidateClient(context.Background(), clientID, clientSecret).Return(mockReturnedClient, nil)
-	// mockClientStore.EXPECT().GetClient(context.Background(), clientID).Return(mockReturnedClient, nil)
 	mockAuthCodeRepo.EXPECT().GetAuthCode(gomock.Any(), authCodeVal).AnyTimes().Return(nil, errors.New("simulated internal db error"))
 
 	data := url.Values{}

@@ -184,17 +184,18 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 
 	// Create OAuth2 API handlers
 	oauth2API := openidv2_1.NewOAuth2API(&openidv2_1.OAuth2APIOptions{
-		OAuthService:      serviceProvider.OAuthService(),
-		JSKSService:       serviceProvider.JWKSService(),
-		ClientService:     serviceProvider.ClientService(),
-		PkceService:       serviceProvider.PKCEService(),
-		Config:            opts.Config,
-		FlowStore:         serviceProvider.FlowStore(),
-		UserSessionStore:  serviceProvider.UserSessionStore(),
-		UserRepo:          repoProvider.UserRepository(context.Background()),
-		PasswordHasher:   passwordHasher,
-		FederationService: serviceProvider.FederationService(),
-		TokenService:      serviceProvider.TokenService(),
+		OAuthService:         serviceProvider.OAuthService(),
+		JSKSService:          serviceProvider.JWKSService(),
+		ClientService:        serviceProvider.ClientService(),
+		PkceService:          serviceProvider.PKCEService(),
+		Config:               opts.Config,
+		FlowStore:            serviceProvider.FlowStore(),
+		UserSessionStore:     serviceProvider.UserSessionStore(),
+		UserRepo:             repoProvider.UserRepository(context.Background()),
+		PasswordHasher:       passwordHasher,
+		FederationService:    serviceProvider.FederationService(),
+		TokenService:         serviceProvider.TokenService(),
+		CookieSigningSecret:  opts.CookieSigningSecret,
 	})
 
 	// Setup Gin server
