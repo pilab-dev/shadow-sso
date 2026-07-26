@@ -202,6 +202,10 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(middleware.ZerologLogger())
+
+	if err := webauth.LoadTemplates(router); err != nil {
+		return nil, fmt.Errorf("failed to load webauth templates: %w", err)
+	}
 	oauth2API.RegisterRoutes(router)
 
 	// --- WebAuth login UI routes ---

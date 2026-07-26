@@ -1,9 +1,17 @@
 package webauth
 
 import (
+	"embed"
+	"html/template"
+	"io/fs"
+
+	"github.com/gin-gonic/gin"
 	"github.com/pilab-dev/shadow-sso/domain"
 	"github.com/pilab-dev/shadow-sso/services"
 )
+
+//go:embed templates/*.html
+var templatesFS embed.FS
 
 // WebAuth holds all dependencies for the server-side web authentication UI.
 // Methods for handling login, consent, and social flows will be added in subsequent todos.
@@ -59,4 +67,19 @@ func New(opts *Options) *WebAuth {
 		ssoCookieSecret:   opts.SSOCookieSecret,
 		rateLimiter:       NewRateLimiter(cfg.RateLimitMaxAttempts, cfg.RateLimitLockoutDuration),
 	}
+}
+
+// LoadTemplates parses the embedded HTML templates and registers them with
+// the gin engine so that c.HTML() calls resolve correctly.
+func LoadTemplates(router *gin.Engine) error {
+	subFS, err := fs.Sub(templatesFS, "templates")
+	if err != nil {
+		return err
+	}
+	tmpl := template.New("")
+	if _, err := tmpl.ParseFS(subFS, "*.html"); err != nil {
+		return err
+	}
+	router.SetHTMLTemplate(tmpl)
+	return nil
 }
