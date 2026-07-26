@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	goerrors "errors" // Standard Go errors package
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"html/template" // Added for HTML rendering
@@ -20,6 +21,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/pilab-dev/shadow-sso/domain"           // Corrected: Single import of domain
 	"github.com/pilab-dev/shadow-sso/internal/metrics" // For custom metrics
+	"github.com/pilab-dev/shadow-sso/internal/ssosession"
 	// Removed duplicate domain import
 	"github.com/pilab-dev/shadow-sso/services"
 	"github.com/rs/zerolog/log"
@@ -47,8 +49,9 @@ type OAuth2API struct {
 	passwordHasher   domain.PasswordHasher
 	federationService services.FederationService
 	tokenService    services.TokenService
-	realmKeysRepo    domain.RealmKeysRepository
-	clientRepo     domain.ClientRepository
+	realmKeysRepo       domain.RealmKeysRepository
+	clientRepo          domain.ClientRepository
+	cookieSigningSecret string
 }
 
 type OAuth2APIOptions struct {
@@ -63,8 +66,9 @@ type OAuth2APIOptions struct {
 	PasswordHasher   domain.PasswordHasher
 	FederationService services.FederationService
 	TokenService     services.TokenService
-	RealmKeysRepo   domain.RealmKeysRepository
-	ClientRepo       domain.ClientRepository
+	RealmKeysRepo     domain.RealmKeysRepository
+	ClientRepo        domain.ClientRepository
+	CookieSigningSecret string
 }
 
 // NewOAuth2API initializes the OAuth2 API.
@@ -97,6 +101,7 @@ func NewOAuth2API(
 		tokenService:     opts.TokenService,
 		realmKeysRepo:   opts.RealmKeysRepo,
 		clientRepo:      opts.ClientRepo,
+		cookieSigningSecret: opts.CookieSigningSecret,
 	}
 }
 
@@ -195,6 +200,100 @@ const deviceVerificationHTML = `
 </html>`
 
 var deviceVerificationTemplate = template.Must(template.New("deviceVerify").Parse(deviceVerificationHTML))
+
+const federatedErrorHTML = `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Authentication Error</title>
+    <style>
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 90vh; background-color: #f4f4f4; color: #333; }
+        .container { background-color: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center; max-width: 480px; }
+        .error { color: #721c24; background-color: #f8d7da; border: 1px solid #f5c6cb; padding: 15px; border-radius: 4px; margin-top: 15px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Authentication Error</h2>
+        <p>{{.Message}}</p>
+        <div class="error">{{.Detail}}</div>
+    </div>
+</body>
+</html>`
+
+const federatedMergeHTML = `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Account Merge Required</title>
+    <style>
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 90vh; background-color: #f4f4f4; color: #333; }
+        .container { background-color: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center; max-width: 480px; }
+        .info { color: #0c5460; background-color: #d1ecf1; border: 1px solid #bee5eb; padding: 15px; border-radius: 4px; margin-top: 15px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Account Merge Required</h2>
+        <p>An account with this email already exists. To link your {{.ProviderName}} account, you need to merge it with your existing account.</p>
+        <div class="info">
+            <strong>Email:</strong> {{.ProviderEmail}}<br/>
+            <strong>Provider:</strong> {{.ProviderName}}
+        </div>
+        <p style="margin-top: 20px; color: #666;">Please contact your administrator to complete the account merge.</p>
+    </div>
+</body>
+</html>`
+
+const federatedRegistrationHTML = `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Registration Required</title>
+    <style>
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 90vh; background-color: #f4f4f4; color: #333; }
+        .container { background-color: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center; max-width: 480px; }
+        .info { color: #856404; background-color: #fff3cd; border: 1px solid #ffeeba; padding: 15px; border-radius: 4px; margin-top: 15px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Registration Required</h2>
+        <p>Your {{.ProviderName}} account is not yet linked to a local account. Registration completion is required.</p>
+        <div class="info">
+            <strong>Email:</strong> {{.ProviderEmail}}<br/>
+            <strong>Provider:</strong> {{.ProviderName}}
+        </div>
+        <p style="margin-top: 20px; color: #666;">Please complete the registration process through your administrator.</p>
+    </div>
+</body>
+</html>`
+
+var (
+	federatedErrorTemplate        = template.Must(template.New("fedError").Parse(federatedErrorHTML))
+	federatedMergeTemplate        = template.Must(template.New("fedMerge").Parse(federatedMergeHTML))
+	federatedRegistrationTemplate = template.Must(template.New("fedRegistration").Parse(federatedRegistrationHTML))
+)
+
+// extractFlowIDFromState attempts to extract the flow_id from an encoded state value.
+// The state format is base64url(flow_id + "." + random_nonce).
+// Returns empty string if the state does not contain an encoded flow_id.
+func extractFlowIDFromState(state string) string {
+	decoded, err := base64.RawURLEncoding.DecodeString(state)
+	if err != nil {
+		decoded, err = base64.StdEncoding.DecodeString(state)
+		if err != nil {
+			return ""
+		}
+	}
+
+	parts := strings.SplitN(string(decoded), ".", 2)
+	if len(parts) != 2 || parts[0] == "" {
+		return ""
+	}
+
+	return parts[0]
+}
 
 // DeviceVerificationPageHandler serves the HTML page for user to enter their device code.
 // It can optionally pre-fill the user_code if provided as a query parameter.
@@ -590,16 +689,9 @@ func (oa *OAuth2API) tryHandleWithExistingSession(c *gin.Context, data *authoriz
 	return false, nil // Not handled, proceed to external login
 }
 
-// initiateExternalLoginFlow sets up the OIDC flow state and redirects the user to the Next.js UI.
+// initiateExternalLoginFlow sets up the OIDC flow state and redirects the user to the login page.
 // Returns an error if the process fails and a response has been sent.
 func (oa *OAuth2API) initiateExternalLoginFlow(c *gin.Context, data *authorizeRequestData) error {
-	if oa.config.NextJSLoginURL == "" {
-		log.Error().Msg("AuthorizeHandler: NextJSLoginURL is not configured. Cannot redirect to external UI.")
-		err := domain.NewServerError("authentication UI not configured")
-		oa.sendJSONError(c, http.StatusInternalServerError, err)
-		return err
-	}
-
 	flowID := uuid.NewString()
 	flowState := domain.LoginFlowState{
 		FlowID:              flowID,
@@ -640,19 +732,9 @@ func (oa *OAuth2API) initiateExternalLoginFlow(c *gin.Context, data *authorizeRe
 	}
 	setCSRFCookie(c, csrfToken, 10*time.Minute)
 
-	nextJSLoginURLParsed, parseErr := url.Parse(oa.config.NextJSLoginURL)
-	if parseErr != nil {
-		log.Error().Err(parseErr).Str("url", oa.config.NextJSLoginURL).Msg("AuthorizeHandler: Failed to parse NextJSLoginURL")
-		ssoErr := domain.NewServerError("invalid authentication UI configuration")
-		oa.sendJSONError(c, http.StatusInternalServerError, ssoErr)
-		return ssoErr
-	}
-	// query := nextJSLoginURLParsed.Query()
-	// query.Set("client_id", data.clientID) // Optionally pass client_id for UI context
-	// nextJSLoginURLParsed.RawQuery = query.Encode()
-
-	log.Info().Str("flowId_cookie_set", flowID).Str("nextjs_url", nextJSLoginURLParsed.String()).Msg("AuthorizeHandler: Redirecting user to Next.js for authentication.")
-	c.Redirect(http.StatusFound, nextJSLoginURLParsed.String())
+	loginURL := fmt.Sprintf("/login?flow_id=%s", url.QueryEscape(flowID))
+	log.Info().Str("sessionId", flowID).Str("login_url", loginURL).Msg("AuthorizeHandler: Redirecting user to login flow.")
+	c.Redirect(http.StatusFound, loginURL)
 	return nil
 }
 
@@ -827,6 +909,41 @@ func (oa *OAuth2API) FederatedCallbackHandler(c *gin.Context) {
 	switch result.Status {
 	case services.FederationStatusLoginSuccessful, services.FederationStatusAccountLinked:
 		log.Info().Str("provider", providerName).Str("userID", result.UserInfo.ID).Msg("Federated login/link successful")
+
+		flowID := extractFlowIDFromState(queryState)
+		if flowID != "" {
+			userName := strings.TrimSpace(result.UserInfo.FirstName + " " + result.UserInfo.LastName)
+			if userName == "" {
+				userName = result.UserInfo.Email
+			}
+
+			session := &ssosession.Session{
+				SessionID: ssosession.NewID(),
+				CSRFToken: "",
+				Accounts: []ssosession.Account{{
+					UserID:   result.UserInfo.ID,
+					Email:    result.UserInfo.Email,
+					Name:     userName,
+					LastUsed: time.Now(),
+				}},
+			}
+
+			isSecure := c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https")
+			if err := ssosession.SetCookie(c.Writer, session, isSecure, oa.cookieSigningSecret); err != nil {
+				log.Error().Err(err).Msg("Failed to set SSOSession cookie after federated login")
+				c.Header("Content-Type", "text/html; charset=utf-8")
+				_ = federatedErrorTemplate.Execute(c.Writer, gin.H{
+					"Message": "Authentication failed",
+					"Detail":  "Failed to create session. Please try logging in again.",
+				})
+				return
+			}
+
+			redirectURL := fmt.Sprintf("/oauth2/authorize?flow_id=%s", url.QueryEscape(flowID))
+			c.Redirect(http.StatusFound, redirectURL)
+			return
+		}
+
 		c.JSON(http.StatusOK, gin.H{
 			"status":        string(result.Status),
 			"message":       result.Message,
@@ -839,6 +956,17 @@ func (oa *OAuth2API) FederatedCallbackHandler(c *gin.Context) {
 
 	case services.FederationStatusMergeRequired:
 		log.Info().Str("provider", providerName).Str("email", result.ProviderEmail).Msg("Federated login requires account merge.")
+
+		flowID := extractFlowIDFromState(queryState)
+		if flowID != "" {
+			c.Header("Content-Type", "text/html; charset=utf-8")
+			_ = federatedMergeTemplate.Execute(c.Writer, gin.H{
+				"ProviderName":  result.ProviderName,
+				"ProviderEmail": result.ProviderEmail,
+			})
+			return
+		}
+
 		c.JSON(http.StatusOK, gin.H{
 			"status":             string(result.Status),
 			"message":            result.Message,
@@ -849,6 +977,17 @@ func (oa *OAuth2API) FederatedCallbackHandler(c *gin.Context) {
 
 	case services.FederationStatusRegistrationNeeded:
 		log.Info().Str("provider", providerName).Str("email", result.ProviderEmail).Msg("Federated login requires new user registration completion.")
+
+		flowID := extractFlowIDFromState(queryState)
+		if flowID != "" {
+			c.Header("Content-Type", "text/html; charset=utf-8")
+			_ = federatedRegistrationTemplate.Execute(c.Writer, gin.H{
+				"ProviderName":  result.ProviderName,
+				"ProviderEmail": result.ProviderEmail,
+			})
+			return
+		}
+
 		c.JSON(http.StatusOK, gin.H{
 			"status":             string(result.Status),
 			"message":            result.Message,
@@ -859,6 +998,17 @@ func (oa *OAuth2API) FederatedCallbackHandler(c *gin.Context) {
 
 	default:
 		log.Error().Str("provider", providerName).Str("status", string(result.Status)).Msg("Unhandled status from HandleFederatedCallback")
+
+		flowID := extractFlowIDFromState(queryState)
+		if flowID != "" {
+			c.Header("Content-Type", "text/html; charset=utf-8")
+			_ = federatedErrorTemplate.Execute(c.Writer, gin.H{
+				"Message": "Authentication failed",
+				"Detail":  result.Message,
+			})
+			return
+		}
+
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "unhandled_callback_status", "message": result.Message})
 	}
 }
