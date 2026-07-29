@@ -77,6 +77,36 @@ func (g *GoogleProvider) GetOAuth2Config(redirectURL string) (*oauth2.Config, er
 	}, nil
 }
 
+// GetAuthCodeURL overrides BaseProvider's method to properly dispatch to Google's
+// GetOAuth2Config. BaseProvider.GetAuthCodeURL calls b.GetOAuth2Config() on the
+// *BaseProvider receiver, which bypasses the GoogleProvider override due to Go's
+// embedded struct method dispatch rules.
+func (g *GoogleProvider) GetAuthCodeURL(state, redirectURL string, opts ...oauth2.AuthCodeOption) (string, error) {
+	conf, err := g.GetOAuth2Config(redirectURL)
+	if err != nil {
+		return "", err
+	}
+	return conf.AuthCodeURL(state, opts...), nil
+}
+
+// ExchangeCode overrides BaseProvider's method for the same dispatch reason as GetAuthCodeURL.
+func (g *GoogleProvider) ExchangeCode(ctx context.Context, redirectURL string, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error) {
+	conf, err := g.GetOAuth2Config(redirectURL)
+	if err != nil {
+		return nil, err
+	}
+	return conf.Exchange(ctx, code, opts...)
+}
+
+// GetHttpClient overrides BaseProvider's method for the same dispatch reason as GetAuthCodeURL.
+func (g *GoogleProvider) GetHttpClient(ctx context.Context, token *oauth2.Token) *http.Client {
+	conf, err := g.GetOAuth2Config("")
+	if err != nil {
+		return oauth2.NewClient(ctx, oauth2.StaticTokenSource(token))
+	}
+	return conf.Client(ctx, token)
+}
+
 // FetchUserInfo overrides BaseProvider's method to fetch user information from Google.
 func (g *GoogleProvider) FetchUserInfo(ctx context.Context, token *oauth2.Token) (*ExternalUserInfo, error) {
 	client := g.GetHttpClient(ctx, token)

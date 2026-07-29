@@ -1,0 +1,48 @@
+{{template "base_start" .}}
+<div class="mfa-icon" style="background: var(--warning-bg); border-color: var(--warning-border);">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--warning);">
+        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+    </svg>
+</div>
+
+<h2 class="page-title">Account Linking Required</h2>
+<p class="page-subtitle">We found an existing account with this email address</p>
+
+<div class="alert alert-warning" role="alert">
+    <span class="alert-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    </span>
+    <div>
+        <strong>Account already exists</strong>
+        <p style="margin-top:4px;margin-bottom:0;font-size:0.875rem;">
+            An account with the email <strong>{{.Email}}</strong> already exists in our system.
+        </p>
+    </div>
+</div>
+
+<div class="info-box">
+    <p class="info-box-title">Provider</p>
+    <p style="font-size:0.875rem;color:var(--text);margin-bottom:10px;">{{.ProviderName}}</p>
+    <p class="info-box-title">What would you like to do?</p>
+    <ul>
+        <li><strong>Sign in with your existing account</strong> — use your email and password to sign in normally</li>
+        <li><strong>Contact your administrator</strong> — request to link your accounts manually</li>
+        <li><strong>Use a different account</strong> — sign in with a different social provider</li>
+    </ul>
+</div>
+
+<div class="actions" style="flex-direction:column;">
+    <a href="/login?flow_id={{.FlowID}}" class="btn btn-primary" style="text-decoration:none;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+        Sign in with Email &amp; Password
+    </a>
+    <a href="/login?flow_id={{.FlowID}}" class="btn btn-secondary" style="text-decoration:none;">
+        Use Different Account
+    </a>
+</div>
+
+<p style="font-size:0.75rem;color:var(--text-subtle);text-align:center;margin-top:14px;">
+    Need help? Contact your administrator for account linking assistance.
+</p>
+{{template "base_end" .}}

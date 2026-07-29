@@ -514,7 +514,7 @@ func TestOAuthService_ValidateClient_Success(t *testing.T) {
 		Secret: clientSecret,
 	}
 
-	mockClientRepo.EXPECT().GetClient(ctx, clientID).Return(client, nil)
+	mockClientRepo.EXPECT().ValidateClient(ctx, clientID, clientSecret).Return(client, nil)
 
 	result, err := oauthService.ValidateClient(ctx, clientID, clientSecret)
 
@@ -549,7 +549,7 @@ func TestOAuthService_ValidateClient_NotFound(t *testing.T) {
 	clientID := "unknown-client"
 	clientSecret := "secret"
 
-	mockClientRepo.EXPECT().GetClient(ctx, clientID).Return(nil, errors.New("not found"))
+	mockClientRepo.EXPECT().ValidateClient(ctx, clientID, clientSecret).Return(nil, errors.New("not found"))
 
 	_, err := oauthService.ValidateClient(ctx, clientID, clientSecret)
 
@@ -584,12 +584,7 @@ func TestOAuthService_ValidateClient_InvalidSecret(t *testing.T) {
 	clientID := "client-id"
 	clientSecret := "wrong-secret"
 
-	client := &domain.Client{
-		ID:     clientID,
-		Secret: "correct-secret",
-	}
-
-	mockClientRepo.EXPECT().GetClient(ctx, clientID).Return(client, nil)
+	mockClientRepo.EXPECT().ValidateClient(ctx, clientID, clientSecret).Return(nil, domain.ErrInvalidClientCredentials)
 
 	_, err := oauthService.ValidateClient(ctx, clientID, clientSecret)
 
@@ -641,7 +636,7 @@ func TestOAuthService_DirectGrant_Success(t *testing.T) {
 		PasswordHash: string(hashedPassword),
 	}
 
-	mockClientRepo.EXPECT().GetClient(ctx, clientID).Return(client, nil)
+	mockClientRepo.EXPECT().ValidateClient(ctx, clientID, clientSecret).Return(client, nil)
 	mockUserRepo.EXPECT().GetUserByEmail(ctx, username).Return(user, nil)
 	mockSessionRepo.EXPECT().StoreSession(ctx, gomock.Any()).Return(nil)
 	mockTokenServiceInterface.EXPECT().GenerateTokenPair(ctx, clientID, user.ID, "openid", gomock.Any()).Return(&api.TokenResponse{
@@ -694,7 +689,7 @@ func TestOAuthService_DirectGrant_InvalidGrantType(t *testing.T) {
 		AllowedScopes:     []string{"openid"},
 	}
 
-	mockClientRepo.EXPECT().GetClient(ctx, clientID).Return(client, nil)
+	mockClientRepo.EXPECT().ValidateClient(ctx, clientID, clientSecret).Return(client, nil)
 
 	_, err := oauthService.DirectGrant(ctx, clientID, clientSecret, "user", "password", "openid")
 
@@ -736,7 +731,7 @@ func TestOAuthService_ClientCredentials_Success(t *testing.T) {
 		AllowedScopes:     []string{"openid", "profile"},
 	}
 
-	mockClientRepo.EXPECT().GetClient(ctx, clientID).Return(client, nil)
+	mockClientRepo.EXPECT().ValidateClient(ctx, clientID, clientSecret).Return(client, nil)
 	mockTokenServiceInterface.EXPECT().CreateToken(ctx, gomock.Any(), nil).Return(&domain.Token{
 		ID:         "token-id",
 		TokenValue: "access-token-value",
@@ -851,7 +846,7 @@ func TestOAuthService_ExchangeAuthorizationCode_Success(t *testing.T) {
 		Used:        false,
 	}
 
-	mockClientRepo.EXPECT().GetClient(ctx, clientID).Return(client, nil)
+	mockClientRepo.EXPECT().ValidateClient(ctx, clientID, clientSecret).Return(client, nil)
 	mockAuthCodeRepo.EXPECT().GetAuthCode(ctx, code).Return(authCode, nil)
 	mockAuthCodeRepo.EXPECT().MarkAuthCodeAsUsed(ctx, code).Return(nil)
 	mockTokenServiceInterface.EXPECT().GenerateTokenPair(ctx, clientID, authCode.UserID, authCode.Scope, time.Hour).Return(&api.TokenResponse{
@@ -901,7 +896,7 @@ func TestOAuthService_ExchangeAuthorizationCode_InvalidCode(t *testing.T) {
 		Secret: clientSecret,
 	}
 
-	mockClientRepo.EXPECT().GetClient(ctx, clientID).Return(client, nil)
+	mockClientRepo.EXPECT().ValidateClient(ctx, clientID, clientSecret).Return(client, nil)
 	mockAuthCodeRepo.EXPECT().GetAuthCode(ctx, code).Return(nil, errors.New("code not found"))
 
 	_, err := oauthService.ExchangeAuthorizationCode(ctx, code, clientID, clientSecret, redirectURI)
@@ -953,7 +948,7 @@ func TestOAuthService_ExchangeAuthorizationCode_Expired(t *testing.T) {
 		Used:        false,
 	}
 
-	mockClientRepo.EXPECT().GetClient(ctx, clientID).Return(client, nil)
+	mockClientRepo.EXPECT().ValidateClient(ctx, clientID, clientSecret).Return(client, nil)
 	mockAuthCodeRepo.EXPECT().GetAuthCode(ctx, code).Return(authCode, nil)
 
 	_, err := oauthService.ExchangeAuthorizationCode(ctx, code, clientID, clientSecret, redirectURI)
@@ -1009,7 +1004,7 @@ func TestOAuthService_IntrospectToken_Success(t *testing.T) {
 		Email: "user@example.com",
 	}
 
-	mockClientRepo.EXPECT().GetClient(ctx, clientID).Return(client, nil)
+	mockClientRepo.EXPECT().ValidateClient(ctx, clientID, clientSecret).Return(client, nil)
 	mockTokenServiceInterface.EXPECT().GetAccessTokenInfo(ctx, token).Return(tokenInfo, nil)
 	mockUserRepo.EXPECT().GetUserByID(ctx, "user-id").Return(user, nil)
 
@@ -1046,7 +1041,7 @@ func TestOAuthService_IntrospectToken_InvalidClient(t *testing.T) {
 
 	ctx := context.Background()
 
-	mockClientRepo.EXPECT().GetClient(ctx, "invalid-client").Return(nil, errors.New("not found"))
+	mockClientRepo.EXPECT().ValidateClient(ctx, "invalid-client", "secret").Return(nil, errors.New("not found"))
 
 	_, err := oauthService.IntrospectToken(ctx, "token", "", "invalid-client", "secret")
 
@@ -1085,7 +1080,7 @@ func TestOAuthService_RevokeToken(t *testing.T) {
 		Secret: clientSecret,
 	}
 
-	mockClientRepo.EXPECT().GetClient(ctx, clientID).Return(client, nil)
+	mockClientRepo.EXPECT().ValidateClient(ctx, clientID, clientSecret).Return(client, nil)
 	mockTokenServiceInterface.EXPECT().RevokeToken(ctx, "token-to-revoke").Return(nil)
 
 	err := oauthService.RevokeToken(ctx, "token-to-revoke", "", clientID, clientSecret)

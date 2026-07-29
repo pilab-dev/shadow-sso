@@ -32,6 +32,9 @@ type RepositoryProvider interface {
 	IdPRepository(ctx context.Context) domain.IdPRepository
 	ConfigurationRepository(ctx context.Context) domain.ConfigurationRepository
 
+	// Health check
+	Ping(ctx context.Context) error
+
 	// Add other repository getters here as they are defined and needed.
 	// Example: AuditLogRepository() AuditLogRepository
 }

@@ -80,6 +80,36 @@ func (f *FacebookProvider) GetOAuth2Config(redirectURL string) (*oauth2.Config, 
 	}, nil
 }
 
+// GetAuthCodeURL overrides BaseProvider's method to properly dispatch to Facebook's
+// GetOAuth2Config. BaseProvider.GetAuthCodeURL calls b.GetOAuth2Config() on the
+// *BaseProvider receiver, which bypasses the FacebookProvider override due to Go's
+// embedded struct method dispatch rules.
+func (f *FacebookProvider) GetAuthCodeURL(state, redirectURL string, opts ...oauth2.AuthCodeOption) (string, error) {
+	conf, err := f.GetOAuth2Config(redirectURL)
+	if err != nil {
+		return "", err
+	}
+	return conf.AuthCodeURL(state, opts...), nil
+}
+
+// ExchangeCode overrides BaseProvider's method for the same dispatch reason as GetAuthCodeURL.
+func (f *FacebookProvider) ExchangeCode(ctx context.Context, redirectURL string, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error) {
+	conf, err := f.GetOAuth2Config(redirectURL)
+	if err != nil {
+		return nil, err
+	}
+	return conf.Exchange(ctx, code, opts...)
+}
+
+// GetHttpClient overrides BaseProvider's method for the same dispatch reason as GetAuthCodeURL.
+func (f *FacebookProvider) GetHttpClient(ctx context.Context, token *oauth2.Token) *http.Client {
+	conf, err := f.GetOAuth2Config("")
+	if err != nil {
+		return oauth2.NewClient(ctx, oauth2.StaticTokenSource(token))
+	}
+	return conf.Client(ctx, token)
+}
+
 // FetchUserInfo overrides BaseProvider's method to fetch user information from Facebook's Graph API.
 func (f *FacebookProvider) FetchUserInfo(ctx context.Context, token *oauth2.Token) (*ExternalUserInfo, error) {
 	// Facebook requires the appsecret_proof for server-side API calls if "Require App Secret" is enabled in App settings.

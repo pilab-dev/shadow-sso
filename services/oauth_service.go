@@ -201,12 +201,12 @@ func (s *defaultOAuthService) GetJWKS() *domain.JWKS {
 }
 
 func (s *defaultOAuthService) ValidateClient(ctx context.Context, clientID, clientSecret string) (*domain.Client, error) {
-	cli, err := s.clientRepo.GetClient(ctx, clientID)
+	cli, err := s.clientRepo.ValidateClient(ctx, clientID, clientSecret)
 	if err != nil {
+		if strings.Contains(err.Error(), domain.ErrInvalidClientCredentials.Error()) {
+			return nil, domain.ErrInvalidClientCredentials
+		}
 		return nil, fmt.Errorf("client not found: %w", err)
-	}
-	if err := bcrypt.CompareHashAndPassword([]byte(cli.Secret), []byte(clientSecret)); err != nil {
-		return nil, domain.ErrInvalidClientCredentials
 	}
 	return cli, nil
 }
@@ -275,6 +275,7 @@ func (s *defaultOAuthService) ClientCredentials(ctx context.Context,
 		TokenType:    "access_token",
 		ExpireIn:     time.Hour,
 		SigningKeyID: "",
+		Roles:        cli.ServiceAccountRoles,
 	}, nil)
 	if err != nil {
 		return nil, err

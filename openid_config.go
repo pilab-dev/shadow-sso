@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"                                                 // For *gin.Engine
 	"github.com/pilab-dev/shadow-sso/api"                                      // For api.OpenIDProviderConfig
 	"github.com/pilab-dev/shadow-sso/api/openidv2_1"                           // For api.NewOAuth2API
+	"github.com/pilab-dev/shadow-sso/api/webauth"                              // For webauth.New, WebAuth login UI
 	"github.com/pilab-dev/shadow-sso/apps/ssso/config"                         // For config.Config
 	"github.com/pilab-dev/shadow-sso/cache"                                    // For cache.NewMemoryTokenStore
 	"github.com/pilab-dev/shadow-sso/domain"
@@ -99,6 +100,8 @@ type SSOServerOptions struct {
 	FlowStore          domain.FlowStore
 	UserSessionStore   domain.UserSessionStore
 	EncryptionKey      string // For configuration service encryption
+	CookieSigningSecret string // Secret for signing SSO session cookies
+	ExtraMiddlewares   []gin.HandlerFunc         // Additional Gin middlewares applied before route registration
 }
 
 // NewSSOServer initializes and returns a configured Gin engine for the SSO server.
@@ -180,26 +183,84 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 	// Initialize password hasher (moved here as it's a service)
 	passwordHasher := pkgAuth.NewBcryptPasswordHasher(opts.Config.SecurityConfig.PasswordHashingCost)
 
+	var brandLogoURL, brandOrgName, brandColor string
+	if opts.AppConfig != nil {
+		brandLogoURL = opts.AppConfig.BrandLogoURL
+		brandOrgName = opts.AppConfig.BrandOrganizationName
+		brandColor = opts.AppConfig.BrandPrimaryColor
+	}
+
 	// Create OAuth2 API handlers
 	oauth2API := openidv2_1.NewOAuth2API(&openidv2_1.OAuth2APIOptions{
-		OAuthService:      serviceProvider.OAuthService(),
-		JSKSService:       serviceProvider.JWKSService(),
-		ClientService:     serviceProvider.ClientService(),
-		PkceService:       serviceProvider.PKCEService(),
-		Config:            opts.Config,
-		FlowStore:         serviceProvider.FlowStore(),
-		UserSessionStore:  serviceProvider.UserSessionStore(),
-		UserRepo:          repoProvider.UserRepository(context.Background()),
-		PasswordHasher:   passwordHasher,
-		FederationService: serviceProvider.FederationService(),
-		TokenService:      serviceProvider.TokenService(),
+		OAuthService:         serviceProvider.OAuthService(),
+		JSKSService:          serviceProvider.JWKSService(),
+		ClientService:        serviceProvider.ClientService(),
+		PkceService:          serviceProvider.PKCEService(),
+		Config:               opts.Config,
+		FlowStore:            serviceProvider.FlowStore(),
+		UserSessionStore:     serviceProvider.UserSessionStore(),
+		UserRepo:             repoProvider.UserRepository(context.Background()),
+		PasswordHasher:       passwordHasher,
+		FederationService:    serviceProvider.FederationService(),
+		TokenService:         serviceProvider.TokenService(),
+		CookieSigningSecret:  opts.CookieSigningSecret,
+		BrandLogoURL:          brandLogoURL,
+		BrandOrganizationName: brandOrgName,
+		BrandPrimaryColor:     brandColor,
 	})
 
 	// Setup Gin server
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(middleware.ZerologLogger())
+
+	// Apply extra middlewares (CORS, request ID, tracing, etc.)
+	for _, m := range opts.ExtraMiddlewares {
+		router.Use(m)
+	}
+
+	if err := webauth.LoadTemplates(router); err != nil {
+		return nil, fmt.Errorf("failed to load webauth templates: %w", err)
+	}
 	oauth2API.RegisterRoutes(router)
+
+	// --- WebAuth login UI routes ---
+	webauthConfig := &webauth.Config{
+		BrandLogoURL:             brandLogoURL,
+		BrandOrganizationName:    brandOrgName,
+		BrandPrimaryColor:        brandColor,
+		RateLimitMaxAttempts:     5,
+		RateLimitLockoutDuration: 15 * time.Minute,
+	}
+	if opts.AppConfig != nil {
+		if opts.AppConfig.RateLimitMaxAttempts > 0 {
+			webauthConfig.RateLimitMaxAttempts = opts.AppConfig.RateLimitMaxAttempts
+		}
+		if opts.AppConfig.RateLimitLockoutDuration > 0 {
+			webauthConfig.RateLimitLockoutDuration = opts.AppConfig.RateLimitLockoutDuration
+		}
+	}
+
+	webauthAPI := webauth.New(&webauth.Options{
+		UserRepo:          repoProvider.UserRepository(context.Background()),
+		PasswordHasher:    passwordHasher,
+		FlowStore:         serviceProvider.FlowStore(),
+		UserSessionStore:  serviceProvider.UserSessionStore(),
+		IdPRepository:     repoProvider.IdPRepository(context.Background()),
+		FederationService: serviceProvider.FederationService(),
+		OAuthService:      serviceProvider.OAuthService(),
+		TokenService:      serviceProvider.TokenService(),
+		ClientService:     serviceProvider.ClientService(),
+		Config:            webauthConfig,
+		SSOCookieSecret:   opts.CookieSigningSecret,
+	})
+
+	router.GET("/", webauthAPI.LandingPageHandler)
+	router.GET("/login", webauthAPI.LoginPageHandler)
+	router.POST("/login", webauthAPI.LoginSubmitHandler)
+	router.GET("/login/:provider", webauthAPI.SocialLoginHandler)
+	router.GET("/consent", webauthAPI.ConsentPageHandler)
+	router.POST("/consent", webauthAPI.ConsentSubmitHandler)
 
 	// ---------- Connect-RPC handlers ----------
 	ctx := context.Background()
@@ -360,8 +421,14 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 			PasswordHasher:          passwordHasher,
 		}
 
+		var bootstrapToken string
+		if opts.AppConfig != nil {
+			bootstrapToken = opts.AppConfig.BootstrapToken
+		}
+
 		graphqlHandler := graphql.AuthMiddleware(
 			serviceProvider.TokenService(),
+			bootstrapToken,
 			graphql.NewHandler(resolver, "/graphql", graphql.GraphQLConfig{IsDevelopment: true}),
 		)
 

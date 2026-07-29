@@ -41,11 +41,14 @@ COPY --from=builder /ssso /usr/local/bin/ssso
 # For example, if you have a default config:
 # COPY --from=builder /app/sso_config.yaml.example /etc/sso/sso_config.yaml
 
+COPY docker/ /docker/
+
 # Set the user to run the application
 USER appuser
 
 # Expose the port the application runs on (default 8080, can be configured)
 EXPOSE 8080
 
-# Command to run the application
-ENTRYPOINT ["/usr/local/bin/ssso"]
+HEALTHCHECK --interval=15s --timeout=3s --start-period=30s --retries=3 CMD curl -f http://localhost:5000/healthz || exit 1
+
+ENTRYPOINT ["/docker/entrypoint.sh"]

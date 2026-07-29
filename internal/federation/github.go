@@ -81,6 +81,36 @@ func (g *GitHubProvider) GetOAuth2Config(redirectURL string) (*oauth2.Config, er
 	}, nil
 }
 
+// GetAuthCodeURL overrides BaseProvider's method to properly dispatch to GitHub's
+// GetOAuth2Config. BaseProvider.GetAuthCodeURL calls b.GetOAuth2Config() on the
+// *BaseProvider receiver, which bypasses the GitHubProvider override due to Go's
+// embedded struct method dispatch rules.
+func (g *GitHubProvider) GetAuthCodeURL(state, redirectURL string, opts ...oauth2.AuthCodeOption) (string, error) {
+	conf, err := g.GetOAuth2Config(redirectURL)
+	if err != nil {
+		return "", err
+	}
+	return conf.AuthCodeURL(state, opts...), nil
+}
+
+// ExchangeCode overrides BaseProvider's method for the same dispatch reason as GetAuthCodeURL.
+func (g *GitHubProvider) ExchangeCode(ctx context.Context, redirectURL string, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error) {
+	conf, err := g.GetOAuth2Config(redirectURL)
+	if err != nil {
+		return nil, err
+	}
+	return conf.Exchange(ctx, code, opts...)
+}
+
+// GetHttpClient overrides BaseProvider's method for the same dispatch reason as GetAuthCodeURL.
+func (g *GitHubProvider) GetHttpClient(ctx context.Context, token *oauth2.Token) *http.Client {
+	conf, err := g.GetOAuth2Config("")
+	if err != nil {
+		return oauth2.NewClient(ctx, oauth2.StaticTokenSource(token))
+	}
+	return conf.Client(ctx, token)
+}
+
 // FetchUserInfo overrides BaseProvider's method to fetch user information from GitHub.
 // GitHub requires two calls: one for user profile, another for primary email if `user:email` scope is granted.
 func (g *GitHubProvider) FetchUserInfo(ctx context.Context, token *oauth2.Token) (*ExternalUserInfo, error) {

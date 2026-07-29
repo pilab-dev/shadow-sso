@@ -1,0 +1,18 @@
+- generic [ref=f17e2]:
+  - generic [ref=f17e3]:
+    - heading "Shadow SSO" [level=1] [ref=f17e8]
+    - heading "Something went wrong" [level=2] [ref=f17e14]
+    - paragraph [ref=f17e15]: We encountered an error processing your request
+    - alert [ref=f17e16]:
+      - strong [ref=f17e21]: invalid client_id
+    - generic [ref=f17e22]:
+      - paragraph [ref=f17e23]: What you can try
+      - list [ref=f17e24]:
+        - listitem [ref=f17e25]: Go back and try again
+        - listitem [ref=f17e26]: Clear your browser cookies and cache
+        - listitem [ref=f17e27]: Contact your administrator if the problem persists
+    - generic [ref=f17e28]:
+      - link "Back to Sign In" [ref=f17e29] [cursor=pointer]:
+        - /url: /login
+      - button "Go Back" [ref=f17e33]
+  - paragraph [ref=f17e37]: Secured by Shadow SSO

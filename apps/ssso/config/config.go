@@ -1,17 +1,21 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/pilab-dev/shadow-sso/api"
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/viper"
 )
 
 // Config holds all configuration for the SSO server.
 type Config struct {
 	HTTPAddr             string        `mapstructure:"http_addr"`
+	MgmtHTTPAddr         string        `mapstructure:"mgmt_http_addr"`
 	LogLevel             string        `mapstructure:"log_level"`
 	MongoURI             string        `mapstructure:"mongo_uri"`
 	MongoDBName          string        `mapstructure:"mongo_db_name"`
@@ -31,9 +35,9 @@ type Config struct {
 	DTSDefaultPKCETTL time.Duration `mapstructure:"dts_default_pkce_ttl"`
 
 	// SMS configuration
-	TwilioAccountSID   string `mapstructure:"twilio_account_sid"`
-	TwilioAuthToken    string `mapstructure:"twilio_auth_token"`
-	TwilioPhoneNumber  string `mapstructure:"twilio_phone_number"`
+	TwilioAccountSID  string `mapstructure:"twilio_account_sid"`
+	TwilioAuthToken   string `mapstructure:"twilio_auth_token"`
+	TwilioPhoneNumber string `mapstructure:"twilio_phone_number"`
 
 	// Email service configuration
 	ResendAPIKey      string `mapstructure:"resend_api_key"`
@@ -61,6 +65,24 @@ type Config struct {
 
 	// JSON logging (false = pretty console for local dev)
 	JSONLog bool `mapstructure:"json_log"`
+
+	TracingEnabled      bool   `mapstructure:"tracing_enabled"`
+	TracingOTLPEndpoint string `mapstructure:"tracing_otlp_endpoint"`
+
+	// Brand customization
+	BrandLogoURL          string `mapstructure:"brand_logo_url"`
+	BrandOrganizationName string `mapstructure:"brand_organization_name"`
+	BrandPrimaryColor     string `mapstructure:"brand_primary_color"`
+
+	// Bootstrap token for admin client access (alternative to service account login)
+	BootstrapToken string `mapstructure:"bootstrap_token"`
+
+	// Rate limiting
+	RateLimitMaxAttempts      int           `mapstructure:"rate_limit_max_attempts"`
+	RateLimitLockoutDuration  time.Duration `mapstructure:"rate_limit_lockout_duration"`
+
+	// CORS configuration
+	AllowedOrigins []string `mapstructure:"allowed_origins"`
 }
 
 // StorageType defines the type of storage backend to use.
@@ -77,11 +99,11 @@ func (c *Config) ToOpenIDProviderConfig() *api.OpenIDProviderConfig {
 	// Create a default config - NewDefaultConfig was removed, so we initialize manually
 	oidcConfig := &api.OpenIDProviderConfig{
 		Issuer:            c.IssuerURL,
-		AccessTokenTTL:    15 * time.Minute,  // Default
-		RefreshTokenTTL:   24 * time.Hour,     // Default
-		AuthCodeTTL:       10 * time.Minute,  // Default
-		IDTokenTTL:        15 * time.Minute,  // Default
-		SessionTTL:        24 * time.Hour,     // Default
+		AccessTokenTTL:    15 * time.Minute, // Default
+		RefreshTokenTTL:   24 * time.Hour,   // Default
+		AuthCodeTTL:       10 * time.Minute, // Default
+		IDTokenTTL:        15 * time.Minute, // Default
+		SessionTTL:        24 * time.Hour,   // Default
 		KeyRotationPeriod: c.KeyRotationInterval,
 		NextJSLoginURL:    c.NextJSLoginURL,
 		// Set default enabled endpoints, grant types, etc.
@@ -106,7 +128,7 @@ func (c *Config) ToOpenIDProviderConfig() *api.OpenIDProviderConfig {
 			PasswordHashingCost: 10,
 		},
 		TokenConfig: api.TokenConfig{
-			AccessTokenFormat: "jwt",
+			AccessTokenFormat:      "jwt",
 			SupportedResponseTypes: []string{"code"},
 		},
 		PKCEConfig: api.PKCEConfig{
@@ -116,9 +138,9 @@ func (c *Config) ToOpenIDProviderConfig() *api.OpenIDProviderConfig {
 	}
 
 	// Override defaults with values from the app's config
-	oidcConfig.AccessTokenTTL = c.TokenCacheDefaultTTL // Assuming this is the desired mapping
+	oidcConfig.AccessTokenTTL = c.TokenCacheDefaultTTL            // Assuming this is the desired mapping
 	oidcConfig.RefreshTokenTTL = c.TokenCacheDefaultTTL * 24 * 30 // Example mapping, adjust as needed
-	oidcConfig.AuthCodeTTL = 10 * time.Minute // Hardcoded default, can be from config if exposed
+	oidcConfig.AuthCodeTTL = 10 * time.Minute                     // Hardcoded default, can be from config if exposed
 	oidcConfig.IDTokenTTL = c.TokenCacheDefaultTTL
 	oidcConfig.SessionTTL = c.KeyRotationInterval // Assuming session TTL can be linked to this or another config entry
 	oidcConfig.KeyRotationPeriod = c.KeyRotationInterval
@@ -154,6 +176,7 @@ func LoadConfig() (config Config, err error) {
 
 	// Default values for original SSSO settings
 	viper.SetDefault("http_addr", "0.0.0.0:8080")
+	viper.SetDefault("mgmt_http_addr", ":5000")
 	viper.SetDefault("log_level", "info")
 	viper.SetDefault("mongo_uri", "mongodb://localhost:27017")
 	viper.SetDefault("mongo_db_name", "shadow_sso_db")
@@ -191,11 +214,22 @@ func LoadConfig() (config Config, err error) {
 	viper.SetDefault("initial_admin_first_name", "Admin")
 	viper.SetDefault("initial_admin_last_name", "User")
 	viper.SetDefault("initial_admin_client_secret", "")
+	viper.SetDefault("bootstrap_token", "")
 	viper.SetDefault("json_log", false)
+	viper.SetDefault("tracing_enabled", false)
+	viper.SetDefault("tracing_otlp_endpoint", "")
+
+	viper.SetDefault("brand_logo_url", "")
+	viper.SetDefault("brand_organization_name", "")
+	viper.SetDefault("brand_primary_color", "")
+	viper.SetDefault("rate_limit_max_attempts", 5)
+	viper.SetDefault("rate_limit_lockout_duration", "15m")
+	viper.SetDefault("allowed_origins", []string{"*"})
 
 	// Explicitly bind env vars so viper.Unmarshal picks them up
-	viper.BindEnv("config_encryption_key")
-	viper.BindEnv("signing_key_path")
+	_ = viper.BindEnv("mgmt_http_addr")
+	_ = viper.BindEnv("config_encryption_key")
+	_ = viper.BindEnv("signing_key_path")
 	viper.BindEnv("token_signing_key")
 	viper.BindEnv("initial_admin_enabled")
 	viper.BindEnv("initial_admin_email")
@@ -203,7 +237,11 @@ func LoadConfig() (config Config, err error) {
 	viper.BindEnv("initial_admin_first_name")
 	viper.BindEnv("initial_admin_last_name")
 	viper.BindEnv("initial_admin_client_secret")
+	viper.BindEnv("bootstrap_token")
 	viper.BindEnv("json_log")
+	viper.BindEnv("tracing_enabled")
+	viper.BindEnv("tracing_otlp_endpoint")
+	viper.BindEnv("allowed_origins")
 
 	if errRead := viper.ReadInConfig(); errRead != nil {
 		if _, ok := errRead.(viper.ConfigFileNotFoundError); ok {
@@ -220,8 +258,16 @@ func LoadConfig() (config Config, err error) {
 		return
 	}
 
-	if config.ConfigEncryptionKey == "" || config.ConfigEncryptionKey == "your-32-byte-encryption-key-here!!" {
-		return Config{}, fmt.Errorf("FATAL: config_encryption_key is required. Set SSSO_CONFIG_ENCRYPTION_KEY environment variable")
+	if config.ConfigEncryptionKey == "" {
+		if config.JSONLog || config.InitialAdminEnabled {
+			return Config{}, fmt.Errorf("FATAL: config_encryption_key is required. Set SSSO_CONFIG_ENCRYPTION_KEY environment variable")
+		}
+		key := make([]byte, 32)
+		if _, err := rand.Read(key); err != nil {
+			return Config{}, fmt.Errorf("failed to generate encryption key: %w", err)
+		}
+		config.ConfigEncryptionKey = hex.EncodeToString(key)
+		log.Warn().Msgf("No SSSO_CONFIG_ENCRYPTION_KEY set — auto-generated ephemeral key for dev session: %s", config.ConfigEncryptionKey)
 	}
 
 	// Viper doesn't automatically convert string to custom types like StorageType

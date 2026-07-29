@@ -1,0 +1,523 @@
+{{define "base_start"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+    <meta http-equiv="X-Frame-Options" content="DENY">
+    <meta http-equiv="X-XSS-Protection" content="1; mode=block">
+    <meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
+    <title>{{if .PageTitle}}{{.PageTitle}} — {{if .BrandName}}{{.BrandName}}{{else}}Shadow SSO{{end}}{{else}}Shadow SSO{{end}}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* ── Design Tokens ─────────────────────────────────────────── */
+        :root {
+            --primary:        {{if .BrandColor}}{{.BrandColor}}{{else}}#6366f1{{end}};
+            --primary-light:  color-mix(in srgb, var(--primary) 15%, transparent);
+            --primary-hover:  color-mix(in srgb, var(--primary) 82%, black);
+            --primary-glow:   color-mix(in srgb, var(--primary) 40%, transparent);
+
+            --bg:             #0f0f13;
+            --bg-card:        rgba(255,255,255,0.05);
+            --bg-card-hover:  rgba(255,255,255,0.08);
+            --bg-input:       rgba(255,255,255,0.06);
+            --bg-muted:       rgba(255,255,255,0.04);
+
+            --border:         rgba(255,255,255,0.1);
+            --border-focus:   var(--primary);
+
+            --text:           #f1f5f9;
+            --text-muted:     #94a3b8;
+            --text-subtle:    #64748b;
+
+            --error:          #f87171;
+            --error-bg:       rgba(248,113,113,0.1);
+            --error-border:   rgba(248,113,113,0.3);
+            --success:        #34d399;
+            --success-bg:     rgba(52,211,153,0.1);
+            --warning:        #fbbf24;
+            --warning-bg:     rgba(251,191,36,0.1);
+            --warning-border: rgba(251,191,36,0.3);
+
+            --radius-sm:      6px;
+            --radius-md:      10px;
+            --radius-lg:      16px;
+            --radius-xl:      20px;
+
+            --shadow-glow:    0 0 40px color-mix(in srgb, var(--primary) 20%, transparent);
+            --shadow-card:    0 24px 48px rgba(0,0,0,0.4), 0 0 0 1px var(--border);
+
+            --font:           'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            --font-mono:      'SF Mono', 'Fira Code', monospace;
+
+            --dur-fast:       0.12s;
+            --dur-mid:        0.22s;
+            --ease:           cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* ── Reset ─────────────────────────────────────────────────── */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html { font-size: 16px; -webkit-font-smoothing: antialiased; }
+
+        /* ── Body & animated gradient background ───────────────────── */
+        body {
+            font-family: var(--font);
+            background-color: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px 16px;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        /* Animated orb background */
+        body::before, body::after {
+            content: '';
+            position: fixed;
+            border-radius: 50%;
+            filter: blur(80px);
+            pointer-events: none;
+            z-index: 0;
+            animation: orb-drift 18s ease-in-out infinite alternate;
+        }
+        body::before {
+            width: 500px; height: 500px;
+            top: -150px; left: -150px;
+            background: color-mix(in srgb, var(--primary) 18%, transparent);
+        }
+        body::after {
+            width: 400px; height: 400px;
+            bottom: -120px; right: -120px;
+            background: color-mix(in srgb, #818cf8 16%, transparent);
+            animation-delay: -9s;
+        }
+
+        @keyframes orb-drift {
+            from { transform: translate(0, 0) scale(1); }
+            to   { transform: translate(40px, 30px) scale(1.08); }
+        }
+
+        /* ── Layout ─────────────────────────────────────────────────── */
+        .container {
+            width: 100%;
+            max-width: 420px;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Glassmorphism card */
+        .card {
+            background: var(--bg-card);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: var(--radius-xl);
+            box-shadow: var(--shadow-card);
+            padding: 36px 32px;
+            border: 1px solid var(--border);
+            animation: card-in var(--dur-mid) var(--ease) both;
+        }
+
+        @keyframes card-in {
+            from { opacity: 0; transform: translateY(14px) scale(0.98); }
+            to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        /* ── Header ─────────────────────────────────────────────────── */
+        .header {
+            text-align: center;
+            margin-bottom: 28px;
+        }
+
+        .logo {
+            max-height: 56px;
+            width: auto;
+            margin-bottom: 14px;
+            filter: drop-shadow(0 0 12px var(--primary-glow));
+        }
+
+        /* Default shield icon when no logo */
+        .brand-icon {
+            width: 56px;
+            height: 56px;
+            margin: 0 auto 14px;
+            background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 60%, #818cf8));
+            border-radius: var(--radius-lg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 24px var(--primary-glow);
+        }
+
+        .brand-icon svg {
+            width: 28px;
+            height: 28px;
+            color: #fff;
+        }
+
+        .brand-name {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--text);
+            letter-spacing: -0.02em;
+            margin-bottom: 2px;
+        }
+
+        .page-title {
+            font-size: 1.0625rem;
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 4px;
+        }
+
+        .page-subtitle {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+        }
+
+        /* ── Forms ──────────────────────────────────────────────────── */
+        .form-group { margin-bottom: 18px; }
+
+        .form-label {
+            display: block;
+            font-size: 0.8125rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            letter-spacing: 0.01em;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 11px 14px;
+            font-size: 0.9375rem;
+            font-family: var(--font);
+            color: var(--text);
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            transition: border-color var(--dur-fast) var(--ease),
+                        box-shadow var(--dur-fast) var(--ease),
+                        background var(--dur-fast) var(--ease);
+            outline: none;
+        }
+
+        .form-input::placeholder { color: var(--text-subtle); }
+
+        .form-input:hover:not(:focus) {
+            border-color: rgba(255,255,255,0.18);
+            background: var(--bg-card-hover);
+        }
+
+        .form-input:focus {
+            border-color: var(--primary);
+            background: var(--bg-card-hover);
+            box-shadow: 0 0 0 3px var(--primary-light);
+        }
+
+        .form-input.error { border-color: var(--error); }
+        .form-input.error:focus { box-shadow: 0 0 0 3px var(--error-bg); }
+
+        /* ── Buttons ────────────────────────────────────────────────── */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            padding: 11px 18px;
+            font-size: 0.9375rem;
+            font-weight: 600;
+            font-family: var(--font);
+            border-radius: var(--radius-md);
+            border: none;
+            cursor: pointer;
+            text-decoration: none;
+            line-height: 1.5;
+            transition: background var(--dur-fast) var(--ease),
+                        box-shadow var(--dur-fast) var(--ease),
+                        transform var(--dur-fast) var(--ease),
+                        opacity var(--dur-fast) var(--ease);
+        }
+
+        .btn:active { transform: scale(0.97); }
+        .btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 70%, #818cf8));
+            color: #fff;
+            box-shadow: 0 4px 16px var(--primary-glow);
+        }
+        .btn-primary:hover:not(:disabled) {
+            background: linear-gradient(135deg, var(--primary-hover), color-mix(in srgb, var(--primary-hover) 70%, #6366f1));
+            box-shadow: 0 6px 20px var(--primary-glow);
+        }
+
+        .btn-secondary {
+            background: var(--bg-input);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+        .btn-secondary:hover:not(:disabled) {
+            background: var(--bg-card-hover);
+            border-color: rgba(255,255,255,0.18);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: #fff;
+            box-shadow: 0 4px 16px rgba(239,68,68,0.3);
+        }
+        .btn-danger:hover:not(:disabled) {
+            background: linear-gradient(135deg, #dc2626, #b91c1c);
+        }
+
+        /* ── Social Login Buttons ───────────────────────────────────── */
+        .social-divider {
+            display: flex;
+            align-items: center;
+            margin: 22px 0;
+        }
+        .social-divider::before,
+        .social-divider::after {
+            content: '';
+            flex: 1;
+            border-bottom: 1px solid var(--border);
+        }
+        .social-divider span {
+            padding: 0 14px;
+            font-size: 0.75rem;
+            color: var(--text-subtle);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-weight: 500;
+        }
+
+        .social-buttons { display: flex; flex-direction: column; gap: 10px; }
+
+        .btn-social {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            width: 100%;
+            padding: 11px 18px;
+            font-size: 0.9375rem;
+            font-weight: 500;
+            font-family: var(--font);
+            border-radius: var(--radius-md);
+            border: 1px solid var(--border);
+            cursor: pointer;
+            text-decoration: none;
+            color: var(--text);
+            background: var(--bg-input);
+            transition: background var(--dur-fast) var(--ease),
+                        border-color var(--dur-fast) var(--ease),
+                        transform var(--dur-fast) var(--ease);
+        }
+        .btn-social:hover {
+            background: var(--bg-card-hover);
+            border-color: rgba(255,255,255,0.18);
+        }
+        .btn-social:active { transform: scale(0.97); }
+        .btn-social svg { width: 18px; height: 18px; flex-shrink: 0; }
+
+        /* ── Alerts ─────────────────────────────────────────────────── */
+        .alert {
+            padding: 12px 14px;
+            border-radius: var(--radius-md);
+            margin-bottom: 18px;
+            font-size: 0.875rem;
+            line-height: 1.5;
+            display: flex;
+            gap: 10px;
+            align-items: flex-start;
+            border: 1px solid transparent;
+        }
+
+        .alert-icon { flex-shrink: 0; margin-top: 1px; }
+        .alert-icon svg { width: 16px; height: 16px; }
+
+        .alert-error  { background: var(--error-bg);   color: var(--error);   border-color: var(--error-border); }
+        .alert-success{ background: var(--success-bg); color: var(--success);
+                         border-color: rgba(52,211,153,0.3); }
+        .alert-warning{ background: var(--warning-bg); color: var(--warning); border-color: var(--warning-border); }
+
+        /* ── Links ──────────────────────────────────────────────────── */
+        .link {
+            color: var(--primary);
+            text-decoration: none;
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: color var(--dur-fast) var(--ease);
+        }
+        .link:hover { color: color-mix(in srgb, var(--primary) 80%, white); text-decoration: underline; }
+        .link-center { display: block; text-align: center; margin-top: 18px; }
+
+        /* ── Scope List ─────────────────────────────────────────────── */
+        .scope-list {
+            list-style: none;
+            margin: 14px 0;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--border);
+            overflow: hidden;
+        }
+        .scope-item {
+            padding: 10px 14px;
+            font-size: 0.875rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: var(--bg-muted);
+        }
+        .scope-item:last-child { border-bottom: none; }
+        .scope-icon { color: var(--success); flex-shrink: 0; }
+
+        /* ── Client Info ────────────────────────────────────────────── */
+        .client-info {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 14px;
+            background: var(--bg-muted);
+            border-radius: var(--radius-md);
+            border: 1px solid var(--border);
+            margin-bottom: 16px;
+        }
+        .client-logo {
+            width: 46px; height: 46px;
+            border-radius: var(--radius-sm);
+            object-fit: contain;
+            background: var(--bg-card);
+            padding: 4px;
+            flex-shrink: 0;
+        }
+        .client-logo-placeholder {
+            width: 46px; height: 46px;
+            border-radius: var(--radius-sm);
+            background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary) 60%, #818cf8));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 1.125rem;
+            color: #fff;
+            flex-shrink: 0;
+        }
+        .client-details { flex: 1; min-width: 0; }
+        .client-name { font-weight: 600; font-size: 0.9375rem; color: var(--text); }
+        .client-description { font-size: 0.8125rem; color: var(--text-muted); margin-top: 2px; }
+
+        /* ── MFA icon ───────────────────────────────────────────────── */
+        .mfa-icon {
+            width: 60px; height: 60px;
+            margin: 0 auto 18px;
+            background: var(--bg-muted);
+            border-radius: 50%;
+            border: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .mfa-icon svg { width: 28px; height: 28px; color: var(--primary); }
+
+        /* OTP input */
+        .otp-input {
+            font-family: var(--font-mono);
+            font-size: 1.75rem;
+            text-align: center;
+            letter-spacing: 0.5em;
+            padding: 14px;
+        }
+
+        /* ── Actions row ────────────────────────────────────────────── */
+        .actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .actions .btn { flex: 1; }
+
+        /* ── Info box ───────────────────────────────────────────────── */
+        .info-box {
+            background: var(--bg-muted);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            padding: 14px;
+            margin-bottom: 18px;
+        }
+        .info-box-title {
+            font-size: 0.8125rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .info-box ul {
+            font-size: 0.8125rem;
+            color: var(--text-muted);
+            margin: 0;
+            padding-left: 18px;
+        }
+        .info-box li { margin-bottom: 4px; }
+        .info-box li:last-child { margin-bottom: 0; }
+
+        /* ── Footer ─────────────────────────────────────────────────── */
+        .footer {
+            text-align: center;
+            margin-top: 20px;
+        }
+        .footer-text {
+            font-size: 0.75rem;
+            color: var(--text-subtle);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+        .footer-text svg { width: 12px; height: 12px; opacity: 0.6; }
+
+        /* ── Responsive ─────────────────────────────────────────────── */
+        @media (max-width: 480px) {
+            body { padding: 12px; align-items: flex-start; padding-top: 32px; }
+            .card { padding: 28px 22px; border-radius: var(--radius-lg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <div class="header">
+                {{if .BrandLogo}}
+                <img src="{{.BrandLogo}}" alt="Logo" class="logo">
+                {{else}}
+                <div class="brand-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                    </svg>
+                </div>
+                {{end}}
+                <h1 class="brand-name">{{if .BrandName}}{{.BrandName}}{{else}}Shadow SSO{{end}}</h1>
+            </div>
+{{end}}
+
+{{define "base_end"}}
+        </div>
+        <div class="footer">
+            <p class="footer-text">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                Secured by Shadow SSO
+            </p>
+        </div>
+    </div>
+</body>
+</html>
+{{end}}

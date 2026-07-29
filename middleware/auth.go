@@ -20,9 +20,8 @@ var publicProcedures = map[string]bool{
 	"/sso.v1.AuthService/Login":                    true,
 	"/sso.v1.AuthService/CompleteWebAuthnLogin":    true,
 
-	// UserService - self-service registration and login lookup
-	"/sso.v1.UserService/RegisterUser": true,
-	"/sso.v1.UserService/GetUser":       true,
+	// UserService - user lookup (authz handled in service logic for self vs admin)
+	"/sso.v1.UserService/GetUser": true,
 
 	// TwoFactorService - setup initiation (uses session-based auth, not JWT)
 	"/sso.v1.TwoFactorService/InitiateTOTPSetup":      true,
