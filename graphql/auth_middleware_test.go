@@ -62,7 +62,7 @@ func TestGraphQLAuth(t *testing.T) {
 			},
 		}
 
-		handler := graphql.AuthMiddleware(mockService, testHandler(true))
+		handler := graphql.AuthMiddleware(mockService, "", testHandler(true))
 		req := httptest.NewRequest(http.MethodGet, "/graphql", nil)
 		req.Header.Set("Authorization", "Bearer "+validToken)
 		rr := httptest.NewRecorder()
@@ -79,7 +79,7 @@ func TestGraphQLAuth(t *testing.T) {
 
 	t.Run("missing token returns 401", func(t *testing.T) {
 		mockService := &MockTokenService{}
-		handler := graphql.AuthMiddleware(mockService, testHandler(false))
+		handler := graphql.AuthMiddleware(mockService, "", testHandler(false))
 		req := httptest.NewRequest(http.MethodGet, "/graphql", nil)
 		rr := httptest.NewRecorder()
 
@@ -97,7 +97,7 @@ func TestGraphQLAuth(t *testing.T) {
 			},
 		}
 
-		handler := graphql.AuthMiddleware(mockService, testHandler(false))
+		handler := graphql.AuthMiddleware(mockService, "", testHandler(false))
 		req := httptest.NewRequest(http.MethodGet, "/graphql", nil)
 		req.Header.Set("Authorization", "Bearer invalid-token")
 		rr := httptest.NewRecorder()
@@ -123,7 +123,7 @@ func TestGraphQLAuth(t *testing.T) {
 			},
 		}
 
-		handler := graphql.AuthMiddleware(mockService, testHandler(false))
+		handler := graphql.AuthMiddleware(mockService, "", testHandler(false))
 		req := httptest.NewRequest(http.MethodGet, "/graphql", nil)
 		req.Header.Set("Authorization", "Bearer "+validToken)
 		rr := httptest.NewRecorder()
@@ -149,7 +149,7 @@ func TestGraphQLAuth(t *testing.T) {
 			},
 		}
 
-		handler := graphql.AuthMiddleware(mockService, testHandler(false))
+		handler := graphql.AuthMiddleware(mockService, "", testHandler(false))
 		req := httptest.NewRequest(http.MethodGet, "/graphql", nil)
 		req.Header.Set("Authorization", "Bearer "+validToken)
 		rr := httptest.NewRecorder()
@@ -163,7 +163,7 @@ func TestGraphQLAuth(t *testing.T) {
 
 	t.Run("sandbox endpoint exempt from auth", func(t *testing.T) {
 		mockService := &MockTokenService{}
-		handler := graphql.AuthMiddleware(mockService, testHandler(false))
+		handler := graphql.AuthMiddleware(mockService, "", testHandler(false))
 		req := httptest.NewRequest(http.MethodGet, "/sandbox", nil)
 		rr := httptest.NewRecorder()
 
@@ -176,7 +176,7 @@ func TestGraphQLAuth(t *testing.T) {
 
 	t.Run("malformed bearer header returns 401", func(t *testing.T) {
 		mockService := &MockTokenService{}
-		handler := graphql.AuthMiddleware(mockService, testHandler(false))
+		handler := graphql.AuthMiddleware(mockService, "", testHandler(false))
 		req := httptest.NewRequest(http.MethodGet, "/graphql", nil)
 		req.Header.Set("Authorization", "Basic abc123")
 		rr := httptest.NewRecorder()
@@ -190,7 +190,7 @@ func TestGraphQLAuth(t *testing.T) {
 
 	t.Run("empty bearer token returns 401", func(t *testing.T) {
 		mockService := &MockTokenService{}
-		handler := graphql.AuthMiddleware(mockService, testHandler(false))
+		handler := graphql.AuthMiddleware(mockService, "", testHandler(false))
 		req := httptest.NewRequest(http.MethodGet, "/graphql", nil)
 		req.Header.Set("Authorization", "Bearer ")
 		rr := httptest.NewRecorder()

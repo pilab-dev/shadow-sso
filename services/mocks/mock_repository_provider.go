@@ -111,6 +111,20 @@ func (mr *MockRepositoryProviderMockRecorder) IdPRepository(ctx any) *gomock.Cal
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IdPRepository", reflect.TypeOf((*MockRepositoryProvider)(nil).IdPRepository), ctx)
 }
 
+// Ping mocks base method.
+func (m *MockRepositoryProvider) Ping(ctx context.Context) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Ping", ctx)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Ping indicates an expected call of Ping.
+func (mr *MockRepositoryProviderMockRecorder) Ping(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Ping", reflect.TypeOf((*MockRepositoryProvider)(nil).Ping), ctx)
+}
+
 // PkceRepository mocks base method.
 func (m *MockRepositoryProvider) PkceRepository(ctx context.Context) domain.PkceRepository {
 	m.ctrl.T.Helper()

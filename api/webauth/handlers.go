@@ -12,6 +12,15 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// LandingPageHandler renders the public landing page at the root path.
+func (wa *WebAuth) LandingPageHandler(c *gin.Context) {
+	c.HTML(http.StatusOK, "landing.html", gin.H{
+		"BrandLogo":  wa.config.BrandLogoURL,
+		"BrandName":  wa.config.BrandOrganizationName,
+		"BrandColor": wa.config.BrandPrimaryColor,
+	})
+}
+
 // renderTemplate is a global helper that sets security headers and renders an
 // HTML template with the provided data. It generates a fresh CSRF token and
 // stores it both in a cookie and in the template data so the form can include

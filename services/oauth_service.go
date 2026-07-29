@@ -275,6 +275,7 @@ func (s *defaultOAuthService) ClientCredentials(ctx context.Context,
 		TokenType:    "access_token",
 		ExpireIn:     time.Hour,
 		SigningKeyID: "",
+		Roles:        cli.ServiceAccountRoles,
 	}, nil)
 	if err != nil {
 		return nil, err

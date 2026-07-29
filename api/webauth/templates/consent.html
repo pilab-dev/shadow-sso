@@ -4,7 +4,10 @@
 
 {{if .Error}}
 <div class="alert alert-error" role="alert">
-    {{.Error}}
+    <span class="alert-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    </span>
+    <span>{{.Error}}</span>
 </div>
 {{end}}
 
@@ -12,36 +15,39 @@
     {{if .ClientLogo}}
     <img src="{{.ClientLogo}}" alt="{{.ClientName}}" class="client-logo">
     {{else}}
-    <div class="client-logo" style="display: flex; align-items: center; justify-content: center; background: var(--primary-color); color: white; font-weight: bold; font-size: 1.25rem;">
-        {{if .ClientName}}{{index .ClientName 0}}{{else}}?{{end}}
+    <div class="client-logo-placeholder">
+        {{if .ClientName}}{{slice .ClientName 0 1}}{{else}}?{{end}}
     </div>
     {{end}}
     <div class="client-details">
-        <h3 class="client-name">{{if .ClientName}}{{.ClientName}}{{else}}Unknown Application{{end}}</h3>
+        <p class="client-name">{{if .ClientName}}{{.ClientName}}{{else}}Unknown Application{{end}}</p>
         {{if .ClientDescription}}<p class="client-description">{{.ClientDescription}}</p>{{end}}
     </div>
 </div>
 
 <div class="alert alert-warning" role="alert">
-    <strong>Review the permissions</strong> this application is requesting before you approve.
+    <span class="alert-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    </span>
+    <span><strong>Review the permissions</strong> this application is requesting before you approve.</span>
 </div>
 
 {{if .Scopes}}
-<p style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: var(--spacing-sm);">This application will be able to:</p>
+<p style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:8px;font-weight:500;">This application will be able to:</p>
 <ul class="scope-list">
     {{range .Scopes}}
     <li class="scope-item">
         <span class="scope-icon">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor">
                 <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/>
             </svg>
         </span>
-        <span>{{.Description}}</span>
+        <span>{{if .Description}}{{.Description}}{{else}}{{.}}{{end}}</span>
     </li>
     {{end}}
 </ul>
 {{else}}
-<p style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: var(--spacing-md);">
+<p style="font-size:0.875rem;color:var(--text-muted);margin-bottom:16px;">
     This application is requesting access to your basic profile information.
 </p>
 {{end}}
@@ -50,12 +56,18 @@
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
     <div class="actions">
-        <button type="submit" name="action" value="deny" class="btn btn-secondary">Deny</button>
-        <button type="submit" name="action" value="approve" class="btn btn-primary">Allow Access</button>
+        <button type="submit" name="decision" value="deny" class="btn btn-secondary">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            Deny
+        </button>
+        <button type="submit" name="decision" value="approve" class="btn btn-primary">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;"><polyline points="20 6 9 17 4 12"/></svg>
+            Allow Access
+        </button>
     </div>
 </form>
 
-<p style="font-size: 0.75rem; color: var(--text-muted); text-align: center; margin-top: var(--spacing-md);">
+<p style="font-size:0.75rem;color:var(--text-subtle);text-align:center;margin-top:14px;">
     Only approve this if you trust the application.
 </p>
 {{template "base_end" .}}

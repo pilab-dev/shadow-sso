@@ -151,7 +151,10 @@ func (s *defaultTokenService) CreateToken(ctx context.Context, opts domain.Creat
 	}
 
 	var userRoles []string
-	if opts.UserID != "" {
+	if len(opts.Roles) > 0 {
+		userRoles = opts.Roles
+		tokenClaimsMap["roles"] = userRoles
+	} else if opts.UserID != "" {
 		user, errUser := s.userRepo.GetUserByID(ctx, opts.UserID)
 		if errUser != nil {
 			log.Warn().Err(errUser).Str("userID", opts.UserID).Msg("CreateToken: failed to get user for roles, proceeding without roles claim.")

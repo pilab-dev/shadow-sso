@@ -1,6 +1,6 @@
 {{template "base_start" .}}
-<div class="mfa-icon" style="background: var(--error-bg);">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--error-color);">
+<div class="mfa-icon" style="background: var(--error-bg); border-color: var(--error-border);">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--error);">
         <circle cx="12" cy="12" r="10"/>
         <line x1="15" y1="9" x2="9" y2="15"/>
         <line x1="9" y1="9" x2="15" y2="15"/>
@@ -8,45 +8,49 @@
 </div>
 
 <h2 class="page-title">Something went wrong</h2>
-<p class="page-subtitle">We encountered an error while processing your request</p>
+<p class="page-subtitle">We encountered an error processing your request</p>
 
 <div class="alert alert-error" role="alert">
-    <strong>{{if .Message}}{{.Message}}{{else}}An unexpected error occurred{{end}}</strong>
-    {{if .Detail}}
-    <p style="margin-top: var(--spacing-xs); margin-bottom: 0; font-size: 0.8125rem; opacity: 0.9;">
-        {{.Detail}}
-    </p>
-    {{end}}
+    <span class="alert-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    </span>
+    <div>
+        <strong>{{if .Message}}{{.Message}}{{else}}An unexpected error occurred{{end}}</strong>
+        {{if .Detail}}
+        <p style="margin-top:4px;margin-bottom:0;font-size:0.8125rem;opacity:0.85;">{{.Detail}}</p>
+        {{end}}
+    </div>
 </div>
 
-<div style="background: var(--bg-color); border-radius: var(--radius-md); padding: var(--spacing-md); margin-bottom: var(--spacing-lg); border: 1px solid var(--border-color);">
-    <h3 style="font-size: 0.875rem; font-weight: 600; color: var(--text-color); margin-bottom: var(--spacing-sm);">
-        What you can try:
-    </h3>
-    <ul style="font-size: 0.8125rem; color: var(--text-muted); margin: 0; padding-left: var(--spacing-lg);">
-        <li style="margin-bottom: var(--spacing-xs);">Go back and try again</li>
-        <li style="margin-bottom: var(--spacing-xs);">Clear your browser cookies and cache</li>
+<div class="info-box">
+    <p class="info-box-title">What you can try</p>
+    <ul>
+        <li>Go back and try again</li>
+        <li>Clear your browser cookies and cache</li>
         <li>Contact your administrator if the problem persists</li>
     </ul>
 </div>
 
-<div class="actions" style="flex-direction: column; gap: var(--spacing-sm);">
+<div class="actions" style="flex-direction:column;">
     {{if .LoginURL}}
-    <a href="{{.LoginURL}}" class="btn btn-primary" style="text-decoration: none;">
+    <a href="{{.LoginURL}}" class="btn btn-primary" style="text-decoration:none;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
         Back to Sign In
     </a>
     {{else}}
-    <a href="/login" class="btn btn-primary" style="text-decoration: none;">
+    <a href="/login" class="btn btn-primary" style="text-decoration:none;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
         Back to Sign In
     </a>
     {{end}}
     <button onclick="window.history.back()" class="btn btn-secondary">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;"><polyline points="15 18 9 12 15 6"/></svg>
         Go Back
     </button>
 </div>
 
 {{if .RequestID}}
-<p style="font-size: 0.75rem; color: var(--text-muted); text-align: center; margin-top: var(--spacing-md); font-family: var(--font-mono);">
+<p style="font-size:0.75rem;color:var(--text-subtle);text-align:center;margin-top:16px;font-family:var(--font-mono);">
     Request ID: {{.RequestID}}
 </p>
 {{end}}

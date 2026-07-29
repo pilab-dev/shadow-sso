@@ -101,6 +101,7 @@ type SSOServerOptions struct {
 	UserSessionStore   domain.UserSessionStore
 	EncryptionKey      string // For configuration service encryption
 	CookieSigningSecret string // Secret for signing SSO session cookies
+	ExtraMiddlewares   []gin.HandlerFunc         // Additional Gin middlewares applied before route registration
 }
 
 // NewSSOServer initializes and returns a configured Gin engine for the SSO server.
@@ -182,6 +183,13 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 	// Initialize password hasher (moved here as it's a service)
 	passwordHasher := pkgAuth.NewBcryptPasswordHasher(opts.Config.SecurityConfig.PasswordHashingCost)
 
+	var brandLogoURL, brandOrgName, brandColor string
+	if opts.AppConfig != nil {
+		brandLogoURL = opts.AppConfig.BrandLogoURL
+		brandOrgName = opts.AppConfig.BrandOrganizationName
+		brandColor = opts.AppConfig.BrandPrimaryColor
+	}
+
 	// Create OAuth2 API handlers
 	oauth2API := openidv2_1.NewOAuth2API(&openidv2_1.OAuth2APIOptions{
 		OAuthService:         serviceProvider.OAuthService(),
@@ -196,12 +204,20 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 		FederationService:    serviceProvider.FederationService(),
 		TokenService:         serviceProvider.TokenService(),
 		CookieSigningSecret:  opts.CookieSigningSecret,
+		BrandLogoURL:          brandLogoURL,
+		BrandOrganizationName: brandOrgName,
+		BrandPrimaryColor:     brandColor,
 	})
 
 	// Setup Gin server
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(middleware.ZerologLogger())
+
+	// Apply extra middlewares (CORS, request ID, tracing, etc.)
+	for _, m := range opts.ExtraMiddlewares {
+		router.Use(m)
+	}
 
 	if err := webauth.LoadTemplates(router); err != nil {
 		return nil, fmt.Errorf("failed to load webauth templates: %w", err)
@@ -210,16 +226,13 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 
 	// --- WebAuth login UI routes ---
 	webauthConfig := &webauth.Config{
-		BrandLogoURL:             "",
-		BrandOrganizationName:    "",
-		BrandPrimaryColor:        "",
+		BrandLogoURL:             brandLogoURL,
+		BrandOrganizationName:    brandOrgName,
+		BrandPrimaryColor:        brandColor,
 		RateLimitMaxAttempts:     5,
 		RateLimitLockoutDuration: 15 * time.Minute,
 	}
 	if opts.AppConfig != nil {
-		webauthConfig.BrandLogoURL = opts.AppConfig.BrandLogoURL
-		webauthConfig.BrandOrganizationName = opts.AppConfig.BrandOrganizationName
-		webauthConfig.BrandPrimaryColor = opts.AppConfig.BrandPrimaryColor
 		if opts.AppConfig.RateLimitMaxAttempts > 0 {
 			webauthConfig.RateLimitMaxAttempts = opts.AppConfig.RateLimitMaxAttempts
 		}
@@ -242,6 +255,7 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 		SSOCookieSecret:   opts.CookieSigningSecret,
 	})
 
+	router.GET("/", webauthAPI.LandingPageHandler)
 	router.GET("/login", webauthAPI.LoginPageHandler)
 	router.POST("/login", webauthAPI.LoginSubmitHandler)
 	router.GET("/login/:provider", webauthAPI.SocialLoginHandler)
@@ -407,8 +421,14 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 			PasswordHasher:          passwordHasher,
 		}
 
+		var bootstrapToken string
+		if opts.AppConfig != nil {
+			bootstrapToken = opts.AppConfig.BootstrapToken
+		}
+
 		graphqlHandler := graphql.AuthMiddleware(
 			serviceProvider.TokenService(),
+			bootstrapToken,
 			graphql.NewHandler(resolver, "/graphql", graphql.GraphQLConfig{IsDevelopment: true}),
 		)
 

@@ -1,0 +1,96 @@
+/**
+ * Any CSS included here will be global. The classic template
+ * bundles Infima and its CSS variables are sufficient for most cases.
+ * See: https://infima.dev/
+ */
+
+/* You can override the default Infima variables here. */
+:root {
+  --ifm-color-primary: #2e8555;
+  --ifm-color-primary-dark: #29784c;
+  --ifm-color-primary-darker: #277148;
+  --ifm-color-primary-darkest: #205d3b;
+  --ifm-color-primary-light: #33925d;
+  --ifm-color-primary-lighter: #359962;
+  --ifm-color-primary-lightest: #3cad6e;
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+}
+
+/* For readability concerns, you can choose a lighter palette in dark mode. */
+[data-theme='dark'] {
+  --ifm-color-primary: #25c2a0;
+  --ifm-color-primary-dark: #21af90;
+  --ifm-color-primary-darker: #1fa588;
+  --ifm-color-primary-darkest: #1a8870;
+  --ifm-color-primary-light: #29d5b0;
+  --ifm-color-primary-lighter: #32d8b4;
+  --ifm-color-primary-lightest: #4fddbf;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+}
+
+/* Custom styles for Shadow SSO documentation */
+
+/* Improve code block readability */
+.prism-code {
+  font-size: 0.9rem;
+}
+
+/* Better table styling */
+table {
+  display: table;
+  width: 100%;
+}
+
+table th {
+  background-color: var(--ifm-color-emphasis-100);
+}
+
+/* Admonition improvements */
+.admonition {
+  margin-bottom: 1.5rem;
+}
+
+/* Sidebar improvements */
+.menu__link {
+  font-size: 0.9rem;
+}
+
+/* Footer improvements */
+.footer {
+  background-color: var(--ifm-background-surface-color);
+}
+
+/* Search bar improvements */
+.navbar__search {
+  margin-left: auto;
+}
+
+/* Mobile responsiveness */
+@media (max-width: 996px) {
+  .navbar__items {
+    flex-wrap: nowrap;
+  }
+}
+
+/* Custom callout styles */
+.callout {
+  padding: 1rem;
+  border-radius: 4px;
+  margin: 1rem 0;
+}
+
+.callout-info {
+  background-color: var(--ifm-color-info-contrast-background);
+  border-left: 4px solid var(--ifm-color-info-dark);
+}
+
+.callout-warning {
+  background-color: var(--ifm-color-warning-contrast-background);
+  border-left: 4px solid var(--ifm-color-warning-dark);
+}
+
+.callout-danger {
+  background-color: var(--ifm-color-danger-contrast-background);
+  border-left: 4px solid var(--ifm-color-danger-dark);
+}

@@ -17,6 +17,10 @@ type CreateTokenOptions struct {
 	ExpireIn           time.Duration
 	SigningKeyID       string
 	RefreshTokenFamily string
+	// Roles to include in the token. When set, these are used directly
+	// instead of looking up roles from the user repository.
+	// This is useful for client_credentials tokens (no user context).
+	Roles []string
 }
 
 type TokenServiceInterface interface {

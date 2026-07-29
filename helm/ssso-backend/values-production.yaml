@@ -24,7 +24,7 @@
 # Secrets are stored in KeePassXC vault at ~/Workspace/Passwords.kdbx (group: shadow-sso/)
 # TODO: Evaluate OpenBao for dynamic secret management if scale demands it
 
-replicaCount: 2
+replicaCount: 1
 
 # Initial admin credentials - see header for required secret creation
 initialAdmin:
@@ -109,9 +109,9 @@ resources:
     memory: 256Mi
 
 autoscaling:
-  enabled: true
-  minReplicas: 2
-  maxReplicas: 5
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 1
   targetCPUUtilizationPercentage: 80
 
 # MongoDB configuration - disabled since using existing instance
@@ -134,7 +134,7 @@ networkPolicy:
 
 # Frontend configuration
 frontend:
-  enabled: true
+  enabled: false
   replicaCount: 1
   
   image:

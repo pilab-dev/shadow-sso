@@ -54,6 +54,7 @@ func (wa *WebAuth) renderLoginPage(c *gin.Context, flowID string, providers []*d
 // It validates the flow, loads social providers, and renders the login form.
 func (wa *WebAuth) LoginPageHandler(c *gin.Context) {
 	flowID := GetFlowIDFromCookie(c.Request)
+
 	if flowID == "" {
 		c.HTML(http.StatusBadRequest, "error.html", gin.H{
 			"PageTitle": "Error",
@@ -61,6 +62,8 @@ func (wa *WebAuth) LoginPageHandler(c *gin.Context) {
 		})
 		return
 	}
+
+	ctx := c.Request.Context()
 
 	flowState, err := wa.flowStore.GetFlow(flowID)
 	if err != nil {
@@ -81,7 +84,7 @@ func (wa *WebAuth) LoginPageHandler(c *gin.Context) {
 		return
 	}
 
-	ctx := c.Request.Context()
+	// Load social providers only after the flow has been validated.
 	providers, err := wa.idpRepo.ListIdPs(ctx, true)
 	if err != nil {
 		log.Error().Err(err).Msg("login: failed to load identity providers")

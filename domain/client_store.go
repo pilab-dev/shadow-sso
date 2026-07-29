@@ -76,6 +76,10 @@ type Client struct {
 	IsActive          bool       `bson:"is_active"                           json:"is_active,omitempty"`
 	IsConfidential    bool       `bson:"is_confidential"                     json:"is_confidential,omitempty"`
 
+	// ServiceAccountRoles defines the roles assigned to tokens issued via the
+	// client_credentials grant for this client. Empty means no roles.
+	ServiceAccountRoles []string `bson:"service_account_roles,omitempty"      json:"service_account_roles,omitempty"`
+
 	ClientLDAPAttributeEmail      string            `bson:"client_ldap_attribute_email,omitempty" json:"client_ldap_attribute_email,omitempty"`
 	ClientLDAPAttributeFirstName  string            `bson:"client_ldap_attribute_first_name,omitempty" json:"client_ldap_attribute_first_name,omitempty"`
 	ClientLDAPAttributeLastName   string            `bson:"client_ldap_attribute_last_name,omitempty" json:"client_ldap_attribute_last_name,omitempty"`

@@ -1,0 +1,10 @@
+allowBuilds:
+  /: true
+  '@': true
+  c: true
+  core-js: true
+  e: true
+  o: true
+  r: true
+  s: true
+  w: true

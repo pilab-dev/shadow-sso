@@ -52,6 +52,10 @@ type OAuth2API struct {
 	realmKeysRepo       domain.RealmKeysRepository
 	clientRepo          domain.ClientRepository
 	cookieSigningSecret string
+
+	brandLogo  string
+	brandName  string
+	brandColor string
 }
 
 type OAuth2APIOptions struct {
@@ -65,10 +69,13 @@ type OAuth2APIOptions struct {
 	UserRepo          domain.UserRepository
 	PasswordHasher   domain.PasswordHasher
 	FederationService services.FederationService
-	TokenService     services.TokenService
+	TokenService      services.TokenService
 	RealmKeysRepo     domain.RealmKeysRepository
 	ClientRepo        domain.ClientRepository
 	CookieSigningSecret string
+	BrandLogoURL          string
+	BrandOrganizationName string
+	BrandPrimaryColor     string
 }
 
 // NewOAuth2API initializes the OAuth2 API.
@@ -100,6 +107,9 @@ func NewOAuth2API(
 		realmKeysRepo:   opts.RealmKeysRepo,
 		clientRepo:      opts.ClientRepo,
 		cookieSigningSecret: opts.CookieSigningSecret,
+		brandLogo:           opts.BrandLogoURL,
+		brandName:           opts.BrandOrganizationName,
+		brandColor:          opts.BrandPrimaryColor,
 	}
 }
 
@@ -461,28 +471,25 @@ func (oa *OAuth2API) AuthorizeHandler(c *gin.Context) {
 
 	authReqData, err := oa.parseAndValidateAuthorizeParams(c)
 	if err != nil {
-		// parseAndValidateAuthorizeParams is responsible for sending the JSON error
 		return
 	}
 
 	if err := oa.validateClientDetails(ctx, authReqData.clientID, authReqData.redirectURI, authReqData.scopeQuery); err != nil {
-		// Ensure the error being cast is actually *domain.OAuth2Error
 		if oauthErr, ok := err.(*domain.OAuth2Error); ok {
-			oa.sendJSONError(c, http.StatusBadRequest, oauthErr)
+			oa.sendHTMLError(c, http.StatusBadRequest, oauthErr)
 		} else {
-			// Fallback for unexpected error types, though validateClientDetails should return ssoerrors
 			log.Error().Err(err).Msg("AuthorizeHandler: Unexpected error type from validateClientDetails")
-			oa.sendJSONError(c, http.StatusInternalServerError, domain.NewServerError("internal validation error"))
+			oa.sendHTMLError(c, http.StatusInternalServerError, domain.NewServerError("internal validation error"))
 		}
 		return
 	}
 
 	if err := oa.validatePKCE(ctx, authReqData.clientID, authReqData.codeChallenge, authReqData.codeChallengeMethod); err != nil {
 		if oauthErr, ok := err.(*domain.OAuth2Error); ok {
-			oa.sendJSONError(c, http.StatusBadRequest, oauthErr)
+			oa.sendHTMLError(c, http.StatusBadRequest, oauthErr)
 		} else {
 			log.Error().Err(err).Msg("AuthorizeHandler: Unexpected error type from validatePKCE")
-			oa.sendJSONError(c, http.StatusInternalServerError, domain.NewServerError("internal PKCE validation error"))
+			oa.sendHTMLError(c, http.StatusInternalServerError, domain.NewServerError("internal PKCE validation error"))
 		}
 		return
 	}
@@ -535,12 +542,12 @@ func (oa *OAuth2API) parseAndValidateAuthorizeParams(c *gin.Context) (*authorize
 
 	if data.clientID == "" || data.redirectURI == "" || data.responseType == "" {
 		err := domain.NewInvalidRequest("client_id, redirect_uri, and response_type are required")
-		oa.sendJSONError(c, http.StatusBadRequest, err)
+		oa.sendHTMLError(c, http.StatusBadRequest, err)
 		return nil, err
 	}
 	if data.responseType != "code" {
 		err := domain.NewInvalidRequest("unsupported response_type, only 'code' is supported")
-		oa.sendJSONError(c, http.StatusBadRequest, err)
+		oa.sendHTMLError(c, http.StatusBadRequest, err)
 		return nil, err
 	}
 	return data, nil
@@ -602,7 +609,7 @@ func (oa *OAuth2API) tryHandleWithExistingSession(c *gin.Context, data *authoriz
 		client, clientErr := oa.clientService.GetClient(ctx, data.clientID)
 		if clientErr != nil {
 			log.Error().Err(clientErr).Str("clientID", data.clientID).Msg("AuthorizeHandler: Failed to get client for consent check")
-			oa.sendJSONError(c, http.StatusInternalServerError, domain.NewServerError("failed to retrieve client information"))
+			oa.sendHTMLError(c, http.StatusInternalServerError, domain.NewServerError("failed to retrieve client information"))
 			return true, clientErr
 		}
 
@@ -625,7 +632,7 @@ func (oa *OAuth2API) tryHandleWithExistingSession(c *gin.Context, data *authoriz
 
 			if storeErr := oa.flowStore.StoreFlow(flowID, flowState); storeErr != nil {
 				log.Error().Err(storeErr).Msg("AuthorizeHandler: Failed to store flow state for consent")
-				oa.sendJSONError(c, http.StatusInternalServerError, domain.NewServerError("failed to initiate consent flow"))
+				oa.sendHTMLError(c, http.StatusInternalServerError, domain.NewServerError("failed to initiate consent flow"))
 				return true, storeErr
 			}
 
@@ -643,7 +650,7 @@ func (oa *OAuth2API) tryHandleWithExistingSession(c *gin.Context, data *authoriz
 			csrfToken, csrfErr := generateCSRFToken()
 			if csrfErr != nil {
 				log.Error().Err(csrfErr).Msg("AuthorizeHandler: Failed to generate CSRF token for consent flow")
-				oa.sendJSONError(c, http.StatusInternalServerError, domain.NewServerError("failed to initiate consent flow"))
+				oa.sendHTMLError(c, http.StatusInternalServerError, domain.NewServerError("failed to initiate consent flow"))
 				return true, csrfErr
 			}
 			setCSRFCookie(c, csrfToken, 10*time.Minute)
@@ -670,7 +677,7 @@ func (oa *OAuth2API) tryHandleWithExistingSession(c *gin.Context, data *authoriz
 		)
 		if errGen != nil {
 			log.Error().Err(errGen).Msg("AuthorizeHandler: Failed to generate authorization code for authenticated user")
-			oa.sendJSONError(c, http.StatusInternalServerError, domain.NewServerError("failed to generate authorization code"))
+			oa.sendHTMLError(c, http.StatusInternalServerError, domain.NewServerError("failed to generate authorization code"))
 			return true, errGen // Error occurred, but considered "handled" in terms of flow decision
 		}
 		oa.redirectToClient(c, data.redirectURI, authCode, data.state)
@@ -707,7 +714,7 @@ func (oa *OAuth2API) initiateExternalLoginFlow(c *gin.Context, data *authorizeRe
 	if err := oa.flowStore.StoreFlow(flowID, flowState); err != nil {
 		log.Error().Err(err).Msg("AuthorizeHandler: Failed to store OIDC flow state")
 		ssoErr := domain.NewServerError("failed to initiate login flow")
-		oa.sendJSONError(c, http.StatusInternalServerError, ssoErr)
+		oa.sendHTMLError(c, http.StatusInternalServerError, ssoErr)
 		return ssoErr
 	}
 
@@ -725,7 +732,7 @@ func (oa *OAuth2API) initiateExternalLoginFlow(c *gin.Context, data *authorizeRe
 	if csrfErr != nil {
 		log.Error().Err(csrfErr).Msg("AuthorizeHandler: Failed to generate CSRF token for login flow")
 		ssoErr := domain.NewServerError("failed to initiate login flow")
-		oa.sendJSONError(c, http.StatusInternalServerError, ssoErr)
+		oa.sendHTMLError(c, http.StatusInternalServerError, ssoErr)
 		return ssoErr
 	}
 	setCSRFCookie(c, csrfToken, 10*time.Minute)
@@ -738,12 +745,17 @@ func (oa *OAuth2API) initiateExternalLoginFlow(c *gin.Context, data *authorizeRe
 
 // sendJSONError is a helper to return JSON errors consistently.
 func (oa *OAuth2API) sendJSONError(c *gin.Context, statusCode int, errDetails *domain.OAuth2Error) {
-	// Ensure Content-Type is application/json for error responses
-	// Some clients might expect this, especially for OAuth errors.
-	// However, /authorize typically redirects or shows HTML.
-	// For initial validation errors before redirect, JSON might be acceptable.
-	// If an HTML error page is preferred, this helper would need to change.
 	c.JSON(statusCode, errDetails)
+}
+
+func (oa *OAuth2API) sendHTMLError(c *gin.Context, statusCode int, errDetails *domain.OAuth2Error) {
+	c.HTML(statusCode, "error.html", gin.H{
+		"PageTitle":  "Error",
+		"Message":    errDetails.Description,
+		"BrandLogo":  oa.brandLogo,
+		"BrandName":  oa.brandName,
+		"BrandColor": oa.brandColor,
+	})
 }
 
 // redirectToClient is a helper to redirect back to the client's redirect_uri.
@@ -751,7 +763,7 @@ func (oa *OAuth2API) redirectToClient(c *gin.Context, baseRedirectURI, code, sta
 	parsedRedirectURI, err := url.Parse(baseRedirectURI)
 	if err != nil {
 		log.Error().Err(err).Str("redirect_uri", baseRedirectURI).Msg("Failed to parse base redirect URI")
-		oa.sendJSONError(c, http.StatusInternalServerError, domain.NewServerError("internal error constructing redirect"))
+		oa.sendHTMLError(c, http.StatusInternalServerError, domain.NewServerError("internal error constructing redirect"))
 		return
 	}
 

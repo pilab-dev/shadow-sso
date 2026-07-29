@@ -17,15 +17,15 @@ const (
 
 // Context represents a single CLI context (server endpoint and auth info)
 type Context struct {
-	Name           string `mapstructure:"name"`
-	ServerEndpoint string `mapstructure:"server_endpoint"`
-	UserAuthToken  string `mapstructure:"user_auth_token,omitempty"` // Token obtained via 'auth login'
+	Name           string `mapstructure:"name"              yaml:"name"`
+	ServerEndpoint string `mapstructure:"server_endpoint"    yaml:"server_endpoint"`
+	UserAuthToken  string `mapstructure:"user_auth_token,omitempty" yaml:"user_auth_token,omitempty"` // Token obtained via 'auth login'
 }
 
 // CLIConfig holds the overall CLI configuration
 type CLIConfig struct {
-	CurrentContext string              `mapstructure:"current_context"`
-	Contexts       map[string]*Context `mapstructure:"contexts"`
+	CurrentContext string              `mapstructure:"current_context" yaml:"current_context"`
+	Contexts       map[string]*Context `mapstructure:"contexts"        yaml:"contexts"`
 	// Add other global settings if needed
 }
 
