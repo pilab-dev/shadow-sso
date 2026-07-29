@@ -3,6 +3,7 @@ package federation
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
 	"net/url"
@@ -153,7 +154,7 @@ func (s *Service) HandleCallback(
 	code string,
 	authCodeOptions ...oauth2.AuthCodeOption,
 ) (*ExternalUserInfo, *oauth2.Token, error) {
-	if queryState == "" || queryState != sessionState {
+	if queryState == "" || subtle.ConstantTimeCompare([]byte(queryState), []byte(sessionState)) != 1 {
 		return nil, nil, ErrInvalidAuthState
 	}
 

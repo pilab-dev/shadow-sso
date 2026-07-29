@@ -261,7 +261,6 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 	router.GET("/login/:provider", webauthAPI.SocialLoginHandler)
 	router.GET("/consent", webauthAPI.ConsentPageHandler)
 	router.POST("/consent", webauthAPI.ConsentSubmitHandler)
-
 	// ---------- Connect-RPC handlers ----------
 	ctx := context.Background()
 

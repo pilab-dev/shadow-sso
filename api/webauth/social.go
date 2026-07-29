@@ -91,3 +91,5 @@ func (wa *WebAuth) SocialLoginHandler(c *gin.Context) {
 	// 7. Redirect the user to the external identity provider.
 	c.Redirect(http.StatusFound, authURL)
 }
+
+

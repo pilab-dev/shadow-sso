@@ -175,7 +175,7 @@ func (p *DefaultServiceProvider) FederationService() FederationService {
 			p.repoProvider.SessionRepository(initCtx),
 			p.TokenService(),
 			p.PasswordHasher(),
-			p.config.Issuer,
+			p.config.Issuer+"/callback",
 		)
 	}
 	return p.federationService

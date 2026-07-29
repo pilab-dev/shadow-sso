@@ -1,155 +1,119 @@
 {
   "schema_version": 2,
-  "active_work_id": "integration-tests-8f2a17b4",
+  "active_work_id": "federation-callback-url-fix-fcb35ab1",
   "works": {
-    "integration-tests-8f2a17b4": {
-      "work_id": "integration-tests-8f2a17b4",
-      "active_plan": "/Users/paalgyula/Workspace/pilab/shadow-sso/.omo/plans/integration-tests.md",
-      "plan_name": "integration-tests",
+    "federation-callback-url-fix-fcb35ab1": {
+      "work_id": "federation-callback-url-fix-fcb35ab1",
+      "active_plan": "/Users/paalgyula/Workspace/pilab/shadow-sso/.omo/plans/federation-callback-url-fix.md",
+      "plan_name": "federation-callback-url-fix",
       "status": "completed",
-      "started_at": "2026-07-28T09:28:34.270Z",
+      "started_at": "2026-07-29T21:33:34.196Z",
+      "updated_at": "2026-07-29T22:17:24.029Z",
       "session_ids": [
-        "opencode:ses_05a73a5d0ffexN3LKoXne0qE7t",
-        "opencode:ses_057a2ff1cffeUsIOJu59MnarXW",
-        "opencode:ses_057a0448effe7brueLZmhiGgHm",
-        "opencode:ses_057a02dcbffe5uNZTV40XF9eyO",
-        "opencode:ses_057a01404ffeAjkFwgpk3RnZGw",
-        "opencode:ses_0579ffb20ffe00JSSLa3xwNteR",
-        "opencode:ses_0579feaf2ffeF0y17SZYNUI66q"
+        "opencode:ses_0508d11d6ffeCbM5DWGk9IAK0j"
       ],
       "session_origins": {
-        "opencode:ses_05a73a5d0ffexN3LKoXne0qE7t": "direct",
-        "opencode:ses_057a2ff1cffeUsIOJu59MnarXW": "appended",
-        "opencode:ses_057a0448effe7brueLZmhiGgHm": "appended",
-        "opencode:ses_057a02dcbffe5uNZTV40XF9eyO": "appended",
-        "opencode:ses_057a01404ffeAjkFwgpk3RnZGw": "appended",
-        "opencode:ses_0579ffb20ffe00JSSLa3xwNteR": "appended",
-        "opencode:ses_0579feaf2ffeF0y17SZYNUI66q": "appended"
+        "opencode:ses_0508d11d6ffeCbM5DWGk9IAK0j": "direct"
       },
-      "worktree_path": null,
+      "agent": "atlas",
       "task_sessions": {
         "todo:1": {
           "task_key": "todo:1",
           "task_label": "1",
-          "task_title": "**Refactor `apps/ssso/ssso.go` main() → extract testable StartServer() + build integration test harness**",
-          "session_id": "opencode:ses_057de64e7ffetP9ywu7RTDebRQ",
+          "task_title": "Fix redirect URL base in federation service",
+          "session_id": "opencode:ses_050339c89ffebxlznXo590WLRm",
           "agent": "Sisyphus-Junior",
-          "category": "deep",
-          "updated_at": "2026-07-28T10:03:13.349Z",
-          "started_at": "2026-07-28T10:01:35.184Z",
+          "category": "quick",
+          "updated_at": "2026-07-29T21:35:20.606Z",
+          "started_at": "2026-07-29T21:35:00.233Z",
           "status": "completed",
-          "ended_at": "2026-07-28T10:03:13.349Z",
-          "elapsed_ms": 98165
+          "ended_at": "2026-07-29T21:35:20.606Z",
+          "elapsed_ms": 20373
         },
         "todo:2": {
           "task_key": "todo:2",
           "task_label": "2",
-          "task_title": "**Bootstrap cycle integration tests — admin user + admin-ui client creation**",
-          "session_id": "opencode:ses_057d179a2ffeEk397RtVTkLPQG",
+          "task_title": "Constant-time state comparison in HandleCallback",
+          "session_id": "opencode:ses_050321c1effe2xj4efPoyDmgub",
           "agent": "Sisyphus-Junior",
-          "category": "deep",
-          "updated_at": "2026-07-28T10:53:32.736Z",
-          "started_at": "2026-07-28T10:14:14.538Z",
+          "category": "quick",
+          "updated_at": "2026-07-29T21:36:33.430Z",
+          "started_at": "2026-07-29T21:36:09.473Z",
           "status": "completed",
-          "ended_at": "2026-07-28T10:53:32.736Z",
-          "elapsed_ms": 2358198
+          "ended_at": "2026-07-29T21:36:33.430Z",
+          "elapsed_ms": 23957
         },
-        "todo:6": {
-          "task_key": "todo:6",
-          "task_label": "6",
-          "task_title": "**Service account + IDP management command integration tests**",
-          "session_id": "opencode:ses_0579feaf2ffeF0y17SZYNUI66q",
+        "todo:3": {
+          "task_key": "todo:3",
+          "task_label": "3",
+          "task_title": "Implement SocialCallbackHandler + register route",
+          "session_id": "opencode:ses_050112080ffeMfy6SnQA1HiEgO",
           "agent": "Sisyphus-Junior",
           "category": "unspecified-high",
-          "started_at": "2026-07-28T10:55:02.292Z",
+          "started_at": "2026-07-29T22:07:56.832Z",
           "status": "completed",
-          "updated_at": "2026-07-28T11:10:04.122Z",
-          "ended_at": "2026-07-28T11:10:04.122Z",
-          "elapsed_ms": 901830
+          "updated_at": "2026-07-29T22:15:21.718Z",
+          "ended_at": "2026-07-29T22:15:21.718Z",
+          "elapsed_ms": 444886
         }
       },
-      "updated_at": "2026-07-28T11:14:25.214Z",
-      "ended_at": "2026-07-28T11:14:25.214Z",
-      "elapsed_ms": 6350944
-    },
-    "production-readiness-c6ae2718": {
-      "work_id": "production-readiness-c6ae2718",
-      "active_plan": "/Users/paalgyula/Workspace/pilab/shadow-sso/.omo/plans/production-readiness.md",
-      "plan_name": "production-readiness",
-      "status": "completed",
-      "started_at": "2026-07-27T18:49:43.575Z",
-      "updated_at": "2026-07-27T20:31:15.463Z",
-      "session_ids": [],
-      "session_origins": {},
-      "ended_at": "2026-07-27T20:31:15.463Z",
-      "elapsed_ms": 6091888
+      "ended_at": "2026-07-29T22:17:24.029Z",
+      "elapsed_ms": 2629833
     }
   },
+  "active_plan": "/Users/paalgyula/Workspace/pilab/shadow-sso/.omo/plans/federation-callback-url-fix.md",
+  "started_at": "2026-07-29T21:33:34.196Z",
+  "status": "completed",
+  "updated_at": "2026-07-29T22:17:24.029Z",
   "session_ids": [
-    "opencode:ses_05a73a5d0ffexN3LKoXne0qE7t",
-    "opencode:ses_057a2ff1cffeUsIOJu59MnarXW",
-    "opencode:ses_057a0448effe7brueLZmhiGgHm",
-    "opencode:ses_057a02dcbffe5uNZTV40XF9eyO",
-    "opencode:ses_057a01404ffeAjkFwgpk3RnZGw",
-    "opencode:ses_0579ffb20ffe00JSSLa3xwNteR",
-    "opencode:ses_0579feaf2ffeF0y17SZYNUI66q"
+    "opencode:ses_0508d11d6ffeCbM5DWGk9IAK0j"
   ],
   "session_origins": {
-    "opencode:ses_05a73a5d0ffexN3LKoXne0qE7t": "direct",
-    "opencode:ses_057a2ff1cffeUsIOJu59MnarXW": "appended",
-    "opencode:ses_057a0448effe7brueLZmhiGgHm": "appended",
-    "opencode:ses_057a02dcbffe5uNZTV40XF9eyO": "appended",
-    "opencode:ses_057a01404ffeAjkFwgpk3RnZGw": "appended",
-    "opencode:ses_0579ffb20ffe00JSSLa3xwNteR": "appended",
-    "opencode:ses_0579feaf2ffeF0y17SZYNUI66q": "appended"
+    "opencode:ses_0508d11d6ffeCbM5DWGk9IAK0j": "direct"
   },
+  "plan_name": "federation-callback-url-fix",
   "task_sessions": {
     "todo:1": {
       "task_key": "todo:1",
       "task_label": "1",
-      "task_title": "**Refactor `apps/ssso/ssso.go` main() → extract testable StartServer() + build integration test harness**",
-      "session_id": "opencode:ses_057de64e7ffetP9ywu7RTDebRQ",
+      "task_title": "Fix redirect URL base in federation service",
+      "session_id": "opencode:ses_050339c89ffebxlznXo590WLRm",
       "agent": "Sisyphus-Junior",
-      "category": "deep",
-      "updated_at": "2026-07-28T10:03:13.349Z",
-      "started_at": "2026-07-28T10:01:35.184Z",
+      "category": "quick",
+      "updated_at": "2026-07-29T21:35:20.606Z",
+      "started_at": "2026-07-29T21:35:00.233Z",
       "status": "completed",
-      "ended_at": "2026-07-28T10:03:13.349Z",
-      "elapsed_ms": 98165
+      "ended_at": "2026-07-29T21:35:20.606Z",
+      "elapsed_ms": 20373
     },
     "todo:2": {
       "task_key": "todo:2",
       "task_label": "2",
-      "task_title": "**Bootstrap cycle integration tests — admin user + admin-ui client creation**",
-      "session_id": "opencode:ses_057d179a2ffeEk397RtVTkLPQG",
+      "task_title": "Constant-time state comparison in HandleCallback",
+      "session_id": "opencode:ses_050321c1effe2xj4efPoyDmgub",
       "agent": "Sisyphus-Junior",
-      "category": "deep",
-      "updated_at": "2026-07-28T10:53:32.736Z",
-      "started_at": "2026-07-28T10:14:14.538Z",
+      "category": "quick",
+      "updated_at": "2026-07-29T21:36:33.430Z",
+      "started_at": "2026-07-29T21:36:09.473Z",
       "status": "completed",
-      "ended_at": "2026-07-28T10:53:32.736Z",
-      "elapsed_ms": 2358198
+      "ended_at": "2026-07-29T21:36:33.430Z",
+      "elapsed_ms": 23957
     },
-    "todo:6": {
-      "task_key": "todo:6",
-      "task_label": "6",
-      "task_title": "**Service account + IDP management command integration tests**",
-      "session_id": "opencode:ses_0579feaf2ffeF0y17SZYNUI66q",
+    "todo:3": {
+      "task_key": "todo:3",
+      "task_label": "3",
+      "task_title": "Implement SocialCallbackHandler + register route",
+      "session_id": "opencode:ses_050112080ffeMfy6SnQA1HiEgO",
       "agent": "Sisyphus-Junior",
       "category": "unspecified-high",
-      "started_at": "2026-07-28T10:55:02.292Z",
+      "started_at": "2026-07-29T22:07:56.832Z",
       "status": "completed",
-      "updated_at": "2026-07-28T11:10:04.122Z",
-      "ended_at": "2026-07-28T11:10:04.122Z",
-      "elapsed_ms": 901830
+      "updated_at": "2026-07-29T22:15:21.718Z",
+      "ended_at": "2026-07-29T22:15:21.718Z",
+      "elapsed_ms": 444886
     }
   },
-  "active_plan": "/Users/paalgyula/Workspace/pilab/shadow-sso/.omo/plans/integration-tests.md",
-  "plan_name": "integration-tests",
-  "status": "completed",
-  "started_at": "2026-07-28T09:28:34.270Z",
-  "updated_at": "2026-07-28T11:14:25.214Z",
-  "worktree_path": null,
-  "ended_at": "2026-07-28T11:14:25.214Z",
-  "elapsed_ms": 6350944
+  "agent": "atlas",
+  "ended_at": "2026-07-29T22:17:24.029Z",
+  "elapsed_ms": 2629833
 }

@@ -194,3 +194,4 @@ func TestSocialLoginHandler_FederationServiceError(t *testing.T) {
 	require.Equal(t, http.StatusInternalServerError, w.Code)
 	assert.Contains(t, w.Body.String(), "Failed to initiate login")
 }
+
