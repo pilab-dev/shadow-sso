@@ -200,11 +200,13 @@ frontend:
   extraEnv: []
   extraEnvFrom: []
 
-# OpenTelemetry tracing — send traces to Grafana Alloy
+# OpenTelemetry tracing — send traces to Grafana Tempo
 tracing:
   enabled: true
+  # gRPC OTLP endpoint for Grafana Tempo in the observability namespace
   otlpEndpoint: "http://tempo.observability:4317"
   serviceName: "shadow-sso"
+  # otlpProtocol: "grpc"      # grpc (default, port 4317) or http/protobuf (port 4318)
 
 extraEnv: []
 

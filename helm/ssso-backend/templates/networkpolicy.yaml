@@ -56,6 +56,16 @@ spec:
         - protocol: TCP
           port: 27017
     {{- end }}
+    # Allow egress to Grafana Tempo (OTLP gRPC)
+    {{- if .Values.tracing.enabled }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 4317
+    {{- end }}
 ---
 {{- if .Values.frontend.enabled }}
 apiVersion: networking.k8s.io/v1
