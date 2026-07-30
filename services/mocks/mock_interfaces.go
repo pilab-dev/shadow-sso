@@ -322,6 +322,20 @@ func (m *MockTokenService) EXPECT() *MockTokenServiceMockRecorder {
 	return m.recorder
 }
 
+// ApplyTokenMappers mocks base method.
+func (m *MockTokenService) ApplyTokenMappers(ctx context.Context, claims map[string]any, clientID, userID, tokenType string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ApplyTokenMappers", ctx, claims, clientID, userID, tokenType)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ApplyTokenMappers indicates an expected call of ApplyTokenMappers.
+func (mr *MockTokenServiceMockRecorder) ApplyTokenMappers(ctx, claims, clientID, userID, tokenType any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ApplyTokenMappers", reflect.TypeOf((*MockTokenService)(nil).ApplyTokenMappers), ctx, claims, clientID, userID, tokenType)
+}
+
 // BuildToken mocks base method.
 func (m *MockTokenService) BuildToken(token *domain.Token) error {
 	m.ctrl.T.Helper()

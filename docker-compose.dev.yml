@@ -1,0 +1,55 @@
+# Local development stack with MongoDB and SSO server
+# The SSO backend handles its own provisioning (bootstrap configs, admin user, admin client)
+# Usage: docker compose -f docker-compose.dev.yml up --build
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: shadow-sso-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    environment:
+      - MONGO_INITDB_DATABASE=shadow_sso_dev
+
+  ssso:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: shadow-sso-server
+    depends_on:
+      mongo:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+      - "5000:5000"
+    env_file:
+      - .env.dev
+    environment:
+      - SSSO_MGMT_HTTP_ADDR=:5000
+      - SSSO_HTTP_ADDR=0.0.0.0:8080
+      - SSSO_MONGO_URI=mongodb://mongo:27017
+      - SSSO_MONGO_DB_NAME=shadow_sso_dev
+      - SSSO_SIGNING_KEY_PATH=/etc/sso/keys/private.pem
+      - SSSO_ISSUER_URL=http://localhost:8080
+      - SSSO_LOG_LEVEL=debug
+      - SSSO_JSON_LOG=false
+      - SSSO_INITIAL_ADMIN_ENABLED=true
+      - SSSO_INITIAL_ADMIN_EMAIL=admin@localhost
+      - SSSO_INITIAL_ADMIN_PASSWORD=admin123
+      - SSSO_INITIAL_ADMIN_FIRST_NAME=Admin
+      - SSSO_INITIAL_ADMIN_LAST_NAME=User
+      - SSSO_CONFIG_ENCRYPTION_KEY=dev-encryption-key-32-chars-long!!
+    volumes:
+      - ./docker/entrypoint.sh:/docker/entrypoint.sh:ro
+      - ./docker/keys:/etc/sso/keys
+    restart: unless-stopped
+
+volumes:
+  mongo_data:

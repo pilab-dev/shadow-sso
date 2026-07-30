@@ -44,6 +44,7 @@ type TokenService interface {
 	GetRefreshTokenInfo(ctx context.Context, tokenValue string) (*domain.TokenInfo, error)
 	GetAccessTokenInfo(ctx context.Context, tokenValue string) (*domain.TokenInfo, error)
 	ValidateIDToken(ctx context.Context, tokenValue string) (map[string]interface{}, error)
+	ApplyTokenMappers(ctx context.Context, claims map[string]interface{}, clientID, userID, tokenType string) error
 }
 
 // PKCEService defines the interface for PKCE validation.

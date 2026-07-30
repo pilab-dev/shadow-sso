@@ -113,6 +113,8 @@ type UserInfo struct {
 	// Phone Claims (requested with phone scope):
 	PhoneNumber         *string `json:"phone_number,omitempty"`          // The End-User's phone number, in E.164 format.
 	PhoneNumberVerified *bool   `json:"phone_number_verified,omitempty"` // Boolean value indicating whether the End-User's phone number has been verified.
+
+	CustomClaims map[string]interface{} `json:"custom_claims,omitempty"`
 }
 
 // OpenIDProviderConfig represents the complete configuration for the OpenID Connect provider

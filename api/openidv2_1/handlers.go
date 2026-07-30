@@ -491,6 +491,40 @@ func (oa *OAuth2API) DeviceAuthorizationHandler(c *gin.Context) {
 func (oa *OAuth2API) AuthorizeHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 
+	// ── flow_id redirect from login form ────────────────────────────────
+	// When the login form (webauth) successfully authenticates a user, it
+	// redirects back here with only the flow_id.  We reconstruct the original
+	// OIDC parameters from the stored flow state so the rest of the handler
+	// can proceed normally.
+	flowID := c.Query("flow_id")
+	if flowID != "" {
+		flowState, fErr := oa.flowStore.GetFlow(ctx, flowID)
+		if fErr != nil {
+			log.Warn().Err(fErr).Str("flow_id", flowID).Msg("AuthorizeHandler: flow not found in flow_id redirect")
+			oa.sendHTMLError(c, http.StatusBadRequest, domain.NewInvalidRequest("Invalid or expired login request."))
+			return
+		}
+		if time.Now().After(flowState.ExpiresAt) {
+			_ = oa.flowStore.DeleteFlow(ctx, flowID)
+			oa.sendHTMLError(c, http.StatusBadRequest, domain.NewInvalidRequest("Login request has expired. Please try again."))
+			return
+		}
+
+		// Reconstruct authReqData from the stored flow state.
+		authReqData := &authorizeRequestData{
+			clientID:            flowState.ClientID,
+			redirectURI:         flowState.RedirectURI,
+			responseType:        "code",
+			scopeQuery:          flowState.Scope,
+			state:               flowState.State,
+			nonce:               flowState.Nonce,
+			codeChallenge:       flowState.CodeChallenge,
+			codeChallengeMethod: flowState.CodeChallengeMethod,
+		}
+		oa.handleFlowAuthorize(c, authReqData, flowState)
+		return
+	}
+
 	authReqData, err := oa.parseAndValidateAuthorizeParams(c)
 	if err != nil {
 		return
@@ -520,7 +554,6 @@ func (oa *OAuth2API) AuthorizeHandler(c *gin.Context) {
 	// err from tryHandleWithExistingSession means an error occurred during processing (e.g. generating auth code)
 	// and the response has likely already been sent by tryHandleWithExistingSession.
 	if err != nil {
-		// Log if necessary, but response is handled by the helper.
 		return
 	}
 	if handledBySession {
@@ -528,11 +561,71 @@ func (oa *OAuth2API) AuthorizeHandler(c *gin.Context) {
 	}
 
 	// If not handled by an existing session, redirect to external login.
-	// err from initiateExternalLoginFlow means an error occurred and response sent.
 	if err := oa.initiateExternalLoginFlow(c, authReqData); err != nil {
-		// Log if necessary, response handled by helper.
 		return
 	}
+}
+
+// handleFlowAuthorize processes a re-entry via flow_id after successful login form submission.
+func (oa *OAuth2API) handleFlowAuthorize(c *gin.Context, authReqData *authorizeRequestData, flowState *domain.LoginFlowState) {
+	// If the user was authenticated by the login form, user ID is stored on the flow state.
+	// The webauth login handler populates this regardless of MFA status.
+	if flowState.UserID != "" {
+		oa.completeAuthorizeAfterAuth(c, authReqData, flowState)
+		return
+	}
+
+	// Otherwise try session-based auth (the OP session cookie might be set now).
+	handledBySession, err := oa.tryHandleWithExistingSession(c, authReqData)
+	if err != nil || handledBySession {
+		return
+	}
+
+	// Still not authenticated — restart the flow.
+	if err := oa.initiateExternalLoginFlow(c, authReqData); err != nil {
+		return
+	}
+}
+
+// completeAuthorizeAfterAuth runs the consent-or-auth-code step after user is authenticated.
+func (oa *OAuth2API) completeAuthorizeAfterAuth(c *gin.Context, authReqData *authorizeRequestData, flowState *domain.LoginFlowState) {
+	ctx := c.Request.Context()
+
+	client, clientErr := oa.clientService.GetClient(ctx, authReqData.clientID)
+	if clientErr != nil {
+		log.Error().Err(clientErr).Str("clientID", authReqData.clientID).Msg("completeAuthorizeAfterAuth: failed to get client")
+		oa.sendHTMLError(c, http.StatusInternalServerError, domain.NewServerError("failed to retrieve client information"))
+		return
+	}
+
+	if client.RequireConsent {
+		// Redirect to consent screen
+		consentURL := "/consent?flow_id=" + url.QueryEscape(flowState.FlowID)
+		log.Info().Str("userID", flowState.UserID).Str("clientID", authReqData.clientID).Msg("completeAuthorizeAfterAuth: consent required")
+		c.Redirect(http.StatusFound, consentURL)
+		return
+	}
+
+	// No consent required — generate auth code directly.
+	authCode, err := oa.service.GenerateAuthCode(
+		ctx,
+		authReqData.clientID,
+		flowState.UserID,
+		authReqData.redirectURI,
+		authReqData.scopeQuery,
+		authReqData.codeChallenge,
+		authReqData.codeChallengeMethod,
+		authReqData.nonce,
+		flowState.UserAuthenticatedAt,
+	)
+	if err != nil {
+		log.Error().Err(err).Msg("completeAuthorizeAfterAuth: failed to generate auth code")
+		oa.sendHTMLError(c, http.StatusInternalServerError, domain.NewServerError("failed to complete authorization"))
+		return
+	}
+
+	_ = oa.flowStore.DeleteFlow(ctx, flowState.FlowID)
+	oa.redirectToClient(c, authReqData.redirectURI, authCode, authReqData.state)
 }
 
 // authorizeRequestData holds extracted and initially validated parameters from an authorization request.
@@ -1325,6 +1418,31 @@ func (oa *OAuth2API) UserInfoHandler(c *gin.Context) {
 			Email:             &email,
 			EmailVerified:     &emailVerified,
 		}
+	}
+
+	claims := make(map[string]interface{})
+	claims["sub"] = userInfo.Sub
+	if userInfo.Name != nil {
+		claims["name"] = *userInfo.Name
+	}
+	if userInfo.Email != nil {
+		claims["email"] = *userInfo.Email
+	}
+	if userInfo.PreferredUsername != nil {
+		claims["preferred_username"] = *userInfo.PreferredUsername
+	}
+	if userInfo.GivenName != nil {
+		claims["given_name"] = *userInfo.GivenName
+	}
+	if userInfo.FamilyName != nil {
+		claims["family_name"] = *userInfo.FamilyName
+	}
+
+	logger := log.Ctx(ctx)
+	if err := oa.tokenService.ApplyTokenMappers(ctx, claims, tokenInfo.ClientID, tokenInfo.UserID, "userinfo"); err != nil {
+		logger.Warn().Err(err).Str("client_id", tokenInfo.ClientID).Str("user_id", tokenInfo.UserID).Msg("UserInfoHandler: failed to apply token mappers")
+	} else if len(claims) > 0 {
+		userInfo.CustomClaims = claims
 	}
 
 	c.Header("Cache-Control", "no-store")

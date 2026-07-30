@@ -4,13 +4,38 @@
 
 ## Installation
 
-Currently, `ssoctl` can be built from source:
-1.  Ensure you have Go installed on your system.
-2.  Clone the repository: `git clone <repository_url>`
-3.  Navigate to the repository root: `cd shadow-sso`
-4.  Build the CLI: `make build`
-    This will create an executable named `ssoctl` in the root directory.
-5.  (Optional) Move the `ssoctl` executable to a directory in your system's PATH, e.g., `/usr/local/bin/`.
+### From Source
+
+```bash
+# Clone the repository
+git clone https://github.com/pilab-dev/shadow-sso.git
+cd shadow-sso
+
+# Build the CLI
+make build
+# This creates an executable named 'ssoctl' in the root directory
+
+# Optional: Install to PATH
+mv ssoctl /usr/local/bin/
+```
+
+### Using Go Install
+
+```bash
+go install github.com/pilab-dev/shadow-sso/apps/ssoctl@latest
+```
+
+### Docker Image
+
+The `ssoctl` binary is now included in the official Shadow SSO Docker image (`ghcr.io/pilab-dev/shadow-sso-backend`):
+
+```bash
+# Run ssoctl from the Docker image
+docker run --rm ghcr.io/pilab-dev/shadow-sso-backend:latest ssoctl --help
+
+# Or use with a mounted config
+docker run --rm -v ~/.ssoctl:/home/appuser/.ssoctl ghcr.io/pilab-dev/shadow-sso-backend:latest ssoctl user list
+```
 
 ## Configuration
 

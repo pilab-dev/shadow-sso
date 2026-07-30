@@ -9,6 +9,9 @@ ENV GOARCH=amd64
 # Create appuser
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
+# Install UPX for binary compression
+RUN apk add --no-cache upx
+
 WORKDIR /app
 
 # Copy go.mod and go.sum files to download dependencies
@@ -18,9 +21,14 @@ RUN go mod download
 # Copy the entire project source code
 COPY . .
 
-# Build the server application
-# The main application seems to be in apps/ssso/ssso.go based on the README
+# Build the server application (ssso)
 RUN go build -ldflags="-w -s" -o /ssso ./apps/ssso/
+
+# Build the CLI tool (ssoctl)
+RUN go build -ldflags="-w -s" -o /ssoctl ./apps/sssoctl/
+
+# Compress binaries with UPX (best compression, safe for Go binaries)
+RUN upx --best --lzma /ssso /ssoctl
 
 # Stage 2: Create the final lightweight image
 FROM alpine:3.21
@@ -36,6 +44,9 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
 # Copy the compiled application binary from the builder stage
 COPY --from=builder /ssso /usr/local/bin/ssso
+
+# Copy the CLI tool binary from the builder stage
+COPY --from=builder /ssoctl /usr/local/bin/ssoctl
 
 # Copy configuration files or templates if any (assuming config is mounted or handled externally)
 # For example, if you have a default config:

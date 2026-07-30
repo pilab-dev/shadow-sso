@@ -188,6 +188,19 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 		return
 	}
 
+	// Record the authenticated user on the flow state so the OIDC AuthorizeHandler
+	// can complete the authorization without relying on SSO session cookies.
+	flowState.UserID = user.ID
+	flowState.UserAuthenticatedAt = time.Now()
+	if err := wa.flowStore.UpdateFlow(ctx, flowID, flowState); err != nil {
+		log.Error().Err(err).Str("flow_id", flowID).Msg("login: failed to update flow state after auth")
+		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
+			"PageTitle": "Error",
+			"Message":   "Internal error. Please try again.",
+		})
+		return
+	}
+
 	displayName := user.Email
 	if user.FirstName != "" || user.LastName != "" {
 		displayName = fmt.Sprintf("%s %s", user.FirstName, user.LastName)

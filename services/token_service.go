@@ -178,6 +178,14 @@ func (s *defaultTokenService) CreateToken(ctx context.Context, opts domain.Creat
 		}
 	}
 
+	// Apply token attribute mappers for access tokens
+	if opts.TokenType == api.TokenTypeAccessToken {
+		if err := s.ApplyTokenMappers(ctx, tokenClaimsMap, opts.ClientID, opts.UserID, api.TokenTypeAccessToken); err != nil {
+			log.Ctx(ctx).Warn().Err(err).Str("client_id", opts.ClientID).Str("user_id", opts.UserID).Msg("CreateToken: failed to apply token mappers for access token")
+			telemetry.RecordSpanError(span, err, "failed to apply token mappers")
+		}
+	}
+
 	// Generate access token with the signer
 	// s.signer.Sign now accepts jwt.Claims (which jwt.MapClaims implements)
 		signedToken, err := s.signer.Sign(tokenClaimsMap, opts.SigningKeyID)
@@ -698,23 +706,8 @@ func (s *defaultTokenService) GenerateIDToken(ctx context.Context, userID, clien
 		}
 	}
 
-	// Apply user attribute mappers if repositories are configured
-	if s.userAttrMapperRepo != nil && s.userAttrRepo != nil {
-		mappers, err := s.userAttrMapperRepo.GetMappersForClient(ctx, clientID, "id_token")
-		if err == nil && len(mappers) > 0 {
-			userAttrs, err := s.userAttrRepo.GetAttributesByUserID(ctx, userID)
-			if err == nil && len(userAttrs) > 0 {
-				attrMap := make(map[string]string)
-				for _, attr := range userAttrs {
-					attrMap[attr.Name] = attr.Value
-				}
-				for _, mapper := range mappers {
-					if attrValue, exists := attrMap[mapper.UserAttribute]; exists {
-						claims[mapper.TokenClaimName] = attrValue
-					}
-				}
-			}
-		}
+	if err := s.ApplyTokenMappers(ctx, claims, clientID, userID, api.TokenTypeIDToken); err != nil {
+		log.Ctx(ctx).Warn().Err(err).Str("client_id", clientID).Str("user_id", userID).Msg("GenerateIDToken: failed to apply token mappers")
 	}
 
 	return s.signer.Sign(claims, "")
@@ -725,7 +718,160 @@ func (s *defaultTokenService) ValidateIDToken(ctx context.Context, tokenValue st
 	return nil, errors.New("not implemented: ValidateIDToken requires JWKS setup, see skipped tests")
 }
 
-// GenerateTokenPairWithFamily generates a token pair with a refresh token family.
+// ApplyTokenMappers applies user attribute mappers to the provided claims map.
+// It fetches mappers configured for the given clientID and tokenType, looks up
+// the user's attributes, and populates claims with mapped values.
+// All steps are logged at debug level for traceability; applied mappings are
+// logged at info level so operators can verify claims in production logs.
+func (s *defaultTokenService) ApplyTokenMappers(ctx context.Context, claims map[string]interface{}, clientID, userID, tokenType string) error {
+	ctx, span := telemetry.StartSpan(ctx, tokenTracerName, "ApplyTokenMappers",
+		attribute.String("client_id", clientID),
+		attribute.String("user_id", userID),
+		attribute.String("token_type", tokenType),
+	)
+	defer span.End()
+
+	logger := log.Ctx(ctx)
+
+	if s.userAttrMapperRepo == nil || s.userAttrRepo == nil {
+		logger.Debug().
+			Str("client_id", clientID).
+			Str("user_id", userID).
+			Str("token_type", tokenType).
+			Msg("ApplyTokenMappers: skipped — userAttrMapperRepo or userAttrRepo not configured")
+		return nil
+	}
+
+	logger.Debug().
+		Str("client_id", clientID).
+		Str("user_id", userID).
+		Str("token_type", tokenType).
+		Msg("ApplyTokenMappers: fetching mappers for client")
+
+	mappers, err := s.userAttrMapperRepo.GetMappersForClient(ctx, clientID, tokenType)
+	if err != nil {
+		logger.Warn().Err(err).
+			Str("client_id", clientID).
+			Str("user_id", userID).
+			Str("token_type", tokenType).
+			Msg("ApplyTokenMappers: failed to fetch mappers")
+		telemetry.RecordSpanError(span, err, "failed to fetch mappers")
+		span.SetStatus(codes.Error, "failed to fetch mappers")
+		return fmt.Errorf("failed to fetch token mappers: %w", err)
+	}
+
+	if len(mappers) == 0 {
+		logger.Debug().
+			Str("client_id", clientID).
+			Str("user_id", userID).
+			Str("token_type", tokenType).
+			Msg("ApplyTokenMappers: no mappers configured for this client and token type")
+		return nil
+	}
+
+	logger.Info().
+		Str("client_id", clientID).
+		Str("user_id", userID).
+		Str("token_type", tokenType).
+		Int("mapper_count", len(mappers)).
+		Msg("ApplyTokenMappers: found configured mappers")
+
+	userAttrs, err := s.userAttrRepo.GetAttributesByUserID(ctx, userID)
+	if err != nil {
+		logger.Warn().Err(err).
+			Str("client_id", clientID).
+			Str("user_id", userID).
+			Str("token_type", tokenType).
+			Msg("ApplyTokenMappers: failed to fetch user attributes")
+		telemetry.RecordSpanError(span, err, "failed to fetch user attributes")
+		span.SetStatus(codes.Error, "failed to fetch user attributes")
+		return fmt.Errorf("failed to fetch user attributes for token mappers: %w", err)
+	}
+
+	attrMap := make(map[string]string, len(userAttrs))
+	for _, attr := range userAttrs {
+		attrMap[attr.Name] = attr.Value
+	}
+
+	logger.Debug().
+		Str("client_id", clientID).
+		Str("user_id", userID).
+		Str("token_type", tokenType).
+		Int("attribute_count", len(userAttrs)).
+		Strs("attribute_names", func() []string {
+			names := make([]string, 0, len(userAttrs))
+			for _, a := range userAttrs {
+				names = append(names, a.Name)
+			}
+			return names
+		}()).
+		Msg("ApplyTokenMappers: fetched user attributes")
+
+	appliedCount := 0
+	skippedCount := 0
+
+	for _, mapper := range mappers {
+		attrValue, exists := attrMap[mapper.UserAttribute]
+		if !exists {
+			logger.Debug().
+				Str("client_id", clientID).
+				Str("user_id", userID).
+				Str("token_type", tokenType).
+				Str("mapper_name", mapper.Name).
+				Str("mapper_id", mapper.ID).
+				Str("user_attribute", mapper.UserAttribute).
+				Str("token_claim", mapper.TokenClaimName).
+				Bool("multi_valued", mapper.MultiValued).
+				Msg("ApplyTokenMappers: user attribute not found, skipping mapper")
+			skippedCount++
+			continue
+		}
+
+		if mapper.MultiValued {
+			values := strings.Split(attrValue, ",")
+			for i, v := range values {
+				values[i] = strings.TrimSpace(v)
+			}
+			claims[mapper.TokenClaimName] = values
+			logger.Info().
+				Str("client_id", clientID).
+				Str("user_id", userID).
+				Str("token_type", tokenType).
+				Str("mapper_name", mapper.Name).
+				Str("mapper_id", mapper.ID).
+				Str("user_attribute", mapper.UserAttribute).
+				Str("token_claim", mapper.TokenClaimName).
+				Strs("values", values).
+				Int("value_count", len(values)).
+				Msg("ApplyTokenMappers: applied multi-valued mapper")
+		} else {
+			claims[mapper.TokenClaimName] = attrValue
+			logger.Info().
+				Str("client_id", clientID).
+				Str("user_id", userID).
+				Str("token_type", tokenType).
+				Str("mapper_name", mapper.Name).
+				Str("mapper_id", mapper.ID).
+				Str("user_attribute", mapper.UserAttribute).
+				Str("token_claim", mapper.TokenClaimName).
+				Str("value", attrValue).
+				Msg("ApplyTokenMappers: applied mapper")
+		}
+		appliedCount++
+	}
+
+	logger.Info().
+		Str("client_id", clientID).
+		Str("user_id", userID).
+		Str("token_type", tokenType).
+		Int("applied_count", appliedCount).
+		Int("skipped_count", skippedCount).
+		Int("total_mappers", len(mappers)).
+		Msg("ApplyTokenMappers: completed")
+
+	return nil
+}
+
 func (s *defaultTokenService) GenerateTokenPairWithFamily(ctx context.Context, clientID, userID, scope string, tokenTTL time.Duration, family string, nonce string, authTime time.Time) (*api.TokenResponse, error) {
 	return nil, errors.New("not implemented: GenerateTokenPairWithFamily requires JWKS setup, see skipped tests")
 }

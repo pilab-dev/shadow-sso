@@ -966,6 +966,7 @@ func TestUserInfoHandler_Success_GET(t *testing.T) {
 		UserID:    "user1",
 		TokenType: "access_token",
 	}, nil)
+	mockTokenSvc.EXPECT().ApplyTokenMappers(gomock.Any(), gomock.Any(), "", "user1", "userinfo").Return(nil)
 	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user1").Return(&domain.User{
 		ID:             "user1",
 		Email:          email,
@@ -1013,6 +1014,7 @@ func TestUserInfoHandler_Success_POST(t *testing.T) {
 		UserID:    "user1",
 		TokenType: "access_token",
 	}, nil)
+	mockTokenSvc.EXPECT().ApplyTokenMappers(gomock.Any(), gomock.Any(), "", "user1", "userinfo").Return(nil)
 	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user1").Return(&domain.User{
 		ID:             "user1",
 		Email:          email,
@@ -1177,6 +1179,7 @@ func TestUserInfoHandler_SAToken(t *testing.T) {
 		UserID:    "sa-issuer",
 		TokenType: "service_account_jwt",
 	}, nil)
+	mockTokenSvc.EXPECT().ApplyTokenMappers(gomock.Any(), gomock.Any(), "", "sa-issuer", "userinfo").Return(nil)
 
 	req := httptest.NewRequest("GET", "/oauth2/userinfo", nil)
 	req.Header.Set("Authorization", "Bearer sa-token")
@@ -1201,6 +1204,7 @@ func TestUserInfoHandler_AliasRoute(t *testing.T) {
 		UserID:    "user1",
 		TokenType: "access_token",
 	}, nil)
+	mockTokenSvc.EXPECT().ApplyTokenMappers(gomock.Any(), gomock.Any(), "", "user1", "userinfo").Return(nil)
 	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user1").Return(&domain.User{
 		ID:        "user1",
 		Email:     "test@test.com",

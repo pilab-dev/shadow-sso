@@ -10,6 +10,8 @@ sidebar_label: CLI Reference
 
 ## Installation
 
+### From Source
+
 ```bash
 # Install from source
 go install github.com/pilab-dev/shadow-sso/apps/ssoctl@latest
@@ -18,6 +20,18 @@ go install github.com/pilab-dev/shadow-sso/apps/ssoctl@latest
 git clone https://github.com/pilab-dev/shadow-sso.git
 cd shadow-sso
 go build -o ssoctl ./apps/ssoctl/
+```
+
+### Docker Image
+
+The `ssoctl` binary is included in the official Shadow SSO Docker image:
+
+```bash
+# Run ssoctl from the Docker image
+docker run --rm ghcr.io/pilab-dev/shadow-sso-backend:latest ssoctl --help
+
+# Or use with a mounted config
+docker run --rm -v ~/.ssoctl:/home/appuser/.ssoctl ghcr.io/pilab-dev/shadow-sso-backend:latest ssoctl user list
 ```
 
 ## Configuration
