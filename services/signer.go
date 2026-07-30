@@ -75,6 +75,7 @@ func (s *TokenSigner) AddRSASigner(keyPath string) error {
 
 	s.keys["rsa-default"] = func(claims jwt.Claims) (string, error) {
 		token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+		token.Header["kid"] = "rsa-default"
 		tokenString, err := token.SignedString(privKey)
 		if err != nil {
 			return "", fmt.Errorf("failed to sign token with RSA: %w", err)
@@ -89,6 +90,10 @@ func (s *TokenSigner) AddRSASigner(keyPath string) error {
 
 func (s *TokenSigner) GetRSAPublicKey() *rsa.PublicKey {
 	return s.rsaPubKey
+}
+
+func (s *TokenSigner) GetRSAPrivateKey() *rsa.PrivateKey {
+	return s.rsaPrivKey
 }
 
 func (s *TokenSigner) HasRSASigner() bool {

@@ -87,6 +87,7 @@ ingress:
 
 # SSSO_MONGO_URI must be provided via extraEnvFrom referencing ssso-config Secret
 config:
+  SSSO_TRACING_ENABLED: "true"
   SSSO_LOG_LEVEL: "trace"
   SSSO_JSON_LOG: "false"
   SSSO_ISSUER_URL: "https://sso.pilab.hu"

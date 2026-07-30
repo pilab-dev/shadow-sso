@@ -1,119 +1,223 @@
 {
   "schema_version": 2,
-  "active_work_id": "federation-callback-url-fix-fcb35ab1",
+  "active_work_id": "mongodb-stores-01079f81",
   "works": {
-    "federation-callback-url-fix-fcb35ab1": {
-      "work_id": "federation-callback-url-fix-fcb35ab1",
-      "active_plan": "/Users/paalgyula/Workspace/pilab/shadow-sso/.omo/plans/federation-callback-url-fix.md",
-      "plan_name": "federation-callback-url-fix",
+    "mongodb-stores-01079f81": {
+      "work_id": "mongodb-stores-01079f81",
+      "active_plan": "/Users/paalgyula/Workspace/pilab/shadow-sso/.omo/plans/mongodb-stores.md",
+      "plan_name": "mongodb-stores",
       "status": "completed",
-      "started_at": "2026-07-29T21:33:34.196Z",
-      "updated_at": "2026-07-29T22:17:24.029Z",
+      "started_at": "2026-07-30T04:59:31.972Z",
+      "updated_at": "2026-07-30T06:25:48.531Z",
       "session_ids": [
-        "opencode:ses_0508d11d6ffeCbM5DWGk9IAK0j"
+        "opencode:ses_04eaa8760ffeOHhnxXUE4bptEO"
       ],
       "session_origins": {
-        "opencode:ses_0508d11d6ffeCbM5DWGk9IAK0j": "direct"
+        "opencode:ses_04eaa8760ffeOHhnxXUE4bptEO": "direct"
       },
       "agent": "atlas",
       "task_sessions": {
         "todo:1": {
           "task_key": "todo:1",
           "task_label": "1",
-          "task_title": "Fix redirect URL base in federation service",
-          "session_id": "opencode:ses_050339c89ffebxlznXo590WLRm",
+          "task_title": "`mongodb/flow_store.go` — Create MongoDB-backed FlowStore",
+          "session_id": "opencode:ses_04e96f78cffe3AgZpE26EG5VIW",
           "agent": "Sisyphus-Junior",
-          "category": "quick",
-          "updated_at": "2026-07-29T21:35:20.606Z",
-          "started_at": "2026-07-29T21:35:00.233Z",
+          "category": "unspecified-high",
+          "started_at": "2026-07-30T05:04:03.352Z",
           "status": "completed",
-          "ended_at": "2026-07-29T21:35:20.606Z",
-          "elapsed_ms": 20373
+          "updated_at": "2026-07-30T05:06:44.910Z",
+          "ended_at": "2026-07-30T05:06:44.910Z",
+          "elapsed_ms": 161558
         },
         "todo:2": {
           "task_key": "todo:2",
           "task_label": "2",
-          "task_title": "Constant-time state comparison in HandleCallback",
-          "session_id": "opencode:ses_050321c1effe2xj4efPoyDmgub",
+          "task_title": "`mongodb/user_session_store.go` — Create MongoDB-backed UserSessionStore",
+          "session_id": "opencode:ses_04e8e3be9ffeI87s45SLRfOTuw",
           "agent": "Sisyphus-Junior",
-          "category": "quick",
-          "updated_at": "2026-07-29T21:36:33.430Z",
-          "started_at": "2026-07-29T21:36:09.473Z",
+          "category": "deep",
+          "started_at": "2026-07-30T05:08:50.888Z",
           "status": "completed",
-          "ended_at": "2026-07-29T21:36:33.430Z",
-          "elapsed_ms": 23957
+          "updated_at": "2026-07-30T05:22:16.282Z",
+          "ended_at": "2026-07-30T05:22:16.282Z",
+          "elapsed_ms": 805394
         },
-        "todo:3": {
-          "task_key": "todo:3",
-          "task_label": "3",
-          "task_title": "Implement SocialCallbackHandler + register route",
-          "session_id": "opencode:ses_050112080ffeMfy6SnQA1HiEgO",
+        "todo:5": {
+          "task_key": "todo:5",
+          "task_label": "5",
+          "task_title": "Wire new stores into `MongoRepositoryProvider` and server startup",
+          "session_id": "opencode:ses_04e792c70ffe5uqQj4cqpH9hqg",
           "agent": "Sisyphus-Junior",
-          "category": "unspecified-high",
-          "started_at": "2026-07-29T22:07:56.832Z",
+          "category": "deep",
+          "started_at": "2026-07-30T05:36:44.752Z",
           "status": "completed",
-          "updated_at": "2026-07-29T22:15:21.718Z",
-          "ended_at": "2026-07-29T22:15:21.718Z",
-          "elapsed_ms": 444886
+          "updated_at": "2026-07-30T05:38:45.769Z",
+          "ended_at": "2026-07-30T05:38:45.769Z",
+          "elapsed_ms": 121017
+        },
+        "todo:6": {
+          "task_key": "todo:6",
+          "task_label": "6",
+          "task_title": "Write tests for all 4 new MongoDB stores",
+          "session_id": "opencode:ses_04e6bda1bffegsg0oPFyS1EJ4G",
+          "agent": "Sisyphus-Junior",
+          "category": "deep",
+          "started_at": "2026-07-30T05:40:21.258Z",
+          "status": "completed",
+          "updated_at": "2026-07-30T06:22:26.879Z",
+          "ended_at": "2026-07-30T06:22:26.878Z",
+          "elapsed_ms": 2525620
+        },
+        "final-wave:f4": {
+          "task_key": "final-wave:f4",
+          "task_label": "F4",
+          "task_title": "Scope fidelity audit — verify MemoryTokenStore unchanged, SessionRepository unchanged, DTS client unchanged.",
+          "session_id": "opencode:ses_04e4f6327ffeQFreSyJtne7tSF",
+          "agent": "Sisyphus-Junior",
+          "category": "deep",
+          "updated_at": "2026-07-30T06:25:24.534Z",
+          "started_at": "2026-07-30T06:23:26.008Z",
+          "status": "completed",
+          "ended_at": "2026-07-30T06:25:24.534Z",
+          "elapsed_ms": 118526
+        },
+        "final-wave:f1": {
+          "task_key": "final-wave:f1",
+          "task_label": "F1",
+          "task_title": "Plan compliance audit — verify all stores exist, all methods implemented, wiring updated.",
+          "session_id": "opencode:ses_04e4f7de1ffeF5gJrp071479xg",
+          "agent": "Sisyphus-Junior",
+          "category": "deep",
+          "updated_at": "2026-07-30T06:25:24.534Z",
+          "started_at": "2026-07-30T06:24:10.490Z",
+          "status": "completed",
+          "ended_at": "2026-07-30T06:25:24.534Z",
+          "elapsed_ms": 74044
+        },
+        "final-wave:f2": {
+          "task_key": "final-wave:f2",
+          "task_label": "F2",
+          "task_title": "Code quality review — ensure no dead code, no in-memory default leaks, no interface breakage.",
+          "session_id": "opencode:ses_04e4f6e4affe28twoEKhK9tSeN",
+          "agent": "Sisyphus-Junior",
+          "category": "deep",
+          "updated_at": "2026-07-30T06:25:24.534Z",
+          "started_at": "2026-07-30T06:25:17.034Z",
+          "status": "completed",
+          "ended_at": "2026-07-30T06:25:24.534Z",
+          "elapsed_ms": 7500
         }
       },
-      "ended_at": "2026-07-29T22:17:24.029Z",
-      "elapsed_ms": 2629833
+      "ended_at": "2026-07-30T06:25:48.531Z",
+      "elapsed_ms": 5176559
     }
   },
-  "active_plan": "/Users/paalgyula/Workspace/pilab/shadow-sso/.omo/plans/federation-callback-url-fix.md",
-  "started_at": "2026-07-29T21:33:34.196Z",
+  "active_plan": "/Users/paalgyula/Workspace/pilab/shadow-sso/.omo/plans/mongodb-stores.md",
+  "started_at": "2026-07-30T04:59:31.972Z",
   "status": "completed",
-  "updated_at": "2026-07-29T22:17:24.029Z",
+  "updated_at": "2026-07-30T06:25:48.531Z",
   "session_ids": [
-    "opencode:ses_0508d11d6ffeCbM5DWGk9IAK0j"
+    "opencode:ses_04eaa8760ffeOHhnxXUE4bptEO"
   ],
   "session_origins": {
-    "opencode:ses_0508d11d6ffeCbM5DWGk9IAK0j": "direct"
+    "opencode:ses_04eaa8760ffeOHhnxXUE4bptEO": "direct"
   },
-  "plan_name": "federation-callback-url-fix",
+  "plan_name": "mongodb-stores",
   "task_sessions": {
     "todo:1": {
       "task_key": "todo:1",
       "task_label": "1",
-      "task_title": "Fix redirect URL base in federation service",
-      "session_id": "opencode:ses_050339c89ffebxlznXo590WLRm",
+      "task_title": "`mongodb/flow_store.go` — Create MongoDB-backed FlowStore",
+      "session_id": "opencode:ses_04e96f78cffe3AgZpE26EG5VIW",
       "agent": "Sisyphus-Junior",
-      "category": "quick",
-      "updated_at": "2026-07-29T21:35:20.606Z",
-      "started_at": "2026-07-29T21:35:00.233Z",
+      "category": "unspecified-high",
+      "started_at": "2026-07-30T05:04:03.352Z",
       "status": "completed",
-      "ended_at": "2026-07-29T21:35:20.606Z",
-      "elapsed_ms": 20373
+      "updated_at": "2026-07-30T05:06:44.910Z",
+      "ended_at": "2026-07-30T05:06:44.910Z",
+      "elapsed_ms": 161558
     },
     "todo:2": {
       "task_key": "todo:2",
       "task_label": "2",
-      "task_title": "Constant-time state comparison in HandleCallback",
-      "session_id": "opencode:ses_050321c1effe2xj4efPoyDmgub",
+      "task_title": "`mongodb/user_session_store.go` — Create MongoDB-backed UserSessionStore",
+      "session_id": "opencode:ses_04e8e3be9ffeI87s45SLRfOTuw",
       "agent": "Sisyphus-Junior",
-      "category": "quick",
-      "updated_at": "2026-07-29T21:36:33.430Z",
-      "started_at": "2026-07-29T21:36:09.473Z",
+      "category": "deep",
+      "started_at": "2026-07-30T05:08:50.888Z",
       "status": "completed",
-      "ended_at": "2026-07-29T21:36:33.430Z",
-      "elapsed_ms": 23957
+      "updated_at": "2026-07-30T05:22:16.282Z",
+      "ended_at": "2026-07-30T05:22:16.282Z",
+      "elapsed_ms": 805394
     },
-    "todo:3": {
-      "task_key": "todo:3",
-      "task_label": "3",
-      "task_title": "Implement SocialCallbackHandler + register route",
-      "session_id": "opencode:ses_050112080ffeMfy6SnQA1HiEgO",
+    "todo:5": {
+      "task_key": "todo:5",
+      "task_label": "5",
+      "task_title": "Wire new stores into `MongoRepositoryProvider` and server startup",
+      "session_id": "opencode:ses_04e792c70ffe5uqQj4cqpH9hqg",
       "agent": "Sisyphus-Junior",
-      "category": "unspecified-high",
-      "started_at": "2026-07-29T22:07:56.832Z",
+      "category": "deep",
+      "started_at": "2026-07-30T05:36:44.752Z",
       "status": "completed",
-      "updated_at": "2026-07-29T22:15:21.718Z",
-      "ended_at": "2026-07-29T22:15:21.718Z",
-      "elapsed_ms": 444886
+      "updated_at": "2026-07-30T05:38:45.769Z",
+      "ended_at": "2026-07-30T05:38:45.769Z",
+      "elapsed_ms": 121017
+    },
+    "todo:6": {
+      "task_key": "todo:6",
+      "task_label": "6",
+      "task_title": "Write tests for all 4 new MongoDB stores",
+      "session_id": "opencode:ses_04e6bda1bffegsg0oPFyS1EJ4G",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "started_at": "2026-07-30T05:40:21.258Z",
+      "status": "completed",
+      "updated_at": "2026-07-30T06:22:26.879Z",
+      "ended_at": "2026-07-30T06:22:26.878Z",
+      "elapsed_ms": 2525620
+    },
+    "final-wave:f4": {
+      "task_key": "final-wave:f4",
+      "task_label": "F4",
+      "task_title": "Scope fidelity audit — verify MemoryTokenStore unchanged, SessionRepository unchanged, DTS client unchanged.",
+      "session_id": "opencode:ses_04e4f6327ffeQFreSyJtne7tSF",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-07-30T06:25:24.534Z",
+      "started_at": "2026-07-30T06:23:26.008Z",
+      "status": "completed",
+      "ended_at": "2026-07-30T06:25:24.534Z",
+      "elapsed_ms": 118526
+    },
+    "final-wave:f1": {
+      "task_key": "final-wave:f1",
+      "task_label": "F1",
+      "task_title": "Plan compliance audit — verify all stores exist, all methods implemented, wiring updated.",
+      "session_id": "opencode:ses_04e4f7de1ffeF5gJrp071479xg",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-07-30T06:25:24.534Z",
+      "started_at": "2026-07-30T06:24:10.490Z",
+      "status": "completed",
+      "ended_at": "2026-07-30T06:25:24.534Z",
+      "elapsed_ms": 74044
+    },
+    "final-wave:f2": {
+      "task_key": "final-wave:f2",
+      "task_label": "F2",
+      "task_title": "Code quality review — ensure no dead code, no in-memory default leaks, no interface breakage.",
+      "session_id": "opencode:ses_04e4f6e4affe28twoEKhK9tSeN",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-07-30T06:25:24.534Z",
+      "started_at": "2026-07-30T06:25:17.034Z",
+      "status": "completed",
+      "ended_at": "2026-07-30T06:25:24.534Z",
+      "elapsed_ms": 7500
     }
   },
   "agent": "atlas",
-  "ended_at": "2026-07-29T22:17:24.029Z",
-  "elapsed_ms": 2629833
+  "ended_at": "2026-07-30T06:25:48.531Z",
+  "elapsed_ms": 5176559
 }

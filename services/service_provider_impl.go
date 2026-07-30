@@ -150,10 +150,16 @@ func (p *DefaultServiceProvider) PKCEService() PKCEService {
 
 func (p *DefaultServiceProvider) JWKSService() JWKSService {
 	if p.jwksService == nil {
-		var err error
-		p.jwksService, err = newDefaultJWKSService(p.config.KeyRotationPeriod)
-		if err != nil {
-			panic("failed to initialize JWKSService: " + err.Error())
+		// Use the actual signing key so JWKS serves the matching public key.
+		if p.tokenSigner != nil && p.tokenSigner.HasRSASigner() {
+			privKey := p.tokenSigner.GetRSAPrivateKey()
+			p.jwksService = NewJWKSServiceWithKey(privKey, "rsa-default")
+		} else {
+			var err error
+			p.jwksService, err = newDefaultJWKSService(p.config.KeyRotationPeriod)
+			if err != nil {
+				panic("failed to initialize JWKSService: " + err.Error())
+			}
 		}
 	}
 	return p.jwksService

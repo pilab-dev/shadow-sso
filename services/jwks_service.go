@@ -66,6 +66,20 @@ func NewJWKSService(keyRotation time.Duration) (*defaultJWKSService, error) {
 	return service, nil
 }
 
+// NewJWKSServiceWithKey creates a JWKS service backed by an existing RSA key pair.
+// This ensures the JWKS endpoint serves the same public key that corresponds to the
+// private key used for signing tokens, making signature verification work.
+// No automatic key rotation is performed — the provided key is the only key served.
+func NewJWKSServiceWithKey(privKey *rsa.PrivateKey, kid string) *defaultJWKSService {
+	service := &defaultJWKSService{
+		keys:        make(map[string]*rsa.PrivateKey),
+		keyRotation: 0, // no rotation for externally-provided keys
+		currentKeyID: kid,
+	}
+	service.keys[kid] = privKey
+	return service
+}
+
 // GetPublicJWKS retrieves the public JSON Web Key Set.
 func (s *defaultJWKSService) GetPublicJWKS(ctx context.Context) (*JSONWebKeySet, error) {
 	s.mu.RLock()
