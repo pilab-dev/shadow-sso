@@ -831,11 +831,6 @@ func TestOAuthService_ExchangeAuthorizationCode_Success(t *testing.T) {
 	clientSecret := "secret"
 	redirectURI := "https://callback"
 
-	client := &domain.Client{
-		ID:     clientID,
-		Secret: clientSecret,
-	}
-
 	authCode := &domain.AuthCode{
 		Code:        code,
 		ClientID:    clientID,
@@ -846,7 +841,6 @@ func TestOAuthService_ExchangeAuthorizationCode_Success(t *testing.T) {
 		Used:        false,
 	}
 
-	mockClientRepo.EXPECT().ValidateClient(ctx, clientID, clientSecret).Return(client, nil)
 	mockAuthCodeRepo.EXPECT().GetAuthCode(ctx, code).Return(authCode, nil)
 	mockAuthCodeRepo.EXPECT().MarkAuthCodeAsUsed(ctx, code).Return(nil)
 	mockTokenServiceInterface.EXPECT().GenerateTokenPair(ctx, clientID, authCode.UserID, authCode.Scope, time.Hour).Return(&api.TokenResponse{
@@ -891,12 +885,6 @@ func TestOAuthService_ExchangeAuthorizationCode_InvalidCode(t *testing.T) {
 	clientSecret := "secret"
 	redirectURI := "https://callback"
 
-	client := &domain.Client{
-		ID:     clientID,
-		Secret: clientSecret,
-	}
-
-	mockClientRepo.EXPECT().ValidateClient(ctx, clientID, clientSecret).Return(client, nil)
 	mockAuthCodeRepo.EXPECT().GetAuthCode(ctx, code).Return(nil, errors.New("code not found"))
 
 	_, err := oauthService.ExchangeAuthorizationCode(ctx, code, clientID, clientSecret, redirectURI)
@@ -934,11 +922,6 @@ func TestOAuthService_ExchangeAuthorizationCode_Expired(t *testing.T) {
 	clientSecret := "secret"
 	redirectURI := "https://callback"
 
-	client := &domain.Client{
-		ID:     clientID,
-		Secret: clientSecret,
-	}
-
 	authCode := &domain.AuthCode{
 		Code:        code,
 		ClientID:    clientID,
@@ -948,7 +931,6 @@ func TestOAuthService_ExchangeAuthorizationCode_Expired(t *testing.T) {
 		Used:        false,
 	}
 
-	mockClientRepo.EXPECT().ValidateClient(ctx, clientID, clientSecret).Return(client, nil)
 	mockAuthCodeRepo.EXPECT().GetAuthCode(ctx, code).Return(authCode, nil)
 
 	_, err := oauthService.ExchangeAuthorizationCode(ctx, code, clientID, clientSecret, redirectURI)

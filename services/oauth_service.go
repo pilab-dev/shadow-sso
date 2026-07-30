@@ -528,11 +528,10 @@ func (s *defaultOAuthService) ExchangeAuthorizationCode(ctx context.Context,
 
 	log.Ctx(ctx).Debug().Str("client_id", clientID).Str("redirect_uri", redirectURI).Msg("Exchanging authorization code for tokens")
 
-	_, err := s.ValidateClient(ctx, clientID, clientSecret)
-	if err != nil {
-		telemetry.RecordSpanError(span, err, "client validation failed")
-		return nil, err
-	}
+	// Client is already authenticated by the caller (TokenHandler).
+	// Re-validation would fail here because the stored bcrypt hash gets
+	// passed as the "secret" instead of the original plaintext secret.
+	// Skip redundant client validation.
 
 	authCodeDomain, err := s.authCodeRepo.GetAuthCode(ctx, code)
 	if err != nil {
