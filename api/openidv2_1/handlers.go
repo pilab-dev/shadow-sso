@@ -1154,20 +1154,24 @@ func (oa *OAuth2API) TokenHandler(c *gin.Context) {
 
 	cli, err = oa.authenticateClient(ctx, clientID, cli, params)
 	if err != nil {
-		log.Error().Err(err).Msg("Client authentication failed")
+		log.Ctx(ctx).Error().Err(err).
+			Str("client_id", clientID).
+			Bool("has_secret", clientSecret != "").
+			Bool("has_assertion", clientAssertion != "").
+			Msg("Client authentication failed")
 		c.JSON(http.StatusUnauthorized, domain.NewInvalidClient("Invalid client credentials"))
 		return
 	}
 
 	if !isDeviceCodeGrant && cli.IsConfidential && cli.TokenEndpointAuth != string(domain.ClientAuthMethodNone) && clientSecret == "" && clientAssertion == "" {
-		log.Error().Str("client_id", clientID).Msg("Client is confidential but no credentials provided")
+		log.Ctx(ctx).Error().Str("client_id", clientID).Msg("Client is confidential but no credentials provided")
 		c.JSON(http.StatusUnauthorized, domain.NewInvalidClient("Client secret required for confidential client"))
 		return
 	}
 
 	// Validate grant type (check if this client is allowed to use this grant type)
 	if err := oa.clientService.ValidateGrantType(ctx, clientID, grantType); err != nil {
-		log.Error().Err(err).Msg("Grant type not allowed for this client")
+		log.Ctx(ctx).Error().Err(err).Str("client_id", clientID).Msg("Grant type not allowed for this client")
 		c.JSON(http.StatusBadRequest, domain.NewUnauthorizedClient("Grant type not allowed for this client"))
 		return
 	}
@@ -1197,9 +1201,11 @@ func (oa *OAuth2API) TokenHandler(c *gin.Context) {
 		}
 		// Try to assert to domain.OAuth2Error first
 		if oauthErr, ok := processErr.(*domain.OAuth2Error); ok {
-			log.Error().Err(oauthErr).Str("code", oauthErr.Code).Msg("Token generation failed (OAuth2Error)")
-			// Assuming OAuth2Error has a field like `HTTPStatusCode` or we map codes to status
-			// For now, default to Bad Request for many, but could be Unauthorized for invalid_client etc.
+			log.Ctx(ctx).Error().Err(oauthErr).
+				Str("client_id", clientID).
+				Str("grant_type", grantType).
+				Str("code", oauthErr.Code).
+				Msg("Token generation failed (OAuth2Error)")
 			statusCode := http.StatusBadRequest
 			if oauthErr.Code == domain.InvalidClient || oauthErr.Code == domain.UnauthorizedClient {
 				statusCode = http.StatusUnauthorized
@@ -1207,14 +1213,11 @@ func (oa *OAuth2API) TokenHandler(c *gin.Context) {
 			c.JSON(statusCode, oauthErr)
 			return
 		}
-		// The check for domain.ErrInvalidRequest or domain.ErrInvalidGrant using goerrors.Is
-		// is likely incorrect if these are not actual exported error variables.
-		// The *domain.OAuth2Error type assertion above should handle these if processErr is of that type
-		// and its .Code field matches domain.InvalidRequest or domain.InvalidGrant.
-		// If they are some other kind of error that should map to NewInvalidGrant, that's a different scenario.
-		// For now, removing this specific block as it's causing undefined errors.
 
-		log.Error().Err(processErr).Msg("Token generation failed (Non-OAuth2Error)")
+		log.Ctx(ctx).Error().Err(processErr).
+			Str("client_id", clientID).
+			Str("grant_type", grantType).
+			Msg("Token generation failed (Non-OAuth2Error)")
 		c.JSON(http.StatusInternalServerError, domain.NewServerError("Failed to generate token: "+processErr.Error()))
 		return
 	}

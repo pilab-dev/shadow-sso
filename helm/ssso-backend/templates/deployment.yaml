@@ -50,6 +50,8 @@ spec:
               value: {{ .Values.config.SSSO_NEXTJS_LOGIN_URL | quote }}
             - name: SSSO_JSON_LOG
               value: {{ .Values.config.SSSO_JSON_LOG | quote }}
+            - name: SSSO_TRACING_ENABLE
+              value: {{ .Values.config.SSSO_TRACING_ENABLE | quote }}
             {{- if include "ssso-backend.mongodb.uri" . }}
             - name: SSSO_MONGO_URI
               value: {{ include "ssso-backend.mongodb.uri" . | quote }}
@@ -82,6 +84,8 @@ spec:
                   optional: true # Server provides default if key is missing in secret
             {{- end }}
             {{- if .Values.tracing.enabled }}
+            - name: SSSO_TRACING_ENABLED
+              value: "true"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.tracing.otlpEndpoint | quote }}
             - name: OTEL_SERVICE_NAME
