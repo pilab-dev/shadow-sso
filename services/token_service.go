@@ -718,6 +718,31 @@ func (s *defaultTokenService) ValidateIDToken(ctx context.Context, tokenValue st
 	return nil, errors.New("not implemented: ValidateIDToken requires JWKS setup, see skipped tests")
 }
 
+// setNestedClaim sets a claim value in the map, supporting dot-notation
+// for nested keys (e.g. "realm_access.roles" creates {"realm_access": {"roles": value}}).
+// This allows token mappers to produce Grafana-compatible nested claim structures
+// like realm_access.roles and resource_access.<client_id>.roles dynamically.
+func setNestedClaim(claims map[string]interface{}, key string, value interface{}) {
+	parts := strings.SplitN(key, ".", 2)
+	if len(parts) == 1 {
+		claims[key] = value
+		return
+	}
+	prefix := parts[0]
+	suffix := parts[1]
+	nested, ok := claims[prefix].(map[string]interface{})
+	if !ok {
+		nested = make(map[string]interface{})
+		claims[prefix] = nested
+	}
+	innerParts := strings.SplitN(suffix, ".", 2)
+	if len(innerParts) == 1 {
+		nested[suffix] = value
+	} else {
+		setNestedClaim(nested, suffix, value)
+	}
+}
+
 // ApplyTokenMappers applies user attribute mappers to the provided claims map.
 // It fetches mappers configured for the given clientID and tokenType, looks up
 // the user's attributes, and populates claims with mapped values.
@@ -832,7 +857,7 @@ func (s *defaultTokenService) ApplyTokenMappers(ctx context.Context, claims map[
 			for i, v := range values {
 				values[i] = strings.TrimSpace(v)
 			}
-			claims[mapper.TokenClaimName] = values
+			setNestedClaim(claims, mapper.TokenClaimName, values)
 			logger.Info().
 				Str("client_id", clientID).
 				Str("user_id", userID).
@@ -845,7 +870,7 @@ func (s *defaultTokenService) ApplyTokenMappers(ctx context.Context, claims map[
 				Int("value_count", len(values)).
 				Msg("ApplyTokenMappers: applied multi-valued mapper")
 		} else {
-			claims[mapper.TokenClaimName] = attrValue
+			setNestedClaim(claims, mapper.TokenClaimName, attrValue)
 			logger.Info().
 				Str("client_id", clientID).
 				Str("user_id", userID).
