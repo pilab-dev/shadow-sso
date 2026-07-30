@@ -15,6 +15,7 @@ type AuthCode struct {
 
 	CodeChallenge       string `json:"code_challenge,omitempty"`
 	CodeChallengeMethod string `json:"code_challenge_method,omitempty"`
+	Nonce               string `json:"nonce,omitempty"`
 
 	AuthCodeData AuthCodeData `json:"auth_code_data,omitempty"`
 }

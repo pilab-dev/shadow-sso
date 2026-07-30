@@ -544,6 +544,7 @@ func (s *defaultOAuthService) ExchangeAuthorizationCode(ctx context.Context,
 		attribute.String("user.id", authCodeDomain.UserID),
 		attribute.String("oauth.scope", authCodeDomain.Scope),
 		attribute.Bool("auth_code.used", authCodeDomain.Used),
+		attribute.String("oauth.nonce", authCodeDomain.Nonce),
 	)
 
 	if authCodeDomain.Used || time.Now().After(authCodeDomain.ExpiresAt) {
@@ -584,6 +585,16 @@ func (s *defaultOAuthService) ExchangeAuthorizationCode(ctx context.Context,
 		span.SetStatus(codes.Error, err.Error())
 		log.Ctx(ctx).Error().Err(err).Str("client_id", clientID).Str("user_id", authCodeDomain.UserID).Msg("Failed to generate token pair during auth code exchange")
 		return nil, fmt.Errorf("failed to generate token pair: %w", err)
+	}
+
+	// If a nonce was stored in the auth code, regenerate the ID token with it.
+	if authCodeDomain.Nonce != "" {
+		idToken, err := s.tokenService.GenerateIDToken(ctx, authCodeDomain.UserID, clientID, authCodeDomain.Nonce, authCodeDomain.CreatedAt, authCodeDomain.Scope)
+		if err != nil {
+			log.Ctx(ctx).Warn().Err(err).Str("client_id", clientID).Msg("Failed to generate ID token with nonce, continuing without it")
+		} else {
+			tokenPair.IDToken = idToken
+		}
 	}
 
 	log.Ctx(ctx).Info().Str("client_id", clientID).Str("user_id", authCodeDomain.UserID).Msg("Authorization code exchange successful")
@@ -753,6 +764,7 @@ func (s *defaultOAuthService) GenerateAuthCode(
 		Used:                false,
 		CodeChallenge:       codeChallenge,
 		CodeChallengeMethod: codeChallengeMethod,
+		Nonce:               nonce,
 	}
 
 	if err := s.authCodeRepo.SaveAuthCode(ctx, authCode); err != nil {
