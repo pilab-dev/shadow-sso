@@ -19,6 +19,7 @@ import (
 	"github.com/pilab-dev/shadow-sso/domain"
 	"github.com/pilab-dev/shadow-sso/internal/metrics"
 	"github.com/pilab-dev/shadow-sso/internal/telemetry"
+	"github.com/pilab-dev/shadow-sso/middleware"
 	"github.com/pilab-dev/shadow-sso/mongodb"
 	pkgauth "github.com/pilab-dev/shadow-sso/pkg/auth"
 	"github.com/pilab-dev/shadow-sso/services"
@@ -46,11 +47,7 @@ func requestIDMiddleware() gin.HandlerFunc {
 		c.Writer.Header().Set("X-Request-ID", requestID)
 		c.Set("X-Request-ID", requestID)
 
-		logger := zerolog.Ctx(c.Request.Context())
-		if logger == nil {
-			logger = &log.Logger
-		}
-		l := logger.With().Str("request_id", requestID).Logger()
+		l := log.Logger.With().Str("request_id", requestID).Logger()
 		c.Request = c.Request.WithContext(l.WithContext(c.Request.Context()))
 
 		c.Next()
@@ -284,6 +281,7 @@ func main() {
 			corsMiddleware(cfg.AllowedOrigins),
 			requestIDMiddleware(),
 			otelgin.Middleware("shadow-sso"),
+			middleware.TraceIDMiddleware(),
 		),
 	)
 	if err != nil {
