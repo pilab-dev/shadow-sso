@@ -10,9 +10,12 @@ import (
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
 	"github.com/pilab-dev/shadow-sso/internal/auth/totp" // The new TOTP utility
+	"github.com/pilab-dev/shadow-sso/internal/telemetry"
 
 	// "github.com/pilab-dev/shadow-sso/middleware" // No longer needed here
 	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -42,25 +45,35 @@ func NewTwoFactorServer(
 	}
 }
 
+const twoFactorTracerName = "two-factor-service"
+
 // InitiateTOTPSetup generates a new TOTP secret and QR code URI for the authenticated user.
 func (s *TwoFactorServer) InitiateTOTPSetup(ctx context.Context, req *connect.Request[ssov1.InitiateTOTPSetupRequest]) (*connect.Response[ssov1.InitiateTOTPSetupResponse], error) {
 	authedToken, ok := domain.GetAuthenticatedTokenFromContext(ctx)
 	if !ok || authedToken == nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated"))
 	}
+	ctx, span := telemetry.StartSpan(ctx, twoFactorTracerName, "InitiateTOTPSetup", attribute.String("user.id", authedToken.UserID))
+	defer span.End()
 
 	user, err := s.userRepo.GetUserByID(ctx, authedToken.UserID)
 	if err != nil {
-		log.Error().Err(err).Str("userID", authedToken.UserID).Msg("InitiateTOTPSetup: User not found")
+		log.Ctx(ctx).Error().Err(err).Str("userID", authedToken.UserID).Msg("InitiateTOTPSetup: User not found")
+		telemetry.RecordSpanError(span, err, "user not found")
+		span.SetStatus(codes.Error, "user not found")
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("user not found: %w", err))
 	}
 	if user.IsTwoFactorEnabled {
+		telemetry.RecordSpanError(span, errors.New("2FA already enabled"), "2FA already enabled")
+		span.SetStatus(codes.Error, "2FA already enabled")
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("2FA is already enabled for this user"))
 	}
 
 	otpKey, otpAuthURI, err := totp.GenerateTOTPSecret(s.ssoAppName, user.Email)
 	if err != nil {
-		log.Error().Err(err).Msg("InitiateTOTPSetup: Failed to generate TOTP secret")
+		log.Ctx(ctx).Error().Err(err).Msg("InitiateTOTPSetup: Failed to generate TOTP secret")
+		telemetry.RecordSpanError(span, err, "failed to generate TOTP secret")
+		span.SetStatus(codes.Error, "failed to generate TOTP secret")
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("could not generate TOTP secret: %w", err))
 	}
 
@@ -69,7 +82,9 @@ func (s *TwoFactorServer) InitiateTOTPSetup(ctx context.Context, req *connect.Re
 	// user.IsTwoFactorEnabled = false; // Stays false until verified
 
 	if err := s.userRepo.UpdateUser(ctx, user); err != nil {
-		log.Error().Err(err).Str("userID", user.ID).Msg("InitiateTOTPSetup: Failed to save temporary TOTP secret to user")
+		log.Ctx(ctx).Error().Err(err).Str("userID", user.ID).Msg("InitiateTOTPSetup: Failed to save temporary TOTP secret to user")
+		telemetry.RecordSpanError(span, err, "failed to save temporary TOTP secret")
+		span.SetStatus(codes.Error, "failed to save temporary TOTP secret")
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to update user with new TOTP secret: %w", err))
 	}
 
@@ -85,30 +100,45 @@ func (s *TwoFactorServer) VerifyAndEnableTOTP(ctx context.Context, req *connect.
 	if !ok || authedToken == nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated"))
 	}
+	ctx, span := telemetry.StartSpan(ctx, twoFactorTracerName, "VerifyAndEnableTOTP", attribute.String("user.id", authedToken.UserID))
+	defer span.End()
+
 	user, err := s.userRepo.GetUserByID(ctx, authedToken.UserID)
 	if err != nil {
+		telemetry.RecordSpanError(span, err, "user not found")
+		span.SetStatus(codes.Error, "user not found")
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("user not found: %w", err))
 	}
 	if user.IsTwoFactorEnabled {
+		telemetry.RecordSpanError(span, errors.New("2FA already enabled"), "2FA already enabled")
+		span.SetStatus(codes.Error, "2FA already enabled")
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("2FA is already enabled"))
 	}
 	if user.TwoFactorSecret == "" || user.TwoFactorMethod != "TOTP" {
+		telemetry.RecordSpanError(span, errors.New("TOTP setup not initiated"), "TOTP setup not initiated")
+		span.SetStatus(codes.Error, "TOTP setup not initiated")
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("TOTP setup not initiated or secret not found"))
 	}
 
 	valid, errValidate := totp.ValidateTOTPCode(user.TwoFactorSecret, req.Msg.TotpCode)
 	if errValidate != nil {
-		log.Error().Err(errValidate).Str("userID", user.ID).Msg("VerifyAndEnableTOTP: Error during TOTP code validation function")
+		log.Ctx(ctx).Error().Err(errValidate).Str("userID", user.ID).Msg("VerifyAndEnableTOTP: Error during TOTP code validation function")
+		telemetry.RecordSpanError(span, errValidate, "TOTP validation error")
+		span.SetStatus(codes.Error, "TOTP validation error")
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("error validating TOTP code: %w", errValidate))
 	}
 	if !valid {
 		// TODO: Implement attempt counting / lockout for TOTP verification
+		telemetry.RecordSpanError(span, errors.New("invalid TOTP code"), "invalid TOTP code")
+		span.SetStatus(codes.Error, "invalid TOTP code")
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid TOTP code"))
 	}
 
 	plaintextCodes, hashedCodes, err := totp.GenerateRecoveryCodes(totp.DefaultNumRecoveryCodes, totp.DefaultRecoveryCodeLength)
 	if err != nil {
-		log.Error().Err(err).Str("userID", user.ID).Msg("VerifyAndEnableTOTP: Failed to generate recovery codes")
+		log.Ctx(ctx).Error().Err(err).Str("userID", user.ID).Msg("VerifyAndEnableTOTP: Failed to generate recovery codes")
+		telemetry.RecordSpanError(span, err, "failed to generate recovery codes")
+		span.SetStatus(codes.Error, "failed to generate recovery codes")
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not generate recovery codes"))
 	}
 
@@ -117,7 +147,9 @@ func (s *TwoFactorServer) VerifyAndEnableTOTP(ctx context.Context, req *connect.
 	user.TwoFactorRecoveryCodes = hashedCodes // Store hashed recovery codes
 
 	if err := s.userRepo.UpdateUser(ctx, user); err != nil {
-		log.Error().Err(err).Str("userID", user.ID).Msg("VerifyAndEnableTOTP: Failed to update user to enable 2FA")
+		log.Ctx(ctx).Error().Err(err).Str("userID", user.ID).Msg("VerifyAndEnableTOTP: Failed to update user to enable 2FA")
+		telemetry.RecordSpanError(span, err, "failed to update user to enable 2FA")
+		span.SetStatus(codes.Error, "failed to update user to enable 2FA")
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to enable 2FA for user: %w", err))
 	}
 
@@ -133,15 +165,24 @@ func (s *TwoFactorServer) Disable2FA(ctx context.Context, req *connect.Request[s
 	if !ok || authedToken == nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated"))
 	}
+	ctx, span := telemetry.StartSpan(ctx, twoFactorTracerName, "Disable2FA", attribute.String("user.id", authedToken.UserID))
+	defer span.End()
+
 	user, err := s.userRepo.GetUserByID(ctx, authedToken.UserID)
 	if err != nil {
+		telemetry.RecordSpanError(span, err, "user not found")
+		span.SetStatus(codes.Error, "user not found")
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("user not found: %w", err))
 	}
 
 	if !user.IsTwoFactorEnabled {
+		telemetry.RecordSpanError(span, errors.New("2FA not enabled"), "2FA not enabled")
+		span.SetStatus(codes.Error, "2FA not enabled")
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("2FA is not currently enabled for this user"))
 	}
 	if req.Msg.PasswordOr_2FaCode == "" {
+		telemetry.RecordSpanError(span, errors.New("password or 2FA code required"), "password or 2FA code required")
+		span.SetStatus(codes.Error, "password or 2FA code required")
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("password or 2FA code required to disable 2FA"))
 	}
 
@@ -167,6 +208,8 @@ func (s *TwoFactorServer) Disable2FA(ctx context.Context, req *connect.Request[s
 	}
 
 	if !passwordVerified && !totpVerified && !recoveryVerified {
+		telemetry.RecordSpanError(span, errors.New("invalid verification"), "invalid password, TOTP code, or recovery code")
+		span.SetStatus(codes.Error, "invalid verification")
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid password, TOTP code, or recovery code"))
 	}
 
@@ -183,7 +226,9 @@ func (s *TwoFactorServer) Disable2FA(ctx context.Context, req *connect.Request[s
 	}
 
 	if err := s.userRepo.UpdateUser(ctx, user); err != nil {
-		log.Error().Err(err).Str("userID", user.ID).Msg("Disable2FA: Failed to update user to disable 2FA")
+		log.Ctx(ctx).Error().Err(err).Str("userID", user.ID).Msg("Disable2FA: Failed to update user to disable 2FA")
+		telemetry.RecordSpanError(span, err, "failed to update user to disable 2FA")
+		span.SetStatus(codes.Error, "failed to update user to disable 2FA")
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to disable 2FA: %w", err))
 	}
 	return connect.NewResponse(&emptypb.Empty{}), nil
@@ -195,12 +240,19 @@ func (s *TwoFactorServer) GenerateRecoveryCodes(ctx context.Context, req *connec
 	if !ok || authedToken == nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated"))
 	}
+	ctx, span := telemetry.StartSpan(ctx, twoFactorTracerName, "GenerateRecoveryCodes", attribute.String("user.id", authedToken.UserID))
+	defer span.End()
+
 	user, err := s.userRepo.GetUserByID(ctx, authedToken.UserID)
 	if err != nil {
+		telemetry.RecordSpanError(span, err, "user not found")
+		span.SetStatus(codes.Error, "user not found")
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("user not found: %w", err))
 	}
 
 	if !user.IsTwoFactorEnabled {
+		telemetry.RecordSpanError(span, errors.New("2FA not enabled"), "2FA not enabled")
+		span.SetStatus(codes.Error, "2FA not enabled")
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("2FA is not enabled for this user"))
 	}
 
@@ -215,19 +267,25 @@ func (s *TwoFactorServer) GenerateRecoveryCodes(ctx context.Context, req *connec
 		}
 		// Typically, using a recovery code to generate new recovery codes is disallowed.
 		if !passwordVerified && !totpVerified {
+			telemetry.RecordSpanError(span, errors.New("invalid re-authentication"), "invalid password or TOTP code for re-authentication")
+			span.SetStatus(codes.Error, "invalid re-authentication")
 			return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid password or TOTP code for re-authentication"))
 		}
 	} // Else, if PasswordOr_2FaCode is empty, proceed without re-auth (depends on policy)
 
 	plaintextCodes, hashedCodes, err := totp.GenerateRecoveryCodes(totp.DefaultNumRecoveryCodes, totp.DefaultRecoveryCodeLength)
 	if err != nil {
-		log.Error().Err(err).Str("userID", user.ID).Msg("GenerateRecoveryCodes: Failed to generate new recovery codes")
+		log.Ctx(ctx).Error().Err(err).Str("userID", user.ID).Msg("GenerateRecoveryCodes: Failed to generate new recovery codes")
+		telemetry.RecordSpanError(span, err, "failed to generate recovery codes")
+		span.SetStatus(codes.Error, "failed to generate recovery codes")
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not generate new recovery codes"))
 	}
 	user.TwoFactorRecoveryCodes = hashedCodes // Replace old codes
 
 	if err := s.userRepo.UpdateUser(ctx, user); err != nil {
-		log.Error().Err(err).Str("userID", user.ID).Msg("GenerateRecoveryCodes: Failed to save new recovery codes")
+		log.Ctx(ctx).Error().Err(err).Str("userID", user.ID).Msg("GenerateRecoveryCodes: Failed to save new recovery codes")
+		telemetry.RecordSpanError(span, err, "failed to save new recovery codes")
+		span.SetStatus(codes.Error, "failed to save new recovery codes")
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to save new recovery codes: %w", err))
 	}
 	return connect.NewResponse(&ssov1.GenerateRecoveryCodesResponse{RecoveryCodes: plaintextCodes}), nil
@@ -239,20 +297,28 @@ func (s *TwoFactorServer) InitiateHOTPSetup(ctx context.Context, req *connect.Re
 	if !ok || authedToken == nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated"))
 	}
+	ctx, span := telemetry.StartSpan(ctx, twoFactorTracerName, "InitiateHOTPSetup", attribute.String("user.id", authedToken.UserID))
+	defer span.End()
 
 	user, err := s.userRepo.GetUserByID(ctx, authedToken.UserID)
 	if err != nil {
-		log.Error().Err(err).Str("userID", authedToken.UserID).Msg("InitiateHOTPSetup: User not found")
+		log.Ctx(ctx).Error().Err(err).Str("userID", authedToken.UserID).Msg("InitiateHOTPSetup: User not found")
+		telemetry.RecordSpanError(span, err, "user not found")
+		span.SetStatus(codes.Error, "user not found")
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("user not found: %w", err))
 	}
 	if user.IsTwoFactorEnabled {
+		telemetry.RecordSpanError(span, errors.New("2FA already enabled"), "2FA already enabled")
+		span.SetStatus(codes.Error, "2FA already enabled")
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("2FA is already enabled for this user"))
 	}
 
 	// Generate HOTP secret
 	otpKey, otpAuthURI, err := totp.GenerateHOTPSecret(s.ssoAppName, user.Email)
 	if err != nil {
-		log.Error().Err(err).Msg("InitiateHOTPSetup: Failed to generate HOTP secret")
+		log.Ctx(ctx).Error().Err(err).Msg("InitiateHOTPSetup: Failed to generate HOTP secret")
+		telemetry.RecordSpanError(span, err, "failed to generate HOTP secret")
+		span.SetStatus(codes.Error, "failed to generate HOTP secret")
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("could not generate HOTP secret: %w", err))
 	}
 
@@ -261,7 +327,9 @@ func (s *TwoFactorServer) InitiateHOTPSetup(ctx context.Context, req *connect.Re
 	user.EmailMFAOTPCounter = 0            // Initialize counter
 
 	if err := s.userRepo.UpdateUser(ctx, user); err != nil {
-		log.Error().Err(err).Str("userID", user.ID).Msg("InitiateHOTPSetup: Failed to save temporary HOTP secret to user")
+		log.Ctx(ctx).Error().Err(err).Str("userID", user.ID).Msg("InitiateHOTPSetup: Failed to save temporary HOTP secret to user")
+		telemetry.RecordSpanError(span, err, "failed to save temporary HOTP secret")
+		span.SetStatus(codes.Error, "failed to save temporary HOTP secret")
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to update user with new HOTP secret: %w", err))
 	}
 
@@ -279,29 +347,44 @@ func (s *TwoFactorServer) VerifyAndEnableHOTP(ctx context.Context, req *connect.
 	if !ok || authedToken == nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated"))
 	}
+	ctx, span := telemetry.StartSpan(ctx, twoFactorTracerName, "VerifyAndEnableHOTP", attribute.String("user.id", authedToken.UserID))
+	defer span.End()
+
 	user, err := s.userRepo.GetUserByID(ctx, authedToken.UserID)
 	if err != nil {
+		telemetry.RecordSpanError(span, err, "user not found")
+		span.SetStatus(codes.Error, "user not found")
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("user not found: %w", err))
 	}
 	if user.IsTwoFactorEnabled {
+		telemetry.RecordSpanError(span, errors.New("2FA already enabled"), "2FA already enabled")
+		span.SetStatus(codes.Error, "2FA already enabled")
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("2FA is already enabled"))
 	}
 	if user.TwoFactorSecret == "" || user.TwoFactorMethod != "HOTP" {
+		telemetry.RecordSpanError(span, errors.New("HOTP setup not initiated"), "HOTP setup not initiated")
+		span.SetStatus(codes.Error, "HOTP setup not initiated")
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("HOTP setup not initiated or secret not found"))
 	}
 
 	valid, errValidate := totp.ValidateHOTPCode(user.TwoFactorSecret, req.Msg.HotpCode, user.EmailMFAOTPCounter)
 	if errValidate != nil {
-		log.Error().Err(errValidate).Str("userID", user.ID).Msg("VerifyAndEnableHOTP: Error during HOTP code validation")
+		log.Ctx(ctx).Error().Err(errValidate).Str("userID", user.ID).Msg("VerifyAndEnableHOTP: Error during HOTP code validation")
+		telemetry.RecordSpanError(span, errValidate, "HOTP validation error")
+		span.SetStatus(codes.Error, "HOTP validation error")
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("error validating HOTP code: %w", errValidate))
 	}
 	if !valid {
+		telemetry.RecordSpanError(span, errors.New("invalid HOTP code"), "invalid HOTP code")
+		span.SetStatus(codes.Error, "invalid HOTP code")
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid HOTP code"))
 	}
 
 	plaintextCodes, hashedCodes, err := totp.GenerateRecoveryCodes(totp.DefaultNumRecoveryCodes, totp.DefaultRecoveryCodeLength)
 	if err != nil {
-		log.Error().Err(err).Str("userID", user.ID).Msg("VerifyAndEnableHOTP: Failed to generate recovery codes")
+		log.Ctx(ctx).Error().Err(err).Str("userID", user.ID).Msg("VerifyAndEnableHOTP: Failed to generate recovery codes")
+		telemetry.RecordSpanError(span, err, "failed to generate recovery codes")
+		span.SetStatus(codes.Error, "failed to generate recovery codes")
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not generate recovery codes"))
 	}
 
@@ -310,7 +393,9 @@ func (s *TwoFactorServer) VerifyAndEnableHOTP(ctx context.Context, req *connect.
 	user.EmailMFAOTPCounter++ // Increment counter on successful validation
 
 	if err := s.userRepo.UpdateUser(ctx, user); err != nil {
-		log.Error().Err(err).Str("userID", user.ID).Msg("VerifyAndEnableHOTP: Failed to update user to enable 2FA")
+		log.Ctx(ctx).Error().Err(err).Str("userID", user.ID).Msg("VerifyAndEnableHOTP: Failed to update user to enable 2FA")
+		telemetry.RecordSpanError(span, err, "failed to update user to enable 2FA")
+		span.SetStatus(codes.Error, "failed to update user to enable 2FA")
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to enable 2FA for user: %w", err))
 	}
 
@@ -326,19 +411,27 @@ func (s *TwoFactorServer) InitiateEmailMFASetup(ctx context.Context, req *connec
 	if !ok || authedToken == nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated"))
 	}
+	ctx, span := telemetry.StartSpan(ctx, twoFactorTracerName, "InitiateEmailMFASetup", attribute.String("user.id", authedToken.UserID))
+	defer span.End()
 
 	user, err := s.userRepo.GetUserByID(ctx, authedToken.UserID)
 	if err != nil {
-		log.Error().Err(err).Str("userID", authedToken.UserID).Msg("InitiateEmailMFASetup: User not found")
+		log.Ctx(ctx).Error().Err(err).Str("userID", authedToken.UserID).Msg("InitiateEmailMFASetup: User not found")
+		telemetry.RecordSpanError(span, err, "user not found")
+		span.SetStatus(codes.Error, "user not found")
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("user not found: %w", err))
 	}
 	if user.IsTwoFactorEnabled {
+		telemetry.RecordSpanError(span, errors.New("2FA already enabled"), "2FA already enabled")
+		span.SetStatus(codes.Error, "2FA already enabled")
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("2FA is already enabled for this user"))
 	}
 
 	err = s.mfaService.InitiateEmailMFASetup(ctx, authedToken.UserID)
 	if err != nil {
-		log.Error().Err(err).Str("userID", authedToken.UserID).Msg("InitiateEmailMFASetup: Failed to initiate email MFA setup")
+		log.Ctx(ctx).Error().Err(err).Str("userID", authedToken.UserID).Msg("InitiateEmailMFASetup: Failed to initiate email MFA setup")
+		telemetry.RecordSpanError(span, err, "failed to initiate email MFA setup")
+		span.SetStatus(codes.Error, "failed to initiate email MFA setup")
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to initiate email MFA setup: %w", err))
 	}
 
@@ -354,17 +447,23 @@ func (s *TwoFactorServer) VerifyAndEnableEmailMFA(ctx context.Context, req *conn
 	if !ok || authedToken == nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated"))
 	}
+	ctx, span := telemetry.StartSpan(ctx, twoFactorTracerName, "VerifyAndEnableEmailMFA", attribute.String("user.id", authedToken.UserID))
+	defer span.End()
 
 	err := s.mfaService.VerifyAndEnableEmailMFA(ctx, authedToken.UserID, req.Msg.EmailOtp)
 	if err != nil {
-		log.Error().Err(err).Str("userID", authedToken.UserID).Msg("VerifyAndEnableEmailMFA: Failed to verify and enable email MFA")
+		log.Ctx(ctx).Error().Err(err).Str("userID", authedToken.UserID).Msg("VerifyAndEnableEmailMFA: Failed to verify and enable email MFA")
+		telemetry.RecordSpanError(span, err, "failed to verify and enable email MFA")
 		// Convert domain errors to appropriate connect errors
 		switch err {
 		case domain.ErrEmailMFAAlreadyEnabled:
+			span.SetStatus(codes.Error, "email MFA already enabled")
 			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 		case domain.ErrInvalidEmailOTP, domain.ErrEmailOTPExpired, domain.ErrEmailOTPNotFound:
+			span.SetStatus(codes.Error, "invalid email OTP")
 			return nil, connect.NewError(connect.CodeInvalidArgument, err)
 		default:
+			span.SetStatus(codes.Error, "failed to verify and enable email MFA")
 			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to verify and enable email MFA: %w", err))
 		}
 	}
@@ -372,14 +471,18 @@ func (s *TwoFactorServer) VerifyAndEnableEmailMFA(ctx context.Context, req *conn
 	// Generate recovery codes (handled by MFAService, but we need to return them)
 	_, err = s.userRepo.GetUserByID(ctx, authedToken.UserID)
 	if err != nil {
-		log.Error().Err(err).Str("userID", authedToken.UserID).Msg("VerifyAndEnableEmailMFA: Failed to get user after enabling MFA")
+		log.Ctx(ctx).Error().Err(err).Str("userID", authedToken.UserID).Msg("VerifyAndEnableEmailMFA: Failed to get user after enabling MFA")
+		telemetry.RecordSpanError(span, err, "failed to get user after enabling MFA")
+		span.SetStatus(codes.Error, "failed to get user after enabling MFA")
 		return nil, connect.NewError(connect.CodeInternal, errors.New("email MFA enabled but failed to retrieve recovery codes"))
 	}
 
 	// For email MFA, we need to generate recovery codes here since the MFAService doesn't return them
 	plaintextCodes, _, err := totp.GenerateRecoveryCodes(totp.DefaultNumRecoveryCodes, totp.DefaultRecoveryCodeLength)
 	if err != nil {
-		log.Error().Err(err).Str("userID", authedToken.UserID).Msg("VerifyAndEnableEmailMFA: Failed to generate recovery codes")
+		log.Ctx(ctx).Error().Err(err).Str("userID", authedToken.UserID).Msg("VerifyAndEnableEmailMFA: Failed to generate recovery codes")
+		telemetry.RecordSpanError(span, err, "failed to generate recovery codes")
+		span.SetStatus(codes.Error, "failed to generate recovery codes")
 		return nil, connect.NewError(connect.CodeInternal, errors.New("email MFA enabled but failed to generate recovery codes"))
 	}
 
@@ -395,15 +498,20 @@ func (s *TwoFactorServer) SendMFAChallenge(ctx context.Context, req *connect.Req
 	if !ok || authedToken == nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated"))
 	}
+	ctx, span := telemetry.StartSpan(ctx, twoFactorTracerName, "SendMFAChallenge", attribute.String("user.id", authedToken.UserID))
+	defer span.End()
 
 	method, counter, challengeID, err := s.mfaService.SendMFAChallenge(ctx, authedToken.UserID)
 	if err != nil {
-		log.Error().Err(err).Str("userID", authedToken.UserID).Msg("SendMFAChallenge: Failed to send MFA challenge")
+		log.Ctx(ctx).Error().Err(err).Str("userID", authedToken.UserID).Msg("SendMFAChallenge: Failed to send MFA challenge")
+		telemetry.RecordSpanError(span, err, "failed to send MFA challenge")
 		// Convert domain errors to appropriate connect errors
 		switch err {
 		case domain.ErrRateLimitExceeded:
+			span.SetStatus(codes.Error, "rate limit exceeded")
 			return nil, connect.NewError(connect.CodeResourceExhausted, err)
 		default:
+			span.SetStatus(codes.Error, "failed to send MFA challenge")
 			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to send MFA challenge: %w", err))
 		}
 	}
@@ -433,10 +541,14 @@ func (s *TwoFactorServer) VerifyMFAChallenge(ctx context.Context, req *connect.R
 	if !ok || authedToken == nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated"))
 	}
+	ctx, span := telemetry.StartSpan(ctx, twoFactorTracerName, "VerifyMFAChallenge", attribute.String("user.id", authedToken.UserID))
+	defer span.End()
 
 	verified, err := s.mfaService.VerifyMFAChallenge(ctx, authedToken.UserID, req.Msg.Code, req.Msg.Counter)
 	if err != nil {
-		log.Error().Err(err).Str("userID", authedToken.UserID).Msg("VerifyMFAChallenge: Failed to verify MFA challenge")
+		log.Ctx(ctx).Error().Err(err).Str("userID", authedToken.UserID).Msg("VerifyMFAChallenge: Failed to verify MFA challenge")
+		telemetry.RecordSpanError(span, err, "failed to verify MFA challenge")
+		span.SetStatus(codes.Error, "failed to verify MFA challenge")
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to verify MFA challenge: %w", err))
 	}
 
@@ -452,10 +564,14 @@ func (s *TwoFactorServer) InitiatePushMFASetup(ctx context.Context, req *connect
 	if !ok || authedToken == nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated"))
 	}
+	ctx, span := telemetry.StartSpan(ctx, twoFactorTracerName, "InitiatePushMFASetup", attribute.String("user.id", authedToken.UserID))
+	defer span.End()
 
 	err := s.pushMFAService.RegisterDeviceToken(ctx, authedToken.UserID, req.Msg.DeviceToken)
 	if err != nil {
-		log.Error().Err(err).Str("userID", authedToken.UserID).Msg("InitiatePushMFASetup: Failed to register device token")
+		log.Ctx(ctx).Error().Err(err).Str("userID", authedToken.UserID).Msg("InitiatePushMFASetup: Failed to register device token")
+		telemetry.RecordSpanError(span, err, "failed to register device token")
+		span.SetStatus(codes.Error, "failed to register device token")
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to register device token: %w", err))
 	}
 
@@ -471,17 +587,23 @@ func (s *TwoFactorServer) VerifyAndEnablePushMFA(ctx context.Context, req *conne
 	if !ok || authedToken == nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated"))
 	}
+	ctx, span := telemetry.StartSpan(ctx, twoFactorTracerName, "VerifyAndEnablePushMFA", attribute.String("user.id", authedToken.UserID))
+	defer span.End()
 
 	err := s.pushMFAService.EnablePushMFA(ctx, authedToken.UserID)
 	if err != nil {
-		log.Error().Err(err).Str("userID", authedToken.UserID).Msg("VerifyAndEnablePushMFA: Failed to enable push MFA")
+		log.Ctx(ctx).Error().Err(err).Str("userID", authedToken.UserID).Msg("VerifyAndEnablePushMFA: Failed to enable push MFA")
+		telemetry.RecordSpanError(span, err, "failed to enable push MFA")
+		span.SetStatus(codes.Error, "failed to enable push MFA")
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to enable push MFA: %w", err))
 	}
 
 	// Generate recovery codes
 	user, err := s.userRepo.GetUserByID(ctx, authedToken.UserID)
 	if err != nil {
-		log.Error().Err(err).Str("userID", authedToken.UserID).Msg("VerifyAndEnablePushMFA: Failed to get user after enabling MFA")
+		log.Ctx(ctx).Error().Err(err).Str("userID", authedToken.UserID).Msg("VerifyAndEnablePushMFA: Failed to get user after enabling MFA")
+		telemetry.RecordSpanError(span, err, "failed to get user after enabling MFA")
+		span.SetStatus(codes.Error, "failed to get user after enabling MFA")
 		return nil, connect.NewError(connect.CodeInternal, errors.New("push MFA enabled but failed to retrieve recovery codes"))
 	}
 
@@ -491,13 +613,17 @@ func (s *TwoFactorServer) VerifyAndEnablePushMFA(ctx context.Context, req *conne
 
 	err = s.userRepo.UpdateUser(ctx, user)
 	if err != nil {
-		log.Error().Err(err).Str("userID", authedToken.UserID).Msg("VerifyAndEnablePushMFA: Failed to update user 2FA method")
+		log.Ctx(ctx).Error().Err(err).Str("userID", authedToken.UserID).Msg("VerifyAndEnablePushMFA: Failed to update user 2FA method")
+		telemetry.RecordSpanError(span, err, "failed to update user 2FA method")
+		span.SetStatus(codes.Error, "failed to update user 2FA method")
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to update user 2FA method: %w", err))
 	}
 
 	plaintextCodes, _, err := totp.GenerateRecoveryCodes(totp.DefaultNumRecoveryCodes, totp.DefaultRecoveryCodeLength)
 	if err != nil {
-		log.Error().Err(err).Str("userID", authedToken.UserID).Msg("VerifyAndEnablePushMFA: Failed to generate recovery codes")
+		log.Ctx(ctx).Error().Err(err).Str("userID", authedToken.UserID).Msg("VerifyAndEnablePushMFA: Failed to generate recovery codes")
+		telemetry.RecordSpanError(span, err, "failed to generate recovery codes")
+		span.SetStatus(codes.Error, "failed to generate recovery codes")
 		return nil, connect.NewError(connect.CodeInternal, errors.New("push MFA enabled but failed to generate recovery codes"))
 	}
 
@@ -513,10 +639,14 @@ func (s *TwoFactorServer) RegisterPushDevice(ctx context.Context, req *connect.R
 	if !ok || authedToken == nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated"))
 	}
+	ctx, span := telemetry.StartSpan(ctx, twoFactorTracerName, "RegisterPushDevice", attribute.String("user.id", authedToken.UserID))
+	defer span.End()
 
 	err := s.pushMFAService.RegisterDeviceToken(ctx, authedToken.UserID, req.Msg.DeviceToken)
 	if err != nil {
-		log.Error().Err(err).Str("userID", authedToken.UserID).Msg("RegisterPushDevice: Failed to register device token")
+		log.Ctx(ctx).Error().Err(err).Str("userID", authedToken.UserID).Msg("RegisterPushDevice: Failed to register device token")
+		telemetry.RecordSpanError(span, err, "failed to register device token")
+		span.SetStatus(codes.Error, "failed to register device token")
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to register device token: %w", err))
 	}
 
@@ -532,10 +662,14 @@ func (s *TwoFactorServer) UnregisterPushDevice(ctx context.Context, req *connect
 	if !ok || authedToken == nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated"))
 	}
+	ctx, span := telemetry.StartSpan(ctx, twoFactorTracerName, "UnregisterPushDevice", attribute.String("user.id", authedToken.UserID))
+	defer span.End()
 
 	err := s.pushMFAService.UnregisterDeviceToken(ctx, authedToken.UserID, req.Msg.DeviceToken)
 	if err != nil {
-		log.Error().Err(err).Str("userID", authedToken.UserID).Msg("UnregisterPushDevice: Failed to unregister device token")
+		log.Ctx(ctx).Error().Err(err).Str("userID", authedToken.UserID).Msg("UnregisterPushDevice: Failed to unregister device token")
+		telemetry.RecordSpanError(span, err, "failed to unregister device token")
+		span.SetStatus(codes.Error, "failed to unregister device token")
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to unregister device token: %w", err))
 	}
 
@@ -551,19 +685,26 @@ func (s *TwoFactorServer) RespondToPushChallenge(ctx context.Context, req *conne
 	if !ok || authedToken == nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated"))
 	}
+	ctx, span := telemetry.StartSpan(ctx, twoFactorTracerName, "RespondToPushChallenge", attribute.String("user.id", authedToken.UserID), attribute.String("challenge.id", req.Msg.ChallengeId))
+	defer span.End()
 
 	approved := req.Msg.Response == "approve" || req.Msg.Response == "approved"
 	err := s.pushMFAService.VerifyPushMFAChallenge(ctx, authedToken.UserID, req.Msg.ChallengeId, approved)
 	if err != nil {
-		log.Error().Err(err).Str("userID", authedToken.UserID).Str("challengeID", req.Msg.ChallengeId).Msg("RespondToPushChallenge: Failed to verify push challenge")
+		log.Ctx(ctx).Error().Err(err).Str("userID", authedToken.UserID).Str("challengeID", req.Msg.ChallengeId).Msg("RespondToPushChallenge: Failed to verify push challenge")
+		telemetry.RecordSpanError(span, err, "failed to verify push challenge")
 		switch err {
 		case domain.ErrChallengeNotFound:
+			span.SetStatus(codes.Error, "challenge not found")
 			return nil, connect.NewError(connect.CodeNotFound, err)
 		case domain.ErrChallengeExpired:
+			span.SetStatus(codes.Error, "challenge expired")
 			return nil, connect.NewError(connect.CodeDeadlineExceeded, err)
 		case domain.ErrChallengeAlreadyUsed:
+			span.SetStatus(codes.Error, "challenge already used")
 			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 		default:
+			span.SetStatus(codes.Error, "failed to respond to push challenge")
 			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to respond to push challenge: %w", err))
 		}
 	}
@@ -585,10 +726,14 @@ func (s *TwoFactorServer) GetPushChallengeStatus(ctx context.Context, req *conne
 	if !ok || authedToken == nil {
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated"))
 	}
+	ctx, span := telemetry.StartSpan(ctx, twoFactorTracerName, "GetPushChallengeStatus", attribute.String("user.id", authedToken.UserID), attribute.String("challenge.id", req.Msg.ChallengeId))
+	defer span.End()
 
 	status, err := s.pushMFAService.GetPushMFAChallengeStatus(ctx, authedToken.UserID, req.Msg.ChallengeId)
 	if err != nil {
-		log.Error().Err(err).Str("userID", authedToken.UserID).Str("challengeID", req.Msg.ChallengeId).Msg("GetPushChallengeStatus: Failed to get challenge status")
+		log.Ctx(ctx).Error().Err(err).Str("userID", authedToken.UserID).Str("challengeID", req.Msg.ChallengeId).Msg("GetPushChallengeStatus: Failed to get challenge status")
+		telemetry.RecordSpanError(span, err, "failed to get challenge status")
+		span.SetStatus(codes.Error, "failed to get challenge status")
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to get challenge status: %w", err))
 	}
 

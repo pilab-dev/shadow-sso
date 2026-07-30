@@ -16,10 +16,15 @@ import (
 	"github.com/pilab-dev/shadow-sso/cache"
 	"github.com/pilab-dev/shadow-sso/domain"
 	"github.com/pilab-dev/shadow-sso/internal/metrics"
+	"github.com/pilab-dev/shadow-sso/internal/telemetry"
 	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 var errMissingKidSAValidation = errors.New("missing kid header, not a service account token, try other validation")
+
+const tokenTracerName = "token-service"
 
 // TokenService handles token generation and validation
 type defaultTokenService struct {
@@ -134,7 +139,14 @@ type CreateTokenOptions struct {
 }
 
 // CreateToken creates a new token with the given options and claims.
-func (s *defaultTokenService) CreateToken(ctx context.Context, opts domain.CreateTokenOptions, claims jwt.Claims) (*domain.Token, error) { // Changed return type
+func (s *defaultTokenService) CreateToken(ctx context.Context, opts domain.CreateTokenOptions, claims jwt.Claims) (*domain.Token, error) {
+	ctx, span := telemetry.StartSpan(ctx, tokenTracerName, "CreateToken",
+		attribute.String("user.id", opts.UserID),
+		attribute.String("token.type", opts.TokenType),
+		attribute.String("oauth.client_id", opts.ClientID),
+	)
+	defer span.End()
+
 	expiresAt := time.Now().Add(opts.ExpireIn)
 
 	// ? This is a default claim object, it can be used for both access and refresh tokens.
@@ -157,7 +169,7 @@ func (s *defaultTokenService) CreateToken(ctx context.Context, opts domain.Creat
 	} else if opts.UserID != "" {
 		user, errUser := s.userRepo.GetUserByID(ctx, opts.UserID)
 		if errUser != nil {
-			log.Warn().Err(errUser).Str("userID", opts.UserID).Msg("CreateToken: failed to get user for roles, proceeding without roles claim.")
+			log.Ctx(ctx).Warn().Err(errUser).Str("userID", opts.UserID).Msg("CreateToken: failed to get user for roles, proceeding without roles claim.")
 		} else if user != nil {
 			userRoles = user.Roles
 			if len(userRoles) > 0 {
@@ -168,10 +180,12 @@ func (s *defaultTokenService) CreateToken(ctx context.Context, opts domain.Creat
 
 	// Generate access token with the signer
 	// s.signer.Sign now accepts jwt.Claims (which jwt.MapClaims implements)
-	signedToken, err := s.signer.Sign(tokenClaimsMap, opts.SigningKeyID)
-	if err != nil {
-		return nil, err
-	}
+		signedToken, err := s.signer.Sign(tokenClaimsMap, opts.SigningKeyID)
+		if err != nil {
+			telemetry.RecordSpanError(span, err, "failed to sign token")
+			span.SetStatus(codes.Error, "failed to sign token")
+			return nil, err
+		}
 
 	// Store token in repository
 	token := &domain.Token{ // Changed to domain.Token
@@ -186,15 +200,16 @@ func (s *defaultTokenService) CreateToken(ctx context.Context, opts domain.Creat
 		LastUsedAt: time.Now(),
 		Roles:      userRoles, // Store roles in the token struct
 	}
-	if err := s.repo.StoreToken(ctx, token); err != nil {
-		return nil, err
-	}
+		if err := s.repo.StoreToken(ctx, token); err != nil {
+			telemetry.RecordSpanError(span, err, "failed to store token")
+			span.SetStatus(codes.Error, "failed to store token")
+			return nil, err
+		}
 
 	if opts.TokenType == api.TokenTypeAccessToken {
 		// Store token in cache
-		if err := s.cache.Set(ctx, toCacheEntry(token)); err != nil { // Use toCacheEntry
-			// return nil, fmt.Errorf("failed to cache token: %w", err)
-			log.Warn().Err(err).Msg("failed to cache token")
+		if err := s.cache.Set(ctx, toCacheEntry(token)); err != nil {
+			log.Ctx(ctx).Warn().Err(err).Msg("failed to cache token")
 		}
 	}
 	if metrics.TokensCreatedTotal != nil {
@@ -323,6 +338,13 @@ func (s *defaultTokenService) BuildToken(token *domain.Token) error { // Changed
 func (s *defaultTokenService) GenerateTokenPair(ctx context.Context,
 	clientID, userID, scope string, tokenTTL time.Duration,
 ) (*api.TokenResponse, error) {
+	ctx, span := telemetry.StartSpan(ctx, tokenTracerName, "GenerateTokenPair",
+		attribute.String("user.id", userID),
+		attribute.String("oauth.client_id", clientID),
+		attribute.String("oauth.scope", scope),
+	)
+	defer span.End()
+
 	// Generate access token
 	accessTokenID := uuid.NewString()
 	accessToken, err := s.CreateToken(ctx, domain.CreateTokenOptions{
@@ -335,10 +357,12 @@ func (s *defaultTokenService) GenerateTokenPair(ctx context.Context,
 		SigningKeyID: "", // Use default key
 	}, nil) // claims can be nil, CreateToken will make its own MapClaims
 	if err != nil {
-		return nil, fmt.Errorf("failed to create access token: %w", err)
-	}
+			telemetry.RecordSpanError(span, err, "failed to create access token")
+			span.SetStatus(codes.Error, "failed to create access token")
+			return nil, fmt.Errorf("failed to create access token: %w", err)
+		}
 
-	// Generate refresh token
+		// Generate refresh token
 	refreshTokenID := uuid.NewString()
 	refreshTokenTTL := tokenTTL * 24 // Example: Refresh token lives 24x longer
 	refreshToken, err := s.CreateToken(ctx, domain.CreateTokenOptions{
@@ -351,10 +375,10 @@ func (s *defaultTokenService) GenerateTokenPair(ctx context.Context,
 		SigningKeyID: "", // Use default key
 	}, nil)
 	if err != nil {
-		// Consider cleanup if access token was stored but refresh token failed
-		// For now, just return the error.
-		return nil, fmt.Errorf("failed to create refresh token: %w", err)
-	}
+			telemetry.RecordSpanError(span, err, "failed to create refresh token")
+			span.SetStatus(codes.Error, "failed to create refresh token")
+			return nil, fmt.Errorf("failed to create refresh token: %w", err)
+		}
 
 	// CreateToken already handles storing in repo and caching for access tokens.
 	// The metrics.TokensCreatedTotal.Inc() is also called within CreateToken.
@@ -363,7 +387,7 @@ func (s *defaultTokenService) GenerateTokenPair(ctx context.Context,
 	if strings.Contains(scope, "openid") {
 		idToken, err = s.GenerateIDToken(ctx, userID, clientID, "", time.Now(), scope)
 		if err != nil {
-			log.Warn().Err(err).Msg("failed to generate ID token, continuing without it")
+			log.Ctx(ctx).Warn().Err(err).Msg("failed to generate ID token, continuing without it")
 			idToken = ""
 		}
 	}
@@ -378,6 +402,9 @@ func (s *defaultTokenService) GenerateTokenPair(ctx context.Context,
 }
 
 func (s *defaultTokenService) ValidateAccessToken(ctx context.Context, tokenValue string) (*domain.Token, error) {
+	_, span := telemetry.StartSpan(ctx, tokenTracerName, "ValidateAccessToken")
+	defer span.End()
+
 	parsedSAJWT, err := jwt.ParseWithClaims(tokenValue, &jwt.MapClaims{}, func(token *jwt.Token) (interface{}, error) {
 		kid, ok := token.Header["kid"].(string)
 		if !ok || kid == "" {
@@ -385,7 +412,7 @@ func (s *defaultTokenService) ValidateAccessToken(ctx context.Context, tokenValu
 		}
 		publicKeyInfo, errDb := s.pubKeyRepo.GetPublicKey(ctx, kid)
 		if errDb != nil {
-			log.Warn().Err(errDb).Str("kid", kid).Msg("Failed to get public key for SA JWT")
+			log.Ctx(ctx).Warn().Err(errDb).Str("kid", kid).Msg("Failed to get public key for SA JWT")
 			return nil, fmt.Errorf("SA key retrieval failed for kid %s: %w", kid, errDb)
 		}
 		if publicKeyInfo.Status != "ACTIVE" {
@@ -409,25 +436,35 @@ func (s *defaultTokenService) ValidateAccessToken(ctx context.Context, tokenValu
 		if parsedSAJWT.Valid {
 			claims, ok := parsedSAJWT.Claims.(*jwt.MapClaims)
 			if !ok {
+				telemetry.RecordSpanError(span, errors.New("invalid claims type in SA JWT"), "invalid claims type")
+				span.SetStatus(codes.Error, "invalid claims type in SA JWT")
 				return nil, errors.New("invalid claims type in SA JWT")
 			}
 			issuerClaim, _ := (*claims)["iss"].(string)
 			if issuerClaim == "" {
+				telemetry.RecordSpanError(span, errors.New("SA JWT missing 'iss' claim"), "missing iss claim")
+				span.SetStatus(codes.Error, "SA JWT missing 'iss' claim")
 				return nil, errors.New("SA JWT missing 'iss' claim")
 			}
 			var expiresAt time.Time
 			if exp, okClaim := (*claims)["exp"].(float64); okClaim {
 				expiresAt = time.Unix(int64(exp), 0)
 			} else {
+				telemetry.RecordSpanError(span, errors.New("SA JWT missing 'exp' claim"), "missing exp claim")
+				span.SetStatus(codes.Error, "SA JWT missing 'exp' claim")
 				return nil, errors.New("SA JWT missing 'exp' claim")
 			}
 			if time.Now().After(expiresAt) {
+				telemetry.RecordSpanError(span, domain.ErrTokenExpiredOrRevoked, "SA JWT expired")
+				span.SetStatus(codes.Error, "SA JWT expired")
 				return nil, domain.ErrTokenExpiredOrRevoked
 			}
 			var issuedAt time.Time
 			if iat, okClaim := (*claims)["iat"].(float64); okClaim {
 				issuedAt = time.Unix(int64(iat), 0)
 			} else {
+				telemetry.RecordSpanError(span, errors.New("SA JWT missing 'iat' claim"), "missing iat claim")
+				span.SetStatus(codes.Error, "SA JWT missing 'iat' claim")
 				return nil, errors.New("SA JWT missing 'iat' claim")
 			}
 			var tokenScope string
@@ -448,16 +485,22 @@ func (s *defaultTokenService) ValidateAccessToken(ctx context.Context, tokenValu
 				Roles:      []string{},
 			}, nil
 		} else {
-			return nil, fmt.Errorf("SA JWT parsed (err is nil) but token.Valid is false, unexpected state")
+			errInvalid := fmt.Errorf("SA JWT parsed (err is nil) but token.Valid is false, unexpected state")
+			telemetry.RecordSpanError(span, errInvalid, "SA JWT invalid state")
+			span.SetStatus(codes.Error, "SA JWT invalid state")
+			return nil, errInvalid
 		}
 	}
 
 	if errors.Is(err, errMissingKidSAValidation) || (err != nil && strings.Contains(err.Error(), "malformed")) {
-		log.Debug().Msg("Attempting user token validation (SA token 'kid' missing or error explicitly requesting fallback).")
+		log.Ctx(ctx).Debug().Msg("Attempting user token validation (SA token 'kid' missing or error explicitly requesting fallback).")
 		return s.validateUserToken(ctx, tokenValue)
 	}
 
-	return nil, fmt.Errorf("SA JWT processing error: %w", err)
+	errFinal := fmt.Errorf("SA JWT processing error: %w", err)
+	telemetry.RecordSpanError(span, errFinal, "SA JWT processing error")
+	span.SetStatus(codes.Error, "SA JWT processing error")
+	return nil, errFinal
 }
 
 func (s *defaultTokenService) validateUserToken(ctx context.Context, tokenValue string) (*domain.Token, error) {
@@ -488,9 +531,9 @@ func (s *defaultTokenService) validateUserToken(ctx context.Context, tokenValue 
 		userTokenDB.Issuer = s.issuer
 	}
 
-	if cacheSetErr := s.cache.Set(ctx, toCacheEntry(userTokenDB)); cacheSetErr != nil {
-		log.Warn().Err(cacheSetErr).Msg("failed to cache user token")
-	}
+		if cacheSetErr := s.cache.Set(ctx, toCacheEntry(userTokenDB)); cacheSetErr != nil {
+			log.Ctx(ctx).Warn().Err(cacheSetErr).Msg("failed to cache user token")
+		}
 	return userTokenDB, nil
 }
 
@@ -576,11 +619,19 @@ func (s *defaultTokenService) validateRS256Token(tokenValue string) (*domain.Tok
 }
 
 func (s *defaultTokenService) RevokeToken(ctx context.Context, token string) error {
+	_, span := telemetry.StartSpan(ctx, tokenTracerName, "RevokeToken")
+	defer span.End()
+
 	if err := s.cache.Delete(ctx, token); err != nil {
-		log.Warn().Err(err).Msg("failed to delete token from cache")
+		log.Ctx(ctx).Warn().Err(err).Msg("failed to delete token from cache")
 	}
 
-	return s.repo.RevokeToken(ctx, token)
+	if err := s.repo.RevokeToken(ctx, token); err != nil {
+		telemetry.RecordSpanError(span, err, "failed to revoke token")
+		span.SetStatus(codes.Error, "failed to revoke token")
+		return err
+	}
+	return nil
 }
 
 // GetRefreshTokenInfo retrieves metadata about a refresh token. Returns the token info if found,
@@ -597,16 +648,29 @@ func (s *defaultTokenService) GetAccessTokenInfo(ctx context.Context, tokenValue
 
 // GenerateIDToken generates an ID token for a user.
 func (s *defaultTokenService) GenerateIDToken(ctx context.Context, userID, clientID, nonce string, authTime time.Time, scope string) (string, error) {
+	_, span := telemetry.StartSpan(ctx, tokenTracerName, "GenerateIDToken",
+		attribute.String("user.id", userID),
+	)
+	defer span.End()
+
 	if userID == "" {
-		return "", errors.New("userID required for ID token")
+		err := errors.New("userID required for ID token")
+		telemetry.RecordSpanError(span, err, "missing userID")
+		span.SetStatus(codes.Error, "missing userID")
+		return "", err
 	}
 
 	user, err := s.userRepo.GetUserByID(ctx, userID)
 	if err != nil {
+		telemetry.RecordSpanError(span, err, "failed to get user for ID token")
+		span.SetStatus(codes.Error, "failed to get user for ID token")
 		return "", fmt.Errorf("failed to get user for ID token: %w", err)
 	}
 	if user == nil {
-		return "", errors.New("user not found for ID token")
+		err := errors.New("user not found for ID token")
+		telemetry.RecordSpanError(span, err, "user not found")
+		span.SetStatus(codes.Error, "user not found for ID token")
+		return "", err
 	}
 
 	claims := jwt.MapClaims{

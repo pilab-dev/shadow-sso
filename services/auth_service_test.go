@@ -56,7 +56,7 @@ func TestAuthServer_Login_UserNotFound(t *testing.T) {
 	ctx := context.Background()
 	email := "test@example.com"
 
-	mockUserRepo.EXPECT().GetUserByEmail(ctx, email).Return(nil, errors.New("user not found"))
+	mockUserRepo.EXPECT().GetUserByEmail(gomock.Any(), email).Return(nil, errors.New("user not found"))
 
 	_, err := authServer.Login(ctx, connect.NewRequest(&ssov1.LoginRequest{
 		Email:    email,
@@ -99,7 +99,7 @@ func TestAuthServer_Login_AccountLocked(t *testing.T) {
 		Status: domain.UserStatusLocked,
 	}
 
-	mockUserRepo.EXPECT().GetUserByEmail(ctx, email).Return(user, nil)
+	mockUserRepo.EXPECT().GetUserByEmail(gomock.Any(), email).Return(user, nil)
 
 	_, err := authServer.Login(ctx, connect.NewRequest(&ssov1.LoginRequest{
 		Email:    email,
@@ -140,7 +140,7 @@ func TestAuthServer_Login_AccountPending(t *testing.T) {
 		Status: domain.UserStatusPending,
 	}
 
-	mockUserRepo.EXPECT().GetUserByEmail(ctx, email).Return(user, nil)
+	mockUserRepo.EXPECT().GetUserByEmail(gomock.Any(), email).Return(user, nil)
 
 	_, err := authServer.Login(ctx, connect.NewRequest(&ssov1.LoginRequest{
 		Email:    email,
@@ -182,7 +182,7 @@ func TestAuthServer_Login_InvalidPassword(t *testing.T) {
 		Status:       domain.UserStatusActive,
 	}
 
-	mockUserRepo.EXPECT().GetUserByEmail(ctx, email).Return(user, nil)
+	mockUserRepo.EXPECT().GetUserByEmail(gomock.Any(), email).Return(user, nil)
 	mockPasswordHasher.EXPECT().Verify(user.PasswordHash, "wrongpassword").Return(errors.New("invalid password"))
 
 	_, err := authServer.Login(ctx, connect.NewRequest(&ssov1.LoginRequest{
@@ -228,7 +228,7 @@ func TestAuthServer_Login_With2FA(t *testing.T) {
 		TwoFactorSecret:    "secret",
 	}
 
-	mockUserRepo.EXPECT().GetUserByEmail(ctx, email).Return(user, nil)
+	mockUserRepo.EXPECT().GetUserByEmail(gomock.Any(), email).Return(user, nil)
 	mockPasswordHasher.EXPECT().Verify(user.PasswordHash, "password123").Return(nil)
 
 	resp, err := authServer.Login(ctx, connect.NewRequest(&ssov1.LoginRequest{
@@ -273,17 +273,17 @@ func TestAuthServer_Login_Success_GeneratesTokens(t *testing.T) {
 		Status:       domain.UserStatusActive,
 	}
 
-	mockUserRepo.EXPECT().GetUserByEmail(ctx, email).Return(user, nil)
+	mockUserRepo.EXPECT().GetUserByEmail(gomock.Any(), email).Return(user, nil)
 	mockPasswordHasher.EXPECT().Verify(user.PasswordHash, "password123").Return(nil)
-	mockTokenService.EXPECT().GenerateTokenPair(ctx, "sso-default-client", user.ID, "openid profile email offline_access", time.Hour).Return(&api.TokenResponse{
+	mockTokenService.EXPECT().GenerateTokenPair(gomock.Any(), "sso-default-client", user.ID, "openid profile email offline_access", time.Hour).Return(&api.TokenResponse{
 		AccessToken:  "access-token",
 		RefreshToken: "refresh-token",
 		IDToken:      "id-token",
 		TokenType:    "Bearer",
 		ExpiresIn:    3600,
 	}, nil)
-	mockSessionRepo.EXPECT().StoreSession(ctx, gomock.Any()).Return(nil)
-	mockUserRepo.EXPECT().UpdateUser(ctx, gomock.Any()).Return(nil)
+	mockSessionRepo.EXPECT().StoreSession(gomock.Any(), gomock.Any()).Return(nil)
+	mockUserRepo.EXPECT().UpdateUser(gomock.Any(), gomock.Any()).Return(nil)
 
 	resp, err := authServer.Login(ctx, connect.NewRequest(&ssov1.LoginRequest{
 		Email:    email,
@@ -360,7 +360,7 @@ func TestAuthServer_ListUserSessions_Success(t *testing.T) {
 	}
 	ctx = context.WithValue(ctx, domain.TokenContextKey, tokenInfo)
 
-	mockSessionRepo.EXPECT().ListSessionsByUserID(ctx, userID, domain.SessionFilter{}).Return(sessions, nil)
+	mockSessionRepo.EXPECT().ListSessionsByUserID(gomock.Any(), userID, domain.SessionFilter{}).Return(sessions, nil)
 
 	resp, err := authServer.ListUserSessions(ctx, connect.NewRequest(&ssov1.ListUserSessionsRequest{
 		UserId: userID,
@@ -464,7 +464,7 @@ func TestAuthServer_SubmitConsent_Success(t *testing.T) {
 	}
 
 	mockFlowStore.EXPECT().GetFlow(gomock.Any(), flowID).Return(flowState, nil)
-	mockOAuthService.EXPECT().GenerateAuthCode(ctx, "client-id", "", "https://callback", "openid profile email", "", "", "", flowState.UserAuthenticatedAt).Return("auth-code", nil)
+	mockOAuthService.EXPECT().GenerateAuthCode(gomock.Any(), "client-id", "", "https://callback", "openid profile email", "", "", "", flowState.UserAuthenticatedAt).Return("auth-code", nil)
 	mockFlowStore.EXPECT().DeleteFlow(gomock.Any(), flowID).Return(nil)
 
 	resp, err := authServer.SubmitConsent(ctx, connect.NewRequest(&ssov1.SubmitConsentRequest{

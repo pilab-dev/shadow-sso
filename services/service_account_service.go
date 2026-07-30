@@ -13,11 +13,14 @@ import (
 	"connectrpc.com/connect"
 	"github.com/google/uuid" // For generating key IDs
 	"github.com/pilab-dev/shadow-sso/domain"
+	"github.com/pilab-dev/shadow-sso/internal/telemetry"
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
+	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
-	// Add other necessary imports like service_account_repository, public_key_repository
 )
 
 // SAKeyGenerator defines an interface for generating RSA keys, to allow for mocking.
@@ -53,10 +56,24 @@ func NewServiceAccountServer(
 	}
 }
 
+const saTracerName = "service-account-service"
+
 func (s *ServiceAccountServer) CreateServiceAccountKey(ctx context.Context, req *connect.Request[ssov1.CreateServiceAccountKeyRequest]) (*connect.Response[ssov1.CreateServiceAccountKeyResponse], error) {
 	projectID := req.Msg.GetProjectId()
 	clientEmail := req.Msg.GetClientEmail()
 	displayName := req.Msg.GetDisplayName()
+
+	ctx, span := telemetry.StartSpan(ctx, saTracerName, "CreateServiceAccountKey",
+		attribute.String("sa.project_id", projectID),
+		attribute.String("sa.client_email", clientEmail),
+	)
+	defer span.End()
+
+	log.Ctx(ctx).Info().
+		Str("project_id", projectID).
+		Str("client_email", clientEmail).
+		Str("display_name", displayName).
+		Msg("CreateServiceAccountKey called")
 
 	if projectID == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("project_id is required"))
@@ -82,6 +99,9 @@ func (s *ServiceAccountServer) CreateServiceAccountKey(ctx context.Context, req 
 			UpdatedAt:   now,
 		}
 		if err := s.saRepo.CreateServiceAccount(ctx, serviceAccount); err != nil {
+			telemetry.RecordSpanError(span, err, "failed to create service account")
+			span.SetStatus(codes.Error, "failed to create service account")
+			log.Ctx(ctx).Error().Err(err).Msg("failed to create service account")
 			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to create service account: %w", err))
 		}
 	} else {
@@ -91,6 +111,9 @@ func (s *ServiceAccountServer) CreateServiceAccountKey(ctx context.Context, req 
 	// Generate RSA key
 	privateKey, err := s.KeyGenerator.GenerateRSAKey()
 	if err != nil {
+		telemetry.RecordSpanError(span, err, "failed to generate RSA key")
+		span.SetStatus(codes.Error, "failed to generate RSA key")
+		log.Ctx(ctx).Error().Err(err).Msg("failed to generate RSA key")
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to generate RSA key: %w", err))
 	}
 
@@ -98,6 +121,9 @@ func (s *ServiceAccountServer) CreateServiceAccountKey(ctx context.Context, req 
 	privateKeyID := uuid.New().String()
 	pubKeyPEM, err := publicKeyToPEM(&privateKey.PublicKey)
 	if err != nil {
+		telemetry.RecordSpanError(span, err, "failed to PEM encode public key")
+		span.SetStatus(codes.Error, "failed to PEM encode public key")
+		log.Ctx(ctx).Error().Err(err).Msg("failed to PEM encode public key")
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to PEM encode public key: %w", err))
 	}
 
@@ -111,6 +137,9 @@ func (s *ServiceAccountServer) CreateServiceAccountKey(ctx context.Context, req 
 		CreatedAt:        time.Now().Unix(),
 	}
 	if err := s.pubKeyRepo.CreatePublicKey(ctx, pubKeyInfo); err != nil {
+		telemetry.RecordSpanError(span, err, "failed to store public key")
+		span.SetStatus(codes.Error, "failed to store public key")
+		log.Ctx(ctx).Error().Err(err).Msg("failed to store public key")
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to store public key: %w", err))
 	}
 
@@ -128,6 +157,11 @@ func (s *ServiceAccountServer) CreateServiceAccountKey(ctx context.Context, req 
 		ClientX509CertUrl:       fmt.Sprintf("https://sso..pilab.hu/certs/%s", serviceAccount.ClientID), // TODO: Get from config
 	}
 
+	log.Ctx(ctx).Info().
+		Str("service_account_id", serviceAccount.ID).
+		Str("key_id", privateKeyID).
+		Msg("service account key created successfully")
+
 	return connect.NewResponse(&ssov1.CreateServiceAccountKeyResponse{
 		ServiceAccountId: serviceAccount.ID,
 		Key:              saKey,
@@ -136,17 +170,33 @@ func (s *ServiceAccountServer) CreateServiceAccountKey(ctx context.Context, req 
 
 func (s *ServiceAccountServer) ListServiceAccountKeys(ctx context.Context, req *connect.Request[ssov1.ListServiceAccountKeysRequest]) (*connect.Response[ssov1.ListServiceAccountKeysResponse], error) {
 	serviceAccountID := req.Msg.GetServiceAccountId()
+
+	ctx, span := telemetry.StartSpan(ctx, saTracerName, "ListServiceAccountKeys",
+		attribute.String("sa.id", serviceAccountID),
+	)
+	defer span.End()
+
+	log.Ctx(ctx).Info().
+		Str("service_account_id", serviceAccountID).
+		Msg("ListServiceAccountKeys called")
+
 	if serviceAccountID == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("service_account_id is required"))
 	}
 
 	_, err := s.saRepo.GetServiceAccount(ctx, serviceAccountID)
 	if err != nil {
+		telemetry.RecordSpanError(span, err, "service account not found")
+		span.SetStatus(codes.Error, "service account not found")
+		log.Ctx(ctx).Error().Err(err).Str("service_account_id", serviceAccountID).Msg("service account not found")
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("service account not found"))
 	}
 
 	pubKeys, err := s.pubKeyRepo.ListPublicKeysForServiceAccount(ctx, serviceAccountID, false)
 	if err != nil {
+		telemetry.RecordSpanError(span, err, "failed to list keys")
+		span.SetStatus(codes.Error, "failed to list keys")
+		log.Ctx(ctx).Error().Err(err).Str("service_account_id", serviceAccountID).Msg("failed to list keys for service account")
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to list keys: %w", err))
 	}
 
@@ -165,6 +215,11 @@ func (s *ServiceAccountServer) ListServiceAccountKeys(ctx context.Context, req *
 		keys = append(keys, keyInfo)
 	}
 
+	log.Ctx(ctx).Info().
+		Str("service_account_id", serviceAccountID).
+		Int("key_count", len(keys)).
+		Msg("service account keys listed successfully")
+
 	return connect.NewResponse(&ssov1.ListServiceAccountKeysResponse{
 		Keys: keys,
 	}), nil
@@ -173,13 +228,33 @@ func (s *ServiceAccountServer) ListServiceAccountKeys(ctx context.Context, req *
 func (s *ServiceAccountServer) DeleteServiceAccountKey(ctx context.Context, req *connect.Request[ssov1.DeleteServiceAccountKeyRequest]) (*connect.Response[emptypb.Empty], error) {
 	serviceAccountID := req.Msg.GetServiceAccountId()
 	keyID := req.Msg.GetKeyId()
+
+	ctx, span := telemetry.StartSpan(ctx, saTracerName, "DeleteServiceAccountKey",
+		attribute.String("sa.id", serviceAccountID),
+		attribute.String("key.id", keyID),
+	)
+	defer span.End()
+
+	log.Ctx(ctx).Info().
+		Str("service_account_id", serviceAccountID).
+		Str("key_id", keyID).
+		Msg("DeleteServiceAccountKey called")
+
 	if serviceAccountID == "" || keyID == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("service_account_id and key_id are required"))
 	}
 
 	if err := s.pubKeyRepo.UpdatePublicKeyStatus(ctx, keyID, "REVOKED"); err != nil {
+		telemetry.RecordSpanError(span, err, "failed to delete key")
+		span.SetStatus(codes.Error, "failed to delete key")
+		log.Ctx(ctx).Error().Err(err).Str("key_id", keyID).Msg("failed to delete service account key")
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to delete key: %w", err))
 	}
+
+	log.Ctx(ctx).Info().
+		Str("key_id", keyID).
+		Str("service_account_id", serviceAccountID).
+		Msg("service account key deleted successfully")
 
 	return connect.NewResponse(&emptypb.Empty{}), nil
 }

@@ -108,60 +108,60 @@ func (mr *MockFlowStoreMockRecorder) CleanupExpiredFlows() *gomock.Call {
 }
 
 // DeleteFlow mocks base method.
-func (m *MockFlowStore) DeleteFlow(flowID string) error {
+func (m *MockFlowStore) DeleteFlow(ctx context.Context, flowID string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeleteFlow", flowID)
+	ret := m.ctrl.Call(m, "DeleteFlow", ctx, flowID)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // DeleteFlow indicates an expected call of DeleteFlow.
-func (mr *MockFlowStoreMockRecorder) DeleteFlow(flowID any) *gomock.Call {
+func (mr *MockFlowStoreMockRecorder) DeleteFlow(ctx, flowID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteFlow", reflect.TypeOf((*MockFlowStore)(nil).DeleteFlow), flowID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteFlow", reflect.TypeOf((*MockFlowStore)(nil).DeleteFlow), ctx, flowID)
 }
 
 // GetFlow mocks base method.
-func (m *MockFlowStore) GetFlow(flowID string) (*domain.LoginFlowState, error) {
+func (m *MockFlowStore) GetFlow(ctx context.Context, flowID string) (*domain.LoginFlowState, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetFlow", flowID)
+	ret := m.ctrl.Call(m, "GetFlow", ctx, flowID)
 	ret0, _ := ret[0].(*domain.LoginFlowState)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetFlow indicates an expected call of GetFlow.
-func (mr *MockFlowStoreMockRecorder) GetFlow(flowID any) *gomock.Call {
+func (mr *MockFlowStoreMockRecorder) GetFlow(ctx, flowID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetFlow", reflect.TypeOf((*MockFlowStore)(nil).GetFlow), flowID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetFlow", reflect.TypeOf((*MockFlowStore)(nil).GetFlow), ctx, flowID)
 }
 
 // StoreFlow mocks base method.
-func (m *MockFlowStore) StoreFlow(flowID string, state domain.LoginFlowState) error {
+func (m *MockFlowStore) StoreFlow(ctx context.Context, flowID string, state domain.LoginFlowState) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "StoreFlow", flowID, state)
+	ret := m.ctrl.Call(m, "StoreFlow", ctx, flowID, state)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // StoreFlow indicates an expected call of StoreFlow.
-func (mr *MockFlowStoreMockRecorder) StoreFlow(flowID, state any) *gomock.Call {
+func (mr *MockFlowStoreMockRecorder) StoreFlow(ctx, flowID, state any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StoreFlow", reflect.TypeOf((*MockFlowStore)(nil).StoreFlow), flowID, state)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StoreFlow", reflect.TypeOf((*MockFlowStore)(nil).StoreFlow), ctx, flowID, state)
 }
 
 // UpdateFlow mocks base method.
-func (m *MockFlowStore) UpdateFlow(flowID string, state *domain.LoginFlowState) error {
+func (m *MockFlowStore) UpdateFlow(ctx context.Context, flowID string, state *domain.LoginFlowState) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateFlow", flowID, state)
+	ret := m.ctrl.Call(m, "UpdateFlow", ctx, flowID, state)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // UpdateFlow indicates an expected call of UpdateFlow.
-func (mr *MockFlowStoreMockRecorder) UpdateFlow(flowID, state any) *gomock.Call {
+func (mr *MockFlowStoreMockRecorder) UpdateFlow(ctx, flowID, state any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateFlow", reflect.TypeOf((*MockFlowStore)(nil).UpdateFlow), flowID, state)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateFlow", reflect.TypeOf((*MockFlowStore)(nil).UpdateFlow), ctx, flowID, state)
 }
 
 // MockUserSessionStore is a mock of UserSessionStore interface.
@@ -201,46 +201,46 @@ func (mr *MockUserSessionStoreMockRecorder) CleanupExpiredSessions() *gomock.Cal
 }
 
 // DeleteUserSession mocks base method.
-func (m *MockUserSessionStore) DeleteUserSession(sessionID string) error {
+func (m *MockUserSessionStore) DeleteUserSession(ctx context.Context, sessionID string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeleteUserSession", sessionID)
+	ret := m.ctrl.Call(m, "DeleteUserSession", ctx, sessionID)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // DeleteUserSession indicates an expected call of DeleteUserSession.
-func (mr *MockUserSessionStoreMockRecorder) DeleteUserSession(sessionID any) *gomock.Call {
+func (mr *MockUserSessionStoreMockRecorder) DeleteUserSession(ctx, sessionID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteUserSession", reflect.TypeOf((*MockUserSessionStore)(nil).DeleteUserSession), sessionID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteUserSession", reflect.TypeOf((*MockUserSessionStore)(nil).DeleteUserSession), ctx, sessionID)
 }
 
 // GetUserSession mocks base method.
-func (m *MockUserSessionStore) GetUserSession(sessionID string) (*domain.UserSession, error) {
+func (m *MockUserSessionStore) GetUserSession(ctx context.Context, sessionID string) (*domain.UserSession, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetUserSession", sessionID)
+	ret := m.ctrl.Call(m, "GetUserSession", ctx, sessionID)
 	ret0, _ := ret[0].(*domain.UserSession)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetUserSession indicates an expected call of GetUserSession.
-func (mr *MockUserSessionStoreMockRecorder) GetUserSession(sessionID any) *gomock.Call {
+func (mr *MockUserSessionStoreMockRecorder) GetUserSession(ctx, sessionID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUserSession", reflect.TypeOf((*MockUserSessionStore)(nil).GetUserSession), sessionID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUserSession", reflect.TypeOf((*MockUserSessionStore)(nil).GetUserSession), ctx, sessionID)
 }
 
 // StoreUserSession mocks base method.
-func (m *MockUserSessionStore) StoreUserSession(session *domain.UserSession) error {
+func (m *MockUserSessionStore) StoreUserSession(ctx context.Context, session *domain.UserSession) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "StoreUserSession", session)
+	ret := m.ctrl.Call(m, "StoreUserSession", ctx, session)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // StoreUserSession indicates an expected call of StoreUserSession.
-func (mr *MockUserSessionStoreMockRecorder) StoreUserSession(session any) *gomock.Call {
+func (mr *MockUserSessionStoreMockRecorder) StoreUserSession(ctx, session any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StoreUserSession", reflect.TypeOf((*MockUserSessionStore)(nil).StoreUserSession), session)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StoreUserSession", reflect.TypeOf((*MockUserSessionStore)(nil).StoreUserSession), ctx, session)
 }
 
 // MockPublicKeyRepository is a mock of PublicKeyRepository interface.

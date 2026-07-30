@@ -21,8 +21,11 @@ import (
 	"github.com/pilab-dev/shadow-sso/internal/auth/rbac"
 	"github.com/pilab-dev/shadow-sso/internal/auth/totp" // For TOTP validation
 	"github.com/pilab-dev/shadow-sso/internal/metrics"
+	"github.com/pilab-dev/shadow-sso/internal/telemetry"
 	// "github.com/pilab-dev/shadow-sso/middleware" // No longer needed here
 	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb" // For mapping time to proto
 )
@@ -117,7 +120,10 @@ func NewAuthServer(
 	}
 }
 
-const twoFactorSessionTTL = 5 * time.Minute
+const (
+	twoFactorSessionTTL = 5 * time.Minute
+	authTracerName       = "auth-service"
+)
 
 func (s *AuthServer) generateSecure2FAToken() (string, error) {
 	b := make([]byte, 32)
@@ -144,12 +150,18 @@ func mapDomainStatusToProto(ds domain.UserStatus) ssov1.UserStatus {
 // If 2FA is enabled, it returns a response indicating that 2FA is required.
 // Otherwise, it completes the login and returns tokens.
 func (s *AuthServer) Login(ctx context.Context, req *connect.Request[ssov1.LoginRequest]) (*connect.Response[ssov1.LoginResponse], error) {
-	log.Debug().Str("email", req.Msg.Email).Msg("Login attempt")
+	ctx, span := telemetry.StartSpan(ctx, authTracerName, "Login", attribute.String("user.email", req.Msg.Email))
+	defer span.End()
+
+	logger := log.Ctx(ctx)
+	logger.Debug().Str("email", req.Msg.Email).Msg("Login attempt")
 	var userID string // For audit logging, even if user object is not fetched
 
 	user, err := s.userRepo.GetUserByEmail(ctx, req.Msg.Email)
 	if err != nil {
-		log.Warn().Err(err).Str("email", req.Msg.Email).Msg("Login: User not found")
+		logger.Warn().Err(err).Str("email", req.Msg.Email).Msg("Login: User not found")
+		telemetry.RecordSpanError(span, err, "user not found")
+		span.SetStatus(codes.Error, "user not found")
 		audit.Log("AuthService", "Login", req.Msg.Email, "", "User not found or DB error", false, err)
 		if metrics.LoginFailureTotal != nil {
 			metrics.LoginFailureTotal.Inc()
@@ -157,9 +169,12 @@ func (s *AuthServer) Login(ctx context.Context, req *connect.Request[ssov1.Login
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid email or password"))
 	}
 	userID = user.ID // User found, set userID for audit
+	span.SetAttributes(attribute.String("user.id", userID))
 
 	if user.Status == domain.UserStatusLocked {
-		log.Warn().Str("userID", userID).Msg("Login: Account locked")
+		logger.Warn().Str("userID", userID).Msg("Login: Account locked")
+		telemetry.RecordSpanError(span, errors.New("account locked"), "account locked")
+		span.SetStatus(codes.Error, "account locked")
 		audit.Log("AuthService", "Login", userID, userID, "Account locked", false, errors.New("account locked"))
 		if metrics.LoginFailureTotal != nil {
 			metrics.LoginFailureTotal.Inc()
@@ -167,7 +182,9 @@ func (s *AuthServer) Login(ctx context.Context, req *connect.Request[ssov1.Login
 		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("account is locked"))
 	}
 	if user.Status == domain.UserStatusPending {
-		log.Warn().Str("userID", userID).Msg("Login: Account pending activation")
+		logger.Warn().Str("userID", userID).Msg("Login: Account pending activation")
+		telemetry.RecordSpanError(span, errors.New("account pending activation"), "account pending activation")
+		span.SetStatus(codes.Error, "account pending activation")
 		audit.Log("AuthService", "Login", userID, userID, "Account pending activation", false, errors.New("account pending activation"))
 		if metrics.LoginFailureTotal != nil {
 			metrics.LoginFailureTotal.Inc()
@@ -176,7 +193,9 @@ func (s *AuthServer) Login(ctx context.Context, req *connect.Request[ssov1.Login
 	}
 
 	if err := s.passwordHasher.Verify(user.PasswordHash, req.Msg.Password); err != nil {
-		log.Warn().Str("userID", userID).Msg("Login: Incorrect password")
+		logger.Warn().Str("userID", userID).Msg("Login: Incorrect password")
+		telemetry.RecordSpanError(span, err, "incorrect password")
+		span.SetStatus(codes.Error, "incorrect password")
 		audit.Log("AuthService", "Login", userID, userID, "Incorrect password", false, err)
 		if metrics.LoginFailureTotal != nil {
 			metrics.LoginFailureTotal.Inc()
@@ -187,10 +206,13 @@ func (s *AuthServer) Login(ctx context.Context, req *connect.Request[ssov1.Login
 
 	// --- 2FA Check ---
 	if user.IsTwoFactorEnabled && user.TwoFactorMethod == "TOTP" {
-		log.Info().Str("userID", user.ID).Msg("Login: 2FA (TOTP) is enabled, step-up required.")
+		logger.Info().Str("userID", user.ID).Msg("Login: 2FA (TOTP) is enabled, step-up required.")
+		span.SetAttributes(attribute.Bool("user.2fa_enabled", true))
 		tfaSessionToken, err := s.generateSecure2FAToken()
 		if err != nil {
-			log.Error().Err(err).Str("userID", user.ID).Msg("Login: Failed to generate 2FA session token")
+			logger.Error().Err(err).Str("userID", user.ID).Msg("Login: Failed to generate 2FA session token")
+			telemetry.RecordSpanError(span, err, "failed to generate 2FA token")
+			span.SetStatus(codes.Error, "failed to generate 2FA token")
 			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to generate 2FA session token: %w", err))
 		}
 		s.twoFactorSessions.Set(tfaSessionToken, user.ID, twoFactorSessionTTL)
@@ -208,6 +230,8 @@ func (s *AuthServer) Login(ctx context.Context, req *connect.Request[ssov1.Login
 
 // completeLogin is a helper to finalize login after all checks (password, and 2FA if applicable) pass.
 func (s *AuthServer) completeLogin(ctx context.Context, user *domain.User) (*connect.Response[ssov1.LoginResponse], error) {
+	logger := log.Ctx(ctx)
+
 	// Define clientID, scope, and tokenTTL for the application initiating the login.
 	// These might come from client authentication if the client itself is an OAuth client.
 	// For now, hardcode for a primary user login flow (e.g., web app, CLI).
@@ -217,7 +241,7 @@ func (s *AuthServer) completeLogin(ctx context.Context, user *domain.User) (*con
 
 	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, user.ID, scope, tokenTTL)
 	if err != nil {
-		log.Error().Err(err).Str("userID", user.ID).Msg("completeLogin: Failed to generate token pair")
+		logger.Error().Err(err).Str("userID", user.ID).Msg("completeLogin: Failed to generate token pair")
 		audit.Log("AuthService", "LoginComplete", user.ID, user.ID, "Failed to generate token pair", false, err)
 		// Note: LoginFailureTotal was already incremented if password check failed.
 		// If token generation is the failure point after successful password, it's an internal error, not a typical "login failure".
@@ -234,7 +258,7 @@ func (s *AuthServer) completeLogin(ctx context.Context, user *domain.User) (*con
 		IsRevoked: false,
 	}
 	if err := s.sessionRepo.StoreSession(ctx, session); err != nil {
-		log.Error().Err(err).Str("userID", user.ID).Msg("completeLogin: Failed to store session")
+		logger.Error().Err(err).Str("userID", user.ID).Msg("completeLogin: Failed to store session")
 		// Decide if this should be a fatal error for login. For now, log and continue.
 	}
 
@@ -243,7 +267,7 @@ func (s *AuthServer) completeLogin(ctx context.Context, user *domain.User) (*con
 	user.LastLoginAt = &now
 	user.FailedLoginAttempts = 0 // Reset on successful login
 	if err := s.userRepo.UpdateUser(ctx, user); err != nil {
-		log.Warn().Err(err).Str("userID", user.ID).Msg("completeLogin: Failed to update user LastLoginAt")
+		logger.Warn().Err(err).Str("userID", user.ID).Msg("completeLogin: Failed to update user LastLoginAt")
 		// Non-fatal
 	}
 
@@ -287,24 +311,35 @@ func (s *AuthServer) completeLogin(ctx context.Context, user *domain.User) (*con
 
 // Verify2FA verifies the 2FA code (TOTP or recovery) and completes the login.
 func (s *AuthServer) Verify2FA(ctx context.Context, req *connect.Request[ssov1.Verify2FARequest]) (*connect.Response[ssov1.LoginResponse], error) {
-	log.Debug().Str("userID", req.Msg.UserId).Msg("Verify2FA attempt")
+	ctx, span := telemetry.StartSpan(ctx, authTracerName, "Verify2FA", attribute.String("user.id", req.Msg.UserId))
+	defer span.End()
+
+	logger := log.Ctx(ctx)
+	logger.Debug().Str("userID", req.Msg.UserId).Msg("Verify2FA attempt")
 
 	entry, valid := s.twoFactorSessions.GetAndDelete(req.Msg.TwoFactorSessionToken)
 	if !valid || entry.UserID != req.Msg.UserId {
-		log.Warn().Str("userID", req.Msg.UserId).Msg("Verify2FA: Invalid or expired 2FA session token")
+		logger.Warn().Str("userID", req.Msg.UserId).Msg("Verify2FA: Invalid or expired 2FA session token")
+		telemetry.RecordSpanError(span, errors.New("invalid or expired 2FA session"), "invalid or expired 2FA session token")
+		span.SetStatus(codes.Error, "invalid or expired 2FA session")
 		audit.Log("AuthService", "Verify2FA", req.Msg.UserId, req.Msg.UserId, "Invalid or missing 2FA session token", false, errors.New("invalid or expired 2FA session"))
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid or expired 2FA session"))
 	}
 
 	user, err := s.userRepo.GetUserByID(ctx, req.Msg.UserId)
 	if err != nil {
-		log.Warn().Err(err).Str("userID", req.Msg.UserId).Msg("Verify2FA: User not found")
+		logger.Warn().Err(err).Str("userID", req.Msg.UserId).Msg("Verify2FA: User not found")
+		telemetry.RecordSpanError(span, err, "user not found")
+		span.SetStatus(codes.Error, "user not found")
 		audit.Log("AuthService", "Verify2FA", req.Msg.UserId, req.Msg.UserId, "User not found for 2FA verification", false, err)
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("user not found: %w", err))
 	}
+	span.SetAttributes(attribute.String("user.id", user.ID))
 
 	if !user.IsTwoFactorEnabled || user.TwoFactorMethod != "TOTP" || user.TwoFactorSecret == "" {
-		log.Warn().Str("userID", user.ID).Msg("Verify2FA: 2FA not enabled or setup correctly for user")
+		logger.Warn().Str("userID", user.ID).Msg("Verify2FA: 2FA not enabled or setup correctly for user")
+		telemetry.RecordSpanError(span, errors.New("2FA not configured"), "2FA not enabled or setup correctly")
+		span.SetStatus(codes.Error, "2FA not configured")
 		audit.Log("AuthService", "Verify2FA", user.ID, user.ID, "2FA not enabled or setup correctly", false, errors.New("2FA not configured or setup incomplete"))
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("2FA not configured for this user, or setup incomplete"))
 	}
@@ -312,13 +347,16 @@ func (s *AuthServer) Verify2FA(ctx context.Context, req *connect.Request[ssov1.V
 	// Validate TOTP code
 	validTOTP, errValidate := totp.ValidateTOTPCode(user.TwoFactorSecret, req.Msg.TotpCode)
 	if errValidate != nil {
-		log.Error().Err(errValidate).Str("userID", user.ID).Msg("Verify2FA: Error during TOTP code validation function call")
+		logger.Error().Err(errValidate).Str("userID", user.ID).Msg("Verify2FA: Error during TOTP code validation function call")
+		telemetry.RecordSpanError(span, errValidate, "error during TOTP validation")
+		span.SetStatus(codes.Error, "error during TOTP validation")
 		audit.Log("AuthService", "Verify2FA", user.ID, user.ID, "Error during TOTP validation function", false, errValidate)
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("error during TOTP validation: %w", errValidate))
 	}
 
 	if validTOTP {
-		log.Info().Str("userID", user.ID).Msg("Verify2FA: TOTP code valid.")
+		logger.Info().Str("userID", user.ID).Msg("Verify2FA: TOTP code valid.")
+		span.SetAttributes(attribute.Bool("2fa.verified", true))
 		// completeLogin will log success/failure of token generation
 		return s.completeLogin(ctx, user)
 	}
@@ -326,11 +364,13 @@ func (s *AuthServer) Verify2FA(ctx context.Context, req *connect.Request[ssov1.V
 	// If TOTP is not valid, try recovery code
 	validRecovery, usedRecoveryIndex := totp.VerifyRecoveryCode(user.TwoFactorRecoveryCodes, req.Msg.TotpCode)
 	if validRecovery {
-		log.Info().Str("userID", user.ID).Int("recoveryIndex", usedRecoveryIndex).Msg("Verify2FA: Recovery code valid and used.")
+		logger.Info().Str("userID", user.ID).Int("recoveryIndex", usedRecoveryIndex).Msg("Verify2FA: Recovery code valid and used.")
+		span.SetAttributes(attribute.Bool("2fa.verified", true), attribute.String("2fa.method", "recovery_code"))
 		// Invalidate used recovery code
 		user.TwoFactorRecoveryCodes = append(user.TwoFactorRecoveryCodes[:usedRecoveryIndex], user.TwoFactorRecoveryCodes[usedRecoveryIndex+1:]...)
 		if errUpdate := s.userRepo.UpdateUser(ctx, user); errUpdate != nil {
-			log.Error().Err(errUpdate).Str("userID", user.ID).Msg("Verify2FA: Failed to update user after using recovery code")
+			logger.Error().Err(errUpdate).Str("userID", user.ID).Msg("Verify2FA: Failed to update user after using recovery code")
+			telemetry.RecordSpanError(span, errUpdate, "failed to update user after recovery code use")
 			audit.Log("AuthService", "Verify2FA", user.ID, user.ID, "Failed to update user after using recovery code", false, errUpdate)
 			// Decide if this failure should prevent login. For now, it proceeds with login but logs the error.
 		}
@@ -338,7 +378,9 @@ func (s *AuthServer) Verify2FA(ctx context.Context, req *connect.Request[ssov1.V
 		return s.completeLogin(ctx, user)
 	}
 
-	log.Warn().Str("userID", user.ID).Msg("Verify2FA: Invalid TOTP or recovery code provided.")
+	logger.Warn().Str("userID", user.ID).Msg("Verify2FA: Invalid TOTP or recovery code provided.")
+	telemetry.RecordSpanError(span, errors.New("invalid 2FA code"), "invalid TOTP or recovery code")
+	span.SetStatus(codes.Error, "invalid 2FA code")
 	audit.Log("AuthService", "Verify2FA", user.ID, user.ID, "Invalid TOTP or recovery code", false, errors.New("invalid 2FA code"))
 	// TODO: Implement failed 2FA attempt tracking and potential user lockout/alert.
 	if metrics.LoginFailureTotal != nil {
@@ -349,23 +391,31 @@ func (s *AuthServer) Verify2FA(ctx context.Context, req *connect.Request[ssov1.V
 
 // Logout method (existing, ensure it's compatible with any context changes if needed)
 func (s *AuthServer) Logout(ctx context.Context, req *connect.Request[ssov1.LogoutRequest]) (*connect.Response[emptypb.Empty], error) {
+	ctx, span := telemetry.StartSpan(ctx, authTracerName, "Logout")
+	defer span.End()
+
+	logger := log.Ctx(ctx)
+
 	authedToken, ok := domain.GetAuthenticatedTokenFromContext(ctx)
 	if !ok || authedToken == nil {
+		telemetry.RecordSpanError(span, errors.New("user not authenticated"), "user not authenticated")
+		span.SetStatus(codes.Error, "user not authenticated")
 		audit.Log("AuthService", "Logout", "anonymous", "", "User not authenticated for logout", false, errors.New("user not authenticated"))
 		// Not incrementing LoginFailureTotal here as it's not a login attempt
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated for logout"))
 	}
 	actingUserID := authedToken.UserID
 	tokenJTI := authedToken.ID
+	span.SetAttributes(attribute.String("user.id", actingUserID), attribute.String("token.jti", tokenJTI))
 
 	// Assuming token.ID from context is the JTI, which is stored as TokenID in domain.Session
 	session, err := s.sessionRepo.GetSessionByTokenID(ctx, tokenJTI)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") { // Check for domain/repo specific "not found"
-			log.Warn().Str("jti", tokenJTI).Str("userID", actingUserID).Msg("Logout: No active session found for token JTI, perhaps already logged out or session expired.")
+			logger.Warn().Str("jti", tokenJTI).Str("userID", actingUserID).Msg("Logout: No active session found for token JTI, perhaps already logged out or session expired.")
 			// If no session, maybe token is already effectively invalid. Can still try to revoke from denylist.
 		} else {
-			log.Error().Err(err).Str("jti", tokenJTI).Str("userID", actingUserID).Msg("Logout: Error retrieving session by JTI")
+			logger.Error().Err(err).Str("jti", tokenJTI).Str("userID", actingUserID).Msg("Logout: Error retrieving session by JTI")
 			// Fall through to try token revocation anyway
 		}
 		// Audit log for session retrieval failure, but continue to attempt token revocation
@@ -376,18 +426,20 @@ func (s *AuthServer) Logout(ctx context.Context, req *connect.Request[ssov1.Logo
 		session.IsRevoked = true
 		session.ExpiresAt = time.Now() // Expire immediately
 		if errUpdate := s.sessionRepo.UpdateSession(ctx, session); errUpdate != nil {
-			log.Error().Err(errUpdate).Str("sessionID", session.ID).Str("userID", actingUserID).Msg("Logout: Failed to update session to revoked")
+			logger.Error().Err(errUpdate).Str("sessionID", session.ID).Str("userID", actingUserID).Msg("Logout: Failed to update session to revoked")
+			telemetry.RecordSpanError(span, errUpdate, "failed to update session to revoked")
 			audit.Log("AuthService", "Logout", actingUserID, session.ID, "Failed to mark session as revoked", false, errUpdate)
 			// Non-fatal for logout, proceed to revoke token itself
 		} else {
-			log.Info().Str("sessionID", session.ID).Str("userID", actingUserID).Msg("Logout: Session marked as revoked")
+			logger.Info().Str("sessionID", session.ID).Str("userID", actingUserID).Msg("Logout: Session marked as revoked")
 			audit.Log("AuthService", "Logout", actingUserID, session.ID, "Session marked as revoked successfully", true, nil)
 		}
 	}
 
 	// Also attempt to revoke the token via TokenService (e.g., if it maintains a denylist)
 	if errRevoke := s.tokenService.RevokeToken(ctx, tokenJTI); errRevoke != nil {
-		log.Error().Err(errRevoke).Str("jti", tokenJTI).Str("userID", actingUserID).Msg("Logout: Failed to revoke token via TokenService (e.g., denylist)")
+		logger.Error().Err(errRevoke).Str("jti", tokenJTI).Str("userID", actingUserID).Msg("Logout: Failed to revoke token via TokenService (e.g., denylist)")
+		telemetry.RecordSpanError(span, errRevoke, "failed to revoke token")
 		audit.Log("AuthService", "Logout", actingUserID, tokenJTI, "Failed to revoke token via TokenService", false, errRevoke)
 		// This might not be fatal if session is already marked.
 		// If session revoking also failed, this could be the primary failure point.
@@ -406,10 +458,18 @@ func (s *AuthServer) Logout(ctx context.Context, req *connect.Request[ssov1.Logo
 
 // ListUserSessions method (existing)
 func (s *AuthServer) ListUserSessions(ctx context.Context, req *connect.Request[ssov1.ListUserSessionsRequest]) (*connect.Response[ssov1.ListUserSessionsResponse], error) {
+	ctx, span := telemetry.StartSpan(ctx, authTracerName, "ListUserSessions")
+	defer span.End()
+
+	logger := log.Ctx(ctx)
+
 	authedToken, ok := domain.GetAuthenticatedTokenFromContext(ctx)
 	if !ok || authedToken == nil {
+		telemetry.RecordSpanError(span, errors.New("user not authenticated"), "user not authenticated")
+		span.SetStatus(codes.Error, "user not authenticated")
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated"))
 	}
+	span.SetAttributes(attribute.String("user.id", authedToken.UserID))
 
 	targetUserID := req.Msg.UserId
 	if targetUserID == "" || targetUserID == "me" { // "me" is a common convention
@@ -420,16 +480,22 @@ func (s *AuthServer) ListUserSessions(ctx context.Context, req *connect.Request[
 		// For now, assume if targetUserID is different, admin rights are needed.
 		// This logic should ideally be in the RBAC interceptor or a helper.
 		if targetUserID != authedToken.UserID && !rbac.HasPermission(authedToken.Roles, rbac.PermSessionsListOthers) {
+			telemetry.RecordSpanError(span, errors.New("permission denied"), "permission denied to list sessions for user")
+			span.SetStatus(codes.Error, "permission denied")
 			return nil, connect.NewError(connect.CodePermissionDenied, fmt.Errorf("permission denied to list sessions for user %s", targetUserID))
 		}
 	}
+	span.SetAttributes(attribute.String("target_user_id", targetUserID))
 
 	// TODO: Populate domain.SessionFilter from request if ListUserSessionsRequest has filter fields
 	dbSessions, err := s.sessionRepo.ListSessionsByUserID(ctx, targetUserID, domain.SessionFilter{})
 	if err != nil {
-		log.Error().Err(err).Str("targetUserID", targetUserID).Msg("ListUserSessions: Failed to list sessions")
+		logger.Error().Err(err).Str("targetUserID", targetUserID).Msg("ListUserSessions: Failed to list sessions")
+		telemetry.RecordSpanError(span, err, "failed to list sessions")
+		span.SetStatus(codes.Error, "failed to list sessions")
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("could not list sessions: %w", err))
 	}
+	span.SetAttributes(attribute.Int("session.count", len(dbSessions)))
 
 	protoSessions := make([]*ssov1.SessionInfo, 0, len(dbSessions))
 	for _, ds := range dbSessions {
@@ -450,19 +516,30 @@ func (s *AuthServer) ListUserSessions(ctx context.Context, req *connect.Request[
 
 // ClearUserSessions method (existing)
 func (s *AuthServer) ClearUserSessions(ctx context.Context, req *connect.Request[ssov1.ClearUserSessionsRequest]) (*connect.Response[emptypb.Empty], error) {
+	ctx, span := telemetry.StartSpan(ctx, authTracerName, "ClearUserSessions")
+	defer span.End()
+
+	logger := log.Ctx(ctx)
+
 	authedToken, ok := domain.GetAuthenticatedTokenFromContext(ctx)
 	if !ok || authedToken == nil {
+		telemetry.RecordSpanError(span, errors.New("user not authenticated"), "user not authenticated")
+		span.SetStatus(codes.Error, "user not authenticated")
 		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated"))
 	}
+	span.SetAttributes(attribute.String("user.id", authedToken.UserID))
 
 	targetUserID := req.Msg.UserId
 	if targetUserID == "" || targetUserID == "me" {
 		targetUserID = authedToken.UserID
 	} else {
 		if targetUserID != authedToken.UserID && !rbac.HasPermission(authedToken.Roles, rbac.PermSessionsClearOthers) {
+			telemetry.RecordSpanError(span, errors.New("permission denied"), "permission denied to clear sessions for user")
+			span.SetStatus(codes.Error, "permission denied")
 			return nil, connect.NewError(connect.CodePermissionDenied, fmt.Errorf("permission denied to clear sessions for user %s", targetUserID))
 		}
 	}
+	span.SetAttributes(attribute.String("target_user_id", targetUserID))
 
 	if len(req.Msg.SessionIds) > 0 { // Clear specific sessions
 		for _, sessionID := range req.Msg.SessionIds {
@@ -473,11 +550,12 @@ func (s *AuthServer) ClearUserSessions(ctx context.Context, req *connect.Request
 				session.IsRevoked = true
 				session.ExpiresAt = time.Now()
 				if errUpdate := s.sessionRepo.UpdateSession(ctx, session); errUpdate != nil {
-					log.Error().Err(errUpdate).Str("sessionID", sessionID).Msg("ClearUserSessions: Failed to revoke specific session")
+					logger.Error().Err(errUpdate).Str("sessionID", sessionID).Msg("ClearUserSessions: Failed to revoke specific session")
+					telemetry.RecordSpanError(span, errUpdate, "failed to revoke specific session")
 					// Continue to try others, or return partial error?
 				}
 			} else if errGet != nil {
-				log.Warn().Err(errGet).Str("sessionID", sessionID).Msg("ClearUserSessions: Failed to get session to revoke or session does not belong to user.")
+				logger.Warn().Err(errGet).Str("sessionID", sessionID).Msg("ClearUserSessions: Failed to get session to revoke or session does not belong to user.")
 			}
 		}
 	} else { // Clear all sessions for the target user (or all but current if self and not specified)
@@ -494,7 +572,9 @@ func (s *AuthServer) ClearUserSessions(ctx context.Context, req *connect.Request
 		}
 		_, err := s.sessionRepo.DeleteSessionsByUserID(ctx, targetUserID, exceptSessionID) // If exceptSessionID is empty, all are deleted for user.
 		if err != nil {
-			log.Error().Err(err).Str("targetUserID", targetUserID).Msg("ClearUserSessions: Failed to delete sessions by user ID")
+			logger.Error().Err(err).Str("targetUserID", targetUserID).Msg("ClearUserSessions: Failed to delete sessions by user ID")
+			telemetry.RecordSpanError(span, err, "failed to delete sessions by user ID")
+			span.SetStatus(codes.Error, "failed to delete sessions")
 			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("could not clear sessions: %w", err))
 		}
 	}
@@ -504,14 +584,28 @@ func (s *AuthServer) ClearUserSessions(ctx context.Context, req *connect.Request
 
 // GetConsentInfo retrieves consent information for an OAuth flow
 func (s *AuthServer) GetConsentInfo(ctx context.Context, req *connect.Request[ssov1.GetConsentInfoRequest]) (*connect.Response[ssov1.GetConsentInfoResponse], error) {
+	ctx, span := telemetry.StartSpan(ctx, authTracerName, "GetConsentInfo", attribute.String("flow.id", req.Msg.FlowId))
+	defer span.End()
+
+	logger := log.Ctx(ctx)
 	flowID := req.Msg.FlowId
-	log.Info().Str("flowId", flowID).Msg("GetConsentInfo called")
+	logger.Info().Str("flowId", flowID).Msg("GetConsentInfo called")
 
 	// Get flow state
 	flowState, err := s.flowStore.GetFlow(ctx, flowID)
+	if err != nil {
+		logger.Error().Err(err).Str("flowId", flowID).Msg("GetConsentInfo: Failed to get flow state")
+		telemetry.RecordSpanError(span, err, "failed to get flow state")
+		span.SetStatus(codes.Error, "failed to get flow state")
+		return nil, connect.NewError(connect.CodeInternal, errors.New("could not retrieve consent information"))
+	}
+	span.SetAttributes(attribute.String("client.id", flowState.ClientID), attribute.String("user.id", flowState.UserID))
+
 	client, err := s.clientService.GetClient(ctx, flowState.ClientID)
 	if err != nil {
-		log.Error().Err(err).Str("clientID", flowState.ClientID).Msg("Failed to get client for consent")
+		logger.Error().Err(err).Str("clientID", flowState.ClientID).Msg("GetConsentInfo: Failed to get client for consent")
+		telemetry.RecordSpanError(span, err, "failed to get client for consent")
+		span.SetStatus(codes.Error, "failed to get client")
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not retrieve client information"))
 	}
 
@@ -557,11 +651,15 @@ func (s *AuthServer) GetConsentInfo(ctx context.Context, req *connect.Request[ss
 
 // SubmitConsent handles user consent approval for OAuth scopes
 func (s *AuthServer) SubmitConsent(ctx context.Context, req *connect.Request[ssov1.SubmitConsentRequest]) (*connect.Response[ssov1.SubmitConsentResponse], error) {
+	ctx, span := telemetry.StartSpan(ctx, authTracerName, "SubmitConsent", attribute.String("flow.id", req.Msg.FlowId))
+	defer span.End()
+
+	logger := log.Ctx(ctx)
 	flowID := req.Msg.FlowId
 	acceptedScopes := req.Msg.AcceptedScopes
 	rememberConsent := req.Msg.RememberConsent
 
-	log.Info().
+	logger.Info().
 		Str("flowId", flowID).
 		Strs("acceptedScopes", acceptedScopes).
 		Bool("rememberConsent", rememberConsent).
@@ -571,11 +669,16 @@ func (s *AuthServer) SubmitConsent(ctx context.Context, req *connect.Request[sso
 	flowState, err := s.flowStore.GetFlow(ctx, flowID)
 	if err != nil {
 		if goerrors.Is(err, domain.ErrFlowNotFound) || goerrors.Is(err, domain.ErrFlowExpired) {
+			telemetry.RecordSpanError(span, err, "consent flow not found or expired")
+			span.SetStatus(codes.Error, "flow not found or expired")
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("consent flow not found or expired"))
 		}
-		log.Error().Err(err).Str("flowId", flowID).Msg("Error retrieving flow state for consent submission")
+		logger.Error().Err(err).Str("flowId", flowID).Msg("SubmitConsent: Error retrieving flow state for consent submission")
+		telemetry.RecordSpanError(span, err, "error retrieving flow state")
+		span.SetStatus(codes.Error, "error retrieving flow state")
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not retrieve flow details"))
 	}
+	span.SetAttributes(attribute.String("client.id", flowState.ClientID), attribute.String("user.id", flowState.UserID))
 
 	// Validate that all required scopes are accepted
 	requestedScopes := strings.Split(flowState.Scope, " ")
@@ -597,6 +700,8 @@ func (s *AuthServer) SubmitConsent(ctx context.Context, req *connect.Request[sso
 			}
 		}
 		if !found {
+			telemetry.RecordSpanError(span, errors.New("required scopes not accepted"), "required scopes must be accepted")
+			span.SetStatus(codes.Error, "required scopes not accepted")
 			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("required scopes must be accepted"))
 		}
 	}
@@ -617,7 +722,9 @@ func (s *AuthServer) SubmitConsent(ctx context.Context, req *connect.Request[sso
 		flowState.UserAuthenticatedAt,
 	)
 	if err != nil {
-		log.Error().Err(err).Str("flowId", flowID).Msg("Failed to generate authorization code after consent")
+		logger.Error().Err(err).Str("flowId", flowID).Msg("SubmitConsent: Failed to generate authorization code after consent")
+		telemetry.RecordSpanError(span, err, "failed to generate authorization code")
+		span.SetStatus(codes.Error, "failed to generate auth code")
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not complete authorization"))
 	}
 
@@ -638,7 +745,7 @@ func (s *AuthServer) SubmitConsent(ctx context.Context, req *connect.Request[sso
 		redirectURL += "?" + params.Encode()
 	}
 
-	log.Info().Str("flowId", flowID).Str("userID", flowState.UserID).Str("redirectURL", redirectURL).Msg("User consented, redirecting to client with auth code")
+	logger.Info().Str("flowId", flowID).Str("userID", flowState.UserID).Str("redirectURL", redirectURL).Msg("User consented, redirecting to client with auth code")
 
 	response := &ssov1.SubmitConsentResponse{
 		RedirectUrl: redirectURL,
@@ -649,18 +756,27 @@ func (s *AuthServer) SubmitConsent(ctx context.Context, req *connect.Request[sso
 
 // DenyConsent handles user consent denial for OAuth scopes
 func (s *AuthServer) DenyConsent(ctx context.Context, req *connect.Request[ssov1.DenyConsentRequest]) (*connect.Response[ssov1.DenyConsentResponse], error) {
+	ctx, span := telemetry.StartSpan(ctx, authTracerName, "DenyConsent", attribute.String("flow.id", req.Msg.FlowId))
+	defer span.End()
+
+	logger := log.Ctx(ctx)
 	flowID := req.Msg.FlowId
-	log.Info().Str("flowId", flowID).Msg("DenyConsent called")
+	logger.Info().Str("flowId", flowID).Msg("DenyConsent called")
 
 	// Get flow state
 	flowState, err := s.flowStore.GetFlow(ctx, flowID)
 	if err != nil {
 		if goerrors.Is(err, domain.ErrFlowNotFound) || goerrors.Is(err, domain.ErrFlowExpired) {
+			telemetry.RecordSpanError(span, err, "consent flow not found or expired")
+			span.SetStatus(codes.Error, "flow not found or expired")
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("consent flow not found or expired"))
 		}
-		log.Error().Err(err).Str("flowId", flowID).Msg("Error retrieving flow state for consent denial")
+		logger.Error().Err(err).Str("flowId", flowID).Msg("DenyConsent: Error retrieving flow state for consent denial")
+		telemetry.RecordSpanError(span, err, "error retrieving flow state")
+		span.SetStatus(codes.Error, "error retrieving flow state")
 		return nil, connect.NewError(connect.CodeInternal, errors.New("could not retrieve flow details"))
 	}
+	span.SetAttributes(attribute.String("client.id", flowState.ClientID), attribute.String("user.id", flowState.UserID))
 
 	// Delete the flow state
 	_ = s.flowStore.DeleteFlow(ctx, flowID)
@@ -680,7 +796,7 @@ func (s *AuthServer) DenyConsent(ctx context.Context, req *connect.Request[ssov1
 		redirectURL += "?" + params.Encode()
 	}
 
-	log.Info().Str("flowId", flowID).Str("userID", flowState.UserID).Str("redirectURL", redirectURL).Msg("User denied consent, redirecting to client with error")
+	logger.Info().Str("flowId", flowID).Str("userID", flowState.UserID).Str("redirectURL", redirectURL).Msg("User denied consent, redirecting to client with error")
 
 	response := &ssov1.DenyConsentResponse{
 		RedirectUrl: redirectURL,

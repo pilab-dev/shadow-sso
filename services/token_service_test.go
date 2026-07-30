@@ -58,9 +58,9 @@ func TestTokenService_CreateToken(t *testing.T) {
 	}
 
 	// Expect the calls - order may matter
-	mockUserRepo.EXPECT().GetUserByID(ctx, "user-id").Return(nil, errors.New("not found"))
-	mockTokenRepo.EXPECT().StoreToken(ctx, gomock.Any()).Return(nil)
-	mockCache.EXPECT().Set(ctx, gomock.Any()).Return(nil)
+	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user-id").Return(nil, errors.New("not found"))
+	mockTokenRepo.EXPECT().StoreToken(gomock.Any(), gomock.Any()).Return(nil)
+	mockCache.EXPECT().Set(gomock.Any(), gomock.Any()).Return(nil)
 
 	// Create service with these mocks
 	mockPubKeyRepo := mock_domain.NewMockPublicKeyRepository(ctrl)
@@ -127,9 +127,9 @@ func TestTokenService_CreateToken_WithRoles(t *testing.T) {
 		Roles: []string{"admin", "user"},
 	}
 
-	mockUserRepo.EXPECT().GetUserByID(ctx, "user-id").Return(user, nil)
-	mockTokenRepo.EXPECT().StoreToken(ctx, gomock.Any()).Return(nil)
-	mockCache.EXPECT().Set(ctx, gomock.Any()).Return(nil)
+	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user-id").Return(user, nil)
+	mockTokenRepo.EXPECT().StoreToken(gomock.Any(), gomock.Any()).Return(nil)
+	mockCache.EXPECT().Set(gomock.Any(), gomock.Any()).Return(nil)
 
 	token, err := tokenService.CreateToken(ctx, opts, nil)
 
@@ -168,9 +168,9 @@ func TestTokenService_GenerateTokenPair(t *testing.T) {
 	scope := "openid profile"
 	tokenTTL := time.Hour
 
-	mockTokenRepo.EXPECT().StoreToken(ctx, gomock.Any()).Return(nil).AnyTimes()
-	mockCache.EXPECT().Set(ctx, gomock.Any()).Return(nil).AnyTimes()
-	mockUserRepo.EXPECT().GetUserByID(ctx, userID).Return(&domain.User{
+	mockTokenRepo.EXPECT().StoreToken(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockCache.EXPECT().Set(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), userID).Return(&domain.User{
 		ID:    userID,
 		Email: "test@example.com",
 		Roles: []string{"user"},
@@ -216,9 +216,9 @@ func TestTokenService_GenerateTokenPair_WithOpenID(t *testing.T) {
 	scope := "openid profile email"
 	tokenTTL := time.Hour
 
-	mockTokenRepo.EXPECT().StoreToken(ctx, gomock.Any()).Return(nil).AnyTimes()
-	mockCache.EXPECT().Set(ctx, gomock.Any()).Return(nil).AnyTimes()
-	mockUserRepo.EXPECT().GetUserByID(ctx, userID).Return(&domain.User{
+	mockTokenRepo.EXPECT().StoreToken(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockCache.EXPECT().Set(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), userID).Return(&domain.User{
 		ID:    userID,
 		Email: "test@example.com",
 		Roles: []string{"user"},
@@ -262,9 +262,9 @@ func TestTokenService_GenerateTokenPair_WithoutOpenID(t *testing.T) {
 	scope := "profile"
 	tokenTTL := time.Hour
 
-	mockTokenRepo.EXPECT().StoreToken(ctx, gomock.Any()).Return(nil).AnyTimes()
-	mockCache.EXPECT().Set(ctx, gomock.Any()).Return(nil).AnyTimes()
-	mockUserRepo.EXPECT().GetUserByID(ctx, userID).Return(&domain.User{
+	mockTokenRepo.EXPECT().StoreToken(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockCache.EXPECT().Set(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), userID).Return(&domain.User{
 		ID:    userID,
 		Email: "test@example.com",
 		Roles: []string{"user"},
@@ -315,7 +315,7 @@ func TestTokenService_ValidateAccessToken_CacheHit(t *testing.T) {
 		IsRevoked: false,
 	}
 
-	mockCache.EXPECT().Get(ctx, tokenValue).Return(cacheEntry, nil)
+	mockCache.EXPECT().Get(gomock.Any(), tokenValue).Return(cacheEntry, nil)
 
 	token, err := tokenService.ValidateAccessToken(ctx, tokenValue)
 
@@ -363,9 +363,9 @@ func TestTokenService_ValidateAccessToken_CacheMiss_RepoHit(t *testing.T) {
 		IsRevoked:  false,
 	}
 
-	mockCache.EXPECT().Get(ctx, tokenValue).Return(nil, errors.New("not found"))
-	mockTokenRepo.EXPECT().GetAccessToken(ctx, tokenValue).Return(repoToken, nil)
-	mockCache.EXPECT().Set(ctx, gomock.Any()).Return(nil)
+	mockCache.EXPECT().Get(gomock.Any(), tokenValue).Return(nil, errors.New("not found"))
+	mockTokenRepo.EXPECT().GetAccessToken(gomock.Any(), tokenValue).Return(repoToken, nil)
+	mockCache.EXPECT().Set(gomock.Any(), gomock.Any()).Return(nil)
 
 	token, err := tokenService.ValidateAccessToken(ctx, tokenValue)
 
@@ -413,8 +413,8 @@ func TestTokenService_ValidateAccessToken_Revoked(t *testing.T) {
 		IsRevoked:  true,
 	}
 
-	mockCache.EXPECT().Get(ctx, tokenValue).Return(nil, errors.New("not found"))
-	mockTokenRepo.EXPECT().GetAccessToken(ctx, tokenValue).Return(revokedToken, nil)
+	mockCache.EXPECT().Get(gomock.Any(), tokenValue).Return(nil, errors.New("not found"))
+	mockTokenRepo.EXPECT().GetAccessToken(gomock.Any(), tokenValue).Return(revokedToken, nil)
 
 	_, errVal := tokenService.ValidateAccessToken(ctx, tokenValue)
 
@@ -450,8 +450,8 @@ func TestTokenService_RevokeToken(t *testing.T) {
 	ctx := context.Background()
 	tokenValue := "token-to-revoke"
 
-	mockCache.EXPECT().Delete(ctx, tokenValue).Return(nil)
-	mockTokenRepo.EXPECT().RevokeToken(ctx, tokenValue).Return(nil)
+	mockCache.EXPECT().Delete(gomock.Any(), tokenValue).Return(nil)
+	mockTokenRepo.EXPECT().RevokeToken(gomock.Any(), tokenValue).Return(nil)
 
 	errVal := tokenService.RevokeToken(ctx, tokenValue)
 
@@ -493,7 +493,7 @@ func TestTokenService_GetRefreshTokenInfo(t *testing.T) {
 		UserID:    "user-id",
 	}
 
-	mockTokenRepo.EXPECT().GetRefreshTokenInfo(ctx, tokenValue).Return(tokenInfo, nil)
+	mockTokenRepo.EXPECT().GetRefreshTokenInfo(gomock.Any(), tokenValue).Return(tokenInfo, nil)
 
 	info, err := tokenService.GetRefreshTokenInfo(ctx, tokenValue)
 
@@ -538,7 +538,7 @@ func TestTokenService_GetAccessTokenInfo(t *testing.T) {
 		Scope:     "openid",
 	}
 
-	mockTokenRepo.EXPECT().GetAccessTokenInfo(ctx, tokenValue).Return(tokenInfo, nil)
+	mockTokenRepo.EXPECT().GetAccessTokenInfo(gomock.Any(), tokenValue).Return(tokenInfo, nil)
 
 	info, err := tokenService.GetAccessTokenInfo(ctx, tokenValue)
 
@@ -586,8 +586,8 @@ func TestTokenService_ValidateAccessToken_Expired(t *testing.T) {
 		IsRevoked:  false,
 	}
 
-	mockCache.EXPECT().Get(ctx, tokenValue).Return(nil, errors.New("not found"))
-	mockTokenRepo.EXPECT().GetAccessToken(ctx, tokenValue).Return(expiredToken, nil)
+	mockCache.EXPECT().Get(gomock.Any(), tokenValue).Return(nil, errors.New("not found"))
+	mockTokenRepo.EXPECT().GetAccessToken(gomock.Any(), tokenValue).Return(expiredToken, nil)
 
 	_, errVal := tokenService.ValidateAccessToken(ctx, tokenValue)
 
@@ -623,8 +623,8 @@ func TestTokenService_ValidateAccessToken_NotFound(t *testing.T) {
 	ctx := context.Background()
 	tokenValue := "nonexistent-token"
 
-	mockCache.EXPECT().Get(ctx, tokenValue).Return(nil, errors.New("not found"))
-	mockTokenRepo.EXPECT().GetAccessToken(ctx, tokenValue).Return(nil, errors.New("token not found"))
+	mockCache.EXPECT().Get(gomock.Any(), tokenValue).Return(nil, errors.New("not found"))
+	mockTokenRepo.EXPECT().GetAccessToken(gomock.Any(), tokenValue).Return(nil, errors.New("token not found"))
 
 	_, errVal := tokenService.ValidateAccessToken(ctx, tokenValue)
 
@@ -667,8 +667,8 @@ func TestTokenService_RevokeToken_CacheError(t *testing.T) {
 	ctx := context.Background()
 	tokenValue := "token-to-revoke"
 
-	mockCache.EXPECT().Delete(ctx, tokenValue).Return(errors.New("cache error"))
-	mockTokenRepo.EXPECT().RevokeToken(ctx, tokenValue).Return(nil)
+	mockCache.EXPECT().Delete(gomock.Any(), tokenValue).Return(errors.New("cache error"))
+	mockTokenRepo.EXPECT().RevokeToken(gomock.Any(), tokenValue).Return(nil)
 
 	errVal := tokenService.RevokeToken(ctx, tokenValue)
 

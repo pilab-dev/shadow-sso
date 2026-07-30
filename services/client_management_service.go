@@ -12,10 +12,15 @@ import (
 	"github.com/pilab-dev/shadow-sso/domain"
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
+	"github.com/pilab-dev/shadow-sso/internal/telemetry"
 	"github.com/rs/zerolog/log"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+const clientMgmtTracerName = "client-management-service"
 
 // ClientManagementServer implements the ssov1connect.ClientManagementServiceHandler interface.
 type ClientManagementServer struct {
@@ -111,8 +116,16 @@ func toClientProto(c *domain.Client, includeSecret bool) *ssov1.ClientProto {
 
 // RegisterClient registers a new OAuth2 client.
 func (s *ClientManagementServer) RegisterClient(ctx context.Context, req *connect.Request[ssov1.RegisterClientRequest]) (*connect.Response[ssov1.RegisterClientResponse], error) {
+	ctx, span := telemetry.StartSpan(ctx, clientMgmtTracerName, "RegisterClient",
+		attribute.String("client.type", req.Msg.ClientType.String()),
+		attribute.String("client.name", req.Msg.ClientName),
+	)
+	defer span.End()
+
 	domainClientType := fromClientTypeProto(req.Msg.ClientType)
 	if domainClientType == "" { // fromClientTypeProto returns empty string for unspecified/invalid
+		telemetry.RecordSpanError(span, errors.New("invalid client type specified"), "invalid client type specified")
+		span.SetStatus(codes.Error, "invalid client type specified")
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invalid client type specified"))
 	}
 
@@ -151,7 +164,9 @@ func (s *ClientManagementServer) RegisterClient(ctx context.Context, req *connec
 		plaintextSecretForResponse = uuid.New().String()
 		hashedSecret, err := s.secretHasher.Hash(plaintextSecretForResponse)
 		if err != nil {
-			log.Error().Err(err).Msg("Failed to hash client secret during registration")
+			telemetry.RecordSpanError(span, err, "failed to hash client secret during registration")
+			span.SetStatus(codes.Error, "error processing client secret")
+			log.Ctx(ctx).Error().Err(err).Msg("Failed to hash client secret during registration")
 			return nil, connect.NewError(connect.CodeInternal, errors.New("error processing client secret"))
 		}
 		newClient.Secret = hashedSecret
@@ -178,7 +193,9 @@ func (s *ClientManagementServer) RegisterClient(ctx context.Context, req *connec
 	}
 
 	if err := s.clientRepo.CreateClient(ctx, newClient); err != nil {
-		log.Error().Err(err).Msg("Failed to create client in repository")
+		telemetry.RecordSpanError(span, err, "failed to create client in repository")
+		span.SetStatus(codes.Error, "failed to register client")
+		log.Ctx(ctx).Error().Err(err).Msg("Failed to create client in repository")
 		// Check for mongo specific duplicate key error if possible, otherwise generic
 		if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "E11000") {
 			return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("client with this client_id already exists"))
@@ -196,9 +213,14 @@ func (s *ClientManagementServer) RegisterClient(ctx context.Context, req *connec
 
 // GetClient retrieves an OAuth2 client by its ID.
 func (s *ClientManagementServer) GetClient(ctx context.Context, req *connect.Request[ssov1.GetClientRequest]) (*connect.Response[ssov1.GetClientResponse], error) {
+	ctx, span := telemetry.StartSpan(ctx, clientMgmtTracerName, "GetClient", attribute.String("client.id", req.Msg.ClientId))
+	defer span.End()
+
 	dbClient, err := s.clientRepo.GetClient(ctx, req.Msg.ClientId)
 	if err != nil {
-		log.Warn().Err(err).Str("clientID", req.Msg.ClientId).Msg("Failed to get client from repository")
+		telemetry.RecordSpanError(span, err, "failed to get client from repository")
+		span.SetStatus(codes.Error, "failed to retrieve client")
+		log.Ctx(ctx).Warn().Err(err).Str("clientID", req.Msg.ClientId).Msg("Failed to get client from repository")
 		if strings.Contains(err.Error(), "not found") { // Basic check
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("client not found"))
 		}
@@ -209,13 +231,18 @@ func (s *ClientManagementServer) GetClient(ctx context.Context, req *connect.Req
 
 // ListClients lists OAuth2 clients.
 func (s *ClientManagementServer) ListClients(ctx context.Context, req *connect.Request[ssov1.ListClientsRequest]) (*connect.Response[ssov1.ListClientsResponse], error) {
+	ctx, span := telemetry.StartSpan(ctx, clientMgmtTracerName, "ListClients")
+	defer span.End()
+
 	dbClients, err := s.clientRepo.ListClients(ctx, domain.ClientFilter{
 		Type:     domain.ClientTypeConfidential,
 		IsActive: false,
 		Search:   "",
 	})
 	if err != nil {
-		log.Error().Err(err).Msg("ListClients: repository error")
+		telemetry.RecordSpanError(span, err, "repository error listing clients")
+		span.SetStatus(codes.Error, "failed to list clients")
+		log.Ctx(ctx).Error().Err(err).Msg("ListClients: repository error")
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to list clients: %w", err))
 	}
 
@@ -232,12 +259,17 @@ func (s *ClientManagementServer) ListClients(ctx context.Context, req *connect.R
 
 // UpdateClient updates an existing OAuth2 client.
 func (s *ClientManagementServer) UpdateClient(ctx context.Context, req *connect.Request[ssov1.UpdateClientRequest]) (*connect.Response[ssov1.UpdateClientResponse], error) {
+	ctx, span := telemetry.StartSpan(ctx, clientMgmtTracerName, "UpdateClient", attribute.String("client.id", req.Msg.ClientId))
+	defer span.End()
+
 	dbClient, err := s.clientRepo.GetClient(ctx, req.Msg.ClientId)
 	if err != nil {
+		telemetry.RecordSpanError(span, err, "failed to retrieve client for update")
+		span.SetStatus(codes.Error, "client not found for update")
 		if strings.Contains(err.Error(), "not found") {
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("client not found for update"))
 		}
-		log.Error().Err(err).Str("clientID", req.Msg.ClientId).Msg("Failed to retrieve client for update")
+		log.Ctx(ctx).Error().Err(err).Str("clientID", req.Msg.ClientId).Msg("Failed to retrieve client for update")
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to retrieve client for update"))
 	}
 
@@ -293,7 +325,9 @@ func (s *ClientManagementServer) UpdateClient(ctx context.Context, req *connect.
 	dbClient.UpdatedAt = time.Now().UTC()
 
 	if err := s.clientRepo.UpdateClient(ctx, dbClient); err != nil {
-		log.Error().Err(err).Str("clientID", dbClient.ID).Msg("Failed to update client in repository")
+		telemetry.RecordSpanError(span, err, "failed to update client in repository")
+		span.SetStatus(codes.Error, "failed to update client")
+		log.Ctx(ctx).Error().Err(err).Str("clientID", dbClient.ID).Msg("Failed to update client in repository")
 		// Check for mongo specific duplicate key error if Name was made unique and conflicts
 		if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "E11000") {
 			return nil, connect.NewError(connect.CodeAlreadyExists, errors.New("client with this name or other unique attributes already exists"))
@@ -305,14 +339,19 @@ func (s *ClientManagementServer) UpdateClient(ctx context.Context, req *connect.
 
 // DeleteClient deletes an OAuth2 client.
 func (s *ClientManagementServer) DeleteClient(ctx context.Context, req *connect.Request[ssov1.DeleteClientRequest]) (*connect.Response[emptypb.Empty], error) {
+	ctx, span := telemetry.StartSpan(ctx, clientMgmtTracerName, "DeleteClient", attribute.String("client.id", req.Msg.ClientId))
+	defer span.End()
+
 	if err := s.clientRepo.DeleteClient(ctx, req.Msg.ClientId); err != nil {
-		log.Warn().Err(err).Str("clientID", req.Msg.ClientId).Msg("Failed to delete client from repository")
+		telemetry.RecordSpanError(span, err, "failed to delete client from repository")
+		span.SetStatus(codes.Error, "failed to delete client")
+		log.Ctx(ctx).Warn().Err(err).Str("clientID", req.Msg.ClientId).Msg("Failed to delete client from repository")
 		if strings.Contains(err.Error(), "not found") {
 			return nil, connect.NewError(connect.CodeNotFound, errors.New("client not found for deletion"))
 		}
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to delete client"))
 	}
-	log.Info().Str("clientID", req.Msg.ClientId).Msg("Client deleted successfully")
+	log.Ctx(ctx).Info().Str("clientID", req.Msg.ClientId).Msg("Client deleted successfully")
 	return connect.NewResponse(&emptypb.Empty{}), nil
 }
 
