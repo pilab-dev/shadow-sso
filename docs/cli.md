@@ -598,3 +598,311 @@ Manage cross-domain identity federation.
 
 ---
 *This documentation provides an overview. For detailed command options, use `ssoctl <command> --help`.*
+
+## User Attribute Commands (`ssoctl user attribute`)
+
+Manage custom user attributes: key-value pairs stored on a user profile that can later be mapped into token claims (see Token Mapper Commands below). The command group is nested under `ssoctl user` (run `ssoctl user attribute --help` for the full subcommand list). Aliases: `ua`, `attributes`. These commands require administrator privileges.
+
+All attribute commands print their result as YAML. The user ID is always given as a positional argument, never as a flag.
+
+**1. Create Attribute**
+
+Create a new custom attribute for a user. Both `--name` and `--value` are required. Takes exactly one positional `USER_ID`.
+
+```bash
+ssoctl user attribute create <USER_ID> --name <NAME> --value <VALUE>
+```
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--name` | string | yes | Attribute name |
+| `--value` | string | yes | Attribute value |
+
+Example:
+
+```bash
+ssoctl user attribute create 65f2a1c4d8e9b01234567890 --name roles --value "admin,viewer"
+```
+
+Sample YAML output:
+
+```yaml
+id: 67e2f8c1a3b94d5e8f0c1234
+name: roles
+value: admin,viewer
+userId: 65f2a1c4d8e9b01234567890
+```
+
+**2. Get Attribute**
+
+Fetch a single attribute by its attribute ID. Takes exactly one positional `ATTRIBUTE_ID`.
+
+```bash
+ssoctl user attribute get <ATTRIBUTE_ID>
+```
+
+Sample YAML output:
+
+```yaml
+id: 67e2f8c1a3b94d5e8f0c1234
+name: roles
+value: admin,viewer
+userId: 65f2a1c4d8e9b01234567890
+```
+
+**3. List Attributes**
+
+List attributes with an optional user filter and pagination. The optional positional `USER_ID` filters results to a single user (maximum one argument).
+
+```bash
+ssoctl user attribute list [USER_ID]
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--name` | string |  | Filter by attribute name |
+| `--limit` | int | 50 | Results per page (max 100) |
+| `--offset` | int | 0 | Pagination offset |
+
+Example:
+
+```bash
+ssoctl user attribute list 65f2a1c4d8e9b01234567890 --name roles
+```
+
+Sample YAML output:
+
+```yaml
+- id: 67e2f8c1a3b94d5e8f0c1234
+  name: roles
+  value: admin,viewer
+  userId: 65f2a1c4d8e9b01234567890
+
+nextPageToken: 50
+```
+
+When no attributes match, the command prints `No user attributes found.` and exits 0. When more results are available, a trailing `nextPageToken` line is printed; pass its value as the next `--offset`.
+
+**4. Update Attribute**
+
+Partially update an existing attribute. Takes exactly one positional `ATTRIBUTE_ID`. At least one of `--name` or `--value` must be provided; only the flags you pass are changed.
+
+```bash
+ssoctl user attribute update <ATTRIBUTE_ID> [--name <NAME>] [--value <VALUE>]
+```
+
+| Flag | Type | Required | Description |
+|------|------|----------|-------------|
+| `--name` | string | no* | New name (leave empty to keep current) |
+| `--value` | string | no* | New value (leave empty to keep current) |
+
+\* At least one of the two must be provided.
+
+Example:
+
+```bash
+ssoctl user attribute update 67e2f8c1a3b94d5e8f0c1234 --value "admin"
+```
+
+**5. Delete Attribute**
+
+Delete a single attribute by its ID. Takes exactly one positional `ATTRIBUTE_ID`.
+
+```bash
+ssoctl user attribute delete <ATTRIBUTE_ID>
+# User attribute '67e2f8c1a3b94d5e8f0c1234' deleted.
+```
+
+**6. Delete Attributes by User**
+
+Delete all attributes for a user in one operation. Irreversible. Takes exactly one positional `USER_ID`.
+
+```bash
+ssoctl user attribute delete-by-user <USER_ID>
+# All user attributes for user '65f2a1c4d8e9b01234567890' deleted.
+```
+
+**Grafana Use Case**
+
+A common setup maps a user's `roles` attribute into the nested `realm_access.roles` claim that Grafana expects in access tokens.
+
+1. Store the roles on the user:
+
+```bash
+ssoctl user attribute create 65f2a1c4d8e9b01234567890 --name roles --value "admin,viewer"
+```
+
+2. Create the token mapper (see Token Mapper Commands below):
+
+```bash
+ssoctl token-mapper create --name grafana-realm-access-roles --user-attribute roles --claim-name realm_access.roles --token-type access_token --multi-valued
+```
+
+3. When the application signs in, the access token carries the nested `realm_access.roles` claim and Grafana reads the roles from it.
+
+**Exit Codes**
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | Error (invalid arguments, validation failure, or RPC error) |
+| 2 | Server unreachable (connection or context failure) |
+| 3 | Not found (attribute does not exist) |
+
+## Token Mapper Commands (`ssoctl token-mapper`)
+
+Manage token mappers: rules that copy user attributes into JWT claims during token generation. This is a top-level command group, not nested under `ssoctl user`. Aliases: `tm`, `token-mappers`, `mapper`. These commands require administrator privileges.
+
+All mapper commands print their result as YAML. Mapper IDs are always given as positional arguments.
+
+**1. Create Token Mapper**
+
+Create a mapper that copies a user attribute into a claim on the chosen token. `--name`, `--user-attribute`, `--claim-name`, and `--token-type` are required.
+
+```bash
+ssoctl token-mapper create --name <NAME> --user-attribute <ATTR> --claim-name <CLAIM> --token-type <id_token|access_token|userinfo> [--multi-valued] [--protocol openid-connect] [--client-id <CLIENT_ID>]
+```
+
+| Flag | Type | Default | Required | Description |
+|------|------|---------|----------|-------------|
+| `--name` | string |  | yes | Name of the token mapper |
+| `--user-attribute` | string |  | yes | User attribute to map from |
+| `--claim-name` | string |  | yes | JWT claim name to map to; supports dot-notation for nested claims, e.g. `realm_access.roles` |
+| `--token-type` | string |  | yes | Token type to map into: `id_token`, `access_token`, `userinfo` |
+| `--multi-valued` | bool | false | no | Treat the attribute as multi-valued (array) |
+| `--protocol` | string | `openid-connect` | no | Protocol for the mapper (only `openid-connect` is supported) |
+| `--client-id` | string |  | no | Scope the mapper to a specific client; omit for a realm-level mapper |
+
+Example:
+
+```bash
+ssoctl token-mapper create --name department_mapper --user-attribute department --claim-name department --token-type id_token
+```
+
+Sample YAML output:
+
+```yaml
+id: 67f0a1b2c3d4e5f67890abcd
+name: department_mapper
+userAttribute: department
+tokenClaimName: department
+tokenType: id_token
+multiValued: false
+protocol: openid-connect
+createdAt: "2026-07-31T10:00:00Z"
+updatedAt: "2026-07-31T10:00:00Z"
+```
+
+**2. Get Token Mapper**
+
+Fetch a single mapper by its mapper ID. Takes exactly one positional `MAPPER_ID`.
+
+```bash
+ssoctl token-mapper get <MAPPER_ID>
+```
+
+Sample YAML output:
+
+```yaml
+id: 67f0a1b2c3d4e5f67890abcd
+name: department_mapper
+userAttribute: department
+tokenClaimName: department
+tokenType: id_token
+multiValued: false
+protocol: openid-connect
+createdAt: "2026-07-31T10:00:00Z"
+updatedAt: "2026-07-31T10:00:00Z"
+```
+
+**3. List Token Mappers**
+
+List mappers with optional filters and pagination.
+
+```bash
+ssoctl token-mapper list
+```
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--token-type` | string |  | Filter by token type: `id_token`, `access_token`, `userinfo` |
+| `--client-id` | string |  | Filter by client ID |
+| `--user-attribute` | string |  | Filter by user attribute |
+| `--limit` | int32 | 50 | Maximum number of mappers to list per page |
+| `--page-token` | string |  | Token for the next page of results |
+
+When no mappers match, the command prints `No token mappers found.` and exits 0. When more results are available, a trailing `Next page token: <token>` line is printed; pass its value as the next `--page-token`.
+
+**4. Update Token Mapper**
+
+Partially update a mapper. Takes exactly one positional `MAPPER_ID`. All flags are optional, but at least one must be provided; only the flags you pass are changed.
+
+```bash
+ssoctl token-mapper update <MAPPER_ID> [--name <NAME>] [--user-attribute <ATTR>] [--claim-name <CLAIM>] [--token-type <TYPE>] [--multi-valued] [--protocol <PROTOCOL>] [--client-id <CLIENT_ID>]
+```
+
+Example:
+
+```bash
+ssoctl token-mapper update 67f0a1b2c3d4e5f67890abcd --multi-valued
+```
+
+**5. Delete Token Mapper**
+
+Delete a mapper by its ID. Takes exactly one positional `MAPPER_ID`.
+
+```bash
+ssoctl token-mapper delete <MAPPER_ID>
+# Token mapper '67f0a1b2c3d4e5f67890abcd' deleted.
+```
+
+**Nested Claims Reference**
+
+Claim names support dot-notation for nested claims: `realm_access.roles` becomes `{"realm_access": {"roles": ...}}` in the token payload. During token generation the pipeline expands dotted claim names into nested objects via the `setNestedClaim` infrastructure (commit 379c365d). This mirrors Keycloak's convention of grouping authorization data under `realm_access`, `resource_access`, and similar namespaces.
+
+**Token Type Values**
+
+| Value | Token | Description |
+|-------|-------|-------------|
+| `id_token` | OIDC ID token | Identity claims about the authenticated user |
+| `access_token` | OAuth 2.0 access token | Authorization claims consumed by the resource server |
+| `userinfo` | OIDC UserInfo response | Profile claims returned by the UserInfo endpoint |
+
+**Protocol Values**
+
+| Value | Description |
+|-------|-------------|
+| `openid-connect` | OpenID Connect (default; the only supported protocol) |
+
+**Multi-Valued Reference**
+
+By default a mapper emits the attribute value as a single string (`multiValued: false`). When the attribute stores a list of values, pass `--multi-valued` (on create or update) so the claim is emitted as an array. This is required for claims that consumers expect to be arrays, such as Grafana's `realm_access.roles`.
+
+**Grafana Use Case**
+
+Grafana expects authorization roles in the nested `realm_access.roles` claim of the access token, emitted as an array.
+
+```bash
+ssoctl token-mapper create --name grafana-realm-access-roles --user-attribute roles --claim-name realm_access.roles --token-type access_token --multi-valued
+```
+
+The mapper reads the user's `roles` attribute; because `--claim-name` uses dot-notation and `--multi-valued` is set, token generation produces:
+
+```json
+{
+  "realm_access": {
+    "roles": ["admin", "viewer"]
+  }
+}
+```
+
+Create the underlying attribute with `ssoctl user attribute create <USER_ID> --name roles --value "admin,viewer"` (see User Attribute Commands above).
+
+**Exit Codes**
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | Error (invalid arguments, validation failure, or RPC error) |
+| 2 | Server unreachable (connection or context failure) |
+| 3 | Not found (mapper does not exist) |
