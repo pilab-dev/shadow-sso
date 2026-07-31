@@ -10,6 +10,7 @@ import (
 	"connectrpc.com/connect"                           // For connect.WithInterceptors
 	"connectrpc.com/otelconnect"                       // For OpenTelemetry Connect interceptor
 	"github.com/gin-gonic/gin"                         // For *gin.Engine
+	"github.com/golang-jwt/jwt/v5"                     // For jwt.Claims in the logout-token signer closure
 	"github.com/pilab-dev/shadow-sso/api"              // For api.OpenIDProviderConfig
 	"github.com/pilab-dev/shadow-sso/api/openidv2_1"   // For api.NewOAuth2API
 	"github.com/pilab-dev/shadow-sso/api/webauth"      // For webauth.New, WebAuth login UI
@@ -19,7 +20,8 @@ import (
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect" // For Connect-RPC service handlers
 	"github.com/pilab-dev/shadow-sso/graphql"
 	"github.com/pilab-dev/shadow-sso/internal/notifications"
-	"github.com/pilab-dev/shadow-sso/internal/oidcflow" // Still needed for concrete in-memory store instantiation
+	"github.com/pilab-dev/shadow-sso/internal/oidcflow"   // Still needed for concrete in-memory store instantiation
+	"github.com/pilab-dev/shadow-sso/internal/oidclogout" // For the OIDC back-channel logout notifier
 	"github.com/pilab-dev/shadow-sso/middleware"
 	"github.com/pilab-dev/shadow-sso/mongodb"          // For mongodb.NewMongoRepositoryProvider
 	pkgAuth "github.com/pilab-dev/shadow-sso/pkg/auth" // For auth.NewBcryptPasswordHasher
@@ -198,11 +200,12 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 	// Initialize password hasher (moved here as it's a service)
 	passwordHasher := pkgAuth.NewBcryptPasswordHasher(opts.Config.SecurityConfig.PasswordHashingCost)
 
-	var brandLogoURL, brandOrgName, brandColor string
+	var brandLogoURL, brandOrgName, brandColor, bootstrapToken string
 	if opts.AppConfig != nil {
 		brandLogoURL = opts.AppConfig.BrandLogoURL
 		brandOrgName = opts.AppConfig.BrandOrganizationName
 		brandColor = opts.AppConfig.BrandPrimaryColor
+		bootstrapToken = opts.AppConfig.BootstrapToken
 	}
 
 	// Create OAuth2 API handlers
@@ -218,10 +221,18 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 		PasswordHasher:        passwordHasher,
 		FederationService:     serviceProvider.FederationService(),
 		TokenService:          serviceProvider.TokenService(),
+		RealmKeysRepo:         repoProvider.RealmKeysRepository(context.Background()),
+		ClientRepo:            repoProvider.ClientRepository(context.Background()),
 		CookieSigningSecret:   opts.CookieSigningSecret,
+		TokenSigner:           tokenSigner,
+		SessionRepo:           repoProvider.SessionRepository(context.Background()),
+		BootstrapToken:        bootstrapToken,
 		BrandLogoURL:          brandLogoURL,
 		BrandOrganizationName: brandOrgName,
 		BrandPrimaryColor:     brandColor,
+		BackchannelLogoutNotifier: oidclogout.NewNotifier(opts.Config.Issuer, func(claims jwt.Claims) (string, error) {
+			return tokenSigner.Sign(claims, "")
+		}),
 	})
 
 	// Setup Gin server

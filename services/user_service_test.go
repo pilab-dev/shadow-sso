@@ -647,3 +647,32 @@ func TestUserServer_ResetPassword(t *testing.T) {
 	require.NotNil(t, resp.Msg)
 	assert.True(t, resp.Msg.Success)
 }
+
+func TestUserServer_RegisterUser_DefaultRole(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	userRepo := mock_domain.NewMockUserRepository(ctrl)
+	hasher := mock_domain.NewMockPasswordHasher(ctrl)
+	service := NewUserServer(userRepo, hasher, nil)
+
+	hasher.EXPECT().Hash("secret-password").Return("hashed", nil)
+	userRepo.EXPECT().GetUserByEmail(gomock.Any(), "new@example.com").Return(nil, domain.ErrUserNotFound)
+	userRepo.EXPECT().CreateUser(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, u *domain.User) error {
+		assert.Equal(t, []string{"ROLE_USER"}, u.Roles, "default role should be ROLE_USER")
+		return nil
+	})
+
+	req := connect.NewRequest(&ssov1.RegisterUserRequest{
+		Email:     "new@example.com",
+		Password:  "secret-password",
+		FirstName: "New",
+		LastName:  "User",
+	})
+	ctx := createAuthenticatedContext(context.Background(), "admin-1")
+	resp, err := service.RegisterUser(ctx, req)
+
+	require.NoError(t, err)
+	require.NotNil(t, resp.Msg.User)
+	assert.Equal(t, []string{"ROLE_USER"}, resp.Msg.User.Roles)
+}

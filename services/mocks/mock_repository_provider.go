@@ -97,6 +97,20 @@ func (mr *MockRepositoryProviderMockRecorder) DeviceAuthorizationRepository(ctx 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeviceAuthorizationRepository", reflect.TypeOf((*MockRepositoryProvider)(nil).DeviceAuthorizationRepository), ctx)
 }
 
+// GroupRepository mocks base method.
+func (m *MockRepositoryProvider) GroupRepository(ctx context.Context) domain.GroupRepository {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GroupRepository", ctx)
+	ret0, _ := ret[0].(domain.GroupRepository)
+	return ret0
+}
+
+// GroupRepository indicates an expected call of GroupRepository.
+func (mr *MockRepositoryProviderMockRecorder) GroupRepository(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GroupRepository", reflect.TypeOf((*MockRepositoryProvider)(nil).GroupRepository), ctx)
+}
+
 // IdPRepository mocks base method.
 func (m *MockRepositoryProvider) IdPRepository(ctx context.Context) domain.IdPRepository {
 	m.ctrl.T.Helper()
@@ -151,6 +165,34 @@ func (m *MockRepositoryProvider) PublicKeyRepository(ctx context.Context) domain
 func (mr *MockRepositoryProviderMockRecorder) PublicKeyRepository(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PublicKeyRepository", reflect.TypeOf((*MockRepositoryProvider)(nil).PublicKeyRepository), ctx)
+}
+
+// RealmKeysRepository mocks base method.
+func (m *MockRepositoryProvider) RealmKeysRepository(ctx context.Context) domain.RealmKeysRepository {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RealmKeysRepository", ctx)
+	ret0, _ := ret[0].(domain.RealmKeysRepository)
+	return ret0
+}
+
+// RealmKeysRepository indicates an expected call of RealmKeysRepository.
+func (mr *MockRepositoryProviderMockRecorder) RealmKeysRepository(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RealmKeysRepository", reflect.TypeOf((*MockRepositoryProvider)(nil).RealmKeysRepository), ctx)
+}
+
+// RoleRepository mocks base method.
+func (m *MockRepositoryProvider) RoleRepository(ctx context.Context) domain.RoleRepository {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RoleRepository", ctx)
+	ret0, _ := ret[0].(domain.RoleRepository)
+	return ret0
+}
+
+// RoleRepository indicates an expected call of RoleRepository.
+func (mr *MockRepositoryProviderMockRecorder) RoleRepository(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RoleRepository", reflect.TypeOf((*MockRepositoryProvider)(nil).RoleRepository), ctx)
 }
 
 // ServiceAccountRepository mocks base method.

@@ -7,12 +7,12 @@ import (
 
 	"context"
 
+	"github.com/gin-gonic/gin"
 	ssso "github.com/pilab-dev/shadow-sso"
 	"github.com/pilab-dev/shadow-sso/apps/ssso/config"
 	"github.com/pilab-dev/shadow-sso/cache"
 	"github.com/pilab-dev/shadow-sso/mongodb"
 	"github.com/pilab-dev/shadow-sso/services"
-	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 )
 
@@ -26,15 +26,7 @@ func WithExtraMiddlewares(mws ...gin.HandlerFunc) ServerOption {
 	}
 }
 
-// StartServer initializes and starts the SSO HTTP server.
-// It handles TokenSigner initialization, SSOServerOptions creation,
-// and returns a running *http.Server.
-// The caller is responsible for Shutdown().
-func StartServer(cfg config.Config, repoProvider services.RepositoryProvider, extraOpts ...ServerOption) (*http.Server, error) {
-	// Map internal config to public api.OpenIDProviderConfig
-	oidcConfig := cfg.ToOpenIDProviderConfig()
-
-	// Initialize TokenSigner (potentially from file/env)
+func newTokenSigner(cfg config.Config) *services.TokenSigner {
 	tokenSigner := services.NewTokenSigner()
 	if cfg.SigningKeyPath != "" {
 		if err := tokenSigner.AddRSASigner(cfg.SigningKeyPath); err != nil {
@@ -50,6 +42,19 @@ func StartServer(cfg config.Config, repoProvider services.RepositoryProvider, ex
 		log.Warn().Msg("No token signing key configured. Using placeholder - REPLACE IN PRODUCTION.")
 		tokenSigner.AddKeySigner("temporary-secret-for-hs256-change-me")
 	}
+	return tokenSigner
+}
+
+// StartServer initializes and starts the SSO HTTP server.
+// It handles TokenSigner initialization, SSOServerOptions creation,
+// and returns a running *http.Server.
+// The caller is responsible for Shutdown().
+func StartServer(cfg config.Config, repoProvider services.RepositoryProvider, extraOpts ...ServerOption) (*http.Server, error) {
+	// Map internal config to public api.OpenIDProviderConfig
+	oidcConfig := cfg.ToOpenIDProviderConfig()
+
+	// Initialize TokenSigner (potentially from file/env)
+	tokenSigner := newTokenSigner(cfg)
 
 	// Get encryption key for configuration service
 	encryptionKey := cfg.ConfigEncryptionKey
@@ -66,11 +71,11 @@ func StartServer(cfg config.Config, repoProvider services.RepositoryProvider, ex
 			}
 			return cache.NewMemoryTokenStore(oidcConfig.AccessTokenTTL)
 		}(),
-		PkceRepository:     nil, // Let NewSSOServer default to in-memory
-		FlowStore:          nil, // Let NewSSOServer default to in-memory
-		UserSessionStore:   nil, // Let NewSSOServer default to in-memory
-		EncryptionKey:      encryptionKey,
-		ExtraMiddlewares:   nil,
+		PkceRepository:   nil, // Let NewSSOServer default to in-memory
+		FlowStore:        nil, // Let NewSSOServer default to in-memory
+		UserSessionStore: nil, // Let NewSSOServer default to in-memory
+		EncryptionKey:    encryptionKey,
+		ExtraMiddlewares: nil,
 	}
 
 	// Apply functional options

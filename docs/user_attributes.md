@@ -356,10 +356,12 @@ tokenService := services.NewTokenService(
     userRepo,
     userAttrMapperRepo,  // Can be nil
     userAttrRepo,       // Can be nil
+    groupRepo,          // Can be nil
+    roleRepo,           // Can be nil
 )
 ```
 
-If repositories are nil, attribute mappers are skipped (backward compatible).
+If repositories are nil, attribute mappers and group/role claims are skipped (backward compatible).
 
 ## Indexes
 

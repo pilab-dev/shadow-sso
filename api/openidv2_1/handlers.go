@@ -54,9 +54,20 @@ type OAuth2API struct {
 	clientRepo          domain.ClientRepository
 	cookieSigningSecret string
 
+	tokenSigner         *services.TokenSigner
+	sessionRepo         domain.SessionRepository
+	bootstrapToken      string
+	backchannelNotifier BackchannelLogoutNotifier
+
 	brandLogo  string
 	brandName  string
 	brandColor string
+}
+
+// BackchannelLogoutNotifier dispatches OIDC back-channel logout tokens to a
+// client's backchannel logout endpoint.
+type BackchannelLogoutNotifier interface {
+	NotifyLogout(ctx context.Context, client *domain.Client, logoutToken string) error
 }
 
 type OAuth2APIOptions struct {
@@ -77,6 +88,11 @@ type OAuth2APIOptions struct {
 	BrandLogoURL          string
 	BrandOrganizationName string
 	BrandPrimaryColor     string
+
+	TokenSigner               *services.TokenSigner
+	SessionRepo               domain.SessionRepository
+	BootstrapToken            string
+	BackchannelLogoutNotifier BackchannelLogoutNotifier
 }
 
 // NewOAuth2API initializes the OAuth2 API.
@@ -108,6 +124,10 @@ func NewOAuth2API(
 		realmKeysRepo:       opts.RealmKeysRepo,
 		clientRepo:          opts.ClientRepo,
 		cookieSigningSecret: opts.CookieSigningSecret,
+		tokenSigner:         opts.TokenSigner,
+		sessionRepo:         opts.SessionRepo,
+		bootstrapToken:      opts.BootstrapToken,
+		backchannelNotifier: opts.BackchannelLogoutNotifier,
 		brandLogo:           opts.BrandLogoURL,
 		brandName:           opts.BrandOrganizationName,
 		brandColor:          opts.BrandPrimaryColor,
@@ -126,6 +146,13 @@ func (oa *OAuth2API) RegisterRoutes(e *gin.Engine) {
 	e.POST("/oauth2/userinfo", oa.UserInfoHandler)
 	e.POST("/oauth2/revoke", oa.RevokeHandler)
 	e.POST("/oauth2/introspect", oa.IntrospectHandler)
+
+	if oa.config.EnabledEndpoints.EndSession {
+		e.GET("/oauth2/logout", oa.LogoutHandler)
+	}
+	if oa.config.EnabledEndpoints.Registration {
+		e.POST("/oauth2/register", oa.RegisterHandler)
+	}
 
 	// OpenID Configuration endpoints
 	e.GET("/.well-known/openid-configuration", oa.OpenIDConfigurationHandler)

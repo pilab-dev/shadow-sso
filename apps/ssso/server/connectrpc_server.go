@@ -16,8 +16,10 @@ import (
 
 	"connectrpc.com/otelconnect" // Import for OpenTelemetry Connect interceptor
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	sssogin "github.com/pilab-dev/shadow-sso/api/openidv2_1" // Ensure domain is imported
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
+	"github.com/pilab-dev/shadow-sso/internal/oidclogout"
 	"github.com/pilab-dev/shadow-sso/middleware"
 	pkgauth "github.com/pilab-dev/shadow-sso/pkg/auth"
 	"github.com/pilab-dev/shadow-sso/services"
@@ -212,6 +214,10 @@ func Start(cfg ServerConfig, repoProvider services.RepositoryProvider) error {
 	appOIDCConfig.KeyRotationPeriod = cfg.AppConfig.KeyRotationInterval
 	// ... map other relevant fields from cfg.AppConfig to appOIDCConfig ...
 
+	// Token signer over the same keys StartServer uses so logout can verify
+	// id_token_hint values issued by either server.
+	tokenSigner := newTokenSigner(cfg.AppConfig)
+
 	oauth2apiOptions := &sssogin.OAuth2APIOptions{
 		OAuthService:      sp.OAuthService(),
 		JSKSService:       sp.JWKSService(),
@@ -224,6 +230,14 @@ func Start(cfg ServerConfig, repoProvider services.RepositoryProvider) error {
 		PasswordHasher:    passwordHasher,         // PasswordHasher from SP
 		FederationService: sp.FederationService(), // Get from ServiceProvider
 		TokenService:      tokenService,           // TokenService from SP
+		RealmKeysRepo:     repoProvider.RealmKeysRepository(ctx),
+		ClientRepo:        repoProvider.ClientRepository(ctx),
+		TokenSigner:       tokenSigner,
+		SessionRepo:       repoProvider.SessionRepository(ctx),
+		BootstrapToken:    cfg.AppConfig.BootstrapToken,
+		BackchannelLogoutNotifier: oidclogout.NewNotifier(appOIDCConfig.Issuer, func(claims jwt.Claims) (string, error) {
+			return tokenSigner.Sign(claims, "")
+		}),
 	}
 	oauth2api := sssogin.NewOAuth2API(oauth2apiOptions)
 

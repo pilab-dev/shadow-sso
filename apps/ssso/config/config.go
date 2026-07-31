@@ -78,8 +78,8 @@ type Config struct {
 	BootstrapToken string `mapstructure:"bootstrap_token"`
 
 	// Rate limiting
-	RateLimitMaxAttempts      int           `mapstructure:"rate_limit_max_attempts"`
-	RateLimitLockoutDuration  time.Duration `mapstructure:"rate_limit_lockout_duration"`
+	RateLimitMaxAttempts     int           `mapstructure:"rate_limit_max_attempts"`
+	RateLimitLockoutDuration time.Duration `mapstructure:"rate_limit_lockout_duration"`
 
 	// CORS configuration
 	AllowedOrigins []string `mapstructure:"allowed_origins"`
@@ -115,6 +115,8 @@ func (c *Config) ToOpenIDProviderConfig() *api.OpenIDProviderConfig {
 			Revocation:          true,
 			Introspection:       true,
 			DeviceAuthorization: true,
+			EndSession:          true,
+			Registration:        true,
 		},
 		EnabledGrantTypes: api.GrantTypesConfig{
 			AuthorizationCode: true,

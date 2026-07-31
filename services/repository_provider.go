@@ -34,6 +34,11 @@ type RepositoryProvider interface {
 	IdPRepository(ctx context.Context) domain.IdPRepository
 	ConfigurationRepository(ctx context.Context) domain.ConfigurationRepository
 
+	// Keycloak-style repositories
+	GroupRepository(ctx context.Context) domain.GroupRepository
+	RoleRepository(ctx context.Context) domain.RoleRepository
+	RealmKeysRepository(ctx context.Context) domain.RealmKeysRepository
+
 	// Health check
 	Ping(ctx context.Context) error
 

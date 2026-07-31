@@ -1,5 +1,7 @@
 package domain
 
+//go:generate go run go.uber.org/mock/mockgen@latest -source=$GOFILE -destination=mocks/mock_keycloak_types.go -package=mock_domain GroupRepository,RoleRepository
+
 import (
 	"context"
 	"time"
@@ -47,6 +49,9 @@ type Group struct {
 	RealmRoles []string            `bson:"realm_roles,omitempty" json:"realmRoles,omitempty"`
 	ClientRoles map[string][]string `bson:"client_roles,omitempty" json:"clientRoles,omitempty"`
 
+	// Keycloak-style custom attributes for this group
+	Attributes map[string]any `bson:"attributes,omitempty" json:"attributes,omitempty"`
+
 	// Member IDs (for quick lookup)
 	MemberIDs []string `bson:"member_ids,omitempty" json:"memberIds,omitempty"`
 }
@@ -59,6 +64,9 @@ type GroupRepository interface {
 	UpdateGroup(ctx context.Context, group *Group) error
 	DeleteGroup(ctx context.Context, id string) error
 	ListGroups(ctx context.Context) ([]*Group, error)
+	// GetGroupsByUserID returns all groups the user is a member of (groups are
+	// flat — membership is tracked via Group.MemberIDs).
+	GetGroupsByUserID(ctx context.Context, userID string) ([]*Group, error)
 	AddMember(ctx context.Context, groupID, userID string) error
 	RemoveMember(ctx context.Context, groupID, userID string) error
 	GetMemberCount(ctx context.Context, groupID string) (int64, error)

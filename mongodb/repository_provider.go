@@ -37,6 +37,9 @@ type MongoRepositoryProvider struct {
 	flowStore          domain.FlowStore
 	userSessionStore   domain.UserSessionStore
 	tokenCache         cache.TokenStore
+	groupRepo          domain.GroupRepository
+	roleRepo           domain.RoleRepository
+	realmKeysRepo      domain.RealmKeysRepository
 }
 
 // NewMongoRepositoryProvider creates a new instance of MongoRepositoryProvider.
@@ -259,6 +262,39 @@ func (p *MongoRepositoryProvider) ClientRepository(ctx context.Context) domain.C
 // (e.g., GraphQL resolver creation).
 func (p *MongoRepositoryProvider) Database() *mongo.Database {
 	return p.db
+}
+
+// GroupRepository returns a MongoDB-backed GroupRepository.
+func (p *MongoRepositoryProvider) GroupRepository(ctx context.Context) domain.GroupRepository {
+	if p.groupRepo == nil && p.db != nil {
+		repo, err := NewGroupRepository(ctx, p.db)
+		if err == nil {
+			p.groupRepo = repo
+		}
+	}
+	return p.groupRepo
+}
+
+// RoleRepository returns a MongoDB-backed RoleRepository.
+func (p *MongoRepositoryProvider) RoleRepository(ctx context.Context) domain.RoleRepository {
+	if p.roleRepo == nil && p.db != nil {
+		repo, err := NewRoleRepository(ctx, p.db)
+		if err == nil {
+			p.roleRepo = repo
+		}
+	}
+	return p.roleRepo
+}
+
+// RealmKeysRepository returns a MongoDB-backed RealmKeysRepository.
+func (p *MongoRepositoryProvider) RealmKeysRepository(ctx context.Context) domain.RealmKeysRepository {
+	if p.realmKeysRepo == nil && p.db != nil {
+		repo, err := NewRealmKeysRepository(ctx, p.db)
+		if err == nil {
+			p.realmKeysRepo = repo
+		}
+	}
+	return p.realmKeysRepo
 }
 
 // ConfigurationRepository returns a MongoDB-backed ConfigurationRepository.

@@ -275,7 +275,7 @@ func TestAuthServer_Login_Success_GeneratesTokens(t *testing.T) {
 
 	mockUserRepo.EXPECT().GetUserByEmail(gomock.Any(), email).Return(user, nil)
 	mockPasswordHasher.EXPECT().Verify(user.PasswordHash, "password123").Return(nil)
-	mockTokenService.EXPECT().GenerateTokenPair(gomock.Any(), "sso-default-client", user.ID, "openid profile email offline_access", time.Hour).Return(&api.TokenResponse{
+	mockTokenService.EXPECT().GenerateTokenPair(gomock.Any(), "sso-default-client", user.ID, "openid profile email offline_access", time.Hour, gomock.Any()).Return(&api.TokenResponse{
 		AccessToken:  "access-token",
 		RefreshToken: "refresh-token",
 		IDToken:      "id-token",

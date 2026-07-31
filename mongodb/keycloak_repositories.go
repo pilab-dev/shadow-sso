@@ -293,6 +293,23 @@ func (r *GroupRepository) GetMemberCount(ctx context.Context, groupID string) (i
 	return int64(len(group.MemberIDs)), nil
 }
 
+func (r *GroupRepository) GetGroupsByUserID(ctx context.Context, userID string) ([]*domain.Group, error) {
+	cursor, err := r.groups.Find(ctx, bson.M{"member_ids": userID})
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var groups []*domain.Group
+	if err := cursor.All(ctx, &groups); err != nil {
+		return nil, err
+	}
+	if groups == nil {
+		groups = []*domain.Group{}
+	}
+	return groups, nil
+}
+
 func (r *GroupRepository) AddRealmRole(ctx context.Context, groupID, roleID string) error {
 	return r.groups.FindOneAndUpdate(
 		ctx,
@@ -749,4 +766,44 @@ func (r *RealmKeysRepository) UpdateRealmKeys(ctx context.Context, keys []*domai
 	}
 	_, err = r.keys.InsertMany(ctx, docs)
 	return err
+}
+// SeedDefaultRealmRoles ensures the given role names exist as realm role
+// documents. Existing roles are left untouched, making the seed idempotent.
+func SeedDefaultRealmRoles(ctx context.Context, roleRepo domain.RoleRepository, names ...string) error {
+	for _, name := range names {
+		existing, err := roleRepo.GetRoleByName(ctx, name)
+		if err == nil && existing != nil {
+			continue
+		}
+		now := time.Now().UTC()
+		role := &domain.Role{
+			ID:         NewID(),
+			Name:       name,
+			ClientRole: false,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		}
+		if err := roleRepo.CreateRole(ctx, role); err != nil {
+			return fmt.Errorf("failed to seed realm role %q: %w", name, err)
+		}
+	}
+	return nil
+}
+
+// SeedDefaultGroup ensures a group with the given name and path exists.
+// An existing group at the same path is left untouched (idempotent).
+func SeedDefaultGroup(ctx context.Context, groupRepo domain.GroupRepository, name, path string) error {
+	existing, err := groupRepo.GetGroupByPath(ctx, path)
+	if err == nil && existing != nil {
+		return nil
+	}
+	group := &domain.Group{
+		ID:   NewID(),
+		Name: name,
+		Path: path,
+	}
+	if err := groupRepo.CreateGroup(ctx, group); err != nil {
+		return fmt.Errorf("failed to seed default group %q: %w", path, err)
+	}
+	return nil
 }

@@ -17,9 +17,10 @@ var ErrInvalidRSAKey = errors.New("invalid RSA key")
 type TokenSignerFunc func(claims jwt.Claims) (string, error)
 
 type TokenSigner struct {
-	keys       map[string]TokenSignerFunc
-	rsaPrivKey *rsa.PrivateKey
-	rsaPubKey  *rsa.PublicKey
+	keys        map[string]TokenSignerFunc
+	rsaPrivKey  *rsa.PrivateKey
+	rsaPubKey   *rsa.PublicKey
+	hs256Secret []byte
 }
 
 // NewTokenSigner creates a new Signer instance
@@ -30,6 +31,7 @@ func NewTokenSigner() *TokenSigner {
 }
 
 func (s *TokenSigner) AddKeySigner(secretKey string) {
+	s.hs256Secret = []byte(secretKey)
 	s.keys["default"] = func(claims jwt.Claims) (string, error) {
 		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
@@ -125,4 +127,35 @@ func (s *TokenSigner) Sign(claims jwt.Claims, keyID string) (string, error) {
 	}
 
 	return "", ErrInvalidKeyID
+}
+
+// VerifyToken verifies a JWT signature against the signer's configured keys
+// (HS256 via the shared secret, RS256 via the RSA public key) and validates
+// standard exp/nbf claims.
+func (s *TokenSigner) VerifyToken(tokenString string) (jwt.MapClaims, error) {
+	claims := jwt.MapClaims{}
+	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+		switch token.Method.(type) {
+		case *jwt.SigningMethodHMAC:
+			if s.hs256Secret == nil {
+				return nil, errors.New("no HS256 secret configured for verification")
+			}
+			return s.hs256Secret, nil
+		case *jwt.SigningMethodRSA:
+			if s.rsaPubKey == nil {
+				return nil, errors.New("no RSA public key configured for verification")
+			}
+			return s.rsaPubKey, nil
+		default:
+			return nil, fmt.Errorf("unsupported signing method: %v", token.Header["alg"])
+		}
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg(), jwt.SigningMethodRS256.Alg()}))
+
+	if err != nil {
+		return nil, fmt.Errorf("token verification failed: %w", err)
+	}
+	if !token.Valid {
+		return nil, errors.New("token is invalid")
+	}
+	return claims, nil
 }

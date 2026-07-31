@@ -107,7 +107,7 @@ func (s *UserServer) RegisterUser(ctx context.Context, req *connect.Request[ssov
 		FirstName:    req.Msg.GetFirstName(),
 		LastName:     req.Msg.GetLastName(),
 		Status:       domain.UserStatusPending, // Require activation
-		Roles:        []string{"user"},         // Default role
+		Roles:        []string{rbac.RoleUser},  // Default role
 	}
 
 	// 5. Save user with userRepo.CreateUser

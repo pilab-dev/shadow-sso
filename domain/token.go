@@ -35,4 +35,5 @@ type Token struct {
 	IsRevoked  bool      `bson:"is_revoked" json:"is_revoked"`
 	Issuer     string    `bson:"issuer,omitempty" json:"issuer,omitempty"`
 	Roles      []string  `bson:"roles,omitempty" json:"roles,omitempty"`
+	SessionID  string    `bson:"session_id,omitempty" json:"session_id,omitempty"`
 }

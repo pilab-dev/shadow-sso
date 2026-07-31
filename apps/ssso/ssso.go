@@ -17,6 +17,7 @@ import (
 	"github.com/pilab-dev/shadow-sso/apps/ssso/config"
 	"github.com/pilab-dev/shadow-sso/apps/ssso/server"
 	"github.com/pilab-dev/shadow-sso/domain"
+	"github.com/pilab-dev/shadow-sso/internal/auth/rbac"
 	"github.com/pilab-dev/shadow-sso/internal/metrics"
 	"github.com/pilab-dev/shadow-sso/internal/telemetry"
 	"github.com/pilab-dev/shadow-sso/middleware"
@@ -167,6 +168,19 @@ func main() {
 		log.Warn().Err(err).Msg("Failed to bootstrap default configurations, some features may not work correctly")
 	} else {
 		log.Info().Msg("Default configurations bootstrapped successfully")
+	}
+
+	// Seed default realm roles (ROLE_ADMIN/ROLE_USER) and the default group (idempotent)
+	seedCtx := context.Background()
+	if err := mongodb.SeedDefaultRealmRoles(seedCtx, repoProvider.RoleRepository(seedCtx), rbac.RoleAdmin, rbac.RoleUser); err != nil {
+		log.Warn().Err(err).Msg("Failed to seed default realm roles, role mappings may be incomplete")
+	} else {
+		log.Info().Msg("Default realm roles seeded")
+	}
+	if err := mongodb.SeedDefaultGroup(seedCtx, repoProvider.GroupRepository(seedCtx), "default", "/default"); err != nil {
+		log.Warn().Err(err).Msg("Failed to seed default group")
+	} else {
+		log.Info().Msg("Default group seeded")
 	}
 
 	// Bootstrap initial admin user and client from environment variables

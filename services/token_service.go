@@ -7,6 +7,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -42,6 +43,10 @@ type defaultTokenService struct {
 	// For user attribute mappers (optional - nil checks when not configured)
 	userAttrMapperRepo domain.UserAttributeMapperRepository
 	userAttrRepo       domain.UserAttributeRepository
+
+	// For Keycloak-style role & group claims (optional - nil checks when not configured)
+	groupRepo domain.GroupRepository
+	roleRepo  domain.RoleRepository
 }
 
 // newDefaultTokenService creates a new TokenService instance (internal constructor).
@@ -53,6 +58,8 @@ func newDefaultTokenService(
 	pubKeyRepo domain.PublicKeyRepository,
 	saRepo domain.ServiceAccountRepository,
 	userRepo domain.UserRepository,
+	groupRepo domain.GroupRepository,
+	roleRepo domain.RoleRepository,
 ) *defaultTokenService {
 	return &defaultTokenService{
 		repo:       repo,
@@ -62,6 +69,8 @@ func newDefaultTokenService(
 		pubKeyRepo: pubKeyRepo,
 		saRepo:     saRepo,
 		userRepo:   userRepo,
+		groupRepo:  groupRepo,
+		roleRepo:   roleRepo,
 	}
 }
 
@@ -76,6 +85,8 @@ func NewTokenService(
 	userRepo domain.UserRepository,
 	userAttrMapperRepo domain.UserAttributeMapperRepository,
 	userAttrRepo domain.UserAttributeRepository,
+	groupRepo domain.GroupRepository,
+	roleRepo domain.RoleRepository,
 ) *defaultTokenService {
 	return &defaultTokenService{
 		repo:       repo,
@@ -87,6 +98,8 @@ func NewTokenService(
 		userRepo:  userRepo,
 		userAttrMapperRepo: userAttrMapperRepo,
 		userAttrRepo: userAttrRepo,
+		groupRepo:  groupRepo,
+		roleRepo:   roleRepo,
 	}
 }
 
@@ -99,6 +112,7 @@ func toCacheEntry(t *domain.Token) *cache.TokenEntry { // Ensure cache pkg is im
 		Scope: t.Scope, ExpiresAt: t.ExpiresAt, IsRevoked: t.IsRevoked,
 		Roles: t.Roles, // Add Roles
 		// Issuer and other fields not in TokenEntry are omitted
+		SessionID: t.SessionID,
 	}
 }
 
@@ -116,6 +130,7 @@ func fromCacheEntry(entry *cache.TokenEntry, tokenValue string) *domain.Token { 
 		ExpiresAt:  entry.ExpiresAt,
 		IsRevoked:  entry.IsRevoked,
 		Roles:      entry.Roles,
+		SessionID:  entry.SessionID,
 		TokenValue: tokenValue, // Pass tokenValue if needed for context
 		// TokenType, CreatedAt, LastUsedAt, Issuer would need to be set if required by caller
 	}
@@ -175,7 +190,14 @@ func (s *defaultTokenService) CreateToken(ctx context.Context, opts domain.Creat
 			if len(userRoles) > 0 {
 				tokenClaimsMap["roles"] = userRoles
 			}
+			if opts.TokenType == api.TokenTypeAccessToken {
+				s.applyRoleAndGroupClaims(ctx, tokenClaimsMap, opts, user)
+			}
 		}
+	}
+
+	if opts.SessionID != "" {
+		tokenClaimsMap["sid"] = opts.SessionID
 	}
 
 	// Apply token attribute mappers for access tokens
@@ -207,6 +229,7 @@ func (s *defaultTokenService) CreateToken(ctx context.Context, opts domain.Creat
 		CreatedAt:  time.Now(),
 		LastUsedAt: time.Now(),
 		Roles:      userRoles, // Store roles in the token struct
+		SessionID:  opts.SessionID,
 	}
 		if err := s.repo.StoreToken(ctx, token); err != nil {
 			telemetry.RecordSpanError(span, err, "failed to store token")
@@ -224,6 +247,89 @@ func (s *defaultTokenService) CreateToken(ctx context.Context, opts domain.Creat
 		metrics.TokensCreatedTotal.Inc()
 	}
 	return token, nil
+}
+
+// applyRoleAndGroupClaims adds Keycloak-style role claims to an access token:
+// realm_access.roles (user roles + group-derived realm roles) and
+// resource_access.<clientID>.roles (user client roles + group-derived client
+// roles). Group role references are role IDs and are resolved to names via the
+// role repository. Both repositories are optional; when either is nil the
+// claims are skipped (backward compatible).
+func (s *defaultTokenService) applyRoleAndGroupClaims(ctx context.Context, tokenClaimsMap jwt.MapClaims, opts domain.CreateTokenOptions, user *domain.User) {
+	if s.groupRepo == nil || s.roleRepo == nil {
+		return
+	}
+
+	realmRoles := make(map[string]bool)
+	for _, name := range user.Roles {
+		if name != "" {
+			realmRoles[name] = true
+		}
+	}
+
+	clientRoles := make(map[string]map[string]bool)
+	for clientID, names := range user.ClientRoles {
+		for _, name := range names {
+			if name == "" {
+				continue
+			}
+			if clientRoles[clientID] == nil {
+				clientRoles[clientID] = make(map[string]bool)
+			}
+			clientRoles[clientID][name] = true
+		}
+	}
+
+	groups, err := s.groupRepo.GetGroupsByUserID(ctx, opts.UserID)
+	if err != nil {
+		log.Ctx(ctx).Warn().Err(err).Str("userID", opts.UserID).Msg("CreateToken: failed to get groups for role claims, proceeding without group-derived roles.")
+	}
+
+	for _, group := range groups {
+		for _, roleID := range group.RealmRoles {
+			role, errRole := s.roleRepo.GetRoleByID(ctx, roleID)
+			if errRole != nil || role == nil {
+				continue
+			}
+			realmRoles[role.Name] = true
+		}
+		for clientID, roleIDs := range group.ClientRoles {
+			for _, roleID := range roleIDs {
+				role, errRole := s.roleRepo.GetRoleByID(ctx, roleID)
+				if errRole != nil || role == nil {
+					continue
+				}
+				if clientRoles[clientID] == nil {
+					clientRoles[clientID] = make(map[string]bool)
+				}
+				clientRoles[clientID][role.Name] = true
+			}
+		}
+	}
+
+	if len(realmRoles) > 0 {
+		tokenClaimsMap["realm_access"] = map[string]any{
+			"roles": sortedKeys(realmRoles),
+		}
+	}
+	if len(clientRoles) > 0 {
+		resourceAccess := make(map[string]any)
+		for clientID, roles := range clientRoles {
+			resourceAccess[clientID] = map[string]any{
+				"roles": sortedKeys(roles),
+			}
+		}
+		tokenClaimsMap["resource_access"] = resourceAccess
+	}
+}
+
+func sortedKeys(set map[string]bool) []string {
+	keys := make([]string, 0, len(set))
+	for k := range set {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // BuildToken builds the token value for an existing token struct.
@@ -342,9 +448,12 @@ func (s *defaultTokenService) BuildToken(token *domain.Token) error { // Changed
 // 	}, nil
 // }
 
-// GenerateTokenPair creates a new access and refresh token pair
+// GenerateTokenPair creates a new access and refresh token pair. sessionID, when
+// non-empty, is emitted as the `sid` claim on the access, refresh, and ID
+// tokens so RP-initiated and back-channel logout can correlate the session
+// (see internal/oidclogout and api/openidv2_1/logout_register.go).
 func (s *defaultTokenService) GenerateTokenPair(ctx context.Context,
-	clientID, userID, scope string, tokenTTL time.Duration,
+	clientID, userID, scope string, tokenTTL time.Duration, sessionID string,
 ) (*api.TokenResponse, error) {
 	ctx, span := telemetry.StartSpan(ctx, tokenTracerName, "GenerateTokenPair",
 		attribute.String("user.id", userID),
@@ -363,6 +472,7 @@ func (s *defaultTokenService) GenerateTokenPair(ctx context.Context,
 		TokenType:    api.TokenTypeAccessToken,
 		ExpireIn:     tokenTTL,
 		SigningKeyID: "", // Use default key
+		SessionID:    sessionID,
 	}, nil) // claims can be nil, CreateToken will make its own MapClaims
 	if err != nil {
 			telemetry.RecordSpanError(span, err, "failed to create access token")
@@ -381,6 +491,7 @@ func (s *defaultTokenService) GenerateTokenPair(ctx context.Context,
 		TokenType:    api.TokenTypeRefreshToken,
 		ExpireIn:     refreshTokenTTL,
 		SigningKeyID: "", // Use default key
+		SessionID:    sessionID,
 	}, nil)
 	if err != nil {
 			telemetry.RecordSpanError(span, err, "failed to create refresh token")
@@ -393,7 +504,7 @@ func (s *defaultTokenService) GenerateTokenPair(ctx context.Context,
 
 	var idToken string
 	if strings.Contains(scope, "openid") {
-		idToken, err = s.GenerateIDToken(ctx, userID, clientID, "", time.Now(), scope)
+		idToken, err = s.GenerateIDToken(ctx, userID, clientID, "", sessionID, time.Now(), scope)
 		if err != nil {
 			log.Ctx(ctx).Warn().Err(err).Msg("failed to generate ID token, continuing without it")
 			idToken = ""
@@ -655,7 +766,7 @@ func (s *defaultTokenService) GetAccessTokenInfo(ctx context.Context, tokenValue
 }
 
 // GenerateIDToken generates an ID token for a user.
-func (s *defaultTokenService) GenerateIDToken(ctx context.Context, userID, clientID, nonce string, authTime time.Time, scope string) (string, error) {
+func (s *defaultTokenService) GenerateIDToken(ctx context.Context, userID, clientID, nonce, sessionID string, authTime time.Time, scope string) (string, error) {
 	_, span := telemetry.StartSpan(ctx, tokenTracerName, "GenerateIDToken",
 		attribute.String("user.id", userID),
 	)
@@ -693,6 +804,10 @@ func (s *defaultTokenService) GenerateIDToken(ctx context.Context, userID, clien
 
 	if nonce != "" {
 		claims["nonce"] = nonce
+	}
+
+	if sessionID != "" {
+		claims["sid"] = sessionID
 	}
 
 	scopes := strings.Split(scope, " ")

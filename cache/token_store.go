@@ -21,6 +21,7 @@ type TokenEntry struct {
 	CreatedAt  time.Time `redis:"createdAt"`       // Creation timestamp
 	LastUsedAt time.Time `redis:"lastUsedAt"`      // Last usage timestamp
 	Roles      []string  `redis:"roles,omitempty"` // New field
+	SessionID  string    `redis:"sessionId,omitempty"`
 }
 
 // HashToken generates a SHA256 hash of the token value.

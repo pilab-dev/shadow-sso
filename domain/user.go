@@ -73,6 +73,7 @@ type User struct {
 	FirstName           string     `bson:"first_name,omitempty" json:"first_name,omitempty"`
 	LastName            string     `bson:"last_name,omitempty" json:"last_name,omitempty"`
 	Roles               []string   `bson:"roles,omitempty" json:"roles,omitempty"`
+	ClientRoles         map[string][]string `bson:"client_roles,omitempty" json:"client_roles,omitempty"`
 	CreatedAt           time.Time  `bson:"created_at" json:"created_at"`
 	UpdatedAt           time.Time  `bson:"updated_at" json:"updated_at"`
 	LastLoginAt         *time.Time `bson:"last_login_at,omitempty" json:"last_login_at,omitempty"`

@@ -366,33 +366,33 @@ func (mr *MockTokenServiceMockRecorder) CreateToken(ctx, opts, claims any) *gomo
 }
 
 // GenerateIDToken mocks base method.
-func (m *MockTokenService) GenerateIDToken(ctx context.Context, userID, clientID, nonce string, authTime time.Time, scope string) (string, error) {
+func (m *MockTokenService) GenerateIDToken(ctx context.Context, userID, clientID, nonce, sessionID string, authTime time.Time, scope string) (string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GenerateIDToken", ctx, userID, clientID, nonce, authTime, scope)
+	ret := m.ctrl.Call(m, "GenerateIDToken", ctx, userID, clientID, nonce, sessionID, authTime, scope)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GenerateIDToken indicates an expected call of GenerateIDToken.
-func (mr *MockTokenServiceMockRecorder) GenerateIDToken(ctx, userID, clientID, nonce, authTime, scope any) *gomock.Call {
+func (mr *MockTokenServiceMockRecorder) GenerateIDToken(ctx, userID, clientID, nonce, sessionID, authTime, scope any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GenerateIDToken", reflect.TypeOf((*MockTokenService)(nil).GenerateIDToken), ctx, userID, clientID, nonce, authTime, scope)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GenerateIDToken", reflect.TypeOf((*MockTokenService)(nil).GenerateIDToken), ctx, userID, clientID, nonce, sessionID, authTime, scope)
 }
 
 // GenerateTokenPair mocks base method.
-func (m *MockTokenService) GenerateTokenPair(ctx context.Context, clientID, userID, scope string, tokenTTL time.Duration) (*api.TokenResponse, error) {
+func (m *MockTokenService) GenerateTokenPair(ctx context.Context, clientID, userID, scope string, tokenTTL time.Duration, sessionID string) (*api.TokenResponse, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GenerateTokenPair", ctx, clientID, userID, scope, tokenTTL)
+	ret := m.ctrl.Call(m, "GenerateTokenPair", ctx, clientID, userID, scope, tokenTTL, sessionID)
 	ret0, _ := ret[0].(*api.TokenResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GenerateTokenPair indicates an expected call of GenerateTokenPair.
-func (mr *MockTokenServiceMockRecorder) GenerateTokenPair(ctx, clientID, userID, scope, tokenTTL any) *gomock.Call {
+func (mr *MockTokenServiceMockRecorder) GenerateTokenPair(ctx, clientID, userID, scope, tokenTTL, sessionID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GenerateTokenPair", reflect.TypeOf((*MockTokenService)(nil).GenerateTokenPair), ctx, clientID, userID, scope, tokenTTL)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GenerateTokenPair", reflect.TypeOf((*MockTokenService)(nil).GenerateTokenPair), ctx, clientID, userID, scope, tokenTTL, sessionID)
 }
 
 // GenerateTokenPairWithFamily mocks base method.

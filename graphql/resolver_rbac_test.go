@@ -69,6 +69,9 @@ func (s *stubGroupRepo) DeleteGroup(_ context.Context, _ string) error       { r
 func (s *stubGroupRepo) ListGroups(_ context.Context) ([]*domain.Group, error) {
 	return nil, nil
 }
+func (s *stubGroupRepo) GetGroupsByUserID(_ context.Context, _ string) ([]*domain.Group, error) {
+	return nil, nil
+}
 func (s *stubGroupRepo) AddMember(_ context.Context, _, _ string) error    { return nil }
 func (s *stubGroupRepo) RemoveMember(_ context.Context, _, _ string) error { return nil }
 func (s *stubGroupRepo) GetMemberCount(_ context.Context, _ string) (int64, error) {

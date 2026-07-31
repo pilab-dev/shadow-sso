@@ -105,6 +105,8 @@ flowStore := oidcflow.NewInMemoryFlowStore()
 		mockUserRepo,
 		nil,
 		nil,
+		nil, // groupRepo
+		nil, // roleRepo
 	)
 
 	// OAuthService initialization
@@ -817,8 +819,8 @@ func TestTokenHandler_PublicClient_NoSecretProvided(t *testing.T) {
 	mockAuthCodeRepo.EXPECT().MarkAuthCodeAsUsed(gomock.Any(), authCodeVal).Return(nil)
 	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), userID).AnyTimes().Return(&domain.User{ID: userID, Email: "public@example.com", Roles: []string{"user"}}, nil)
 	// mockSessionRepo.EXPECT().StoreSession(context.Background(), gomock.Any()).Return(nil) // Not called in this path by default
-	mockTokenRepo.EXPECT().StoreToken(context.Background(), gomock.Any()).Times(2).Return(nil)
-	mockTokenCache.EXPECT().Set(context.Background(), gomock.Any()).Return(nil)
+	mockTokenRepo.EXPECT().StoreToken(gomock.Any(), gomock.Any()).Times(2).Return(nil)
+	mockTokenCache.EXPECT().Set(gomock.Any(), gomock.Any()).Return(nil)
 
 	data := url.Values{}
 	data.Set("grant_type", "authorization_code")

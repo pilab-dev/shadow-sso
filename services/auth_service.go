@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/google/uuid"
 	"github.com/pilab-dev/shadow-sso/client"
 	"github.com/pilab-dev/shadow-sso/domain"
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
@@ -239,7 +240,8 @@ func (s *AuthServer) completeLogin(ctx context.Context, user *domain.User) (*con
 	scope := "openid profile email offline_access" // Standard OIDC scopes + offline for refresh token
 	tokenTTL := 1 * time.Hour                      // Example access token TTL
 
-	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, user.ID, scope, tokenTTL)
+	sessionID := uuid.NewString()
+	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, user.ID, scope, tokenTTL, sessionID)
 	if err != nil {
 		logger.Error().Err(err).Str("userID", user.ID).Msg("completeLogin: Failed to generate token pair")
 		audit.Log("AuthService", "LoginComplete", user.ID, user.ID, "Failed to generate token pair", false, err)
@@ -248,10 +250,13 @@ func (s *AuthServer) completeLogin(ctx context.Context, user *domain.User) (*con
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("could not generate tokens: %w", err))
 	}
 
-	// Create and store session
+	// Create and store session. The session ID doubles as the `sid` claim on
+	// the issued tokens (see GenerateTokenPair above) so RP-initiated/
+	// back-channel logout can correlate and revoke it later.
 	session := &domain.Session{
+		ID:           sessionID,
 		UserID:       user.ID,
-		TokenID:      "", // TODO: Extract JTI from access token (tokenPair.AccessToken) to use as session.TokenID
+		TokenID:      sessionID,
 		RefreshToken: tokenPair.RefreshToken,
 		// TODO: Populate IPAddress, UserAgent from ctx/request if available and desired
 		ExpiresAt: time.Now().Add(30 * 24 * time.Hour), // Example: Long session expiry, e.g., 30 days

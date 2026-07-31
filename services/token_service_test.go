@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/pilab-dev/shadow-sso/api"
 	"github.com/pilab-dev/shadow-sso/cache"
 	mock_cache "github.com/pilab-dev/shadow-sso/cache/mocks"
@@ -36,6 +37,8 @@ func createTokenService(ctrl *gomock.Controller) services.TokenService {
 		mockUserRepo,
 		nil, // userAttrMapperRepo
 		nil, // userAttrRepo
+		nil, // groupRepo
+		nil, // roleRepo
 	)
 }
 
@@ -78,6 +81,8 @@ func TestTokenService_CreateToken(t *testing.T) {
 		mockUserRepo,
 		nil,
 		nil,
+		nil, // groupRepo
+		nil, // roleRepo
 	)
 
 	token, err := ts.CreateToken(ctx, opts, nil)
@@ -110,6 +115,8 @@ func TestTokenService_CreateToken_WithRoles(t *testing.T) {
 		mockUserRepo,
 		nil,
 		nil,
+		nil, // groupRepo
+		nil, // roleRepo
 	)
 
 	ctx := context.Background()
@@ -160,6 +167,8 @@ func TestTokenService_GenerateTokenPair(t *testing.T) {
 		mockUserRepo,
 		nil,
 		nil,
+		nil, // groupRepo
+		nil, // roleRepo
 	)
 
 	ctx := context.Background()
@@ -176,7 +185,7 @@ func TestTokenService_GenerateTokenPair(t *testing.T) {
 		Roles: []string{"user"},
 	}, nil).AnyTimes()
 
-	resp, err := tokenService.GenerateTokenPair(ctx, clientID, userID, scope, tokenTTL)
+	resp, err := tokenService.GenerateTokenPair(ctx, clientID, userID, scope, tokenTTL, "")
 
 	require.NoError(t, err)
 	assert.NotNil(t, resp)
@@ -208,6 +217,8 @@ func TestTokenService_GenerateTokenPair_WithOpenID(t *testing.T) {
 		mockUserRepo,
 		nil,
 		nil,
+		nil, // groupRepo
+		nil, // roleRepo
 	)
 
 	ctx := context.Background()
@@ -224,7 +235,7 @@ func TestTokenService_GenerateTokenPair_WithOpenID(t *testing.T) {
 		Roles: []string{"user"},
 	}, nil).AnyTimes()
 
-	resp, err := tokenService.GenerateTokenPair(ctx, clientID, userID, scope, tokenTTL)
+	resp, err := tokenService.GenerateTokenPair(ctx, clientID, userID, scope, tokenTTL, "")
 
 	require.NoError(t, err)
 	assert.NotNil(t, resp)
@@ -254,6 +265,8 @@ func TestTokenService_GenerateTokenPair_WithoutOpenID(t *testing.T) {
 		mockUserRepo,
 		nil,
 		nil,
+		nil, // groupRepo
+		nil, // roleRepo
 	)
 
 	ctx := context.Background()
@@ -270,7 +283,7 @@ func TestTokenService_GenerateTokenPair_WithoutOpenID(t *testing.T) {
 		Roles: []string{"user"},
 	}, nil).AnyTimes()
 
-	resp, err := tokenService.GenerateTokenPair(ctx, clientID, userID, scope, tokenTTL)
+	resp, err := tokenService.GenerateTokenPair(ctx, clientID, userID, scope, tokenTTL, "")
 
 	require.NoError(t, err)
 	assert.NotNil(t, resp)
@@ -300,6 +313,8 @@ func TestTokenService_ValidateAccessToken_CacheHit(t *testing.T) {
 		mockUserRepo,
 		nil,
 		nil,
+		nil, // groupRepo
+		nil, // roleRepo
 	)
 
 	ctx := context.Background()
@@ -347,6 +362,8 @@ func TestTokenService_ValidateAccessToken_CacheMiss_RepoHit(t *testing.T) {
 		mockUserRepo,
 		nil,
 		nil,
+		nil, // groupRepo
+		nil, // roleRepo
 	)
 
 	ctx := context.Background()
@@ -397,6 +414,8 @@ func TestTokenService_ValidateAccessToken_Revoked(t *testing.T) {
 		mockUserRepo,
 		nil,
 		nil,
+		nil, // groupRepo
+		nil, // roleRepo
 	)
 
 	ctx := context.Background()
@@ -445,6 +464,8 @@ func TestTokenService_RevokeToken(t *testing.T) {
 		mockUserRepo,
 		nil,
 		nil,
+		nil, // groupRepo
+		nil, // roleRepo
 	)
 
 	ctx := context.Background()
@@ -481,6 +502,8 @@ func TestTokenService_GetRefreshTokenInfo(t *testing.T) {
 		mockUserRepo,
 		nil,
 		nil,
+		nil, // groupRepo
+		nil, // roleRepo
 	)
 
 	ctx := context.Background()
@@ -525,6 +548,8 @@ func TestTokenService_GetAccessTokenInfo(t *testing.T) {
 		mockUserRepo,
 		nil,
 		nil,
+		nil, // groupRepo
+		nil, // roleRepo
 	)
 
 	ctx := context.Background()
@@ -570,6 +595,8 @@ func TestTokenService_ValidateAccessToken_Expired(t *testing.T) {
 		mockUserRepo,
 		nil,
 		nil,
+		nil, // groupRepo
+		nil, // roleRepo
 	)
 
 	ctx := context.Background()
@@ -618,6 +645,8 @@ func TestTokenService_ValidateAccessToken_NotFound(t *testing.T) {
 		mockUserRepo,
 		nil,
 		nil,
+		nil, // groupRepo
+		nil, // roleRepo
 	)
 
 	ctx := context.Background()
@@ -662,6 +691,8 @@ func TestTokenService_RevokeToken_CacheError(t *testing.T) {
 		mockUserRepo,
 		nil,
 		nil,
+		nil, // groupRepo
+		nil, // roleRepo
 	)
 
 	ctx := context.Background()
@@ -699,4 +730,104 @@ func TestTokenService_containsScope(t *testing.T) {
 			// This test serves as documentation of expected behavior
 		})
 	}
+}
+
+func TestTokenService_CreateToken_KeycloakClaims(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
+	mockCache := mock_cache.NewMockTokenStore(ctrl)
+	mockSigner := services.NewTokenSigner()
+	mockSigner.AddKeySigner("test-secret")
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockGroupRepo := mock_domain.NewMockGroupRepository(ctrl)
+	mockRoleRepo := mock_domain.NewMockRoleRepository(ctrl)
+	mockPubKeyRepo := mock_domain.NewMockPublicKeyRepository(ctrl)
+	mockSARepo := mock_domain.NewMockServiceAccountRepository(ctrl)
+
+	tokenService := services.NewTokenService(
+		mockTokenRepo,
+		mockCache,
+		"test-issuer",
+		mockSigner,
+		mockPubKeyRepo,
+		mockSARepo,
+		mockUserRepo,
+		nil,
+		nil,
+		mockGroupRepo,
+		mockRoleRepo,
+	)
+
+	ctx := context.Background()
+	opts := domain.CreateTokenOptions{
+		TokenID:   "token-id",
+		Scope:     "openid",
+		ClientID:  "client-id",
+		UserID:    "user-id",
+		ExpireIn:  time.Hour,
+		TokenType: api.TokenTypeAccessToken,
+		SessionID: "session-123",
+	}
+
+	user := &domain.User{
+		ID:          "user-id",
+		Roles:       []string{"ROLE_USER"},
+		ClientRoles: map[string][]string{"client-id": {"client-user-role"}},
+	}
+
+	group := &domain.Group{
+		ID:          "group-id",
+		Name:        "grp",
+		MemberIDs:   []string{"user-id"},
+		RealmRoles:  []string{"role-id-group"},
+		ClientRoles: map[string][]string{"client-id": {"role-id-client"}},
+	}
+
+	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user-id").Return(user, nil)
+	mockGroupRepo.EXPECT().GetGroupsByUserID(gomock.Any(), "user-id").Return([]*domain.Group{group}, nil)
+	mockRoleRepo.EXPECT().GetRoleByID(gomock.Any(), "role-id-group").Return(&domain.Role{ID: "role-id-group", Name: "group-realm-role"}, nil)
+	mockRoleRepo.EXPECT().GetRoleByID(gomock.Any(), "role-id-client").Return(&domain.Role{ID: "role-id-client", Name: "group-client-role"}, nil)
+	mockTokenRepo.EXPECT().StoreToken(gomock.Any(), gomock.Any()).Return(nil)
+	mockCache.EXPECT().Set(gomock.Any(), gomock.Any()).Return(nil)
+
+	token, err := tokenService.CreateToken(ctx, opts, nil)
+	require.NoError(t, err)
+	require.NotNil(t, token)
+
+	parsed, err := jwt.ParseWithClaims(token.TokenValue, &jwt.MapClaims{}, func(tok *jwt.Token) (interface{}, error) {
+		return []byte("test-secret"), nil
+	})
+	require.NoError(t, err)
+	require.True(t, parsed.Valid)
+
+	claims, ok := parsed.Claims.(*jwt.MapClaims)
+	require.True(t, ok)
+
+	realmAccess, ok := (*claims)["realm_access"].(map[string]any)
+	require.True(t, ok, "expected realm_access claim")
+	realmRoles, ok := realmAccess["roles"].([]any)
+	require.True(t, ok, "expected realm_access.roles claim")
+	realmRoleSet := make(map[string]bool)
+	for _, r := range realmRoles {
+		realmRoleSet[r.(string)] = true
+	}
+	assert.True(t, realmRoleSet["ROLE_USER"], "expected user role in realm_access.roles")
+	assert.True(t, realmRoleSet["group-realm-role"], "expected group-derived realm role in realm_access.roles")
+
+	resourceAccess, ok := (*claims)["resource_access"].(map[string]any)
+	require.True(t, ok, "expected resource_access claim")
+	clientAccess, ok := resourceAccess["client-id"].(map[string]any)
+	require.True(t, ok, "expected resource_access.<client>.roles claim")
+	clientRoles, ok := clientAccess["roles"].([]any)
+	require.True(t, ok, "expected resource_access.<client>.roles claim")
+	clientRoleSet := make(map[string]bool)
+	for _, r := range clientRoles {
+		clientRoleSet[r.(string)] = true
+	}
+	assert.True(t, clientRoleSet["client-user-role"], "expected direct client role in resource_access.<client>.roles")
+	assert.True(t, clientRoleSet["group-client-role"], "expected group-derived client role in resource_access.<client>.roles")
+
+	assert.Equal(t, "session-123", (*claims)["sid"], "expected sid claim from session")
 }

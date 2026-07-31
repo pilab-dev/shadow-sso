@@ -148,7 +148,7 @@ func TestOAuthService_Login_Success(t *testing.T) {
 
 	mockUserRepo.EXPECT().GetUserByEmail(ctx, username).Return(user, nil)
 	mockSessionRepo.EXPECT().StoreSession(ctx, gomock.Any()).Return(nil)
-	mockTokenServiceInterface.EXPECT().GenerateTokenPair(ctx, "oauth-service-login-client", user.ID, "openid profile email", time.Hour).Return(&api.TokenResponse{
+	mockTokenServiceInterface.EXPECT().GenerateTokenPair(ctx, "oauth-service-login-client", user.ID, "openid profile email", time.Hour, gomock.Any()).Return(&api.TokenResponse{
 		AccessToken:  "access-token",
 		RefreshToken: "refresh-token",
 		TokenType:    "Bearer",
@@ -317,7 +317,7 @@ func TestOAuthService_RefreshToken_Success(t *testing.T) {
 
 	mockTokenRepo.EXPECT().GetRefreshTokenInfo(ctx, refreshTokenValue).Return(tokenInfo, nil)
 	mockTokenRepo.EXPECT().RevokeRefreshToken(ctx, refreshTokenValue).Return(nil)
-	mockTokenServiceInterface.EXPECT().GenerateTokenPair(ctx, clientID, tokenInfo.UserID, tokenInfo.Scope, time.Hour).Return(&api.TokenResponse{
+	mockTokenServiceInterface.EXPECT().GenerateTokenPair(ctx, clientID, tokenInfo.UserID, tokenInfo.Scope, time.Hour, "").Return(&api.TokenResponse{
 		AccessToken:  "new-access-token",
 		RefreshToken: "new-refresh-token",
 		TokenType:    "Bearer",
@@ -639,7 +639,7 @@ func TestOAuthService_DirectGrant_Success(t *testing.T) {
 	mockClientRepo.EXPECT().ValidateClient(ctx, clientID, clientSecret).Return(client, nil)
 	mockUserRepo.EXPECT().GetUserByEmail(ctx, username).Return(user, nil)
 	mockSessionRepo.EXPECT().StoreSession(ctx, gomock.Any()).Return(nil)
-	mockTokenServiceInterface.EXPECT().GenerateTokenPair(ctx, clientID, user.ID, "openid", gomock.Any()).Return(&api.TokenResponse{
+	mockTokenServiceInterface.EXPECT().GenerateTokenPair(ctx, clientID, user.ID, "openid", gomock.Any(), gomock.Any()).Return(&api.TokenResponse{
 		AccessToken:  "jwt-access-token",
 		TokenType:    "Bearer",
 		ExpiresIn:    3600,
@@ -789,7 +789,7 @@ func TestOAuthService_PasswordGrant_Success(t *testing.T) {
 	}
 
 	mockUserRepo.EXPECT().GetUserByEmail(ctx, username).Return(user, nil)
-	mockTokenServiceInterface.EXPECT().GenerateTokenPair(ctx, client.ID, user.ID, scope, time.Hour).Return(&api.TokenResponse{
+	mockTokenServiceInterface.EXPECT().GenerateTokenPair(ctx, client.ID, user.ID, scope, time.Hour, "").Return(&api.TokenResponse{
 		AccessToken:  "access-token",
 		RefreshToken: "refresh-token",
 		TokenType:    "Bearer",
@@ -843,7 +843,7 @@ func TestOAuthService_ExchangeAuthorizationCode_Success(t *testing.T) {
 
 	mockAuthCodeRepo.EXPECT().GetAuthCode(ctx, code).Return(authCode, nil)
 	mockAuthCodeRepo.EXPECT().MarkAuthCodeAsUsed(ctx, code).Return(nil)
-	mockTokenServiceInterface.EXPECT().GenerateTokenPair(ctx, clientID, authCode.UserID, authCode.Scope, time.Hour).Return(&api.TokenResponse{
+	mockTokenServiceInterface.EXPECT().GenerateTokenPair(ctx, clientID, authCode.UserID, authCode.Scope, time.Hour, "").Return(&api.TokenResponse{
 		AccessToken:  "access-token",
 		RefreshToken: "refresh-token",
 		TokenType:    "Bearer",
@@ -1348,7 +1348,7 @@ func TestOAuthService_IssueTokenForDeviceFlow_Authorized(t *testing.T) {
 	}
 
 	mockDeviceAuthRepo.EXPECT().GetDeviceAuthByDeviceCode(ctx, deviceCode).Return(deviceAuth, nil)
-	mockTokenServiceInterface.EXPECT().GenerateTokenPair(ctx, clientID, "user-id", "openid", time.Hour).Return(&api.TokenResponse{
+	mockTokenServiceInterface.EXPECT().GenerateTokenPair(ctx, clientID, "user-id", "openid", time.Hour, "").Return(&api.TokenResponse{
 		AccessToken: "access-token",
 		TokenType:   "Bearer",
 		ExpiresIn:   3600,
@@ -1446,7 +1446,7 @@ func TestOAuthService_TokenExchange_Success(t *testing.T) {
 		IsRevoked: false,
 	}, nil)
 	mockClientRepo.EXPECT().GetClient(ctx, clientID).Return(client, nil)
-	mockTokenServiceInterface.EXPECT().GenerateTokenPair(ctx, clientID, "user-id", scope, time.Hour).Return(&api.TokenResponse{
+	mockTokenServiceInterface.EXPECT().GenerateTokenPair(ctx, clientID, "user-id", scope, time.Hour, "").Return(&api.TokenResponse{
 		AccessToken: "exchanged-access-token",
 		TokenType:   "Bearer",
 		ExpiresIn:   3600,
@@ -1615,7 +1615,7 @@ func TestOAuthService_TokenExchange_ScopeIntersection(t *testing.T) {
 			mockClientRepo.EXPECT().GetClient(ctx, clientID).Return(client, nil)
 
 			if !tt.expectError {
-				mockTokenServiceInterface.EXPECT().GenerateTokenPair(ctx, clientID, "user-id", tt.expectedScope, time.Hour).Return(&api.TokenResponse{
+				mockTokenServiceInterface.EXPECT().GenerateTokenPair(ctx, clientID, "user-id", tt.expectedScope, time.Hour, "").Return(&api.TokenResponse{
 					AccessToken: "exchanged-access-token",
 					TokenType:   "Bearer",
 					ExpiresIn:   3600,

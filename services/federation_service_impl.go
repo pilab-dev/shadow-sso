@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/pilab-dev/shadow-sso/domain"
 	"github.com/pilab-dev/shadow-sso/internal/federation"
 )
@@ -97,13 +98,16 @@ func (s *defaultFederationService) HandleFederatedCallback(ctx context.Context, 
 }
 
 func (s *defaultFederationService) completeFederationLogin(ctx context.Context, user *domain.User, status FederationCallbackStatus, message string) (*FederationCallbackResult, error) {
-	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, "sso-default-client", user.ID, "openid profile email offline_access", 1*time.Hour)
+	sessionID := uuid.NewString()
+	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, "sso-default-client", user.ID, "openid profile email offline_access", 1*time.Hour, sessionID)
 	if err != nil {
 		return nil, err
 	}
 
 	session := &domain.Session{
+		ID:           sessionID,
 		UserID:       user.ID,
+		TokenID:      sessionID,
 		RefreshToken: tokenPair.RefreshToken,
 		ExpiresAt:    time.Now().Add(30 * 24 * time.Hour),
 	}

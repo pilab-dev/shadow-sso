@@ -193,6 +193,7 @@ func (s *defaultOAuthService) Login(ctx context.Context, username, password, dev
 		LastUsedAt: time.Now(),
 		IsRevoked:  false,
 	}
+	session.TokenID = session.ID
 	if err := s.sessionRepo.StoreSession(ctx, session); err != nil {
 		log.Ctx(ctx).Warn().Err(err).Str("user_id", user.ID).Str("session_id", session.ID).Msg("Failed to store session in OAuthService.Login")
 	} else {
@@ -202,7 +203,7 @@ func (s *defaultOAuthService) Login(ctx context.Context, username, password, dev
 	// Generate tokens for the client
 	clientIdentifier := "oauth-service-login-client"
 	loginScope := "openid profile email"
-	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientIdentifier, user.ID, loginScope, time.Hour)
+	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientIdentifier, user.ID, loginScope, time.Hour, session.ID)
 	if err != nil {
 		telemetry.RecordSpanError(span, err, "failed to generate token pair")
 		span.SetStatus(codes.Error, err.Error())
@@ -272,7 +273,7 @@ func (s *defaultOAuthService) RefreshToken(ctx context.Context, refreshTokenValu
 		return nil, fmt.Errorf("failed to revoke refresh token: %w", err)
 	}
 
-	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, tokenInfo.UserID, tokenInfo.Scope, time.Hour)
+	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, tokenInfo.UserID, tokenInfo.Scope, time.Hour, "")
 	if err != nil {
 		telemetry.RecordSpanError(span, err, "failed to generate token pair")
 		span.SetStatus(codes.Error, err.Error())
@@ -372,12 +373,13 @@ func (s *defaultOAuthService) DirectGrant(ctx context.Context,
 		LastUsedAt: time.Now(),
 		IsRevoked:  false,
 	}
+	session.TokenID = session.ID
 	if err := s.sessionRepo.StoreSession(ctx, session); err != nil {
 		log.Ctx(ctx).Warn().Err(err).Str("session_id", session.ID).Str("user_id", user.ID).Msg("Failed to store session in OAuthService.DirectGrant")
 	}
 
 	tokenTTL := 1 * time.Hour
-	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, user.ID, scope, tokenTTL)
+	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, user.ID, scope, tokenTTL, session.ID)
 	if err != nil {
 		telemetry.RecordSpanError(span, err, "token pair generation failed")
 		span.SetStatus(codes.Error, err.Error())
@@ -505,7 +507,7 @@ func (s *defaultOAuthService) PasswordGrant(ctx context.Context,
 		return nil, domain.ErrInvalidCredentials
 	}
 
-	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, cli.ID, user.ID, scope, time.Hour)
+	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, cli.ID, user.ID, scope, time.Hour, "")
 	if err != nil {
 		telemetry.RecordSpanError(span, err, "token pair generation failed")
 		span.SetStatus(codes.Error, err.Error())
@@ -579,7 +581,7 @@ func (s *defaultOAuthService) ExchangeAuthorizationCode(ctx context.Context,
 		return nil, fmt.Errorf("failed to mark auth code as used: %w", err)
 	}
 
-	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, authCodeDomain.UserID, authCodeDomain.Scope, time.Hour)
+	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, authCodeDomain.UserID, authCodeDomain.Scope, time.Hour, "")
 	if err != nil {
 		telemetry.RecordSpanError(span, err, "failed to generate token pair")
 		span.SetStatus(codes.Error, err.Error())
@@ -589,7 +591,7 @@ func (s *defaultOAuthService) ExchangeAuthorizationCode(ctx context.Context,
 
 	// If a nonce was stored in the auth code, regenerate the ID token with it.
 	if authCodeDomain.Nonce != "" {
-		idToken, err := s.tokenService.GenerateIDToken(ctx, authCodeDomain.UserID, clientID, authCodeDomain.Nonce, authCodeDomain.CreatedAt, authCodeDomain.Scope)
+		idToken, err := s.tokenService.GenerateIDToken(ctx, authCodeDomain.UserID, clientID, authCodeDomain.Nonce, "", authCodeDomain.CreatedAt, authCodeDomain.Scope)
 		if err != nil {
 			log.Ctx(ctx).Warn().Err(err).Str("client_id", clientID).Msg("Failed to generate ID token with nonce, continuing without it")
 		} else {
@@ -945,7 +947,7 @@ func (s *defaultOAuthService) IssueTokenForDeviceFlow(ctx context.Context, devic
 		return nil, domain.ErrAuthorizationPending
 
 	case domain.DeviceCodeStatusAuthorized:
-		tokenResponse, tokenErr := s.tokenService.GenerateTokenPair(ctx, deviceAuth.ClientID, deviceAuth.UserID, deviceAuth.Scope, time.Hour)
+		tokenResponse, tokenErr := s.tokenService.GenerateTokenPair(ctx, deviceAuth.ClientID, deviceAuth.UserID, deviceAuth.Scope, time.Hour, "")
 		if tokenErr != nil {
 			telemetry.RecordSpanError(span, tokenErr, "token generation failed for device flow")
 			span.SetStatus(codes.Error, tokenErr.Error())
@@ -1073,7 +1075,7 @@ func (s *defaultOAuthService) TokenExchange(ctx context.Context, subjectToken, s
 		return nil, err
 	}
 
-	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, tokenInfo.UserID, effectiveScope, time.Hour)
+	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, tokenInfo.UserID, effectiveScope, time.Hour, "")
 	if err != nil {
 		telemetry.RecordSpanError(span, err, "failed to generate token pair")
 		span.SetStatus(codes.Error, err.Error())

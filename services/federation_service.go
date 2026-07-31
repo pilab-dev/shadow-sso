@@ -322,16 +322,19 @@ func (s *FederationServer) completeLoginAndRespond(ctx context.Context, user *do
 	clientID := "sso-default-client" // Example
 	scope := "openid profile email offline_access"
 
-	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, user.ID, scope, 1*time.Hour)
+	sessionID := uuid.NewString()
+	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, user.ID, scope, 1*time.Hour, sessionID)
 	if err != nil {
 		log.Error().Err(err).Str("userID", user.ID).Msg("Failed to generate token pair in federated login")
 		return nil, connect.NewError(connect.CodeInternal, errors.New("token generation failed"))
 	}
 
-	// Create and store session
+	// Create and store session. The session ID doubles as the `sid` claim on
+	// the issued tokens so RP-initiated/back-channel logout can correlate it.
 	session := &domain.Session{
-		UserID: user.ID,
-		// TokenID should be JTI of access token if available
+		ID:           sessionID,
+		UserID:       user.ID,
+		TokenID:      sessionID,
 		RefreshToken: tokenPair.RefreshToken,
 		ExpiresAt:    time.Now().Add(30 * 24 * time.Hour), // Long session for refresh token
 	}

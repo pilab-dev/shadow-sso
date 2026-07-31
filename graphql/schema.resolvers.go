@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"connectrpc.com/connect"
@@ -240,6 +241,9 @@ func (r *groupResolver) Subgroups(ctx context.Context, obj *domain.Group) ([]dom
 
 // Attributes is the resolver for the attributes field.
 func (r *groupResolver) Attributes(ctx context.Context, obj *domain.Group) (map[string]any, error) {
+	if len(obj.Attributes) > 0 {
+		return obj.Attributes, nil
+	}
 	return map[string]any{
 		"path":            obj.Path,
 		"parent_group_id": obj.ParentGroupID,
@@ -616,23 +620,31 @@ func (r *mutationResolver) DeleteRole(ctx context.Context, id string) (bool, err
 
 // AddRealmRoleToUser is the resolver for the addRealmRoleToUser field.
 func (r *mutationResolver) AddRealmRoleToUser(ctx context.Context, userID string, roleID string) (bool, error) {
+	role, err := r.RoleRepo.GetRoleByID(ctx, roleID)
+	if err != nil {
+		return false, err
+	}
 	user, err := r.UserRepo.GetUserByID(ctx, userID)
 	if err != nil {
 		return false, err
 	}
-	user.Roles = append(user.Roles, roleID)
+	user.Roles = append(user.Roles, role.Name)
 	err = r.UserRepo.UpdateUser(ctx, user)
 	return err == nil, err
 }
 
 // RemoveRealmRoleFromUser is the resolver for the removeRealmRoleFromUser field.
 func (r *mutationResolver) RemoveRealmRoleFromUser(ctx context.Context, userID string, roleID string) (bool, error) {
+	role, err := r.RoleRepo.GetRoleByID(ctx, roleID)
+	if err != nil {
+		return false, err
+	}
 	user, err := r.UserRepo.GetUserByID(ctx, userID)
 	if err != nil {
 		return false, err
 	}
 	for i, r := range user.Roles {
-		if r == roleID {
+		if r == role.Name {
 			user.Roles = append(user.Roles[:i], user.Roles[i+1:]...)
 			break
 		}
@@ -643,14 +655,41 @@ func (r *mutationResolver) RemoveRealmRoleFromUser(ctx context.Context, userID s
 
 // AddClientRoleToUser is the resolver for the addClientRoleToUser field.
 func (r *mutationResolver) AddClientRoleToUser(ctx context.Context, userID string, clientID string, roleID string) (bool, error) {
-	// Would need client role storage - not implemented
-	return false, nil
+	role, err := r.RoleRepo.GetRoleByID(ctx, roleID)
+	if err != nil {
+		return false, err
+	}
+	user, err := r.UserRepo.GetUserByID(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	if user.ClientRoles == nil {
+		user.ClientRoles = make(map[string][]string)
+	}
+	user.ClientRoles[clientID] = append(user.ClientRoles[clientID], role.Name)
+	err = r.UserRepo.UpdateUser(ctx, user)
+	return err == nil, err
 }
 
 // RemoveClientRoleFromUser is the resolver for the removeClientRoleFromUser field.
 func (r *mutationResolver) RemoveClientRoleFromUser(ctx context.Context, userID string, clientID string, roleID string) (bool, error) {
-	// Would need client role storage - not implemented
-	return false, nil
+	role, err := r.RoleRepo.GetRoleByID(ctx, roleID)
+	if err != nil {
+		return false, err
+	}
+	user, err := r.UserRepo.GetUserByID(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	roles := user.ClientRoles[clientID]
+	for i, name := range roles {
+		if name == role.Name {
+			user.ClientRoles[clientID] = append(roles[:i], roles[i+1:]...)
+			break
+		}
+	}
+	err = r.UserRepo.UpdateUser(ctx, user)
+	return err == nil, err
 }
 
 // AddRealmRoleToGroup is the resolver for the addRealmRoleToGroup field.
@@ -1489,19 +1528,53 @@ func (r *queryResolver) GroupMembers(ctx context.Context, groupID string, first 
 	}, nil
 }
 
+// resolveRoleNames resolves role names (as stored on a user's Roles /
+// ClientRoles) into full role documents via the role repository.
+// Unresolvable names are skipped; the returned slice is never nil.
+func (r *Resolver) resolveRoleNames(ctx context.Context, names []string) []domain.Role {
+	roles := make([]domain.Role, 0, len(names))
+	for _, name := range names {
+		if name == "" {
+			continue
+		}
+		role, err := r.RoleRepo.GetRoleByName(ctx, name)
+		if err != nil || role == nil {
+			continue
+		}
+		roles = append(roles, *role)
+	}
+	return roles
+}
+
 // RoleMappings is the resolver for the roleMappings field.
 func (r *queryResolver) RoleMappings(ctx context.Context, userID string) (*RoleMapping, error) {
-	// Get user's realm roles - would need to look up from user record
+	user, err := r.UserRepo.GetUserByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, fmt.Errorf("user %q not found", userID)
+	}
+	clientMappings := make([]domain.Role, 0)
+	for _, names := range user.ClientRoles {
+		clientMappings = append(clientMappings, r.resolveRoleNames(ctx, names)...)
+	}
 	return &RoleMapping{
-		RealmMappings:  nil,
-		ClientMappings: nil,
+		RealmMappings:  r.resolveRoleNames(ctx, user.Roles),
+		ClientMappings: clientMappings,
 	}, nil
 }
 
 // ClientRoleMappings is the resolver for the clientRoleMappings field.
 func (r *queryResolver) ClientRoleMappings(ctx context.Context, userID string, clientID string) ([]domain.Role, error) {
-	// Get client roles for user - would need role assignment storage
-	return nil, nil
+	user, err := r.UserRepo.GetUserByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, fmt.Errorf("user %q not found", userID)
+	}
+	return r.resolveRoleNames(ctx, user.ClientRoles[clientID]), nil
 }
 
 // TokenMappers is the resolver for the tokenMappers field.
@@ -1532,8 +1605,15 @@ func (r *queryResolver) ClientTokenMappers(ctx context.Context, clientID string)
 
 // UserGroups is the resolver for the userGroups field.
 func (r *queryResolver) UserGroups(ctx context.Context, userID string) ([]domain.Group, error) {
-	// Would need to look up groups where user is a member - not implemented
-	return nil, nil
+	groups, err := r.GroupRepo.GetGroupsByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]domain.Group, len(groups))
+	for i, g := range groups {
+		result[i] = *g
+	}
+	return result, nil
 }
 
 // UserSessions is the resolver for the userSessions field.
@@ -1779,8 +1859,15 @@ func (r *userResolver) LastAccess(ctx context.Context, obj *domain.User) (*time.
 
 // Groups is the resolver for the groups field.
 func (r *userResolver) Groups(ctx context.Context, obj *domain.User) ([]domain.Group, error) {
-	// Would need to look up groups from group repository via member IDs
-	return nil, nil
+	groups, err := r.GroupRepo.GetGroupsByUserID(ctx, obj.ID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]domain.Group, len(groups))
+	for i, g := range groups {
+		result[i] = *g
+	}
+	return result, nil
 }
 
 // FederatedIdentities is the resolver for the federatedIdentities field.
@@ -1797,8 +1884,7 @@ func (r *userResolver) Credentials(ctx context.Context, obj *domain.User) ([]Use
 
 // ClientRoles is the resolver for the clientRoles field.
 func (r *userResolver) ClientRoles(ctx context.Context, obj *domain.User, clientID string) ([]domain.Role, error) {
-	// Would need to look up client roles assigned to user
-	return nil, nil
+	return r.resolveRoleNames(ctx, obj.ClientRoles[clientID]), nil
 }
 
 // Sessions is the resolver for the sessions field.

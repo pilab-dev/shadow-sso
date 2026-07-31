@@ -36,9 +36,9 @@ type OAuthService interface {
 type TokenService interface {
 	CreateToken(ctx context.Context, opts domain.CreateTokenOptions, claims jwt.Claims) (*domain.Token, error)
 	BuildToken(token *domain.Token) error
-	GenerateTokenPair(ctx context.Context, clientID, userID, scope string, tokenTTL time.Duration) (*api.TokenResponse, error)
+	GenerateTokenPair(ctx context.Context, clientID, userID, scope string, tokenTTL time.Duration, sessionID string) (*api.TokenResponse, error)
 	GenerateTokenPairWithFamily(ctx context.Context, clientID, userID, scope string, tokenTTL time.Duration, family string, nonce string, authTime time.Time) (*api.TokenResponse, error)
-	GenerateIDToken(ctx context.Context, userID, clientID, nonce string, authTime time.Time, scope string) (string, error)
+	GenerateIDToken(ctx context.Context, userID, clientID, nonce, sessionID string, authTime time.Time, scope string) (string, error)
 	ValidateAccessToken(ctx context.Context, tokenValue string) (*domain.Token, error)
 	RevokeToken(ctx context.Context, token string) error
 	GetRefreshTokenInfo(ctx context.Context, tokenValue string) (*domain.TokenInfo, error)

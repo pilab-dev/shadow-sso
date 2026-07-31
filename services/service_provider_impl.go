@@ -136,6 +136,8 @@ func (p *DefaultServiceProvider) TokenService() TokenService {
 			p.repoProvider.PublicKeyRepository(initCtx),
 			p.repoProvider.ServiceAccountRepository(initCtx),
 			p.repoProvider.UserRepository(initCtx),
+			p.repoProvider.GroupRepository(initCtx),
+			p.repoProvider.RoleRepository(initCtx),
 		)
 	}
 	return p.tokenService
