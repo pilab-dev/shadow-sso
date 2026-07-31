@@ -11,6 +11,7 @@ import (
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"gopkg.in/yaml.v3" // For pretty printing mapper(s)
 )
 
@@ -28,6 +29,21 @@ func tokenTypeFromString(v string) (ssov1.TokenTypeProto, error) {
 	}
 }
 
+// tokenTypeToString is the inverse of tokenTypeFromString: it renders a proto
+// token type enum as its canonical CLI string.
+func tokenTypeToString(v ssov1.TokenTypeProto) string {
+	switch v {
+	case ssov1.TokenTypeProto_TOKEN_TYPE_ID_TOKEN:
+		return "id_token"
+	case ssov1.TokenTypeProto_TOKEN_TYPE_ACCESS_TOKEN:
+		return "access_token"
+	case ssov1.TokenTypeProto_TOKEN_TYPE_USERINFO:
+		return "userinfo"
+	default:
+		return v.String()
+	}
+}
+
 // protocolFromString maps a CLI --protocol value to its proto enum.
 func protocolFromString(v string) (ssov1.ProtocolProto, error) {
 	switch v {
@@ -35,6 +51,46 @@ func protocolFromString(v string) (ssov1.ProtocolProto, error) {
 		return ssov1.ProtocolProto_PROTOCOL_OPENID_CONNECT, nil
 	default:
 		return ssov1.ProtocolProto_PROTOCOL_UNSPECIFIED, fmt.Errorf("invalid protocol %q: must be openid-connect", v)
+	}
+}
+
+// protocolToString is the inverse of protocolFromString: it renders a proto
+// protocol enum as its canonical CLI string.
+func protocolToString(v ssov1.ProtocolProto) string {
+	if v == ssov1.ProtocolProto_PROTOCOL_OPENID_CONNECT {
+		return "openid-connect"
+	}
+	return v.String()
+}
+
+// mapperOutput is the YAML-rendered shape of a token mapper, with enum fields
+// rendered as canonical strings (e.g. tokenType: id_token, protocol: openid-connect).
+type mapperOutput struct {
+	ID             string                 `yaml:"id"`
+	Name           string                 `yaml:"name"`
+	UserAttribute  string                 `yaml:"userAttribute"`
+	TokenClaimName string                 `yaml:"tokenClaimName"`
+	TokenType      string                 `yaml:"tokenType"`
+	MultiValued    bool                   `yaml:"multiValued"`
+	Protocol       string                 `yaml:"protocol"`
+	ClientId       string                 `yaml:"clientId,omitempty"`
+	CreatedAt      *timestamppb.Timestamp `yaml:"createdAt"`
+	UpdatedAt      *timestamppb.Timestamp `yaml:"updatedAt"`
+}
+
+// newMapperOutput converts a proto token mapper into its YAML output shape.
+func newMapperOutput(m *ssov1.UserAttributeMapper) mapperOutput {
+	return mapperOutput{
+		ID:             m.GetId(),
+		Name:           m.GetName(),
+		UserAttribute:  m.GetUserAttribute(),
+		TokenClaimName: m.GetTokenClaimName(),
+		TokenType:      tokenTypeToString(m.GetTokenType()),
+		MultiValued:    m.GetMultiValued(),
+		Protocol:       protocolToString(m.GetProtocol()),
+		ClientId:       m.GetClientId(),
+		CreatedAt:      m.GetCreatedAt(),
+		UpdatedAt:      m.GetUpdatedAt(),
 	}
 }
 
@@ -130,7 +186,7 @@ var tokenMapperCreateCmd = &cobra.Command{
 			return fmt.Errorf("failed to create token mapper: %w", err)
 		}
 
-		out, _ := yaml.Marshal(resp.Msg.UserAttributeMapper)
+		out, _ := yaml.Marshal(newMapperOutput(resp.Msg.UserAttributeMapper))
 		fmt.Println(string(out))
 		return nil
 	},
@@ -157,7 +213,7 @@ var tokenMapperGetCmd = &cobra.Command{
 			return fmt.Errorf("failed to get token mapper: %w", err)
 		}
 
-		out, _ := yaml.Marshal(resp.Msg.UserAttributeMapper)
+		out, _ := yaml.Marshal(newMapperOutput(resp.Msg.UserAttributeMapper))
 		fmt.Println(string(out))
 		return nil
 	},
@@ -211,7 +267,11 @@ var tokenMapperListCmd = &cobra.Command{
 			fmt.Println("No token mappers found.")
 			return nil
 		}
-		out, _ := yaml.Marshal(resp.Msg.UserAttributeMappers)
+		output := make([]mapperOutput, 0, len(resp.Msg.UserAttributeMappers))
+		for _, m := range resp.Msg.UserAttributeMappers {
+			output = append(output, newMapperOutput(m))
+		}
+		out, _ := yaml.Marshal(output)
 		fmt.Println(string(out))
 		if resp.Msg.NextPageToken != "" {
 			fmt.Printf("\nNext page token: %s\n", resp.Msg.NextPageToken)
@@ -286,7 +346,7 @@ var tokenMapperUpdateCmd = &cobra.Command{
 			return fmt.Errorf("failed to update token mapper: %w", err)
 		}
 
-		out, _ := yaml.Marshal(resp.Msg.UserAttributeMapper)
+		out, _ := yaml.Marshal(newMapperOutput(resp.Msg.UserAttributeMapper))
 		fmt.Println(string(out))
 		return nil
 	},
