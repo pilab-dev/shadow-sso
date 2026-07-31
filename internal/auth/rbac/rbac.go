@@ -58,6 +58,12 @@ const (
 	PermServiceAccountsManage = "serviceaccounts:manage"
 )
 
+// User Attribute Management (Admin only)
+const (
+	PermUserAttributesManage = "user_attributes:manage"
+	PermTokenMappersManage   = "token_mappers:manage"
+)
+
 // RoleToPermissionsMap maps roles to their granted permissions.
 // This can be used by the authorization interceptor.
 var RoleToPermissionsMap = map[string][]string{
@@ -104,6 +110,9 @@ var RoleToPermissionsMap = map[string][]string{
 		PermSessionsClearOthers,
 
 		PermServiceAccountsManage,
+
+		PermUserAttributesManage,
+		PermTokenMappersManage,
 	},
 }
 
@@ -127,17 +136,17 @@ func HasPermission(roles []string, requiredPermission string) bool {
 // An empty string for permission means authz is intentionally deferred to service logic.
 var MethodPermissions = map[string]string{
 	// UserService
-	"/sso.v1.UserService/RegisterUser":           PermUsersCreate,
-	"/sso.v1.UserService/ActivateUser":           PermUsersActivateAll,
-	"/sso.v1.UserService/LockUser":               PermUsersLockAll,
-	"/sso.v1.UserService/ListUsers":              PermUsersReadAll,
-	"/sso.v1.UserService/GetUser":                "", // AuthZ handled in service logic (user can read self, admin can read all)
-	"/sso.v1.UserService/ChangePassword":         "",               // Complex: self (PermUsersChangePasswordSelf) vs admin (PermUsersChangePasswordAll) - handled in service
+	"/sso.v1.UserService/RegisterUser":   PermUsersCreate,
+	"/sso.v1.UserService/ActivateUser":   PermUsersActivateAll,
+	"/sso.v1.UserService/LockUser":       PermUsersLockAll,
+	"/sso.v1.UserService/ListUsers":      PermUsersReadAll,
+	"/sso.v1.UserService/GetUser":        "", // AuthZ handled in service logic (user can read self, admin can read all)
+	"/sso.v1.UserService/ChangePassword": "", // Complex: self (PermUsersChangePasswordSelf) vs admin (PermUsersChangePasswordAll) - handled in service
 
 	// AuthService - Login is public (no entry). Logout is authenticated but simple (revokes own session).
 	// ListUserSessions, ClearUserSessions need logic based on target user vs. authenticated user.
-	"/sso.v1.AuthService/ListUserSessions":       "", // Complex: self (PermSessionsListSelf) vs admin (PermSessionsListOthers) - handled in service
-	"/sso.v1.AuthService/ClearUserSessions":      "", // Complex: self (PermSessionsClearSelf) vs admin (PermSessionsClearOthers) - handled in service
+	"/sso.v1.AuthService/ListUserSessions":  "", // Complex: self (PermSessionsListSelf) vs admin (PermSessionsListOthers) - handled in service
+	"/sso.v1.AuthService/ClearUserSessions": "", // Complex: self (PermSessionsClearSelf) vs admin (PermSessionsClearOthers) - handled in service
 
 	// ServiceAccountService (All admin-level)
 	"/sso.v1.ServiceAccountService/CreateServiceAccountKey": PermServiceAccountsManage,
@@ -150,4 +159,19 @@ var MethodPermissions = map[string]string{
 	"/sso.v1.IdPManagementService/ListIdPs":  PermIdPsRead,
 	"/sso.v1.IdPManagementService/UpdateIdP": PermIdPsUpdate,
 	"/sso.v1.IdPManagementService/DeleteIdP": PermIdPsDelete,
+
+	// UserAttributeService (All admin)
+	"/sso.v1.UserAttributeService/CreateUserAttribute":          PermUserAttributesManage,
+	"/sso.v1.UserAttributeService/GetUserAttribute":             PermUserAttributesManage,
+	"/sso.v1.UserAttributeService/ListUserAttributes":           PermUserAttributesManage,
+	"/sso.v1.UserAttributeService/UpdateUserAttribute":          PermUserAttributesManage,
+	"/sso.v1.UserAttributeService/DeleteUserAttribute":          PermUserAttributesManage,
+	"/sso.v1.UserAttributeService/DeleteUserAttributesByUserId": PermUserAttributesManage,
+
+	// UserAttributeMapperService (All admin)
+	"/sso.v1.UserAttributeMapperService/CreateUserAttributeMapper": PermTokenMappersManage,
+	"/sso.v1.UserAttributeMapperService/GetUserAttributeMapper":    PermTokenMappersManage,
+	"/sso.v1.UserAttributeMapperService/ListUserAttributeMappers":  PermTokenMappersManage,
+	"/sso.v1.UserAttributeMapperService/UpdateUserAttributeMapper": PermTokenMappersManage,
+	"/sso.v1.UserAttributeMapperService/DeleteUserAttributeMapper": PermTokenMappersManage,
 }

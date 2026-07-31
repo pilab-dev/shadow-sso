@@ -164,6 +164,17 @@ func Start(cfg ServerConfig, repoProvider services.RepositoryProvider) error {
 	router.Any(federationPath, gin.WrapH(federationHandler))
 	router.Any(federationPath+"/", gin.WrapH(federationHandler))
 
+	attrServer := services.NewUserAttributeServiceServer(
+		repoProvider.UserAttributeRepository(ctx),
+		repoProvider.UserAttributeMapperRepository(ctx),
+	)
+	attrPath, attrHandler := ssov1connect.NewUserAttributeServiceHandler(attrServer, interceptors)
+	router.Any(attrPath, gin.WrapH(attrHandler))
+	router.Any(attrPath+"/", gin.WrapH(attrHandler))
+	attrMapperPath, attrMapperHandler := ssov1connect.NewUserAttributeMapperServiceHandler(attrServer, interceptors)
+	router.Any(attrMapperPath, gin.WrapH(attrMapperHandler))
+	router.Any(attrMapperPath+"/", gin.WrapH(attrMapperHandler))
+
 	// * Add health check endpoints
 	router.GET("/healthz", gin.WrapF(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
