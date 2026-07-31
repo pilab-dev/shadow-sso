@@ -10,8 +10,33 @@ import (
 	"github.com/pilab-dev/shadow-sso/apps/sssoctl/cmd/config"
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"gopkg.in/yaml.v3" // For pretty printing user attributes
 )
+
+// attributeOutput is the YAML-rendered shape of a user attribute, with
+// explicit camelCase field names (yaml.v3 would otherwise lowercase the Go
+// struct field names, e.g. UserId -> userid).
+type attributeOutput struct {
+	ID        string                 `yaml:"id"`
+	Name      string                 `yaml:"name"`
+	Value     string                 `yaml:"value"`
+	UserId    string                 `yaml:"userId"`
+	CreatedAt *timestamppb.Timestamp `yaml:"createdAt"`
+	UpdatedAt *timestamppb.Timestamp `yaml:"updatedAt"`
+}
+
+// newAttributeOutput converts a proto user attribute into its YAML output shape.
+func newAttributeOutput(a *ssov1.UserAttribute) attributeOutput {
+	return attributeOutput{
+		ID:        a.GetId(),
+		Name:      a.GetName(),
+		Value:     a.GetValue(),
+		UserId:    a.GetUserId(),
+		CreatedAt: a.GetCreatedAt(),
+		UpdatedAt: a.GetUpdatedAt(),
+	}
+}
 
 var userAttributeCmd = &cobra.Command{
 	Use:     "attribute",
@@ -54,7 +79,7 @@ var userAttributeCreateCmd = &cobra.Command{
 			return fmt.Errorf("failed to create user attribute: %w", err)
 		}
 
-		out, _ := yaml.Marshal(resp.Msg.UserAttribute)
+		out, _ := yaml.Marshal(newAttributeOutput(resp.Msg.UserAttribute))
 		fmt.Println(string(out))
 		return nil
 	},
@@ -82,7 +107,7 @@ var userAttributeGetCmd = &cobra.Command{
 			return fmt.Errorf("failed to get user attribute: %w", err)
 		}
 
-		out, _ := yaml.Marshal(resp.Msg.UserAttribute)
+		out, _ := yaml.Marshal(newAttributeOutput(resp.Msg.UserAttribute))
 		fmt.Println(string(out))
 		return nil
 	},
@@ -123,7 +148,11 @@ var userAttributeListCmd = &cobra.Command{
 			fmt.Println("No user attributes found.")
 			return nil
 		}
-		out, _ := yaml.Marshal(resp.Msg.UserAttributes)
+		output := make([]attributeOutput, 0, len(resp.Msg.UserAttributes))
+		for _, a := range resp.Msg.UserAttributes {
+			output = append(output, newAttributeOutput(a))
+		}
+		out, _ := yaml.Marshal(output)
 		fmt.Println(string(out))
 		if resp.Msg.NextPageToken != "" {
 			fmt.Printf("\nnextPageToken: %s\n", resp.Msg.NextPageToken)
@@ -169,7 +198,7 @@ var userAttributeUpdateCmd = &cobra.Command{
 			return fmt.Errorf("failed to update user attribute: %w", err)
 		}
 
-		out, _ := yaml.Marshal(resp.Msg.UserAttribute)
+		out, _ := yaml.Marshal(newAttributeOutput(resp.Msg.UserAttribute))
 		fmt.Println(string(out))
 		return nil
 	},
