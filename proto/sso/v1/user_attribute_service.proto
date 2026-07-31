@@ -1,0 +1,182 @@
+syntax = "proto3";
+
+package sso.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+import "buf/validate/validate.proto";
+
+option go_package = "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1;ssov1";
+
+// UserAttributeService provides CRUD operations for user attributes.
+service UserAttributeService {
+  // Creates a new user attribute.
+  rpc CreateUserAttribute(CreateUserAttributeRequest) returns (CreateUserAttributeResponse);
+  // Retrieves a user attribute by its ID.
+  rpc GetUserAttribute(GetUserAttributeRequest) returns (GetUserAttributeResponse);
+  // Lists user attributes with optional filters and pagination.
+  rpc ListUserAttributes(ListUserAttributesRequest) returns (ListUserAttributesResponse);
+  // Updates an existing user attribute.
+  rpc UpdateUserAttribute(UpdateUserAttributeRequest) returns (UpdateUserAttributeResponse);
+  // Deletes a user attribute by its ID.
+  rpc DeleteUserAttribute(DeleteUserAttributeRequest) returns (google.protobuf.Empty);
+  // Deletes all user attributes belonging to a user.
+  rpc DeleteUserAttributesByUserId(DeleteUserAttributesByUserIdRequest) returns (google.protobuf.Empty);
+}
+
+// UserAttributeMapperService provides CRUD operations for user attribute token mappers.
+service UserAttributeMapperService {
+  // Creates a new user attribute mapper.
+  rpc CreateUserAttributeMapper(CreateUserAttributeMapperRequest) returns (CreateUserAttributeMapperResponse);
+  // Retrieves a user attribute mapper by its ID.
+  rpc GetUserAttributeMapper(GetUserAttributeMapperRequest) returns (GetUserAttributeMapperResponse);
+  // Lists user attribute mappers with optional filters and pagination.
+  rpc ListUserAttributeMappers(ListUserAttributeMappersRequest) returns (ListUserAttributeMappersResponse);
+  // Updates an existing user attribute mapper.
+  rpc UpdateUserAttributeMapper(UpdateUserAttributeMapperRequest) returns (UpdateUserAttributeMapperResponse);
+  // Deletes a user attribute mapper by its ID.
+  rpc DeleteUserAttributeMapper(DeleteUserAttributeMapperRequest) returns (google.protobuf.Empty);
+}
+
+// Token type the mapper's claim is added to, mirroring services.proto pattern.
+enum TokenTypeProto {
+  TOKEN_TYPE_UNSPECIFIED = 0;
+  TOKEN_TYPE_ID_TOKEN = 1;
+  TOKEN_TYPE_ACCESS_TOKEN = 2;
+  TOKEN_TYPE_USERINFO = 3;
+}
+
+// Protocol the mapper applies to.
+enum ProtocolProto {
+  PROTOCOL_UNSPECIFIED = 0;
+  PROTOCOL_OPENID_CONNECT = 1;
+}
+
+// User attribute, mirroring fields from domain.UserAttribute.
+message UserAttribute {
+  string id = 1;
+  string name = 2;
+  string value = 3;
+  string user_id = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+}
+
+// --- CreateUserAttribute ---
+message CreateUserAttributeRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1]; // Required
+  string name = 2 [(buf.validate.field).string.min_len = 1];    // Required
+  string value = 3 [(buf.validate.field).string.min_len = 1];   // Required
+}
+
+message CreateUserAttributeResponse {
+  UserAttribute user_attribute = 1; // The created entity
+}
+
+// --- GetUserAttribute ---
+message GetUserAttributeRequest { string id = 1 [(buf.validate.field).string.min_len = 1]; }
+
+message GetUserAttributeResponse {
+  UserAttribute user_attribute = 1;
+}
+
+// --- ListUserAttributes ---
+message ListUserAttributesRequest {
+  string user_id = 1; // Optional filter
+  string name = 2;    // Optional filter
+  int32 page_size = 3 [(buf.validate.field).int32.lte = 100]; // Defaults to 50 server-side, max 100
+  string page_token = 4;
+}
+
+message ListUserAttributesResponse {
+  repeated UserAttribute user_attributes = 1;
+  string next_page_token = 2;
+}
+
+// --- UpdateUserAttribute ---
+message UpdateUserAttributeRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1]; // Required to identify the attribute
+
+  optional string name = 2;  // Optional — empty means not set
+  optional string value = 3; // Optional — empty means not set
+}
+
+message UpdateUserAttributeResponse {
+  UserAttribute user_attribute = 1; // The updated entity
+}
+
+// --- DeleteUserAttribute ---
+message DeleteUserAttributeRequest { string id = 1 [(buf.validate.field).string.min_len = 1]; }
+
+// --- DeleteUserAttributesByUserId ---
+message DeleteUserAttributesByUserIdRequest { string user_id = 1 [(buf.validate.field).string.min_len = 1]; }
+
+// User attribute token mapper, mirroring fields from domain.UserAttributeMapper.
+message UserAttributeMapper {
+  string id = 1;
+  string name = 2;
+  string user_attribute = 3;
+  string token_claim_name = 4;
+  TokenTypeProto token_type = 5;
+  bool multi_valued = 6;
+  ProtocolProto protocol = 7;
+  string client_id = 8; // Optional
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+}
+
+// --- CreateUserAttributeMapper ---
+message CreateUserAttributeMapperRequest {
+  string name = 1 [(buf.validate.field).string.min_len = 1];            // Required
+  string user_attribute = 2 [(buf.validate.field).string.min_len = 1];  // Required
+  string token_claim_name = 3 [(buf.validate.field).string.min_len = 1]; // Required
+  TokenTypeProto token_type = 4;                                        // Required
+  optional bool multi_valued = 5;                                       // Optional — defaults to false
+  optional ProtocolProto protocol = 6; // Optional — server defaults to PROTOCOL_OPENID_CONNECT when unset
+  optional string client_id = 7;       // Optional
+}
+
+message CreateUserAttributeMapperResponse {
+  UserAttributeMapper user_attribute_mapper = 1; // The created entity
+}
+
+// --- GetUserAttributeMapper ---
+message GetUserAttributeMapperRequest { string id = 1 [(buf.validate.field).string.min_len = 1]; }
+
+message GetUserAttributeMapperResponse {
+  UserAttributeMapper user_attribute_mapper = 1;
+}
+
+// --- ListUserAttributeMappers ---
+message ListUserAttributeMappersRequest {
+  TokenTypeProto token_type = 1; // Optional filter
+  string client_id = 2;          // Optional filter
+  string user_attribute = 3;     // Optional filter
+  int32 page_size = 4 [(buf.validate.field).int32.lte = 100]; // Defaults to 50 server-side, max 100
+  string page_token = 5;
+}
+
+message ListUserAttributeMappersResponse {
+  repeated UserAttributeMapper user_attribute_mappers = 1;
+  string next_page_token = 2;
+}
+
+// --- UpdateUserAttributeMapper ---
+message UpdateUserAttributeMapperRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1]; // Required to identify the mapper
+
+  optional string name = 2;            // Optional — empty means not set
+  optional string user_attribute = 3;  // Optional — empty means not set
+  optional string token_claim_name = 4; // Optional — empty means not set
+  optional TokenTypeProto token_type = 5;   // Optional
+  optional bool multi_valued = 6;           // Optional
+  optional ProtocolProto protocol = 7;      // Optional
+  optional string client_id = 8;            // Optional
+}
+
+message UpdateUserAttributeMapperResponse {
+  UserAttributeMapper user_attribute_mapper = 1; // The updated entity
+}
+
+// --- DeleteUserAttributeMapper ---
+message DeleteUserAttributeMapperRequest { string id = 1 [(buf.validate.field).string.min_len = 1]; }
