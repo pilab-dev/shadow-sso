@@ -45,7 +45,7 @@ services:
       - SSSO_INITIAL_ADMIN_PASSWORD=admin123
       - SSSO_INITIAL_ADMIN_FIRST_NAME=Admin
       - SSSO_INITIAL_ADMIN_LAST_NAME=User
-      - SSSO_CONFIG_ENCRYPTION_KEY=dev-encryption-key-32-chars-long!!
+      - SSSO_CONFIG_ENCRYPTION_KEY=dev-encryption-key-32-chars-long
     volumes:
       - ./docker/entrypoint.sh:/docker/entrypoint.sh:ro
       - ./docker/keys:/etc/sso/keys
