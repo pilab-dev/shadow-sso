@@ -28,8 +28,8 @@ cloud.google.com/go/compute/metadata
 ## explicit; go 1.24.0
 connectrpc.com/connect
 connectrpc.com/connect/internal/gen/connectext/grpc/status/v1
-# connectrpc.com/grpchealth v1.4.0
-## explicit; go 1.23.0
+# connectrpc.com/grpchealth v1.5.0
+## explicit; go 1.24.0
 connectrpc.com/grpchealth
 connectrpc.com/grpchealth/internal/gen/go/connectext/grpc/health/v1
 # connectrpc.com/grpcreflect v1.3.0
