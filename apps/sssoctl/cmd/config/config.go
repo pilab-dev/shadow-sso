@@ -112,16 +112,26 @@ func SaveConfig() error {
 		return fmt.Errorf("failed to create config directory %s: %w", configDir, err)
 	}
 
-    // Update viper's internal map before writing
-    // This ensures that changes made directly to GlobalConfig are reflected.
-    settings := map[string]interface{}{
-        "current_context": GlobalConfig.CurrentContext,
-        "contexts":        GlobalConfig.Contexts,
-    }
-    if err := viper.MergeConfigMap(settings); err != nil {
-        return fmt.Errorf("failed to merge config map for saving: %w", err)
-    }
-
+	// Update viper's internal map before writing
+	// This ensures that changes made directly to GlobalConfig are reflected.
+	// Convert contexts to plain maps: viper v1.21 mergeMaps silently drops values
+	// that are not map[string]any when the destination key already exists as a map,
+	// which would discard new contexts and saved tokens.
+	contexts := make(map[string]any, len(GlobalConfig.Contexts))
+	for name, ctx := range GlobalConfig.Contexts {
+		contexts[name] = map[string]any{
+			"name":            ctx.Name,
+			"server_endpoint": ctx.ServerEndpoint,
+			"user_auth_token": ctx.UserAuthToken,
+		}
+	}
+	settings := map[string]interface{}{
+		"current_context": GlobalConfig.CurrentContext,
+		"contexts":        contexts,
+	}
+	if err := viper.MergeConfigMap(settings); err != nil {
+		return fmt.Errorf("failed to merge config map for saving: %w", err)
+	}
 
 	if err := viper.WriteConfigAs(CfgFile); err != nil {
 		return fmt.Errorf("failed to save config to %s: %w", CfgFile, err)
