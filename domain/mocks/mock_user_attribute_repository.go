@@ -113,6 +113,21 @@ func (mr *MockUserAttributeRepositoryMockRecorder) GetAttributesByUserID(ctx, us
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAttributesByUserID", reflect.TypeOf((*MockUserAttributeRepository)(nil).GetAttributesByUserID), ctx, userID)
 }
 
+// ListAllAttributes mocks base method.
+func (m *MockUserAttributeRepository) ListAllAttributes(ctx context.Context) ([]*domain.UserAttribute, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListAllAttributes", ctx)
+	ret0, _ := ret[0].([]*domain.UserAttribute)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListAllAttributes indicates an expected call of ListAllAttributes.
+func (mr *MockUserAttributeRepositoryMockRecorder) ListAllAttributes(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListAllAttributes", reflect.TypeOf((*MockUserAttributeRepository)(nil).ListAllAttributes), ctx)
+}
+
 // UpdateAttribute mocks base method.
 func (m *MockUserAttributeRepository) UpdateAttribute(ctx context.Context, attr *domain.UserAttribute) error {
 	m.ctrl.T.Helper()

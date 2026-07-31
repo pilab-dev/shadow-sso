@@ -31,6 +31,7 @@ type UserAttributeRepository interface {
 	CreateAttribute(ctx context.Context, attr *UserAttribute) error
 	GetAttributeByID(ctx context.Context, id string) (*UserAttribute, error)
 	GetAttributesByUserID(ctx context.Context, userID string) ([]*UserAttribute, error)
+	ListAllAttributes(ctx context.Context) ([]*UserAttribute, error)
 	UpdateAttribute(ctx context.Context, attr *UserAttribute) error
 	DeleteAttribute(ctx context.Context, id string) error
 	DeleteAttributesByUserID(ctx context.Context, userID string) error
@@ -42,6 +43,7 @@ type UserAttributeMapperRepository interface {
 	GetMappersByTokenType(ctx context.Context, tokenType string) ([]*UserAttributeMapper, error)
 	GetMappersForClient(ctx context.Context, clientID string, tokenType string) ([]*UserAttributeMapper, error)
 	GetClientMappers(ctx context.Context, clientID string) ([]*UserAttributeMapper, error)
+	ListAllMappers(ctx context.Context) ([]*UserAttributeMapper, error)
 	UpdateMapper(ctx context.Context, mapper *UserAttributeMapper) error
 	DeleteMapper(ctx context.Context, id string) error
 }

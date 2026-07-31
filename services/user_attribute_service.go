@@ -113,10 +113,16 @@ func (s *UserAttributeServiceServer) ListUserAttributes(ctx context.Context, req
 	)
 	defer span.End()
 
-	// The repository interface exposes only per-user fetches; there is no
-	// list-all method. An empty user_id filter is passed through as the
-	// closest available query, and the name filter is applied in memory.
-	dbAttrs, err := s.attrRepo.GetAttributesByUserID(ctx, req.Msg.UserId)
+	// The name filter is applied in memory below.
+	var (
+		dbAttrs []*domain.UserAttribute
+		err     error
+	)
+	if req.Msg.UserId != "" {
+		dbAttrs, err = s.attrRepo.GetAttributesByUserID(ctx, req.Msg.UserId)
+	} else {
+		dbAttrs, err = s.attrRepo.ListAllAttributes(ctx)
+	}
 	if err != nil {
 		telemetry.RecordSpanError(span, err, "repository error listing user attributes")
 		span.SetStatus(codes.Error, "failed to list user attributes")
@@ -308,10 +314,8 @@ func (s *UserAttributeServiceServer) ListUserAttributeMappers(ctx context.Contex
 	case req.Msg.ClientId != "":
 		dbMappers, err = s.mapperRepo.GetClientMappers(ctx, req.Msg.ClientId)
 	default:
-		// The repository interface exposes no list-all method; an empty token
-		// type filter is passed through as the closest available query. The
-		// user_attribute filter is applied in memory below.
-		dbMappers, err = s.mapperRepo.GetMappersByTokenType(ctx, "")
+		// The user_attribute filter is applied in memory below.
+		dbMappers, err = s.mapperRepo.ListAllMappers(ctx)
 	}
 	if err != nil {
 		telemetry.RecordSpanError(span, err, "repository error listing user attribute mappers")

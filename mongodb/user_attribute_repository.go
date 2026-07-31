@@ -72,6 +72,20 @@ func (r *UserAttributeRepository) GetAttributesByUserID(ctx context.Context, use
 	return attrs, nil
 }
 
+func (r *UserAttributeRepository) ListAllAttributes(ctx context.Context) ([]*domain.UserAttribute, error) {
+	cursor, err := r.collection.Find(ctx, bson.M{})
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var attrs []*domain.UserAttribute
+	if err := cursor.All(ctx, &attrs); err != nil {
+		return nil, err
+	}
+	return attrs, nil
+}
+
 func (r *UserAttributeRepository) UpdateAttribute(ctx context.Context, attr *domain.UserAttribute) error {
 	oid, err := bson.ObjectIDFromHex(attr.ID)
 	if err != nil {
@@ -180,6 +194,20 @@ func (r *UserAttributeMapperRepository) GetMappersForClient(ctx context.Context,
 
 func (r *UserAttributeMapperRepository) GetClientMappers(ctx context.Context, clientID string) ([]*domain.UserAttributeMapper, error) {
 	cursor, err := r.collection.Find(ctx, bson.M{"client_id": clientID})
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var mappers []*domain.UserAttributeMapper
+	if err := cursor.All(ctx, &mappers); err != nil {
+		return nil, err
+	}
+	return mappers, nil
+}
+
+func (r *UserAttributeMapperRepository) ListAllMappers(ctx context.Context) ([]*domain.UserAttributeMapper, error) {
+	cursor, err := r.collection.Find(ctx, bson.M{})
 	if err != nil {
 		return nil, err
 	}

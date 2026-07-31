@@ -129,6 +129,21 @@ func (mr *MockUserAttributeMapperRepositoryMockRecorder) GetMappersForClient(ctx
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMappersForClient", reflect.TypeOf((*MockUserAttributeMapperRepository)(nil).GetMappersForClient), ctx, clientID, tokenType)
 }
 
+// ListAllMappers mocks base method.
+func (m *MockUserAttributeMapperRepository) ListAllMappers(ctx context.Context) ([]*domain.UserAttributeMapper, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListAllMappers", ctx)
+	ret0, _ := ret[0].([]*domain.UserAttributeMapper)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListAllMappers indicates an expected call of ListAllMappers.
+func (mr *MockUserAttributeMapperRepositoryMockRecorder) ListAllMappers(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListAllMappers", reflect.TypeOf((*MockUserAttributeMapperRepository)(nil).ListAllMappers), ctx)
+}
+
 // UpdateMapper mocks base method.
 func (m *MockUserAttributeMapperRepository) UpdateMapper(ctx context.Context, mapper *domain.UserAttributeMapper) error {
 	m.ctrl.T.Helper()
