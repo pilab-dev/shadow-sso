@@ -195,6 +195,34 @@ func (mr *MockRepositoryProviderMockRecorder) TokenRepository(ctx any) *gomock.C
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TokenRepository", reflect.TypeOf((*MockRepositoryProvider)(nil).TokenRepository), ctx)
 }
 
+// UserAttributeMapperRepository mocks base method.
+func (m *MockRepositoryProvider) UserAttributeMapperRepository(ctx context.Context) domain.UserAttributeMapperRepository {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UserAttributeMapperRepository", ctx)
+	ret0, _ := ret[0].(domain.UserAttributeMapperRepository)
+	return ret0
+}
+
+// UserAttributeMapperRepository indicates an expected call of UserAttributeMapperRepository.
+func (mr *MockRepositoryProviderMockRecorder) UserAttributeMapperRepository(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UserAttributeMapperRepository", reflect.TypeOf((*MockRepositoryProvider)(nil).UserAttributeMapperRepository), ctx)
+}
+
+// UserAttributeRepository mocks base method.
+func (m *MockRepositoryProvider) UserAttributeRepository(ctx context.Context) domain.UserAttributeRepository {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UserAttributeRepository", ctx)
+	ret0, _ := ret[0].(domain.UserAttributeRepository)
+	return ret0
+}
+
+// UserAttributeRepository indicates an expected call of UserAttributeRepository.
+func (mr *MockRepositoryProviderMockRecorder) UserAttributeRepository(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UserAttributeRepository", reflect.TypeOf((*MockRepositoryProvider)(nil).UserAttributeRepository), ctx)
+}
+
 // UserFederatedIdentityRepository mocks base method.
 func (m *MockRepositoryProvider) UserFederatedIdentityRepository(ctx context.Context) domain.UserFederatedIdentityRepository {
 	m.ctrl.T.Helper()

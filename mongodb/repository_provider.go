@@ -20,21 +20,23 @@ type MongoRepositoryProvider struct {
 	cfgDbName   string
 
 	// Cached repository instances
-	userRepo        domain.UserRepository
-	sessionRepo     domain.SessionRepository
-	fedIDRepo       domain.UserFederatedIdentityRepository
-	tokenRepo       domain.TokenRepository
-	authCodeRepo    domain.AuthorizationCodeRepository
-	pkceRepo        domain.PkceRepository // See PkceRepository method for discussion
-	deviceAuthRepo  domain.DeviceAuthorizationRepository
-	pubKeyRepo      domain.PublicKeyRepository
-	saRepo          domain.ServiceAccountRepository
-	idpRepo         domain.IdPRepository
-	configRepo      domain.ConfigurationRepository
-	clientRepo      *ClientRepository
-	flowStore        domain.FlowStore
-	userSessionStore domain.UserSessionStore
-	tokenCache       cache.TokenStore
+	userRepo           domain.UserRepository
+	sessionRepo        domain.SessionRepository
+	fedIDRepo          domain.UserFederatedIdentityRepository
+	userAttrRepo       domain.UserAttributeRepository
+	userAttrMapperRepo domain.UserAttributeMapperRepository
+	tokenRepo          domain.TokenRepository
+	authCodeRepo       domain.AuthorizationCodeRepository
+	pkceRepo           domain.PkceRepository // See PkceRepository method for discussion
+	deviceAuthRepo     domain.DeviceAuthorizationRepository
+	pubKeyRepo         domain.PublicKeyRepository
+	saRepo             domain.ServiceAccountRepository
+	idpRepo            domain.IdPRepository
+	configRepo         domain.ConfigurationRepository
+	clientRepo         *ClientRepository
+	flowStore          domain.FlowStore
+	userSessionStore   domain.UserSessionStore
+	tokenCache         cache.TokenStore
 }
 
 // NewMongoRepositoryProvider creates a new instance of MongoRepositoryProvider.
@@ -136,6 +138,28 @@ func (p *MongoRepositoryProvider) UserFederatedIdentityRepository(ctx context.Co
 		}
 	}
 	return p.fedIDRepo
+}
+
+// UserAttributeRepository returns a MongoDB-backed UserAttributeRepository.
+func (p *MongoRepositoryProvider) UserAttributeRepository(ctx context.Context) domain.UserAttributeRepository {
+	if p.userAttrRepo == nil && p.db != nil {
+		repo, err := NewUserAttributeRepository(ctx, p.db)
+		if err == nil {
+			p.userAttrRepo = repo
+		}
+	}
+	return p.userAttrRepo
+}
+
+// UserAttributeMapperRepository returns a MongoDB-backed UserAttributeMapperRepository.
+func (p *MongoRepositoryProvider) UserAttributeMapperRepository(ctx context.Context) domain.UserAttributeMapperRepository {
+	if p.userAttrMapperRepo == nil && p.db != nil {
+		repo, err := NewUserAttributeMapperRepository(ctx, p.db)
+		if err == nil {
+			p.userAttrMapperRepo = repo
+		}
+	}
+	return p.userAttrMapperRepo
 }
 
 // TokenRepository returns a MongoDB-backed TokenRepository.

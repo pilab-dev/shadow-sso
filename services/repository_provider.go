@@ -16,6 +16,8 @@ type RepositoryProvider interface {
 	UserRepository(ctx context.Context) domain.UserRepository
 	SessionRepository(ctx context.Context) domain.SessionRepository
 	UserFederatedIdentityRepository(ctx context.Context) domain.UserFederatedIdentityRepository
+	UserAttributeRepository(ctx context.Context) domain.UserAttributeRepository
+	UserAttributeMapperRepository(ctx context.Context) domain.UserAttributeMapperRepository
 
 	// Token and Auth flow related repositories
 	TokenRepository(ctx context.Context) domain.TokenRepository

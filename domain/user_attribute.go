@@ -1,3 +1,5 @@
+//go:generate go run go.uber.org/mock/mockgen@latest -source=$GOFILE -destination=mocks/mock_user_attribute_repository.go -package=mock_domain -exclude_interfaces=UserAttributeMapperRepository UserAttributeRepository
+//go:generate go run go.uber.org/mock/mockgen@latest -source=$GOFILE -destination=mocks/mock_user_attribute_mapper_repository.go -package=mock_domain -exclude_interfaces=UserAttributeRepository UserAttributeMapperRepository
 package domain
 
 import (
@@ -13,16 +15,16 @@ type UserAttribute struct {
 }
 
 type UserAttributeMapper struct {
-	ID             string         `bson:"_id,omitempty" json:"id"`
-	Name           string         `bson:"name" json:"name"`
-	UserAttribute  string         `bson:"user_attribute" json:"userAttribute"`
-	TokenClaimName string         `bson:"token_claim_name" json:"tokenClaimName"`
-	TokenType     string         `bson:"token_type" json:"tokenType"`
-	MultiValued   bool           `bson:"multi_valued" json:"multiValued"`
-	Protocol      string         `bson:"protocol" json:"protocol"`
-	ClientID      string         `bson:"client_id,omitempty" json:"clientId,omitempty"`
-	CreatedAt     time.Time      `bson:"created_at" json:"createdAt"`
-	UpdatedAt     time.Time      `bson:"updated_at" json:"updatedAt"`
+	ID             string    `bson:"_id,omitempty" json:"id"`
+	Name           string    `bson:"name" json:"name"`
+	UserAttribute  string    `bson:"user_attribute" json:"userAttribute"`
+	TokenClaimName string    `bson:"token_claim_name" json:"tokenClaimName"`
+	TokenType      string    `bson:"token_type" json:"tokenType"`
+	MultiValued    bool      `bson:"multi_valued" json:"multiValued"`
+	Protocol       string    `bson:"protocol" json:"protocol"`
+	ClientID       string    `bson:"client_id,omitempty" json:"clientId,omitempty"`
+	CreatedAt      time.Time `bson:"created_at" json:"createdAt"`
+	UpdatedAt      time.Time `bson:"updated_at" json:"updatedAt"`
 }
 
 type UserAttributeRepository interface {
