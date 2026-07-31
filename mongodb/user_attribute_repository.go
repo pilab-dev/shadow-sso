@@ -2,6 +2,7 @@ package mongodb
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/pilab-dev/shadow-sso/domain"
@@ -47,11 +48,7 @@ func (r *UserAttributeRepository) CreateAttribute(ctx context.Context, attr *dom
 
 func (r *UserAttributeRepository) GetAttributeByID(ctx context.Context, id string) (*domain.UserAttribute, error) {
 	var attr domain.UserAttribute
-	oid, err := bson.ObjectIDFromHex(id)
-	if err != nil {
-		return nil, err
-	}
-	err = r.collection.FindOne(ctx, bson.M{"_id": oid}).Decode(&attr)
+	err := r.collection.FindOne(ctx, bson.M{"_id": id}).Decode(&attr)
 	if err != nil {
 		return nil, err
 	}
@@ -87,21 +84,25 @@ func (r *UserAttributeRepository) ListAllAttributes(ctx context.Context) ([]*dom
 }
 
 func (r *UserAttributeRepository) UpdateAttribute(ctx context.Context, attr *domain.UserAttribute) error {
-	oid, err := bson.ObjectIDFromHex(attr.ID)
+	res, err := r.collection.UpdateOne(ctx, bson.M{"_id": attr.ID}, bson.M{"$set": attr})
 	if err != nil {
 		return err
 	}
-	_, err = r.collection.UpdateOne(ctx, bson.M{"_id": oid}, bson.M{"$set": attr})
-	return err
+	if res.MatchedCount == 0 {
+		return fmt.Errorf("user attribute not found")
+	}
+	return nil
 }
 
 func (r *UserAttributeRepository) DeleteAttribute(ctx context.Context, id string) error {
-	oid, err := bson.ObjectIDFromHex(id)
+	res, err := r.collection.DeleteOne(ctx, bson.M{"_id": id})
 	if err != nil {
 		return err
 	}
-	_, err = r.collection.DeleteOne(ctx, bson.M{"_id": oid})
-	return err
+	if res.DeletedCount == 0 {
+		return fmt.Errorf("user attribute not found")
+	}
+	return nil
 }
 
 func (r *UserAttributeRepository) DeleteAttributesByUserID(ctx context.Context, userID string) error {
@@ -147,11 +148,7 @@ func (r *UserAttributeMapperRepository) CreateMapper(ctx context.Context, mapper
 
 func (r *UserAttributeMapperRepository) GetMapperByID(ctx context.Context, id string) (*domain.UserAttributeMapper, error) {
 	var mapper domain.UserAttributeMapper
-	oid, err := bson.ObjectIDFromHex(id)
-	if err != nil {
-		return nil, err
-	}
-	err = r.collection.FindOne(ctx, bson.M{"_id": oid}).Decode(&mapper)
+	err := r.collection.FindOne(ctx, bson.M{"_id": id}).Decode(&mapper)
 	if err != nil {
 		return nil, err
 	}
@@ -221,22 +218,26 @@ func (r *UserAttributeMapperRepository) ListAllMappers(ctx context.Context) ([]*
 }
 
 func (r *UserAttributeMapperRepository) UpdateMapper(ctx context.Context, mapper *domain.UserAttributeMapper) error {
-	oid, err := bson.ObjectIDFromHex(mapper.ID)
+	mapper.UpdatedAt = time.Now()
+	res, err := r.collection.UpdateOne(ctx, bson.M{"_id": mapper.ID}, bson.M{"$set": mapper})
 	if err != nil {
 		return err
 	}
-	mapper.UpdatedAt = time.Now()
-	_, err = r.collection.UpdateOne(ctx, bson.M{"_id": oid}, bson.M{"$set": mapper})
-	return err
+	if res.MatchedCount == 0 {
+		return fmt.Errorf("user attribute mapper not found")
+	}
+	return nil
 }
 
 func (r *UserAttributeMapperRepository) DeleteMapper(ctx context.Context, id string) error {
-	oid, err := bson.ObjectIDFromHex(id)
+	res, err := r.collection.DeleteOne(ctx, bson.M{"_id": id})
 	if err != nil {
 		return err
 	}
-	_, err = r.collection.DeleteOne(ctx, bson.M{"_id": oid})
-	return err
+	if res.DeletedCount == 0 {
+		return fmt.Errorf("user attribute mapper not found")
+	}
+	return nil
 }
 
 func ptr[T any](v T) *T {
