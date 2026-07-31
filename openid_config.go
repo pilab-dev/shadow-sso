@@ -7,23 +7,23 @@ import (
 	"fmt"
 	"time"
 
-	"connectrpc.com/connect"                                                   // For connect.WithInterceptors
-	"connectrpc.com/otelconnect"                                               // For OpenTelemetry Connect interceptor
-	"github.com/gin-gonic/gin"                                                 // For *gin.Engine
-	"github.com/pilab-dev/shadow-sso/api"                                      // For api.OpenIDProviderConfig
-	"github.com/pilab-dev/shadow-sso/api/openidv2_1"                           // For api.NewOAuth2API
-	"github.com/pilab-dev/shadow-sso/api/webauth"                              // For webauth.New, WebAuth login UI
-	"github.com/pilab-dev/shadow-sso/apps/ssso/config"                         // For config.Config
-	"github.com/pilab-dev/shadow-sso/cache"                                    // For cache.NewMemoryTokenStore
+	"connectrpc.com/connect"                           // For connect.WithInterceptors
+	"connectrpc.com/otelconnect"                       // For OpenTelemetry Connect interceptor
+	"github.com/gin-gonic/gin"                         // For *gin.Engine
+	"github.com/pilab-dev/shadow-sso/api"              // For api.OpenIDProviderConfig
+	"github.com/pilab-dev/shadow-sso/api/openidv2_1"   // For api.NewOAuth2API
+	"github.com/pilab-dev/shadow-sso/api/webauth"      // For webauth.New, WebAuth login UI
+	"github.com/pilab-dev/shadow-sso/apps/ssso/config" // For config.Config
+	"github.com/pilab-dev/shadow-sso/cache"            // For cache.NewMemoryTokenStore
 	"github.com/pilab-dev/shadow-sso/domain"
-	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"           // For Connect-RPC service handlers
+	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect" // For Connect-RPC service handlers
 	"github.com/pilab-dev/shadow-sso/graphql"
 	"github.com/pilab-dev/shadow-sso/internal/notifications"
 	"github.com/pilab-dev/shadow-sso/internal/oidcflow" // Still needed for concrete in-memory store instantiation
 	"github.com/pilab-dev/shadow-sso/middleware"
-	"github.com/pilab-dev/shadow-sso/mongodb" // For mongodb.NewMongoRepositoryProvider
+	"github.com/pilab-dev/shadow-sso/mongodb"          // For mongodb.NewMongoRepositoryProvider
 	pkgAuth "github.com/pilab-dev/shadow-sso/pkg/auth" // For auth.NewBcryptPasswordHasher
-	"github.com/pilab-dev/shadow-sso/services" // For services.NewTokenSigner, services.NewDefaultServiceProvider
+	"github.com/pilab-dev/shadow-sso/services"         // For services.NewTokenSigner, services.NewDefaultServiceProvider
 	"github.com/rs/zerolog/log"
 	"sync" // For InMemoryPkceRepository
 )
@@ -91,17 +91,17 @@ func (r *InMemoryPkceRepository) DeleteCodeChallenge(ctx context.Context, code s
 
 // SSOServerOptions provides options for configuring the NewSSOServer function.
 type SSOServerOptions struct {
-	Config             *api.OpenIDProviderConfig
-	AppConfig          *config.Config            // Viper configuration
-	RepositoryProvider services.RepositoryProvider
-	TokenSigner        *services.TokenSigner
-	TokenCache         cache.TokenStore
-	PkceRepository     domain.PkceRepository
-	FlowStore          domain.FlowStore
-	UserSessionStore   domain.UserSessionStore
-	EncryptionKey      string // For configuration service encryption
-	CookieSigningSecret string // Secret for signing SSO session cookies
-	ExtraMiddlewares   []gin.HandlerFunc         // Additional Gin middlewares applied before route registration
+	Config              *api.OpenIDProviderConfig
+	AppConfig           *config.Config // Viper configuration
+	RepositoryProvider  services.RepositoryProvider
+	TokenSigner         *services.TokenSigner
+	TokenCache          cache.TokenStore
+	PkceRepository      domain.PkceRepository
+	FlowStore           domain.FlowStore
+	UserSessionStore    domain.UserSessionStore
+	EncryptionKey       string            // For configuration service encryption
+	CookieSigningSecret string            // Secret for signing SSO session cookies
+	ExtraMiddlewares    []gin.HandlerFunc // Additional Gin middlewares applied before route registration
 }
 
 // NewSSOServer initializes and returns a configured Gin engine for the SSO server.
@@ -207,18 +207,18 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 
 	// Create OAuth2 API handlers
 	oauth2API := openidv2_1.NewOAuth2API(&openidv2_1.OAuth2APIOptions{
-		OAuthService:         serviceProvider.OAuthService(),
-		JSKSService:          serviceProvider.JWKSService(),
-		ClientService:        serviceProvider.ClientService(),
-		PkceService:          serviceProvider.PKCEService(),
-		Config:               opts.Config,
-		FlowStore:            serviceProvider.FlowStore(),
-		UserSessionStore:     serviceProvider.UserSessionStore(),
-		UserRepo:             repoProvider.UserRepository(context.Background()),
-		PasswordHasher:       passwordHasher,
-		FederationService:    serviceProvider.FederationService(),
-		TokenService:         serviceProvider.TokenService(),
-		CookieSigningSecret:  opts.CookieSigningSecret,
+		OAuthService:          serviceProvider.OAuthService(),
+		JSKSService:           serviceProvider.JWKSService(),
+		ClientService:         serviceProvider.ClientService(),
+		PkceService:           serviceProvider.PKCEService(),
+		Config:                opts.Config,
+		FlowStore:             serviceProvider.FlowStore(),
+		UserSessionStore:      serviceProvider.UserSessionStore(),
+		UserRepo:              repoProvider.UserRepository(context.Background()),
+		PasswordHasher:        passwordHasher,
+		FederationService:     serviceProvider.FederationService(),
+		TokenService:          serviceProvider.TokenService(),
+		CookieSigningSecret:   opts.CookieSigningSecret,
 		BrandLogoURL:          brandLogoURL,
 		BrandOrganizationName: brandOrgName,
 		BrandPrimaryColor:     brandColor,
@@ -363,6 +363,16 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 	federationPath, federationHandler := ssov1connect.NewFederationServiceHandler(federationServer, interceptors)
 	router.Any(federationPath+"*action", gin.WrapH(federationHandler))
 
+	// User Attribute + User Attribute Mapper Service
+	attrServer := services.NewUserAttributeServiceServer(
+		opts.RepositoryProvider.UserAttributeRepository(ctx),
+		opts.RepositoryProvider.UserAttributeMapperRepository(ctx),
+	)
+	attrPath, attrHandler := ssov1connect.NewUserAttributeServiceHandler(attrServer, interceptors)
+	router.Any(attrPath+"*action", gin.WrapH(attrHandler))
+	attrMapperPath, attrMapperHandler := ssov1connect.NewUserAttributeMapperServiceHandler(attrServer, interceptors)
+	router.Any(attrMapperPath+"*action", gin.WrapH(attrMapperHandler))
+
 	log.Info().Msg("Connect-RPC handlers registered successfully")
 	// ---------- End Connect-RPC handlers ----------
 
@@ -452,7 +462,6 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 
 	return router, nil
 }
-
 
 var (
 	ErrInvalidConfig       = errors.New("invalid configuration")
