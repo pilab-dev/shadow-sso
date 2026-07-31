@@ -115,6 +115,38 @@ func TwoFactorServiceClient(cfg *config.Context) (ssov1connect.TwoFactorServiceC
 	return ssov1connect.NewTwoFactorServiceClient(httpClient, cfg.ServerEndpoint, opts...), nil
 }
 
+// UserAttributeServiceClient returns a new UserAttributeService client.
+func UserAttributeServiceClient(cfg *config.Context) (ssov1connect.UserAttributeServiceClient, error) {
+	if cfg == nil || cfg.ServerEndpoint == "" {
+		return nil, fmt.Errorf("invalid context or server endpoint for UserAttributeService client")
+	}
+	if cfg.UserAuthToken == "" { // User attribute management requires auth (admin)
+		return nil, fmt.Errorf("user authentication token not found in current context. Please login using 'ssoctl auth login'")
+	}
+	httpClient := &http.Client{ /* ... consider shared transport ... */ }
+	opts := []connect.ClientOption{
+		connect.WithProtoJSON(),
+		connect.WithInterceptors(&authInterceptor{token: cfg.UserAuthToken}),
+	}
+	return ssov1connect.NewUserAttributeServiceClient(httpClient, cfg.ServerEndpoint, opts...), nil
+}
+
+// UserAttributeMapperServiceClient returns a new UserAttributeMapperService client.
+func UserAttributeMapperServiceClient(cfg *config.Context) (ssov1connect.UserAttributeMapperServiceClient, error) {
+	if cfg == nil || cfg.ServerEndpoint == "" {
+		return nil, fmt.Errorf("invalid context or server endpoint for UserAttributeMapperService client")
+	}
+	if cfg.UserAuthToken == "" { // Token mapper management requires auth (admin)
+		return nil, fmt.Errorf("user authentication token not found in current context. Please login using 'ssoctl auth login'")
+	}
+	httpClient := &http.Client{ /* ... consider shared transport ... */ }
+	opts := []connect.ClientOption{
+		connect.WithProtoJSON(),
+		connect.WithInterceptors(&authInterceptor{token: cfg.UserAuthToken}),
+	}
+	return ssov1connect.NewUserAttributeMapperServiceClient(httpClient, cfg.ServerEndpoint, opts...), nil
+}
+
 // authInterceptor is a simple client interceptor to add the auth token.
 type authInterceptor struct {
 	token string
