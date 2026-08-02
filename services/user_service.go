@@ -10,6 +10,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
 	"github.com/pilab-dev/shadow-sso/domain"
+	pkgauth "github.com/pilab-dev/shadow-sso/pkg/auth"
 	"github.com/pilab-dev/shadow-sso/internal/audit"
 	"github.com/pilab-dev/shadow-sso/internal/auth/rbac"
 	"github.com/pilab-dev/shadow-sso/internal/auth/totp"
@@ -26,6 +27,19 @@ type UserServer struct {
 	userRepo                                     domain.UserRepository
 	passwordHasher                               domain.PasswordHasher
 	phoneVerificationService                     *domain.PhoneVerificationService
+	realmSettingsRepo                            domain.RealmSettingsRepository
+}
+
+// userServerOption configures a UserServer at construction time.
+type userServerOption func(*UserServer)
+
+// WithUserRealmSettings injects the realm settings repository so password
+// policies persisted in realm settings are enforced on registration, password
+// change and password reset.
+func WithUserRealmSettings(repo domain.RealmSettingsRepository) userServerOption {
+	return func(s *UserServer) {
+		s.realmSettingsRepo = repo
+	}
 }
 
 // mapUserStatusToProto maps domain.UserStatus to ssov1.UserStatus
@@ -57,12 +71,34 @@ func generateSecureOTP(length int) string {
 }
 
 // NewUserServer creates a new UserServer.
-func NewUserServer(userRepo domain.UserRepository, hasher domain.PasswordHasher, phoneVerificationService *domain.PhoneVerificationService) *UserServer {
-	return &UserServer{
+func NewUserServer(userRepo domain.UserRepository, hasher domain.PasswordHasher, phoneVerificationService *domain.PhoneVerificationService, opts ...userServerOption) *UserServer {
+	svc := &UserServer{
 		userRepo:                 userRepo,
 		passwordHasher:           hasher,
 		phoneVerificationService: phoneVerificationService,
 	}
+	for _, opt := range opts {
+		opt(svc)
+	}
+	return svc
+}
+
+// realmPasswordPolicy resolves the password policy to enforce. It falls back
+// to a bare minimum of 8 characters when no realm settings repository is wired
+// or when the persisted settings configure no explicit policy.
+func (s *UserServer) realmPasswordPolicy(ctx context.Context) pkgauth.PasswordPolicy {
+	if s.realmSettingsRepo == nil {
+		return pkgauth.PasswordPolicy{MinLength: 8}
+	}
+	settings, err := s.realmSettingsRepo.GetRealmSettings(ctx)
+	if err != nil {
+		return pkgauth.PasswordPolicy{MinLength: 8}
+	}
+	policy := pkgauth.PasswordPolicyFromRealm(settings)
+	if policy.MinLength == 0 {
+		policy.MinLength = 8
+	}
+	return policy
 }
 
 // resolveUser looks up a user by ID first, falling back to email lookup.
@@ -106,14 +142,20 @@ func (s *UserServer) RegisterUser(ctx context.Context, req *connect.Request[ssov
 		return nil, connect.NewError(connect.CodeAlreadyExists, err)
 	}
 
-	// 3. Hash password using passwordHasher
+	// 3. Enforce realm password policy
+	if err := pkgauth.ValidatePassword(req.Msg.GetPassword(), s.realmPasswordPolicy(ctx)); err != nil {
+		audit.Log("UserService", "RegisterUser", actingUserID, req.Msg.GetEmail(), "Password policy violation", false, err)
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+
+	// 4. Hash password using passwordHasher
 	hashedPassword, err := s.passwordHasher.Hash(req.Msg.GetPassword())
 	if err != nil {
 		audit.Log("UserService", "RegisterUser", actingUserID, req.Msg.GetEmail(), "Failed to hash password", false, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to process password"))
 	}
 
-	// 4. Create domain.User struct
+	// 5. Create domain.User struct
 	newUser := &domain.User{
 		Email:        req.Msg.GetEmail(),
 		PasswordHash: hashedPassword,
@@ -388,18 +430,24 @@ func (s *UserServer) ChangePassword(ctx context.Context, req *connect.Request[ss
 		audit.Log("UserService", "ChangePassword", actingUserID, targetUserID, "Admin password change", true, nil)
 	}
 
-	// 3. Hash new password
+	// 3. Enforce realm password policy
+	if err := pkgauth.ValidatePassword(req.Msg.GetNewPassword(), s.realmPasswordPolicy(ctx)); err != nil {
+		audit.Log("UserService", "ChangePassword", actingUserID, targetUserID, "Password policy violation", false, err)
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+
+	// 4. Hash new password
 	hashedPassword, err := s.passwordHasher.Hash(req.Msg.GetNewPassword())
 	if err != nil {
 		audit.Log("UserService", "ChangePassword", actingUserID, targetUserID, "Failed to hash new password", false, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to process new password"))
 	}
 
-	// 4. Update password hash and timestamp
+	// 5. Update password hash and timestamp
 	user.PasswordHash = hashedPassword
 	user.UpdatedAt = time.Now()
 
-	// 5. Save user
+	// 6. Save user
 	err = s.userRepo.UpdateUser(ctx, user)
 	if err != nil {
 		audit.Log("UserService", "ChangePassword", actingUserID, targetUserID, "Failed to update user password", false, err)
@@ -1024,6 +1072,13 @@ func (s *UserServer) ResetPassword(ctx context.Context, req *connect.Request[sso
 		return connect.NewResponse(&ssov1.ResetPasswordResponse{
 			Success: false,
 			Error:   "reset token expired",
+		}), nil
+	}
+
+	if err := pkgauth.ValidatePassword(req.Msg.GetNewPassword(), s.realmPasswordPolicy(ctx)); err != nil {
+		return connect.NewResponse(&ssov1.ResetPasswordResponse{
+			Success: false,
+			Error:   err.Error(),
 		}), nil
 	}
 

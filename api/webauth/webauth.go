@@ -30,6 +30,7 @@ type WebAuth struct {
 	ssoCookieSecret    string
 	rateLimiter        *RateLimiter
 	runner             *authflow.Runner
+	realmSettingsRepo  domain.RealmSettingsRepository
 }
 
 // Options configures the WebAuth instance with all required dependencies.
@@ -46,6 +47,7 @@ type Options struct {
 	Config             *Config
 	SSOCookieSecret    string
 	AuthFlowRepo       domain.AuthenticationFlowRepository
+	RealmSettingsRepo  domain.RealmSettingsRepository
 }
 
 // New creates a new WebAuth instance with the provided dependencies.
@@ -70,6 +72,7 @@ func New(opts *Options) *WebAuth {
 		ssoCookieSecret:   opts.SSOCookieSecret,
 		rateLimiter:       NewRateLimiter(cfg.RateLimitMaxAttempts, cfg.RateLimitLockoutDuration),
 		runner:            authflow.NewRunner(opts.AuthFlowRepo, opts.PasswordHasher),
+		realmSettingsRepo: opts.RealmSettingsRepo,
 	}
 }
 

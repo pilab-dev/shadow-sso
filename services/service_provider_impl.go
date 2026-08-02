@@ -121,6 +121,7 @@ func (p *DefaultServiceProvider) OAuthService() OAuthService {
 			p.repoProvider.SessionRepository(initCtx),
 			p.TokenService(),
 			p.config.Issuer,
+			WithRealmSettings(p.repoProvider.RealmSettingsRepository(initCtx)),
 		)
 	}
 	return p.oauthService

@@ -161,6 +161,9 @@ func (f *fakeRepoProvider) Ping(context.Context) error { return nil }
 func (f *fakeRepoProvider) ProtocolMapperRepository(context.Context) domain.ProtocolMapperRepository {
 	return f.protocolMapperRepo
 }
+func (f *fakeRepoProvider) RealmSettingsRepository(context.Context) domain.RealmSettingsRepository {
+	return nil
+}
 
 func TestSetNestedClaim(t *testing.T) {
 	t.Run("flat key stores value", func(t *testing.T) {

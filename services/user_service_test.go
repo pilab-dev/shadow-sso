@@ -677,6 +677,93 @@ func TestUserServer_RegisterUser_DefaultRole(t *testing.T) {
 	assert.Equal(t, []string{"ROLE_USER"}, resp.Msg.User.Roles)
 }
 
+func TestUserServer_RegisterUser_RejectsWeakPasswordPerRealmPolicy(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	userRepo := mock_domain.NewMockUserRepository(ctrl)
+	hasher := mock_domain.NewMockPasswordHasher(ctrl)
+	realmSettingsRepo := mock_domain.NewMockRealmSettingsRepository(ctrl)
+	service := NewUserServer(userRepo, hasher, nil, WithUserRealmSettings(realmSettingsRepo))
+
+	userRepo.EXPECT().GetUserByEmail(gomock.Any(), "new@example.com").Return(nil, domain.ErrUserNotFound)
+	realmSettingsRepo.EXPECT().GetRealmSettings(gomock.Any()).Return(&domain.RealmSettings{
+		Realm:             "master",
+		PasswordMinLength: 12,
+		PasswordUpperCase: 1,
+		PasswordDigits:    1,
+	}, nil)
+
+	req := connect.NewRequest(&ssov1.RegisterUserRequest{
+		Email:    "new@example.com",
+		Password: "weak",
+	})
+	ctx := createAuthenticatedContext(context.Background(), "admin-1")
+	_, err := service.RegisterUser(ctx, req)
+
+	require.Error(t, err)
+	assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
+}
+
+func TestUserServer_RegisterUser_AcceptsPasswordMeetingRealmPolicy(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	userRepo := mock_domain.NewMockUserRepository(ctrl)
+	hasher := mock_domain.NewMockPasswordHasher(ctrl)
+	realmSettingsRepo := mock_domain.NewMockRealmSettingsRepository(ctrl)
+	service := NewUserServer(userRepo, hasher, nil, WithUserRealmSettings(realmSettingsRepo))
+
+	realmSettingsRepo.EXPECT().GetRealmSettings(gomock.Any()).Return(&domain.RealmSettings{
+		Realm:             "master",
+		PasswordMinLength: 8,
+		PasswordUpperCase: 1,
+		PasswordDigits:    1,
+	}, nil)
+	userRepo.EXPECT().GetUserByEmail(gomock.Any(), "new@example.com").Return(nil, domain.ErrUserNotFound)
+	hasher.EXPECT().Hash("StrongPass1").Return("hashed", nil)
+	userRepo.EXPECT().CreateUser(gomock.Any(), gomock.Any()).Return(nil)
+
+	req := connect.NewRequest(&ssov1.RegisterUserRequest{
+		Email:    "new@example.com",
+		Password: "StrongPass1",
+	})
+	ctx := createAuthenticatedContext(context.Background(), "admin-1")
+	resp, err := service.RegisterUser(ctx, req)
+
+	require.NoError(t, err)
+	require.NotNil(t, resp.Msg.User)
+}
+
+func TestUserServer_ChangePassword_RejectsWeakPasswordPerRealmPolicy(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	userRepo := mock_domain.NewMockUserRepository(ctrl)
+	hasher := mock_domain.NewMockPasswordHasher(ctrl)
+	realmSettingsRepo := mock_domain.NewMockRealmSettingsRepository(ctrl)
+	service := NewUserServer(userRepo, hasher, nil, WithUserRealmSettings(realmSettingsRepo))
+
+	existingUser := &domain.User{ID: "user-123", Email: "user@example.com", PasswordHash: "hashed-old"}
+	userRepo.EXPECT().GetUserByID(gomock.Any(), "user-123").Return(existingUser, nil)
+	hasher.EXPECT().Verify("hashed-old", "old-password").Return(nil)
+	realmSettingsRepo.EXPECT().GetRealmSettings(gomock.Any()).Return(&domain.RealmSettings{
+		Realm:             "master",
+		PasswordMinLength: 12,
+	}, nil)
+
+	req := connect.NewRequest(&ssov1.ChangePasswordRequest{
+		UserId:      "user-123",
+		OldPassword: "old-password",
+		NewPassword: "short",
+	})
+	ctx := createAuthenticatedContext(context.Background(), "user-123")
+	_, err := service.ChangePassword(ctx, req)
+
+	require.Error(t, err)
+	assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
+}
+
 func TestResolveUser(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()

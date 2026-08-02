@@ -717,6 +717,33 @@ func (r *RealmSettingsRepository) UpdateRealmSettings(ctx context.Context, s *do
 	return err
 }
 
+// SeedRealmSettingsIfEmpty persists the given settings only when the realm
+// settings collection is empty (first boot). It returns true when a seed was
+// written and false when settings already exist, leaving any admin-applied
+// configuration untouched. This intentionally never calls UpdateRealmSettings
+// so the delete-all + re-insert semantics stay reserved for explicit updates.
+func (r *RealmSettingsRepository) SeedRealmSettingsIfEmpty(ctx context.Context, s *domain.RealmSettings) (bool, error) {
+	count, err := r.settings.CountDocuments(ctx, bson.M{})
+	if err != nil {
+		return false, err
+	}
+	if count > 0 {
+		return false, nil
+	}
+
+	if s.ID == "" {
+		s.ID = "master"
+	}
+	s.CreatedAt = time.Now().UTC()
+	s.UpdatedAt = time.Now().UTC()
+
+	_, err = r.settings.InsertOne(ctx, s)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 const RealmKeysCollection = "realm_keys"
 
 // RealmKeysRepository implements domain.RealmKeysRepository

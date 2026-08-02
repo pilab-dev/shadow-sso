@@ -199,6 +199,13 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 		return nil, fmt.Errorf("failed to initialize service provider: %w", err)
 	}
 
+	// Seed realm settings from config on first boot so grant paths read the
+	// persisted AccessTokenLifespan/AccessCodeLifespan instead of hardcoded
+	// values. No-op once the realm_settings collection already holds documents.
+	if err := seedRealmSettingsFromConfig(repoProvider, opts.Config); err != nil {
+		return nil, err
+	}
+
 	// Initialize password hasher (moved here as it's a service)
 	passwordHasher := pkgAuth.NewBcryptPasswordHasher(opts.Config.SecurityConfig.PasswordHashingCost)
 
@@ -275,18 +282,19 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 	}
 
 	webauthAPI := webauth.New(&webauth.Options{
-		UserRepo:          repoProvider.UserRepository(context.Background()),
-		PasswordHasher:    passwordHasher,
-		FlowStore:         serviceProvider.FlowStore(),
-		UserSessionStore:  serviceProvider.UserSessionStore(),
-		IdPRepository:     repoProvider.IdPRepository(context.Background()),
-		FederationService: serviceProvider.FederationService(),
-		OAuthService:      serviceProvider.OAuthService(),
-		TokenService:      serviceProvider.TokenService(),
-		ClientService:     serviceProvider.ClientService(),
-		Config:            webauthConfig,
-		SSOCookieSecret:   opts.CookieSigningSecret,
-		AuthFlowRepo:      authFlowRepo,
+		UserRepo:           repoProvider.UserRepository(context.Background()),
+		PasswordHasher:     passwordHasher,
+		FlowStore:          serviceProvider.FlowStore(),
+		UserSessionStore:   serviceProvider.UserSessionStore(),
+		IdPRepository:      repoProvider.IdPRepository(context.Background()),
+		FederationService:  serviceProvider.FederationService(),
+		OAuthService:       serviceProvider.OAuthService(),
+		TokenService:       serviceProvider.TokenService(),
+		ClientService:      serviceProvider.ClientService(),
+		Config:             webauthConfig,
+		SSOCookieSecret:    opts.CookieSigningSecret,
+		AuthFlowRepo:       authFlowRepo,
+		RealmSettingsRepo:  repoProvider.RealmSettingsRepository(context.Background()),
 	})
 
 	router.GET("/", webauthAPI.LandingPageHandler)
@@ -329,6 +337,7 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 		opts.RepositoryProvider.UserRepository(ctx),
 		connectPasswordHasher,
 		nil,
+		services.WithUserRealmSettings(opts.RepositoryProvider.RealmSettingsRepository(ctx)),
 	)
 	userPath, userHandler := ssov1connect.NewUserServiceHandler(userServer, interceptors)
 	router.Any(userPath+"*action", gin.WrapH(userHandler))
@@ -483,6 +492,47 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 	}
 
 	return router, nil
+}
+
+// seedRealmSettingsFromConfig persists realm settings derived from config on
+// the first boot of a fresh MongoDB database. It is a no-op when a non-MongoDB
+// repository provider is in use or when realm settings already exist, so
+// admin-applied settings are never clobbered.
+func seedRealmSettingsFromConfig(repoProvider services.RepositoryProvider, cfg *api.OpenIDProviderConfig) error {
+	mongoRp, ok := repoProvider.(*mongodb.MongoRepositoryProvider)
+	if !ok {
+		return nil
+	}
+
+	ctx := context.Background()
+	repo, ok := mongoRp.RealmSettingsRepository(ctx).(*mongodb.RealmSettingsRepository)
+	if !ok {
+		return nil
+	}
+
+	accessTokenLifespan := int(cfg.AccessTokenTTL.Seconds())
+	if accessTokenLifespan <= 0 {
+		accessTokenLifespan = 300
+	}
+	accessCodeLifespan := int(cfg.AuthCodeTTL.Seconds())
+	if accessCodeLifespan <= 0 {
+		accessCodeLifespan = 60
+	}
+
+	settings := &domain.RealmSettings{
+		Realm:               "master",
+		DisplayName:         "Shadow SSO",
+		Enabled:             true,
+		BruteForceProtected: true,
+		SSLRequired:         "external",
+		AccessTokenLifespan: accessTokenLifespan,
+		AccessCodeLifespan:  accessCodeLifespan,
+	}
+
+	if _, err := repo.SeedRealmSettingsIfEmpty(ctx, settings); err != nil {
+		return fmt.Errorf("failed to seed realm settings: %w", err)
+	}
+	return nil
 }
 
 var (

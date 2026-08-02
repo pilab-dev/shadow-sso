@@ -38,6 +38,7 @@ type RepositoryProvider interface {
 	GroupRepository(ctx context.Context) domain.GroupRepository
 	RoleRepository(ctx context.Context) domain.RoleRepository
 	RealmKeysRepository(ctx context.Context) domain.RealmKeysRepository
+	RealmSettingsRepository(ctx context.Context) domain.RealmSettingsRepository
 
 	// Health check
 	Ping(ctx context.Context) error
