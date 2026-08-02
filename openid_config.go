@@ -19,6 +19,7 @@ import (
 	"github.com/pilab-dev/shadow-sso/domain"
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect" // For Connect-RPC service handlers
 	"github.com/pilab-dev/shadow-sso/graphql"
+	"github.com/pilab-dev/shadow-sso/internal/audit"
 	"github.com/pilab-dev/shadow-sso/internal/notifications"
 	"github.com/pilab-dev/shadow-sso/internal/oidcflow"   // Still needed for concrete in-memory store instantiation
 	"github.com/pilab-dev/shadow-sso/internal/oidclogout" // For the OIDC back-channel logout notifier
@@ -129,6 +130,11 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 			return nil, fmt.Errorf("failed to initialize default MongoDB repository provider: %w", err)
 		}
 	}
+
+	// Install the async audit persistence sink so audit.Log events are also
+	// written to the repository without blocking the auth path. Fire-and-forget:
+	// a slow or unavailable MongoDB never delays or fails the caller.
+	audit.SetSink(repoProvider.AuditLogRepository(context.Background()))
 
 	// Initialize TokenSigner
 	tokenSigner := opts.TokenSigner
@@ -401,6 +407,11 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 	attrMapperPath, attrMapperHandler := ssov1connect.NewUserAttributeMapperServiceHandler(attrServer, interceptors)
 	router.Any(attrMapperPath+"*action", gin.WrapH(attrMapperHandler))
 
+	// Audit Service — read-only admin access to persisted audit events
+	auditServer := services.NewAuditServer(repoProvider.AuditLogRepository(ctx))
+	auditPath, auditHandler := ssov1connect.NewAuditServiceHandler(auditServer, interceptors)
+	router.Any(auditPath+"*action", gin.WrapH(auditHandler))
+
 	log.Info().Msg("Connect-RPC handlers registered successfully")
 	// ---------- End Connect-RPC handlers ----------
 
@@ -446,6 +457,7 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 		realmKeysRepo := mongoRp.RealmKeysRepository(gqlCtx)
 		userAttrRepo := mongoRp.UserAttributeRepository(gqlCtx)
 		userAttrMapperRepo := mongoRp.UserAttributeMapperRepository(gqlCtx)
+		auditRepo := mongoRp.AuditLogRepository(gqlCtx)
 
 		var emailService domain.EmailService
 		if opts.AppConfig != nil {
@@ -474,6 +486,7 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 			RealmKeysRepo:           realmKeysRepo,
 			EmailService:            emailService,
 			PasswordHasher:          passwordHasher,
+			AuditLogRepo:            auditRepo,
 		}
 
 		var bootstrapToken string

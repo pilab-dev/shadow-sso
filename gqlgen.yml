@@ -40,3 +40,5 @@ models:
     model: github.com/pilab-dev/shadow-sso/domain.UserAttribute
   UserAttributeMapper:
     model: github.com/pilab-dev/shadow-sso/domain.UserAttributeMapper
+  AuditLog:
+    model: github.com/pilab-dev/shadow-sso/domain.AuditLog

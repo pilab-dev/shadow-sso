@@ -52,6 +52,7 @@ func newTestResolver(t *testing.T) *graphql.Resolver {
 		PasswordHasher:    &MockPasswordHasher{},
 		GroupRepo:         &stubGroupRepo{},
 		RealmSettingsRepo: &stubRealmSettingsRepo{},
+		AuditLogRepo:      mock_domain.NewMockAuditLogRepository(ctrl),
 	}
 }
 
@@ -516,5 +517,82 @@ func TestGenerateClientSecret_UserDenied(t *testing.T) {
 	}
 	if connectErrCode(err) != connect.CodePermissionDenied {
 		t.Fatalf("expected PermissionDenied, got %v", connectErrCode(err))
+	}
+}
+
+func TestAuditLogs_AdminAllowed(t *testing.T) {
+	r := newTestResolver(t)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	auditRepo := r.AuditLogRepo.(*mock_domain.MockAuditLogRepository)
+	auditRepo.EXPECT().List(gomock.Any(), gomock.Any(), 50, 0).
+		Return([]*domain.AuditLog{{ID: "a1", Service: "user", Action: "create"}}, nil)
+	auditRepo.EXPECT().Count(gomock.Any(), gomock.Any()).Return(int64(1), nil)
+
+	conn, err := r.Query().AuditLogs(adminCtx(), nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if conn == nil {
+		t.Fatal("expected connection")
+	}
+	if len(conn.Edges) != 1 {
+		t.Fatalf("expected 1 edge, got %d", len(conn.Edges))
+	}
+	if conn.Edges[0].Cursor != "a1" {
+		t.Fatalf("expected cursor a1, got %q", conn.Edges[0].Cursor)
+	}
+	if conn.TotalCount != 1 {
+		t.Fatalf("expected total 1, got %d", conn.TotalCount)
+	}
+}
+
+func TestAuditLogs_AdminAllowedPagination(t *testing.T) {
+	r := newTestResolver(t)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	first := 10
+	after := 20
+	auditRepo := r.AuditLogRepo.(*mock_domain.MockAuditLogRepository)
+	auditRepo.EXPECT().List(gomock.Any(), gomock.Any(), 10, 20).
+		Return([]*domain.AuditLog{{ID: "a1"}}, nil)
+	auditRepo.EXPECT().Count(gomock.Any(), gomock.Any()).Return(int64(35), nil)
+
+	conn, err := r.Query().AuditLogs(adminCtx(), nil, &first, &after)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if conn.PageInfo == nil {
+		t.Fatal("expected page info")
+	}
+	if !conn.PageInfo.HasNextPage {
+		t.Fatal("expected HasNextPage true when more events remain")
+	}
+	if !conn.PageInfo.HasPreviousPage {
+		t.Fatal("expected HasPreviousPage true when offset > 0")
+	}
+}
+
+func TestAuditLogs_UserDenied(t *testing.T) {
+	r := newTestResolver(t)
+	_, err := r.Query().AuditLogs(userCtx(), nil, nil, nil)
+	if err == nil {
+		t.Fatal("expected error for non-admin user")
+	}
+	if connectErrCode(err) != connect.CodePermissionDenied {
+		t.Fatalf("expected PermissionDenied, got %v", connectErrCode(err))
+	}
+}
+
+func TestAuditLogs_NoToken(t *testing.T) {
+	r := newTestResolver(t)
+	_, err := r.Query().AuditLogs(noTokenCtx(), nil, nil, nil)
+	if err == nil {
+		t.Fatal("expected error for unauthenticated caller")
+	}
+	if connectErrCode(err) != connect.CodeUnauthenticated {
+		t.Fatalf("expected Unauthenticated, got %v", connectErrCode(err))
 	}
 }

@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package sso.v1;
+
+import "google/protobuf/timestamp.proto";
+import "buf/validate/validate.proto";
+
+option go_package = "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1;ssov1";
+
+// AuditService provides read-only access to persisted audit events.
+// All methods require the audit:read permission (admin only).
+service AuditService {
+  // Lists persisted audit events filtered by user/action/time with pagination.
+  rpc ListAuditEvents(ListAuditEventsRequest) returns (ListAuditEventsResponse);
+}
+
+// --- ListAuditEvents ---
+message ListAuditEventsRequest {
+  string user = 1;             // Filter by user ID or username; empty means any
+  string action = 2;           // Filter by action name; empty means any
+  google.protobuf.Timestamp from = 3; // Inclusive lower bound on event timestamp
+  google.protobuf.Timestamp to = 4;   // Inclusive upper bound on event timestamp
+  int32 limit = 5;             // Max events to return (1-500, default 50)
+  int32 offset = 6;            // Number of events to skip (default 0)
+}
+
+message AuditEventProto {
+  string id = 1;
+  google.protobuf.Timestamp timestamp = 2;
+  string service = 3;
+  string action = 4;
+  string user = 5;
+  string target = 6;
+  string details = 7;
+  bool success = 8;
+  string error = 9;
+}
+
+message ListAuditEventsResponse {
+  repeated AuditEventProto events = 1; // Newest-first
+  int64 total = 2;                     // Total matching events (ignores limit/offset)
+  int32 limit = 3;
+  int32 offset = 4;
+}

@@ -90,6 +90,7 @@ type MongoRepositoryProvider struct {
 	authFlowRepo       domain.AuthenticationFlowRepository
 	clientScopeRepo    domain.ClientScopeRepository
 	realmSettingsRepo  domain.RealmSettingsRepository
+	auditLogRepo       domain.AuditLogRepository
 }
 
 // NewMongoRepositoryProvider creates a new instance of MongoRepositoryProvider.
@@ -423,4 +424,15 @@ func (p *MongoRepositoryProvider) RealmSettingsRepository(ctx context.Context) d
 		}
 	}
 	return p.realmSettingsRepo
+}
+
+// AuditLogRepository returns a MongoDB-backed AuditLogRepository.
+func (p *MongoRepositoryProvider) AuditLogRepository(ctx context.Context) domain.AuditLogRepository {
+	if p.auditLogRepo == nil && p.db != nil {
+		repo, err := NewAuditRepository(ctx, p.db)
+		if err == nil {
+			p.auditLogRepo = repo
+		}
+	}
+	return p.auditLogRepo
 }

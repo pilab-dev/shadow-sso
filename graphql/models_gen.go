@@ -8,6 +8,17 @@ import (
 	"github.com/pilab-dev/shadow-sso/domain"
 )
 
+type AuditLogConnection struct {
+	Edges      []AuditLogEdge `json:"edges"`
+	TotalCount int            `json:"totalCount"`
+	PageInfo   *PageInfo      `json:"pageInfo"`
+}
+
+type AuditLogEdge struct {
+	Node   *domain.AuditLog `json:"node"`
+	Cursor string           `json:"cursor"`
+}
+
 type AuthenticationExecutionInput struct {
 	ID          *string `json:"id,omitempty"`
 	Execution   string  `json:"execution"`

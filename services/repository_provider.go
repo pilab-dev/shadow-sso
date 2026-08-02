@@ -40,6 +40,9 @@ type RepositoryProvider interface {
 	RealmKeysRepository(ctx context.Context) domain.RealmKeysRepository
 	RealmSettingsRepository(ctx context.Context) domain.RealmSettingsRepository
 
+	// Audit repository (persisted audit events)
+	AuditLogRepository(ctx context.Context) domain.AuditLogRepository
+
 	// Health check
 	Ping(ctx context.Context) error
 

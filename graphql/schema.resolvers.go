@@ -32,6 +32,7 @@ type Resolver struct {
 	RealmKeysRepo           domain.RealmKeysRepository
 	EmailService           domain.EmailService
 	PasswordHasher        domain.PasswordHasher
+	AuditLogRepo           domain.AuditLogRepository
 }
 
 // Executions is the resolver for the executions field.
@@ -1440,6 +1441,53 @@ func (r *queryResolver) Sessions(ctx context.Context, userID *string, first *int
 // Session is the resolver for the session field.
 func (r *queryResolver) Session(ctx context.Context, id string) (*domain.Session, error) {
 	return r.SessionRepo.GetSessionByID(ctx, id)
+}
+
+// AuditLogs is the resolver for the auditLogs field.
+func (r *queryResolver) AuditLogs(ctx context.Context, filter *domain.AuditLogFilter, first *int, after *int) (*AuditLogConnection, error) {
+	if err := requireAdmin(ctx); err != nil {
+		return nil, err
+	}
+
+	var f domain.AuditLogFilter
+	if filter != nil {
+		f = *filter
+	}
+
+	limit := 50
+	if first != nil && *first > 0 {
+		limit = *first
+	}
+	offset := 0
+	if after != nil && *after > 0 {
+		offset = *after
+	}
+
+	events, err := r.AuditLogRepo.List(ctx, f, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	total, err := r.AuditLogRepo.Count(ctx, f)
+	if err != nil {
+		return nil, err
+	}
+
+	edges := make([]AuditLogEdge, len(events))
+	for i, e := range events {
+		edges[i] = AuditLogEdge{
+			Node:   e,
+			Cursor: e.ID,
+		}
+	}
+
+	return &AuditLogConnection{
+		Edges:      edges,
+		TotalCount: int(total),
+		PageInfo: &PageInfo{
+			HasNextPage:     offset+len(events) < int(total),
+			HasPreviousPage: offset > 0,
+		},
+	}, nil
 }
 
 // IdentityProviders is the resolver for the identityProviders field.
