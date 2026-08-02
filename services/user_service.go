@@ -590,10 +590,28 @@ func (s *UserServer) DeleteUser(ctx context.Context, req *connect.Request[ssov1.
 	return connect.NewResponse(&emptypb.Empty{}), nil
 }
 
-func (s *UserServer) AddMfaMethod(ctx context.Context, req *connect.Request[ssov1.AddMfaMethodRequest]) (*connect.Response[ssov1.AddMfaMethodResponse], error) {
+// requireSelfOrMFAManager enforces self-or-admin access to a user's MFA/credential data.
+// The authenticated user may act on their own records; anyone else needs the 2FA
+// management permission (admin). Returns the authenticated user's ID on success.
+func (s *UserServer) requireSelfOrMFAManager(ctx context.Context, targetUserID string) (string, error) {
 	actingUserID, err := domain.GetAuthenticatedUserIDFromContext(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+		return "", connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+	if actingUserID == targetUserID {
+		return actingUserID, nil
+	}
+	tokenInfo, ok := domain.GetAuthenticatedTokenFromContext(ctx)
+	if !ok || !rbac.HasPermission(tokenInfo.Roles, rbac.Perm2FAManageOthers) {
+		return "", connect.NewError(connect.CodePermissionDenied, errors.New("permission denied to manage MFA methods for another user"))
+	}
+	return actingUserID, nil
+}
+
+func (s *UserServer) AddMfaMethod(ctx context.Context, req *connect.Request[ssov1.AddMfaMethodRequest]) (*connect.Response[ssov1.AddMfaMethodResponse], error) {
+	actingUserID, err := s.requireSelfOrMFAManager(ctx, req.Msg.GetUserId())
+	if err != nil {
+		return nil, err
 	}
 
 	user, err := s.userRepo.GetUserByID(ctx, req.Msg.GetUserId())
@@ -633,9 +651,9 @@ func (s *UserServer) AddMfaMethod(ctx context.Context, req *connect.Request[ssov
 }
 
 func (s *UserServer) GetMfaMethod(ctx context.Context, req *connect.Request[ssov1.GetMfaMethodRequest]) (*connect.Response[ssov1.GetMfaMethodResponse], error) {
-	_, err := domain.GetAuthenticatedUserIDFromContext(ctx)
+	_, err := s.requireSelfOrMFAManager(ctx, req.Msg.GetUserId())
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+		return nil, err
 	}
 
 	user, err := s.userRepo.GetUserByID(ctx, req.Msg.GetUserId())
@@ -656,9 +674,9 @@ func (s *UserServer) GetMfaMethod(ctx context.Context, req *connect.Request[ssov
 }
 
 func (s *UserServer) ListMfaMethods(ctx context.Context, req *connect.Request[ssov1.ListMfaMethodsRequest]) (*connect.Response[ssov1.ListMfaMethodsResponse], error) {
-	_, err := domain.GetAuthenticatedUserIDFromContext(ctx)
+	_, err := s.requireSelfOrMFAManager(ctx, req.Msg.GetUserId())
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+		return nil, err
 	}
 
 	methods, err := s.userRepo.ListMfaMethods(ctx, req.Msg.GetUserId())
@@ -678,9 +696,9 @@ func (s *UserServer) ListMfaMethods(ctx context.Context, req *connect.Request[ss
 }
 
 func (s *UserServer) VerifyMfaMethod(ctx context.Context, req *connect.Request[ssov1.VerifyMfaMethodRequest]) (*connect.Response[emptypb.Empty], error) {
-	actingUserID, err := domain.GetAuthenticatedUserIDFromContext(ctx)
+	actingUserID, err := s.requireSelfOrMFAManager(ctx, req.Msg.GetUserId())
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+		return nil, err
 	}
 
 	if err := s.userRepo.VerifyMfaMethod(ctx, req.Msg.GetUserId(), req.Msg.GetMethodId()); err != nil {
@@ -695,9 +713,9 @@ func (s *UserServer) VerifyMfaMethod(ctx context.Context, req *connect.Request[s
 }
 
 func (s *UserServer) RemoveMfaMethod(ctx context.Context, req *connect.Request[ssov1.RemoveMfaMethodRequest]) (*connect.Response[emptypb.Empty], error) {
-	actingUserID, err := domain.GetAuthenticatedUserIDFromContext(ctx)
+	actingUserID, err := s.requireSelfOrMFAManager(ctx, req.Msg.GetUserId())
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+		return nil, err
 	}
 
 	if err := s.userRepo.RemoveMfaMethod(ctx, req.Msg.GetUserId(), req.Msg.GetMethodId()); err != nil {
@@ -712,9 +730,9 @@ func (s *UserServer) RemoveMfaMethod(ctx context.Context, req *connect.Request[s
 }
 
 func (s *UserServer) AddWebAuthnDevice(ctx context.Context, req *connect.Request[ssov1.AddWebAuthnDeviceRequest]) (*connect.Response[ssov1.AddWebAuthnDeviceResponse], error) {
-	actingUserID, err := domain.GetAuthenticatedUserIDFromContext(ctx)
+	actingUserID, err := s.requireSelfOrMFAManager(ctx, req.Msg.GetUserId())
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+		return nil, err
 	}
 
 	user, err := s.userRepo.GetUserByID(ctx, req.Msg.GetUserId())
@@ -755,9 +773,9 @@ func (s *UserServer) AddWebAuthnDevice(ctx context.Context, req *connect.Request
 }
 
 func (s *UserServer) GetWebAuthnDevice(ctx context.Context, req *connect.Request[ssov1.GetWebAuthnDeviceRequest]) (*connect.Response[ssov1.GetWebAuthnDeviceResponse], error) {
-	_, err := domain.GetAuthenticatedUserIDFromContext(ctx)
+	_, err := s.requireSelfOrMFAManager(ctx, req.Msg.GetUserId())
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+		return nil, err
 	}
 
 	device, err := s.userRepo.GetWebAuthnDevice(ctx, req.Msg.GetUserId(), req.Msg.GetDeviceId())
@@ -772,9 +790,9 @@ func (s *UserServer) GetWebAuthnDevice(ctx context.Context, req *connect.Request
 }
 
 func (s *UserServer) ListWebAuthnDevices(ctx context.Context, req *connect.Request[ssov1.ListWebAuthnDevicesRequest]) (*connect.Response[ssov1.ListWebAuthnDevicesResponse], error) {
-	_, err := domain.GetAuthenticatedUserIDFromContext(ctx)
+	_, err := s.requireSelfOrMFAManager(ctx, req.Msg.GetUserId())
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+		return nil, err
 	}
 
 	devices, err := s.userRepo.ListWebAuthnDevices(ctx, req.Msg.GetUserId())
@@ -794,9 +812,9 @@ func (s *UserServer) ListWebAuthnDevices(ctx context.Context, req *connect.Reque
 }
 
 func (s *UserServer) UpdateWebAuthnDeviceCounter(ctx context.Context, req *connect.Request[ssov1.UpdateWebAuthnDeviceCounterRequest]) (*connect.Response[emptypb.Empty], error) {
-	actingUserID, err := domain.GetAuthenticatedUserIDFromContext(ctx)
+	actingUserID, err := s.requireSelfOrMFAManager(ctx, req.Msg.GetUserId())
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+		return nil, err
 	}
 
 	if err := s.userRepo.UpdateWebAuthnDeviceCounter(ctx, req.Msg.GetUserId(), req.Msg.GetDeviceId(), req.Msg.GetNewCounter()); err != nil {
@@ -808,9 +826,9 @@ func (s *UserServer) UpdateWebAuthnDeviceCounter(ctx context.Context, req *conne
 }
 
 func (s *UserServer) RemoveWebAuthnDevice(ctx context.Context, req *connect.Request[ssov1.RemoveWebAuthnDeviceRequest]) (*connect.Response[emptypb.Empty], error) {
-	actingUserID, err := domain.GetAuthenticatedUserIDFromContext(ctx)
+	actingUserID, err := s.requireSelfOrMFAManager(ctx, req.Msg.GetUserId())
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+		return nil, err
 	}
 
 	if err := s.userRepo.RemoveWebAuthnDevice(ctx, req.Msg.GetUserId(), req.Msg.GetDeviceId()); err != nil {

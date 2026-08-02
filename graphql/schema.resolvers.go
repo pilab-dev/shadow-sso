@@ -33,6 +33,7 @@ type Resolver struct {
 	EmailService           domain.EmailService
 	PasswordHasher        domain.PasswordHasher
 	AuditLogRepo           domain.AuditLogRepository
+	FederatedIdentityRepo  domain.UserFederatedIdentityRepository
 }
 
 // Executions is the resolver for the executions field.
@@ -1920,8 +1921,32 @@ func (r *userResolver) Groups(ctx context.Context, obj *domain.User) ([]domain.G
 
 // FederatedIdentities is the resolver for the federatedIdentities field.
 func (r *userResolver) FederatedIdentities(ctx context.Context, obj *domain.User) ([]FederatedIdentity, error) {
-	// Would need to look up federated identities - not yet implemented
-	return nil, nil
+	tokenInfo, ok := domain.GetAuthenticatedTokenFromContext(ctx)
+	if !ok || tokenInfo == nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+	if obj.ID != tokenInfo.UserID && !rbac.HasPermission(tokenInfo.Roles, rbac.PermUsersReadAll) {
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("permission denied to list federated identities"))
+	}
+
+	identities, err := r.FederatedIdentityRepo.ListByUserID(ctx, obj.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]FederatedIdentity, 0, len(identities))
+	for _, ident := range identities {
+		providerName := ident.ProviderID
+		if provider, pErr := r.IdPRepo.GetIdPByID(ctx, ident.ProviderID); pErr == nil && provider != nil {
+			providerName = provider.Name
+		}
+		result = append(result, FederatedIdentity{
+			IdentityProvider: providerName,
+			UserID:           ident.ProviderUserID,
+			Username:         ident.ProviderUsername,
+		})
+	}
+	return result, nil
 }
 
 // Credentials is the resolver for the credentials field.

@@ -370,6 +370,173 @@ func TestAuthServer_ListUserSessions_Success(t *testing.T) {
 	assert.Len(t, resp.Msg.Sessions, 2)
 }
 
+func TestAuthServer_ListUserSessions_DeniedOtherUser(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockSessionRepo := mock_domain.NewMockSessionRepository(ctrl)
+	mockTokenService := mock_domain.NewMockTokenServiceInterface(ctrl)
+	mockOAuthService := mock_domain.NewMockOAuthServiceInterface(ctrl)
+	mockClientService := client_mocks.NewMockClientServiceInterface(ctrl)
+
+	authServer := services.NewAuthServer(
+		mockUserRepo,
+		mockSessionRepo,
+		mockTokenService,
+		nil,
+		nil,
+		mockOAuthService,
+		mockClientService,
+	)
+
+	tokenInfo := &domain.TokenInfo{
+		UserID: "user-1",
+		Roles:  []string{"user"},
+	}
+	ctx := context.WithValue(context.Background(), domain.TokenContextKey, tokenInfo)
+
+	_, err := authServer.ListUserSessions(ctx, connect.NewRequest(&ssov1.ListUserSessionsRequest{
+		UserId: "user-2",
+	}))
+
+	require.Error(t, err)
+	assert.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
+}
+
+func TestAuthServer_ListUserSessions_MeConvention(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockSessionRepo := mock_domain.NewMockSessionRepository(ctrl)
+	mockTokenService := mock_domain.NewMockTokenServiceInterface(ctrl)
+	mockOAuthService := mock_domain.NewMockOAuthServiceInterface(ctrl)
+	mockClientService := client_mocks.NewMockClientServiceInterface(ctrl)
+
+	authServer := services.NewAuthServer(
+		mockUserRepo,
+		mockSessionRepo,
+		mockTokenService,
+		nil,
+		nil,
+		mockOAuthService,
+		mockClientService,
+	)
+
+	tokenInfo := &domain.TokenInfo{
+		UserID: "user-1",
+		Roles:  []string{"user"},
+	}
+	ctx := context.WithValue(context.Background(), domain.TokenContextKey, tokenInfo)
+
+	mockSessionRepo.EXPECT().ListSessionsByUserID(gomock.Any(), "user-1", domain.SessionFilter{}).Return(nil, nil)
+
+	resp, err := authServer.ListUserSessions(ctx, connect.NewRequest(&ssov1.ListUserSessionsRequest{
+		UserId: "me",
+	}))
+
+	require.NoError(t, err)
+	require.NotNil(t, resp.Msg)
+}
+
+func TestAuthServer_ClearUserSessions_Success(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockSessionRepo := mock_domain.NewMockSessionRepository(ctrl)
+	mockTokenService := mock_domain.NewMockTokenServiceInterface(ctrl)
+	mockOAuthService := mock_domain.NewMockOAuthServiceInterface(ctrl)
+	mockClientService := client_mocks.NewMockClientServiceInterface(ctrl)
+
+	authServer := services.NewAuthServer(
+		mockUserRepo,
+		mockSessionRepo,
+		mockTokenService,
+		nil,
+		nil,
+		mockOAuthService,
+		mockClientService,
+	)
+
+	tokenInfo := &domain.TokenInfo{
+		UserID: "user-1",
+		Roles:  []string{"user"},
+	}
+	ctx := context.WithValue(context.Background(), domain.TokenContextKey, tokenInfo)
+
+	mockSessionRepo.EXPECT().DeleteSessionsByUserID(gomock.Any(), "user-1", "").Return(int64(2), nil)
+
+	resp, err := authServer.ClearUserSessions(ctx, connect.NewRequest(&ssov1.ClearUserSessionsRequest{
+		UserId: "me",
+	}))
+
+	require.NoError(t, err)
+	require.NotNil(t, resp.Msg)
+}
+
+func TestAuthServer_ClearUserSessions_DeniedOtherUser(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockSessionRepo := mock_domain.NewMockSessionRepository(ctrl)
+	mockTokenService := mock_domain.NewMockTokenServiceInterface(ctrl)
+	mockOAuthService := mock_domain.NewMockOAuthServiceInterface(ctrl)
+	mockClientService := client_mocks.NewMockClientServiceInterface(ctrl)
+
+	authServer := services.NewAuthServer(
+		mockUserRepo,
+		mockSessionRepo,
+		mockTokenService,
+		nil,
+		nil,
+		mockOAuthService,
+		mockClientService,
+	)
+
+	tokenInfo := &domain.TokenInfo{
+		UserID: "user-1",
+		Roles:  []string{"user"},
+	}
+	ctx := context.WithValue(context.Background(), domain.TokenContextKey, tokenInfo)
+
+	_, err := authServer.ClearUserSessions(ctx, connect.NewRequest(&ssov1.ClearUserSessionsRequest{
+		UserId: "user-2",
+	}))
+
+	require.Error(t, err)
+	assert.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
+}
+
+func TestAuthServer_ClearUserSessions_NotAuthenticated(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockTokenService := mock_domain.NewMockTokenServiceInterface(ctrl)
+	mockOAuthService := mock_domain.NewMockOAuthServiceInterface(ctrl)
+	mockClientService := client_mocks.NewMockClientServiceInterface(ctrl)
+
+	authServer := services.NewAuthServer(
+		mockUserRepo,
+		nil,
+		mockTokenService,
+		nil,
+		nil,
+		mockOAuthService,
+		mockClientService,
+	)
+
+	_, err := authServer.ClearUserSessions(context.Background(), connect.NewRequest(&ssov1.ClearUserSessionsRequest{
+		UserId: "user-id",
+	}))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not authenticated")
+}
+
 func TestAuthServer_GetConsentInfo_NotFound(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()

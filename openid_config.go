@@ -458,6 +458,7 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 		userAttrRepo := mongoRp.UserAttributeRepository(gqlCtx)
 		userAttrMapperRepo := mongoRp.UserAttributeMapperRepository(gqlCtx)
 		auditRepo := mongoRp.AuditLogRepository(gqlCtx)
+		fedIDRepo := mongoRp.UserFederatedIdentityRepository(gqlCtx)
 
 		var emailService domain.EmailService
 		if opts.AppConfig != nil {
@@ -487,6 +488,7 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 			EmailService:            emailService,
 			PasswordHasher:          passwordHasher,
 			AuditLogRepo:            auditRepo,
+			FederatedIdentityRepo:   fedIDRepo,
 		}
 
 		var bootstrapToken string
