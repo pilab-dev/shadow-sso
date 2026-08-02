@@ -189,21 +189,60 @@ type RealmSettingsRepository interface {
 	UpdateRealmSettings(ctx context.Context, settings *RealmSettings) error
 }
 
-// RealmKey represents a signing key
+// RealmKeyStatus describes a signing key's position in its rotation lifecycle.
+type RealmKeyStatus string
+
+const (
+	// RealmKeyStatusNext is a key generated ahead of a rotation cutover.
+	// Not yet used for signing or published for verification.
+	RealmKeyStatusNext RealmKeyStatus = "next"
+	// RealmKeyStatusActive is the current signing key for its scope
+	// (realm-default, or a specific client). Published in JWKS.
+	RealmKeyStatusActive RealmKeyStatus = "active"
+	// RealmKeyStatusRetiring is a former active key kept for a grace
+	// period so tokens it already signed keep verifying. Published in
+	// JWKS but never used to sign new tokens.
+	RealmKeyStatusRetiring RealmKeyStatus = "retiring"
+	// RealmKeyStatusRevoked is excluded from both signing and
+	// verification, and dropped from JWKS immediately.
+	RealmKeyStatusRevoked RealmKeyStatus = "revoked"
+)
+
+// RealmKey represents a signing key. ClientID is empty for realm-default
+// keys, or set to a specific OAuth client's ID for a dedicated client
+// signing key (falls back to the realm-default key when absent).
 type RealmKey struct {
-	ID         string `bson:"_id,omitempty" json:"id"`
-	Name       string `bson:"name" json:"name"`
-	Type       string `bson:"type" json:"type"`         // RSA, EC, etc.
-	ProviderID string `bson:"provider_id" json:"providerId"`
-	Active     bool   `bson:"active" json:"active"`
-	Priority   int    `bson:"priority" json:"priority"`
-	PublicKey  string `bson:"public_key,omitempty" json:"publicKey,omitempty"`
-	PrivateKey string `bson:"private_key,omitempty" json:"privateKey,omitempty"`
-	Certificate string `bson:"certificate,omitempty" json:"certificate,omitempty"`
+	ID          string         `bson:"_id,omitempty"          json:"id"`
+	Name        string         `bson:"name"                   json:"name"`
+	Type        string         `bson:"type"                   json:"type"` // RSA, EC, etc.
+	ProviderID  string         `bson:"provider_id"             json:"providerId"`
+	Active      bool           `bson:"active"                 json:"active"`
+	Priority    int            `bson:"priority"                json:"priority"`
+	PublicKey   string         `bson:"public_key,omitempty"    json:"publicKey,omitempty"`
+	PrivateKey  string         `bson:"private_key,omitempty"   json:"privateKey,omitempty"` // encrypted at rest, see services.ConfigurationService's AES-GCM helpers
+	Certificate string         `bson:"certificate,omitempty"   json:"certificate,omitempty"`
+	ClientID    string         `bson:"client_id"               json:"clientId,omitempty"`
+	Status      RealmKeyStatus `bson:"status"                  json:"status,omitempty"`
+	CreatedAt   time.Time      `bson:"created_at,omitempty"    json:"createdAt,omitempty"`
+	NotBefore   time.Time      `bson:"not_before,omitempty"    json:"notBefore,omitempty"`
+	ExpiresAt   time.Time      `bson:"expires_at,omitempty"    json:"expiresAt,omitempty"`
 }
 
-// RealmKeysRepository defines methods for realm keys persistence
+// RealmKeysRepository defines methods for realm keys persistence.
 type RealmKeysRepository interface {
+	// ListRealmKeys returns realm-default keys only (ClientID == "").
 	ListRealmKeys(ctx context.Context) ([]*RealmKey, error)
+	// ListClientKeys returns the dedicated signing keys for a specific client.
+	ListClientKeys(ctx context.Context, clientID string) ([]*RealmKey, error)
+	// ListAllKeys returns every key (realm-default and all clients'), for
+	// loading the full signing/verification key registry at startup and refresh.
+	ListAllKeys(ctx context.Context) ([]*RealmKey, error)
+	// SaveRealmKey creates or updates a single key without touching others,
+	// used for rotation/generation instead of the bulk-replace UpdateRealmKeys.
+	SaveRealmKey(ctx context.Context, key *RealmKey) error
+	// UpdateRealmKeyStatus transitions a single key to a new lifecycle status.
+	UpdateRealmKeyStatus(ctx context.Context, keyID string, status RealmKeyStatus) error
+	// UpdateRealmKeys bulk-replaces the realm-default key set (ClientID == "").
+	// Retained for the existing GraphQL admin mutation; does not affect client keys.
 	UpdateRealmKeys(ctx context.Context, keys []*RealmKey) error
 }

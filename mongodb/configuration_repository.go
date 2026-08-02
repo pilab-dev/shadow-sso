@@ -19,7 +19,7 @@ type ConfigurationRepository struct {
 }
 
 // NewConfigurationRepository creates a new MongoDB configuration repository
-func NewConfigurationRepository(db *mongo.Database) *ConfigurationRepository {
+func NewConfigurationRepository(_ context.Context, db *mongo.Database) *ConfigurationRepository {
 	return &ConfigurationRepository{
 		collection: db.Collection("configurations"),
 	}

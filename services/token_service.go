@@ -208,10 +208,8 @@ func (s *defaultTokenService) CreateToken(ctx context.Context, opts domain.Creat
 		}
 	}
 
-	// Generate access token with the signer
-	// s.signer.Sign now accepts jwt.Claims (which jwt.MapClaims implements)
-		signedToken, err := s.signer.Sign(tokenClaimsMap, opts.SigningKeyID)
-		if err != nil {
+	signedToken, err := s.signer.Sign(tokenClaimsMap, s.resolveSigningKeyID(opts.SigningKeyID, opts.ClientID))
+	if err != nil {
 			telemetry.RecordSpanError(span, err, "failed to sign token")
 			span.SetStatus(codes.Error, "failed to sign token")
 			return nil, err
@@ -332,6 +330,15 @@ func sortedKeys(set map[string]bool) []string {
 	return keys
 }
 
+// resolveSigningKeyID picks the client's dedicated key with realm-default fallback unless explicit is set.
+func (s *defaultTokenService) resolveSigningKeyID(explicit, clientID string) string {
+	if explicit != "" {
+		return explicit
+	}
+	keyID, _ := s.signer.ResolveSigningKeyID(clientID)
+	return keyID
+}
+
 // BuildToken builds the token value for an existing token struct.
 func (s *defaultTokenService) BuildToken(token *domain.Token) error { // Changed to domain.Token
 	// ? This is a default claim object, it can be used for both access and refresh tokens.
@@ -362,9 +369,7 @@ func (s *defaultTokenService) BuildToken(token *domain.Token) error { // Changed
 	// If UserID is present and token.Roles is empty, one might fetch roles here if context was available.
 	// else if token.UserID != "" && s.userRepo != nil { /* fetch roles - needs context */ }
 
-	// Generate access token with the signer
-	// Assuming s.signer.Sign takes jwt.Claims (jwt.MapClaims implements this)
-	signedToken, err := s.signer.Sign(tokenMapClaims, "") // Pass empty keyID for default signer key
+	signedToken, err := s.signer.Sign(tokenMapClaims, s.resolveSigningKeyID("", token.ClientID))
 	if err != nil {
 		return fmt.Errorf("cannot sign token: %w", err)
 	}
@@ -825,7 +830,7 @@ func (s *defaultTokenService) GenerateIDToken(ctx context.Context, userID, clien
 		log.Ctx(ctx).Warn().Err(err).Str("client_id", clientID).Str("user_id", userID).Msg("GenerateIDToken: failed to apply token mappers")
 	}
 
-	return s.signer.Sign(claims, "")
+	return s.signer.Sign(claims, s.resolveSigningKeyID("", clientID))
 }
 
 // ValidateIDToken validates an ID token.

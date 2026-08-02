@@ -16,13 +16,22 @@
 #    Keys: SSSO_INITIAL_ADMIN_EMAIL, SSSO_INITIAL_ADMIN_PASSWORD,
 #          SSSO_INITIAL_ADMIN_FIRST_NAME, SSSO_INITIAL_ADMIN_LAST_NAME
 #
-# 3. ssso-config - Application configuration secrets (MongoDB URI)
+# 3. ssso-config - Application configuration secrets (MongoDB URI, config encryption key)
 #    kubectl create secret generic ssso-config \
-#      --from-literal=SSSO_MONGO_URI='mongodb://user:pass@host:27017/shadow_sso?authSource=shadow_sso'
-#    Keys: SSSO_MONGO_URI
+#      --from-literal=SSSO_MONGO_URI='mongodb://user:pass@host:27017/shadow_sso?authSource=shadow_sso' \
+#      --from-literal=SSSO_CONFIG_ENCRYPTION_KEY='<32-byte-random-string>'
+#    Keys: SSSO_MONGO_URI, SSSO_CONFIG_ENCRYPTION_KEY
+#    SSSO_CONFIG_ENCRYPTION_KEY MUST be exactly 32 bytes and MUST be set here — without it the
+#    app now refuses to start (see SSSO_ALLOW_INSECURE_DEFAULTS). Generate with:
+#      openssl rand -hex 16
 #
 # Secrets are stored in KeePassXC vault at ~/Workspace/Passwords.kdbx (group: shadow-sso/)
 # TODO: Evaluate OpenBao for dynamic secret management if scale demands it
+#
+# TLS: the Go server itself performs no TLS termination (no ListenAndServeTLS,
+# no cert loading) — it must always run behind a TLS-terminating proxy/ingress.
+# This chart's ingress + cert-manager.io annotation handles that; do not expose
+# the backend Service directly without a TLS-terminating layer in front of it.
 
 replicaCount: 1
 
@@ -93,6 +102,11 @@ config:
   SSSO_ISSUER_URL: "https://sso.pilab.hu"
   SSSO_MONGO_DB_NAME: "sso_dev"
   SSSO_SIGNING_KEY_PATH: "/etc/sso/keys/private.pem"
+  # SSSO_ALLOWED_ORIGINS now defaults to closed (no cross-origin requests
+  # allowed) instead of "*" — set the actual browser-facing RP origin(s)
+  # that need CORS access (e.g. for userinfo/token fetch() calls from JS),
+  # as a JSON array string. Redirect-based OIDC flows don't need this.
+  # SSSO_ALLOWED_ORIGINS: '["https://your-rp-origin.example.com"]'
   SSSO_KEY_ROTATION_INTERVAL: "24h"
   SSSO_NEXTJS_LOGIN_URL: "https://sso.pilab.hu/login"
 
@@ -226,4 +240,4 @@ extraEnvFrom:
 #            "SSSO_INITIAL_ADMIN_FIRST_NAME", "SSSO_INITIAL_ADMIN_LAST_NAME"]
 #   config:
 #     secretName: "ssso-config"
-#     keys: ["SSSO_MONGO_URI"]
+#     keys: ["SSSO_MONGO_URI", "SSSO_CONFIG_ENCRYPTION_KEY"]

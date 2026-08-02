@@ -83,6 +83,12 @@ type Config struct {
 
 	// CORS configuration
 	AllowedOrigins []string `mapstructure:"allowed_origins"`
+
+	// AllowInsecureDefaults opts into insecure fallback behavior (hardcoded
+	// signing secrets, ephemeral encryption keys) instead of refusing to
+	// start when critical secrets are missing/invalid. Intended for local
+	// development only — never set this in production.
+	AllowInsecureDefaults bool `mapstructure:"allow_insecure_defaults"`
 }
 
 // StorageType defines the type of storage backend to use.
@@ -226,7 +232,10 @@ func LoadConfig() (config Config, err error) {
 	viper.SetDefault("brand_primary_color", "")
 	viper.SetDefault("rate_limit_max_attempts", 5)
 	viper.SetDefault("rate_limit_lockout_duration", "15m")
-	viper.SetDefault("allowed_origins", []string{"*"})
+	// Fail closed by default: no cross-origin requests are allowed unless
+	// SSSO_ALLOWED_ORIGINS is explicitly set. Local dev sets "*" via .env.dev.
+	viper.SetDefault("allowed_origins", []string{})
+	viper.SetDefault("allow_insecure_defaults", false)
 
 	// Explicitly bind env vars so viper.Unmarshal picks them up
 	_ = viper.BindEnv("mgmt_http_addr")
@@ -244,6 +253,7 @@ func LoadConfig() (config Config, err error) {
 	viper.BindEnv("tracing_enabled")
 	viper.BindEnv("tracing_otlp_endpoint")
 	viper.BindEnv("allowed_origins")
+	viper.BindEnv("allow_insecure_defaults")
 
 	if errRead := viper.ReadInConfig(); errRead != nil {
 		if _, ok := errRead.(viper.ConfigFileNotFoundError); ok {
@@ -261,15 +271,15 @@ func LoadConfig() (config Config, err error) {
 	}
 
 	if config.ConfigEncryptionKey == "" {
-		if config.JSONLog || config.InitialAdminEnabled {
-			return Config{}, fmt.Errorf("FATAL: config_encryption_key is required. Set SSSO_CONFIG_ENCRYPTION_KEY environment variable")
+		if !config.AllowInsecureDefaults {
+			return Config{}, fmt.Errorf("FATAL: config_encryption_key is required. Set SSSO_CONFIG_ENCRYPTION_KEY environment variable (or set SSSO_ALLOW_INSECURE_DEFAULTS=true for local development only)")
 		}
 		key := make([]byte, 32)
 		if _, err := rand.Read(key); err != nil {
 			return Config{}, fmt.Errorf("failed to generate encryption key: %w", err)
 		}
 		config.ConfigEncryptionKey = hex.EncodeToString(key)
-		log.Warn().Msgf("No SSSO_CONFIG_ENCRYPTION_KEY set — auto-generated ephemeral key for dev session: %s", config.ConfigEncryptionKey)
+		log.Warn().Msgf("No SSSO_CONFIG_ENCRYPTION_KEY set — auto-generated ephemeral key for dev session (SSSO_ALLOW_INSECURE_DEFAULTS=true): %s", config.ConfigEncryptionKey)
 	}
 
 	// Viper doesn't automatically convert string to custom types like StorageType

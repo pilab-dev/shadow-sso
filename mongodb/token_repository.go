@@ -16,7 +16,7 @@ type TokenRepository struct {
 	coll *mongo.Collection
 }
 
-func NewTokenRepository(db *mongo.Database) domain.TokenRepository {
+func NewTokenRepository(_ context.Context, db *mongo.Database) domain.TokenRepository {
 	return &TokenRepository{
 		coll: db.Collection(TokensCollection),
 	}

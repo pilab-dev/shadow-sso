@@ -58,6 +58,13 @@ service:
   port: 8080 # Port the service will listen on
   targetPort: 8080 # Port the application container listens on (from Dockerfile EXPOSE)
 
+# Management server: /healthz, /readyz, /metrics, and (if SSSO_PPROF_ENABLED) /debug/pprof/*.
+# Exposed as a separate container/service port so /metrics can stay off the
+# public ingress path while still being reachable for Prometheus scraping.
+management:
+  port: 5000
+  targetPort: 5000
+
 ingress:
   enabled: false
   className: "" # "nginx" or "traefik" for example

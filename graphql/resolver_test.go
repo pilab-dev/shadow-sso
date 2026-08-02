@@ -59,7 +59,7 @@ func TestGraphQLResolverWithMongoDB(t *testing.T) {
 		t.Skip("Failed to create user repo: " + err.Error())
 		return
 	}
-	clientRepo := mongodb.NewClientRepository(db)
+	clientRepo := mongodb.NewClientRepository(ctx, db)
 	sessionRepo, _ := mongodb.NewSessionRepositoryMongo(ctx, db)
 	idpRepo, _ := mongodb.NewIdPRepositoryMongo(ctx, db)
 	groupRepo, _ := mongodb.NewGroupRepository(ctx, db)

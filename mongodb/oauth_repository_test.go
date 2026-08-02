@@ -38,7 +38,7 @@ func setupOAuthTokenRepoTest(t *testing.T) (domain.TokenRepository, func(), erro
 	}
 	db := client.Database(dbName)
 
-	tokenRepo := mongodb.NewTokenRepository(db)
+	tokenRepo := mongodb.NewTokenRepository(ctx, db)
 
 	cleanupFunc := func() {
 		mainCtx := context.Background()

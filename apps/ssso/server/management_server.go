@@ -69,6 +69,10 @@ func StartManagementServer(address string, repoProvider services.RepositoryProvi
 		Addr:              address,
 		Handler:           mux,
 		ReadHeaderTimeout: 3 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      30 * time.Second, // pprof profile/trace captures can take a while
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    8 * 1024, // 8KiB
 	}
 
 	go func() {

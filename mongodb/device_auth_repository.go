@@ -16,7 +16,7 @@ type DeviceAuthRepository struct {
 	deviceAuth *mongo.Collection
 }
 
-func NewDeviceAuthRepository(db *mongo.Database) *DeviceAuthRepository {
+func NewDeviceAuthRepository(_ context.Context, db *mongo.Database) *DeviceAuthRepository {
 	return &DeviceAuthRepository{
 		deviceAuth: db.Collection(DeviceAuthCollectionName),
 	}

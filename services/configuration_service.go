@@ -2,15 +2,12 @@ package services
 
 import (
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
-	"encoding/base64"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/pilab-dev/shadow-sso/domain"
+	pkgcrypto "github.com/pilab-dev/shadow-sso/pkg/crypto"
 )
 
 // ConfigurationService manages operational configuration with caching
@@ -230,54 +227,12 @@ func (s *defaultConfigurationService) getCacheKey(configType domain.Configuratio
 	return string(configType) + ":" + key
 }
 
-// encrypt encrypts a value using AES-GCM
+// encrypt encrypts a value using AES-GCM.
 func (s *defaultConfigurationService) encrypt(plaintext string) (string, error) {
-	block, err := aes.NewCipher(s.encryptionKey)
-	if err != nil {
-		return "", err
-	}
-
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", err
-	}
-
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err := rand.Read(nonce); err != nil {
-		return "", err
-	}
-
-	ciphertext := gcm.Seal(nonce, nonce, []byte(plaintext), nil)
-	return base64.StdEncoding.EncodeToString(ciphertext), nil
+	return pkgcrypto.EncryptAESGCM(s.encryptionKey, plaintext)
 }
 
-// decrypt decrypts a value using AES-GCM
+// decrypt decrypts a value using AES-GCM.
 func (s *defaultConfigurationService) decrypt(ciphertext string) (string, error) {
-	data, err := base64.StdEncoding.DecodeString(ciphertext)
-	if err != nil {
-		return "", err
-	}
-
-	block, err := aes.NewCipher(s.encryptionKey)
-	if err != nil {
-		return "", err
-	}
-
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", err
-	}
-
-	nonceSize := gcm.NonceSize()
-	if len(data) < nonceSize {
-		return "", fmt.Errorf("ciphertext too short")
-	}
-
-	nonce, ciphertextData := data[:nonceSize], data[nonceSize:]
-	plaintext, err := gcm.Open(nil, nonce, ciphertextData, nil)
-	if err != nil {
-		return "", err
-	}
-
-	return string(plaintext), nil
+	return pkgcrypto.DecryptAESGCM(s.encryptionKey, ciphertext)
 }

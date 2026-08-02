@@ -2,6 +2,7 @@ package services_test
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"testing"
 	"time"
@@ -830,4 +831,67 @@ func TestTokenService_CreateToken_KeycloakClaims(t *testing.T) {
 	assert.True(t, clientRoleSet["group-client-role"], "expected group-derived client role in resource_access.<client>.roles")
 
 	assert.Equal(t, "session-123", (*claims)["sid"], "expected sid claim from session")
+}
+
+func TestTokenService_CreateToken_SigningKeyResolution(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	encKey := make([]byte, 32)
+	_, err := rand.Read(encKey)
+	require.NoError(t, err)
+
+	mockKeysRepo := mock_domain.NewMockRealmKeysRepository(ctrl)
+	mockKeysRepo.EXPECT().ListAllKeys(gomock.Any()).Return([]*domain.RealmKey{
+		encryptedRealmKey(t, encKey, "realm-active", "", domain.RealmKeyStatusActive, 10),
+		encryptedRealmKey(t, encKey, "client-active", "client-1", domain.RealmKeyStatusActive, 10),
+	}, nil)
+
+	signer := services.NewTokenSigner()
+	require.NoError(t, signer.LoadFromRepository(context.Background(), mockKeysRepo, encKey))
+
+	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
+	mockCache := mock_cache.NewMockTokenStore(ctrl)
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockPubKeyRepo := mock_domain.NewMockPublicKeyRepository(ctrl)
+	mockSARepo := mock_domain.NewMockServiceAccountRepository(ctrl)
+
+	mockTokenRepo.EXPECT().StoreToken(gomock.Any(), gomock.Any()).Return(nil).Times(3)
+	mockCache.EXPECT().Set(gomock.Any(), gomock.Any()).Return(nil).Times(3)
+
+	tokenSvc := services.NewTokenService(
+		mockTokenRepo, mockCache, "test-issuer", signer,
+		mockPubKeyRepo, mockSARepo, mockUserRepo,
+		nil, nil, nil, nil,
+	)
+
+	ctx := context.Background()
+	baseOpts := domain.CreateTokenOptions{
+		TokenID:   "token-1",
+		Scope:     "openid",
+		ClientID:  "client-1",
+		ExpireIn:  time.Hour,
+		TokenType: api.TokenTypeAccessToken,
+	}
+
+	kidOf := func(opts domain.CreateTokenOptions) string {
+		t.Helper()
+		token, err := tokenSvc.CreateToken(ctx, opts, nil)
+		require.NoError(t, err)
+		require.NotNil(t, token)
+		parsed, _, err := jwt.NewParser().ParseUnverified(token.TokenValue, jwt.MapClaims{})
+		require.NoError(t, err)
+		kid, _ := parsed.Header["kid"].(string)
+		return kid
+	}
+
+	assert.Equal(t, "client-active", kidOf(baseOpts), "per-client key must be used when client has a dedicated key")
+
+	realmOpts := baseOpts
+	realmOpts.ClientID = "client-2"
+	assert.Equal(t, "realm-active", kidOf(realmOpts), "realm-default key must be used when client has no dedicated key")
+
+	overrideOpts := baseOpts
+	overrideOpts.SigningKeyID = "realm-active"
+	assert.Equal(t, "realm-active", kidOf(overrideOpts), "explicit SigningKeyID must win over per-client resolution")
 }

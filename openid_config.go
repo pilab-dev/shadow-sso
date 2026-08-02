@@ -133,9 +133,11 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 	// Initialize TokenSigner
 	tokenSigner := opts.TokenSigner
 	if tokenSigner == nil {
-		// Default token signer (e.g., with a generated key for HS256 for simplicity in example, or from file)
+		if opts.AppConfig == nil || !opts.AppConfig.AllowInsecureDefaults {
+			return nil, errors.New("TokenSigner is required (set SSSO_ALLOW_INSECURE_DEFAULTS=true to fall back to an insecure placeholder key for local development only)")
+		}
+		log.Warn().Msg("No TokenSigner provided. Using insecure dev placeholder key - REPLACE IN PRODUCTION.")
 		tokenSigner = services.NewTokenSigner()
-		// For a real setup, this key should be loaded securely
 		tokenSigner.AddKeySigner("super-secret-default-key-replace-me-in-production")
 	}
 
@@ -409,23 +411,26 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 	})
 
 	// --- GraphQL API wiring ---
+	// Reuses the same cached repository instances as the REST/Connect-RPC APIs
+	// above (via repoProvider) instead of constructing a second, independent
+	// set — avoids duplicate index-creation calls and swallowed constructor
+	// errors on every boot.
 	if mongoRp, ok := repoProvider.(*mongodb.MongoRepositoryProvider); ok {
-		db := mongoRp.Database()
 		gqlCtx := context.Background()
 
-		userRepo, _ := mongodb.NewUserRepository(gqlCtx, db)
-		clientRepo := mongodb.NewClientRepository(db)
-		sessionRepo, _ := mongodb.NewSessionRepositoryMongo(gqlCtx, db)
-		idpRepo, _ := mongodb.NewIdPRepositoryMongo(gqlCtx, db)
-		groupRepo, _ := mongodb.NewGroupRepository(gqlCtx, db)
-		roleRepo, _ := mongodb.NewRoleRepository(gqlCtx, db)
-		protocolMapperRepo, _ := mongodb.NewProtocolMapperRepository(gqlCtx, db)
-		authFlowRepo, _ := mongodb.NewAuthenticationFlowRepository(gqlCtx, db)
-		clientScopeRepo, _ := mongodb.NewClientScopeRepository(gqlCtx, db)
-		realmSettingsRepo, _ := mongodb.NewRealmSettingsRepository(gqlCtx, db)
-		realmKeysRepo, _ := mongodb.NewRealmKeysRepository(gqlCtx, db)
-		userAttrRepo, _ := mongodb.NewUserAttributeRepository(gqlCtx, db)
-		userAttrMapperRepo, _ := mongodb.NewUserAttributeMapperRepository(gqlCtx, db)
+		userRepo := mongoRp.UserRepository(gqlCtx)
+		clientRepo := mongoRp.ClientRepository(gqlCtx)
+		sessionRepo := mongoRp.SessionRepository(gqlCtx)
+		idpRepo := mongoRp.IdPRepository(gqlCtx)
+		groupRepo := mongoRp.GroupRepository(gqlCtx)
+		roleRepo := mongoRp.RoleRepository(gqlCtx)
+		protocolMapperRepo := mongoRp.ProtocolMapperRepository(gqlCtx)
+		authFlowRepo := mongoRp.AuthenticationFlowRepository(gqlCtx)
+		clientScopeRepo := mongoRp.ClientScopeRepository(gqlCtx)
+		realmSettingsRepo := mongoRp.RealmSettingsRepository(gqlCtx)
+		realmKeysRepo := mongoRp.RealmKeysRepository(gqlCtx)
+		userAttrRepo := mongoRp.UserAttributeRepository(gqlCtx)
+		userAttrMapperRepo := mongoRp.UserAttributeMapperRepository(gqlCtx)
 
 		var emailService domain.EmailService
 		if opts.AppConfig != nil {

@@ -21,12 +21,11 @@ type MongoFlowStore struct {
 }
 
 // NewFlowStore creates a new MongoFlowStore and ensures the TTL index on expires_at.
-func NewFlowStore(db *mongo.Database) *MongoFlowStore {
+func NewFlowStore(ctx context.Context, db *mongo.Database) *MongoFlowStore {
 	repo := &MongoFlowStore{
 		collection: db.Collection(FlowStatesCollection),
 	}
 
-	ctx := context.Background()
 	indexModels := []mongo.IndexModel{
 		{
 			Keys:    bson.D{{Key: "expires_at", Value: 1}},

@@ -80,6 +80,22 @@ func NewJWKSServiceWithKey(privKey *rsa.PrivateKey, kid string) *defaultJWKSServ
 	return service
 }
 
+// jsonWebKeyFromPublicKey converts an RSA public key into a JWKS entry.
+func jsonWebKeyFromPublicKey(kid string, publicKey *rsa.PublicKey) JSONWebKey {
+	// RSA kulcs komponensek kódolása
+	n := base64.RawURLEncoding.EncodeToString(publicKey.N.Bytes())
+	e := base64.RawURLEncoding.EncodeToString(big.NewInt(int64(publicKey.E)).Bytes())
+
+	return JSONWebKey{
+		Kid: kid,
+		Kty: "RSA",
+		Alg: "RS256",
+		Use: "sig",
+		N:   n,
+		E:   e,
+	}
+}
+
 // GetPublicJWKS retrieves the public JSON Web Key Set.
 func (s *defaultJWKSService) GetPublicJWKS(ctx context.Context) (*JSONWebKeySet, error) {
 	s.mu.RLock()
@@ -89,22 +105,10 @@ func (s *defaultJWKSService) GetPublicJWKS(ctx context.Context) (*JSONWebKeySet,
 		return nil, fmt.Errorf("no keys available in JWKS service")
 	}
 
-	var keys []JSONWebKey
+	keys := make([]JSONWebKey, 0, len(s.keys))
 	for kid, privateKey := range s.keys {
 		publicKey := privateKey.Public().(*rsa.PublicKey)
-
-		// RSA kulcs komponensek kódolása
-		n := base64.RawURLEncoding.EncodeToString(publicKey.N.Bytes())
-		e := base64.RawURLEncoding.EncodeToString(big.NewInt(int64(publicKey.E)).Bytes())
-
-		keys = append(keys, JSONWebKey{
-			Kid: kid,
-			Kty: "RSA",
-			Alg: "RS256",
-			Use: "sig",
-			N:   n,
-			E:   e,
-		})
+		keys = append(keys, jsonWebKeyFromPublicKey(kid, publicKey))
 	}
 
 	return &JSONWebKeySet{Keys: keys}, nil
@@ -115,25 +119,58 @@ func (s *defaultJWKSService) GetJWKS() JSONWebKeySet {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	var keys []JSONWebKey
+	keys := make([]JSONWebKey, 0, len(s.keys))
 	for kid, privateKey := range s.keys {
 		publicKey := privateKey.Public().(*rsa.PublicKey)
-
-		// RSA kulcs komponensek kódolása
-		n := base64.RawURLEncoding.EncodeToString(publicKey.N.Bytes())
-		e := base64.RawURLEncoding.EncodeToString(big.NewInt(int64(publicKey.E)).Bytes())
-
-		keys = append(keys, JSONWebKey{
-			Kid: kid,
-			Kty: "RSA",
-			Alg: "RS256",
-			Use: "sig",
-			N:   n,
-			E:   e,
-		})
+		keys = append(keys, jsonWebKeyFromPublicKey(kid, publicKey))
 	}
 
 	return JSONWebKeySet{Keys: keys}
+}
+
+// signerJWKSService serves the JSON Web Key Set from the TokenSigner's key
+// registry, so the JWKS endpoint always reflects the exact keys used for
+// signing: the realm-default key, per-client keys, and retiring keys kept
+// for verification during rotation.
+type signerJWKSService struct {
+	signer *TokenSigner
+}
+
+// NewJWKSServiceFromSigner creates a JWKS service backed by the signer's
+// key registry. The served key set is derived live from the registry, so
+// rotations picked up by the signer are reflected automatically.
+func NewJWKSServiceFromSigner(signer *TokenSigner) JWKSService {
+	return &signerJWKSService{signer: signer}
+}
+
+// GetPublicJWKS retrieves the public JSON Web Key Set from the signer's
+// active and retiring keys.
+func (s *signerJWKSService) GetPublicJWKS(ctx context.Context) (*JSONWebKeySet, error) {
+	pubKeys := s.signer.PublicKeys()
+	if len(pubKeys) == 0 {
+		return nil, fmt.Errorf("no keys available in JWKS service")
+	}
+
+	keys := make([]JSONWebKey, 0, len(pubKeys))
+	for kid, publicKey := range pubKeys {
+		keys = append(keys, jsonWebKeyFromPublicKey(kid, publicKey))
+	}
+	return &JSONWebKeySet{Keys: keys}, nil
+}
+
+// GetJWKS retrieves the JSON Web Key Set.
+func (s *signerJWKSService) GetJWKS() JSONWebKeySet {
+	pubKeys := s.signer.PublicKeys()
+	keys := make([]JSONWebKey, 0, len(pubKeys))
+	for kid, publicKey := range pubKeys {
+		keys = append(keys, jsonWebKeyFromPublicKey(kid, publicKey))
+	}
+	return JSONWebKeySet{Keys: keys}
+}
+
+// GetSigningKey retrieves the current realm-default signing key.
+func (s *signerJWKSService) GetSigningKey() (string, interface{}) {
+	return s.signer.RealmDefaultKeyID(), s.signer.GetRSAPrivateKey()
 }
 
 // GetSigningKey retrieves the current signing key.

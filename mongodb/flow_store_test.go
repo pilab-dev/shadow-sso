@@ -37,7 +37,7 @@ func setupFlowStoreTest(t *testing.T) (domain.FlowStore, func(), error) {
 	}
 	db := client.Database(dbName)
 
-	flowStore := mongodb.NewFlowStore(db) // Creates collection and TTL index
+	flowStore := mongodb.NewFlowStore(ctx, db) // Creates collection and TTL index
 
 	cleanupFunc := func() {
 		mainCtx := context.Background()

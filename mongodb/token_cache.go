@@ -39,12 +39,11 @@ type MongoTokenStore struct {
 }
 
 // NewTokenCache creates a new MongoTokenStore and ensures a TTL index on expires_at.
-func NewTokenCache(db *mongo.Database) *MongoTokenStore {
+func NewTokenCache(ctx context.Context, db *mongo.Database) *MongoTokenStore {
 	store := &MongoTokenStore{
 		collection: db.Collection(TokenCacheCollection),
 	}
 
-	ctx := context.Background()
 	indexModels := []mongo.IndexModel{
 		{
 			Keys:    bson.D{{Key: "expires_at", Value: 1}},

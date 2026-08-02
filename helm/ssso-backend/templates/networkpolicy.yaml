@@ -31,6 +31,14 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.service.targetPort }}
+    # Allow Prometheus in the observability namespace to scrape /metrics
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: {{ .Values.management.targetPort }}
   egress:
     # Allow DNS resolution (UDP port 53)
     - to: []

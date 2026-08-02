@@ -152,8 +152,13 @@ func (p *DefaultServiceProvider) PKCEService() PKCEService {
 
 func (p *DefaultServiceProvider) JWKSService() JWKSService {
 	if p.jwksService == nil {
-		// Use the actual signing key so JWKS serves the matching public key.
-		if p.tokenSigner != nil && p.tokenSigner.HasRSASigner() {
+		// Registry-backed signers serve the JWKS from the key registry so the
+		// endpoint reflects the exact keys used for signing (realm-default,
+		// per-client and retiring keys during rotation).
+		if p.tokenSigner != nil && p.tokenSigner.IsRegistryBacked() {
+			p.jwksService = NewJWKSServiceFromSigner(p.tokenSigner)
+		} else if p.tokenSigner != nil && p.tokenSigner.HasRSASigner() {
+			// Use the actual signing key so JWKS serves the matching public key.
 			privKey := p.tokenSigner.GetRSAPrivateKey()
 			p.jwksService = NewJWKSServiceWithKey(privKey, "rsa-default")
 		} else {

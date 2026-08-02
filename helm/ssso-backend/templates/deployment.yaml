@@ -38,6 +38,8 @@ spec:
           env:
             - name: SSSO_HTTP_ADDR
               value: "0.0.0.0:{{ .Values.service.targetPort }}"
+            - name: SSSO_MGMT_HTTP_ADDR
+              value: "0.0.0.0:{{ .Values.management.targetPort }}"
             - name: SSSO_LOG_LEVEL
               value: {{ .Values.config.SSSO_LOG_LEVEL | quote }}
             - name: SSSO_ISSUER_URL
@@ -109,6 +111,9 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.service.targetPort }}
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.management.targetPort }}
               protocol: TCP
           livenessProbe:
             httpGet:

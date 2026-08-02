@@ -81,6 +81,11 @@ type Client struct {
 	// client_credentials grant for this client. Empty means no roles.
 	ServiceAccountRoles []string `bson:"service_account_roles,omitempty"      json:"service_account_roles,omitempty"`
 
+	// SigningKeyID optionally points at a dedicated RealmKey.ID used to sign
+	// tokens issued for this client. Empty means "use the realm-default
+	// active signing key".
+	SigningKeyID string `bson:"signing_key_id,omitempty" json:"signing_key_id,omitempty"`
+
 	ClientLDAPAttributeEmail      string            `bson:"client_ldap_attribute_email,omitempty" json:"client_ldap_attribute_email,omitempty"`
 	ClientLDAPAttributeFirstName  string            `bson:"client_ldap_attribute_first_name,omitempty" json:"client_ldap_attribute_first_name,omitempty"`
 	ClientLDAPAttributeLastName   string            `bson:"client_ldap_attribute_last_name,omitempty" json:"client_ldap_attribute_last_name,omitempty"`
