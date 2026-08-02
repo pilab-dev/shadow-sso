@@ -30,6 +30,11 @@ func setupMockRepoProvider(ctrl *gomock.Controller) *mock_services.MockRepositor
 	mockRepoProvider.EXPECT().PublicKeyRepository(gomock.Any()).Return(mock_domain.NewMockPublicKeyRepository(ctrl)).AnyTimes()
 	mockRepoProvider.EXPECT().ServiceAccountRepository(gomock.Any()).Return(mock_domain.NewMockServiceAccountRepository(ctrl)).AnyTimes()
 	mockRepoProvider.EXPECT().IdPRepository(gomock.Any()).Return(mock_domain.NewMockIdPRepository(ctrl)).AnyTimes()
+	mockRepoProvider.EXPECT().GroupRepository(gomock.Any()).Return(mock_domain.NewMockGroupRepository(ctrl)).AnyTimes()
+	mockRepoProvider.EXPECT().RoleRepository(gomock.Any()).Return(mock_domain.NewMockRoleRepository(ctrl)).AnyTimes()
+	mockRepoProvider.EXPECT().RealmKeysRepository(gomock.Any()).Return(mock_domain.NewMockRealmKeysRepository(ctrl)).AnyTimes()
+	mockRepoProvider.EXPECT().UserAttributeRepository(gomock.Any()).Return(mock_domain.NewMockUserAttributeRepository(ctrl)).AnyTimes()
+	mockRepoProvider.EXPECT().UserAttributeMapperRepository(gomock.Any()).Return(mock_domain.NewMockUserAttributeMapperRepository(ctrl)).AnyTimes()
 	return mockRepoProvider
 }
 
