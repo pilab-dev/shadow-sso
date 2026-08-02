@@ -128,6 +128,7 @@ func (p *DefaultServiceProvider) OAuthService() OAuthService {
 
 func (p *DefaultServiceProvider) TokenService() TokenService {
 	if p.tokenService == nil {
+		protocolMapperRepo, userAttrMapperRepo, userAttrRepo := p.keycloakMapperRepositories()
 		p.tokenService = newDefaultTokenService(
 			p.repoProvider.TokenRepository(initCtx),
 			p.tokenCache,
@@ -136,11 +137,34 @@ func (p *DefaultServiceProvider) TokenService() TokenService {
 			p.repoProvider.PublicKeyRepository(initCtx),
 			p.repoProvider.ServiceAccountRepository(initCtx),
 			p.repoProvider.UserRepository(initCtx),
+			userAttrMapperRepo,
+			userAttrRepo,
+			protocolMapperRepo,
 			p.repoProvider.GroupRepository(initCtx),
 			p.repoProvider.RoleRepository(initCtx),
 		)
 	}
 	return p.tokenService
+}
+
+// keycloakMapperProvider is implemented by RepositoryProviders that can serve
+// Keycloak-style token mappers: protocol mappers (realm/client/group/role
+// mappers) plus user attribute mappers.
+type keycloakMapperProvider interface {
+	ProtocolMapperRepository(ctx context.Context) domain.ProtocolMapperRepository
+	UserAttributeMapperRepository(ctx context.Context) domain.UserAttributeMapperRepository
+	UserAttributeRepository(ctx context.Context) domain.UserAttributeRepository
+}
+
+// keycloakMapperRepositories returns the token mapper repositories when the
+// backing RepositoryProvider is a Keycloak-parity provider, or nils otherwise.
+// The token service treats nil repositories as "no mappers configured" and
+// safely skips those categories during token mapping.
+func (p *DefaultServiceProvider) keycloakMapperRepositories() (protocolMapperRepo domain.ProtocolMapperRepository, userAttrMapperRepo domain.UserAttributeMapperRepository, userAttrRepo domain.UserAttributeRepository) {
+	if provider, ok := p.repoProvider.(keycloakMapperProvider); ok {
+		return provider.ProtocolMapperRepository(initCtx), provider.UserAttributeMapperRepository(initCtx), provider.UserAttributeRepository(initCtx)
+	}
+	return nil, nil, nil
 }
 
 func (p *DefaultServiceProvider) PKCEService() PKCEService {
