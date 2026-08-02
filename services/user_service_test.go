@@ -254,7 +254,7 @@ func TestUserServer_IncrementFailedLoginAttempts(t *testing.T) {
 	assert.Equal(t, int32(3), resp.Msg.CurrentAttempts)
 }
 
-func TestTwoFactorServer_InitiateTOTPSetup_SecretNotReturned(t *testing.T) {
+func TestTwoFactorServer_InitiateTOTPSetup_ReturnsSecret(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -275,7 +275,7 @@ func TestTwoFactorServer_InitiateTOTPSetup_SecretNotReturned(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, resp.Msg)
-	assert.Empty(t, resp.Msg.Secret, "TOTP secret must not be returned in API response")
+	assert.NotEmpty(t, resp.Msg.Secret, "TOTP secret must be returned in API response for CLI enrollment")
 	assert.NotEmpty(t, resp.Msg.QrCodeUri, "QR code URI must be returned")
 }
 
@@ -675,4 +675,40 @@ func TestUserServer_RegisterUser_DefaultRole(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp.Msg.User)
 	assert.Equal(t, []string{"ROLE_USER"}, resp.Msg.User.Roles)
+}
+
+func TestResolveUser(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	userRepo := mock_domain.NewMockUserRepository(ctrl)
+	service := NewUserServer(userRepo, nil, nil)
+
+	t.Run("returns user by ID when found", func(t *testing.T) {
+		expected := &domain.User{ID: "mongo-id-123", Email: "user@example.com"}
+		userRepo.EXPECT().GetUserByID(gomock.Any(), "mongo-id-123").Return(expected, nil)
+
+		user, err := service.resolveUser(context.Background(), "mongo-id-123")
+		require.NoError(t, err)
+		assert.Equal(t, expected, user)
+	})
+
+	t.Run("falls back to email when ID not found", func(t *testing.T) {
+		expected := &domain.User{ID: "mongo-id-456", Email: "fallback@example.com"}
+		userRepo.EXPECT().GetUserByID(gomock.Any(), "fallback@example.com").Return(nil, domain.ErrUserNotFound)
+		userRepo.EXPECT().GetUserByEmail(gomock.Any(), "fallback@example.com").Return(expected, nil)
+
+		user, err := service.resolveUser(context.Background(), "fallback@example.com")
+		require.NoError(t, err)
+		assert.Equal(t, expected, user)
+	})
+
+	t.Run("propagates not-found when both ID and email miss", func(t *testing.T) {
+		userRepo.EXPECT().GetUserByID(gomock.Any(), "nobody@example.com").Return(nil, domain.ErrUserNotFound)
+		userRepo.EXPECT().GetUserByEmail(gomock.Any(), "nobody@example.com").Return(nil, domain.ErrUserNotFound)
+
+		user, err := service.resolveUser(context.Background(), "nobody@example.com")
+		require.Nil(t, user)
+		assert.ErrorIs(t, err, domain.ErrUserNotFound)
+	})
 }

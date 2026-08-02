@@ -1,12 +1,13 @@
 package config
 
 import (
-	"errors" // Added for GetCurrentContext
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -112,28 +113,30 @@ func SaveConfig() error {
 		return fmt.Errorf("failed to create config directory %s: %w", configDir, err)
 	}
 
-	// Update viper's internal map before writing
-	// This ensures that changes made directly to GlobalConfig are reflected.
-	// Convert contexts to plain maps: viper v1.21 mergeMaps silently drops values
-	// that are not map[string]any when the destination key already exists as a map,
-	// which would discard new contexts and saved tokens.
+	// Build the full config map from GlobalConfig. Only include user_auth_token
+	// when non-empty so that logout (which clears the token) removes the key.
 	contexts := make(map[string]any, len(GlobalConfig.Contexts))
 	for name, ctx := range GlobalConfig.Contexts {
-		contexts[name] = map[string]any{
+		ctxMap := map[string]any{
 			"name":            ctx.Name,
 			"server_endpoint": ctx.ServerEndpoint,
-			"user_auth_token": ctx.UserAuthToken,
 		}
-	}
-	settings := map[string]interface{}{
-		"current_context": GlobalConfig.CurrentContext,
-		"contexts":        contexts,
-	}
-	if err := viper.MergeConfigMap(settings); err != nil {
-		return fmt.Errorf("failed to merge config map for saving: %w", err)
+		if ctx.UserAuthToken != "" {
+			ctxMap["user_auth_token"] = ctx.UserAuthToken
+		}
+		contexts[name] = ctxMap
 	}
 
-	if err := viper.WriteConfigAs(CfgFile); err != nil {
+	// Marshal the complete config directly to YAML and write it,
+	// avoiding viper.MergeConfigMap which cannot remove stale keys.
+	data, err := yaml.Marshal(map[string]any{
+		"current_context": GlobalConfig.CurrentContext,
+		"contexts":        contexts,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+	if err := os.WriteFile(CfgFile, data, 0o644); err != nil {
 		return fmt.Errorf("failed to save config to %s: %w", CfgFile, err)
 	}
 	fmt.Fprintln(os.Stderr, "Config saved to:", CfgFile)

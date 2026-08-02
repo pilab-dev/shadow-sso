@@ -2,17 +2,22 @@ package integration
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// parseSAKeyJSON extracts the private_key_id from a service account key JSON output.
+// parseSAKeyJSON extracts the service account key JSON from output that may
+// contain stderr messages (e.g. "Using config file: ...") before the JSON.
 func parseSAKeyJSON(t testing.TB, output string) map[string]string {
 	t.Helper()
+	// CombinedOutput() merges stdout+stderr; find the first '{' to locate JSON start.
+	idx := strings.IndexByte(output, '{')
+	require.GreaterOrEqual(t, idx, 0, "no JSON object found in output:\n%s", output)
 	var result map[string]string
-	err := json.Unmarshal([]byte(output), &result)
+	err := json.Unmarshal([]byte(output[idx:]), &result)
 	require.NoError(t, err, "failed to parse SA key JSON:\n%s", output)
 	return result
 }
@@ -34,7 +39,7 @@ func TestCLIServiceAccount_CreateKey(t *testing.T) {
 	assert.NotEmpty(t, parsed["private_key_id"], "output should contain private_key_id")
 	assert.NotEmpty(t, parsed["client_email"], "output should contain client_email")
 	assert.Equal(t, "test-project", parsed["project_id"], "project_id should match")
-	assert.Equal(t, "SERVICE_ACCOUNT", parsed["type"], "type should be SERVICE_ACCOUNT")
+	assert.Equal(t, "service_account", parsed["type"], "type should be service_account")
 	t.Logf("created SA key: %s", parsed["private_key_id"])
 }
 
@@ -51,11 +56,10 @@ func TestCLIServiceAccount_ListKeys(t *testing.T) {
 	)
 	require.NoError(t, err, "SA create-key failed: %s", createOut)
 
-	// Extract SA ID from stderr (printed after JSON: "Service Account ID: <id>")
-	// The SA ID is printed to stderr, so get it from the JSON instead
+	// The SA ID is now part of the JSON output as service_account_id.
 	parsed := parseSAKeyJSON(t, createOut)
-	saID := parsed["client_id"]
-	require.NotEmpty(t, saID, "client_id should be in JSON output")
+	saID := parsed["service_account_id"]
+	require.NotEmpty(t, saID, "service_account_id should be in JSON output")
 
 	// List keys
 	listOut, err := h.ExecuteCommand("service-account", "list-keys", saID)
@@ -77,9 +81,9 @@ func TestCLIServiceAccount_DeleteKey(t *testing.T) {
 	require.NoError(t, err, "SA create-key failed: %s", createOut)
 
 	parsed := parseSAKeyJSON(t, createOut)
-	saID := parsed["client_id"]
+	saID := parsed["service_account_id"]
 	keyID := parsed["private_key_id"]
-	require.NotEmpty(t, saID, "client_id should be in JSON output")
+	require.NotEmpty(t, saID, "service_account_id should be in JSON output")
 	require.NotEmpty(t, keyID, "private_key_id should be in JSON output")
 
 	// Delete the key
@@ -93,7 +97,7 @@ func TestCLIServiceAccount_CreateKey_MissingProject(t *testing.T) {
 	h := SetupCLITest(t)
 	defer h.Close()
 
-	_, err := h.ExecuteCommand("service-account", "create-key")
+	out, err := h.ExecuteCommand("service-account", "create-key")
 	require.Error(t, err, "should fail without --project-id")
-	assert.Contains(t, err.Error(), "project-id is required", "error should mention missing --project-id")
+	assert.Contains(t, out, "project-id is required", "output should mention missing --project-id")
 }

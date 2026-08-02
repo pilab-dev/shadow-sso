@@ -65,6 +65,19 @@ func NewUserServer(userRepo domain.UserRepository, hasher domain.PasswordHasher,
 	}
 }
 
+// resolveUser looks up a user by ID first, falling back to email lookup.
+// This supports CLI commands that pass either a MongoDB _id or an email address.
+func (s *UserServer) resolveUser(ctx context.Context, idOrEmail string) (*domain.User, error) {
+	user, err := s.userRepo.GetUserByID(ctx, idOrEmail)
+	if err == nil {
+		return user, nil
+	}
+	if !errors.Is(err, domain.ErrUserNotFound) {
+		return nil, err
+	}
+	return s.userRepo.GetUserByEmail(ctx, idOrEmail)
+}
+
 // RegisterUser registers a new user with the provided details.
 func (s *UserServer) RegisterUser(ctx context.Context, req *connect.Request[ssov1.RegisterUserRequest]) (*connect.Response[ssov1.RegisterUserResponse], error) {
 	// Get acting user from context (could be a service account acting on behalf of a user)
@@ -149,7 +162,7 @@ func (s *UserServer) ActivateUser(ctx context.Context, req *connect.Request[ssov
 	}
 
 	// 1. Fetch user by req.UserId from userRepo
-	user, err := s.userRepo.GetUserByID(ctx, userID)
+	user, err := s.resolveUser(ctx, userID)
 	if err != nil {
 		if errors.Is(err, domain.ErrUserNotFound) {
 			audit.Log("UserService", "ActivateUser", actingUserID, userID, "User not found", false, err)
@@ -198,7 +211,7 @@ func (s *UserServer) LockUser(ctx context.Context, req *connect.Request[ssov1.Lo
 	}
 
 	// 1. Fetch user by req.UserId from userRepo
-	user, err := s.userRepo.GetUserByID(ctx, userID)
+	user, err := s.resolveUser(ctx, userID)
 	if err != nil {
 		if errors.Is(err, domain.ErrUserNotFound) {
 			audit.Log("UserService", "LockUser", actingUserID, userID, "User not found", false, err)
@@ -294,7 +307,7 @@ func (s *UserServer) GetUser(ctx context.Context, req *connect.Request[ssov1.Get
 	}
 
 	// 1. Fetch user by req.UserId from userRepo.GetUserByID
-	user, err := s.userRepo.GetUserByID(ctx, targetUserID)
+	user, err := s.resolveUser(ctx, targetUserID)
 	if err != nil {
 		if errors.Is(err, domain.ErrUserNotFound) {
 			audit.Log("UserService", "GetUser", actingUserID, targetUserID, "User not found", false, err)
@@ -342,7 +355,7 @@ func (s *UserServer) ChangePassword(ctx context.Context, req *connect.Request[ss
 	}
 
 	// 1. Fetch target user
-	user, err := s.userRepo.GetUserByID(ctx, targetUserID)
+	user, err := s.resolveUser(ctx, targetUserID)
 	if err != nil {
 		if errors.Is(err, domain.ErrUserNotFound) {
 			audit.Log("UserService", "ChangePassword", actingUserID, targetUserID, "User not found", false, err)

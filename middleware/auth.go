@@ -20,19 +20,6 @@ var publicProcedures = map[string]bool{
 	"/sso.v1.AuthService/Login":                    true,
 	"/sso.v1.AuthService/CompleteWebAuthnLogin":    true,
 
-	// UserService - user lookup (authz handled in service logic for self vs admin)
-	"/sso.v1.UserService/GetUser": true,
-
-	// TwoFactorService - setup initiation (uses session-based auth, not JWT)
-	"/sso.v1.TwoFactorService/InitiateTOTPSetup":      true,
-	"/sso.v1.TwoFactorService/VerifyAndEnableTOTP":    true,
-	"/sso.v1.TwoFactorService/InitiateHOTPSetup":      true,
-	"/sso.v1.TwoFactorService/VerifyAndEnableHOTP":    true,
-	"/sso.v1.TwoFactorService/InitiateEmailMFASetup":  true,
-	"/sso.v1.TwoFactorService/VerifyAndEnableEmailMFA": true,
-	"/sso.v1.TwoFactorService/InitiatePushMFASetup":   true,
-	"/sso.v1.TwoFactorService/VerifyAndEnablePushMFA":  true,
-
 	// FederationService - federated login initiation and callback
 	"/sso.v1.FederationService/InitiateFederatedLogin":    true,
 	"/sso.v1.FederationService/HandleFederatedCallback":   true,
