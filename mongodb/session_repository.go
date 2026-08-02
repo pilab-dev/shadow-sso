@@ -169,7 +169,7 @@ func (r *SessionRepositoryMongo) ListSessionsByUserID(ctx context.Context, userI
 		mongoFilter["is_revoked"] = *filter.IsRevoked
 	}
 
-	cursor, err := r.collection.Find(ctx, mongoFilter, options.Find().SetSort(bson.D{{"created_at", -1}}))
+	cursor, err := r.collection.Find(ctx, mongoFilter, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}))
 	if err != nil {
 		log.Error().Err(err).Str("userID", userID).Msg("Error listing sessions by user ID from MongoDB")
 		return nil, err

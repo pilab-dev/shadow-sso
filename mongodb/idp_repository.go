@@ -109,7 +109,7 @@ func (r *IdPRepositoryMongo) ListIdPs(ctx context.Context, onlyEnabled bool) ([]
 		filter["is_enabled"] = true
 	}
 
-	findOptions := options.Find().SetSort(bson.D{{"name", 1}})
+	findOptions := options.Find().SetSort(bson.D{{Key: "name", Value: 1}})
 
 	cursor, err := r.collection.Find(ctx, filter, findOptions)
 	if err != nil {

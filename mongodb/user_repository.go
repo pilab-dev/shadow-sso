@@ -209,7 +209,7 @@ func (r *UserRepository) ListUsers(ctx context.Context, pageToken string, pageSi
 	findOptions := options.Find()
 	findOptions.SetSkip(skip)
 	findOptions.SetLimit(int64(pageSize))
-	findOptions.SetSort(bson.D{{"created_at", -1}}) // Example sort, adjust as needed
+	findOptions.SetSort(bson.D{{Key: "created_at", Value: -1}}) // Example sort, adjust as needed
 
 	cursor, err := r.users.Find(ctx, bson.M{}, findOptions)
 	if err != nil {

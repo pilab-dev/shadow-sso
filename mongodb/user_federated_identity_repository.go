@@ -148,7 +148,7 @@ func (r *UserFederatedIdentityRepositoryMongo) GetByUserIDAndProvider(ctx contex
 
 func (r *UserFederatedIdentityRepositoryMongo) ListByUserID(ctx context.Context, userID string) ([]*domain.UserFederatedIdentity, error) {
 	filter := bson.M{"user_id": userID}
-	cursor, err := r.collection.Find(ctx, filter, options.Find().SetSort(bson.D{{"created_at", 1}}))
+	cursor, err := r.collection.Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}}))
 	if err != nil {
 		log.Error().Err(err).Str("userID", userID).Msg("Error listing federated identities by user ID")
 		return nil, err
