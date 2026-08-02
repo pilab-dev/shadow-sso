@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/pilab-dev/shadow-sso/domain"
+	"github.com/pilab-dev/shadow-sso/internal/authflow"
 	"github.com/pilab-dev/shadow-sso/services"
 )
 
@@ -28,6 +29,7 @@ type WebAuth struct {
 	config             *Config
 	ssoCookieSecret    string
 	rateLimiter        *RateLimiter
+	runner             *authflow.Runner
 }
 
 // Options configures the WebAuth instance with all required dependencies.
@@ -43,6 +45,7 @@ type Options struct {
 	ClientService      services.ClientService
 	Config             *Config
 	SSOCookieSecret    string
+	AuthFlowRepo       domain.AuthenticationFlowRepository
 }
 
 // New creates a new WebAuth instance with the provided dependencies.
@@ -66,6 +69,7 @@ func New(opts *Options) *WebAuth {
 		config:            cfg,
 		ssoCookieSecret:   opts.SSOCookieSecret,
 		rateLimiter:       NewRateLimiter(cfg.RateLimitMaxAttempts, cfg.RateLimitLockoutDuration),
+		runner:            authflow.NewRunner(opts.AuthFlowRepo, opts.PasswordHasher),
 	}
 }
 

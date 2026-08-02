@@ -182,6 +182,13 @@ func main() {
 	} else {
 		log.Info().Msg("Default group seeded")
 	}
+	if mongoRp, ok := repoProvider.(*mongodb.MongoRepositoryProvider); ok {
+		if err := mongodb.SeedDefaultBrowserFlow(seedCtx, mongoRp.AuthenticationFlowRepository(seedCtx)); err != nil {
+			log.Warn().Err(err).Msg("Failed to seed default browser flow")
+		} else {
+			log.Info().Msg("Default browser flow seeded")
+		}
+	}
 
 	// Bootstrap initial admin user and client from environment variables
 	if cfg.InitialAdminEnabled && cfg.InitialAdminEmail != "" && cfg.InitialAdminPassword != "" {

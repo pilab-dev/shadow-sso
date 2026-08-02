@@ -12,18 +12,6 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func hasMFAEnabled(user *domain.User) bool {
-	if user.IsTwoFactorEnabled || user.EmailMFAEnabled || user.PushMFAEnabled {
-		return true
-	}
-	for _, m := range user.MfaMethods {
-		if m.Verified {
-			return true
-		}
-	}
-	return false
-}
-
 func (wa *WebAuth) renderLoginPage(c *gin.Context, flowID string, providers []*domain.IdentityProvider, errMsg string) {
 	csrfToken, err := generateCSRFToken()
 	if err != nil {
@@ -152,7 +140,8 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 		return
 	}
 
-	if err := wa.passwordHasher.Verify(user.PasswordHash, password); err != nil {
+	requiresMFA, err := wa.runner.Authenticate(ctx, user, password)
+	if err != nil {
 		wa.rateLimiter.RecordFailure(rateLimitKey)
 		log.Warn().Str("email", email).Msg("login: password verification failed")
 		wa.renderLoginPage(c, flowID, nil, "Invalid email or password.")
@@ -168,7 +157,7 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 
 	wa.rateLimiter.Reset(rateLimitKey)
 
-	if hasMFAEnabled(user) {
+	if requiresMFA {
 		flowState.UserID = user.ID
 		flowState.UserAuthenticatedAt = time.Now()
 		if err := wa.flowStore.UpdateFlow(ctx, flowID, flowState); err != nil {

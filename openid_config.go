@@ -269,6 +269,11 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 		}
 	}
 
+	var authFlowRepo domain.AuthenticationFlowRepository
+	if mongoRp, ok := repoProvider.(*mongodb.MongoRepositoryProvider); ok {
+		authFlowRepo = mongoRp.AuthenticationFlowRepository(context.Background())
+	}
+
 	webauthAPI := webauth.New(&webauth.Options{
 		UserRepo:          repoProvider.UserRepository(context.Background()),
 		PasswordHasher:    passwordHasher,
@@ -281,6 +286,7 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 		ClientService:     serviceProvider.ClientService(),
 		Config:            webauthConfig,
 		SSOCookieSecret:   opts.CookieSigningSecret,
+		AuthFlowRepo:      authFlowRepo,
 	})
 
 	router.GET("/", webauthAPI.LandingPageHandler)

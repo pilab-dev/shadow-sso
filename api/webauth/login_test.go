@@ -300,6 +300,7 @@ func TestLoginSubmit_Success(t *testing.T) {
 		ClientID:  "test-client",
 	}
 	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "valid-flow").Return(flowState, nil)
+	mockFlowStore.EXPECT().UpdateFlow(gomock.Any(), "valid-flow", gomock.Any()).Return(nil)
 
 	user := &domain.User{
 		ID:           "user-123",
