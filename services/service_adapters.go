@@ -27,10 +27,8 @@ func (s *defaultClientService) CreatePublicClient(ctx context.Context, name stri
 }
 
 func (s *defaultClientService) CreateClient(ctx context.Context, c *domain.Client) (*domain.Client, error) {
-	if err := s.clientRepo.CreateClient(ctx, c); err != nil {
-		return nil, err
-	}
-	return c, nil
+	cs := client.NewClientService(s.clientRepo)
+	return cs.CreateClient(ctx, c)
 }
 
 func (s *defaultClientService) ValidateRedirectURI(ctx context.Context, clientID, redirectURI string) error {
