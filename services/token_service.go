@@ -546,6 +546,12 @@ func (s *defaultTokenService) ValidateAccessToken(ctx context.Context, tokenValu
 		}
 		publicKeyInfo, errDb := s.pubKeyRepo.GetPublicKey(ctx, kid)
 		if errDb != nil {
+			// If the kid simply isn't in the SA key store (key not found), signal
+			// errMissingKidSAValidation so the outer fallback tries user-token validation.
+			// This is the normal case for user JWTs whose kid belongs to a realm signing key.
+			if strings.Contains(errDb.Error(), "not found") {
+				return nil, errMissingKidSAValidation
+			}
 			log.Ctx(ctx).Warn().Err(errDb).Str("kid", kid).Msg("Failed to get public key for SA JWT")
 			return nil, fmt.Errorf("SA key retrieval failed for kid %s: %w", kid, errDb)
 		}
