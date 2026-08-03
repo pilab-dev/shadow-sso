@@ -1,0 +1,64 @@
+name: Semantic Release
+
+on:
+  push:
+    branches: [v1]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: semantic-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Capture previous tag
+        id: prevtag
+        run: echo "tag=$(git describe --tags --abbrev=0 2>/dev/null || echo 'none')" >> "$GITHUB_OUTPUT"
+      - name: Semantic release
+        id: semantic
+        uses: go-semantic-release/action@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          allow-initial-development-versions: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Check if a new release was created
+        id: check
+        run: |
+          if [ -n "${{ steps.semantic.outputs.version }}" ] && [ "${{ steps.semantic.outputs.version }}" != "${{ steps.prevtag.outputs.tag }}" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Log in to GitHub Container Registry
+        if: steps.check.outputs.publish == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Docker Buildx
+        if: steps.check.outputs.publish == 'true'
+        uses: docker/setup-buildx-action@v3
+      - name: Build and push Docker image
+        if: steps.check.outputs.publish == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ghcr.io/pilab-dev/shadow-sso-backend:${{ steps.semantic.outputs.version }}
+            ghcr.io/pilab-dev/shadow-sso-backend:${{ github.sha }}
+            ${{ !contains(steps.semantic.outputs.version, '-') && 'ghcr.io/pilab-dev/shadow-sso-backend:latest' || '' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
