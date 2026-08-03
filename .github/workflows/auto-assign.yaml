@@ -10,10 +10,11 @@ jobs:
     permissions:
       issues: write
       pull-requests: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-    - name: 'Auto-assign issue'
-      uses: pozil/auto-assign-issue@v1
-      with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          assignees: paalgyula
-          numOfAssignee: 1
+    - name: Auto-assign to paalgyula
+      run: gh issue edit "$NUMBER" --add-assignee paalgyula --repo "$REPO"
+      env:
+        NUMBER: ${{ github.event.number }}
+        REPO: ${{ github.repository }}
