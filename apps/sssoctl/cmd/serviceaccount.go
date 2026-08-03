@@ -2,17 +2,16 @@ package cmd
 
 import (
 	"context"
-	"encoding/json" // For outputting the JSON key directly
+	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 
 	"connectrpc.com/connect"
 	"github.com/pilab-dev/shadow-sso/apps/sssoctl/cmd/client"
 	"github.com/pilab-dev/shadow-sso/apps/sssoctl/cmd/config"
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3" // For list output
+	"gopkg.in/yaml.v3"
 )
 
 var saCmd = &cobra.Command{
@@ -80,6 +79,7 @@ var saCreateKeyCmd = &cobra.Command{
 			"token_uri":                   resp.Msg.Key.TokenUri,
 			"auth_provider_x509_cert_url": resp.Msg.Key.AuthProviderX509CertUrl,
 			"client_x509_cert_url":        resp.Msg.Key.ClientX509CertUrl,
+			"service_account_id":          resp.Msg.ServiceAccountId,
 		}
 
 		jsonKey, err := json.MarshalIndent(keyOutput, "", "  ")
@@ -87,9 +87,6 @@ var saCreateKeyCmd = &cobra.Command{
 			return fmt.Errorf("failed to marshal service account key to JSON: %w", err)
 		}
 		fmt.Println(string(jsonKey))
-		if resp.Msg.ServiceAccountId != "" {
-			fmt.Fprintf(os.Stderr, "\nService Account ID: %s\n", resp.Msg.ServiceAccountId)
-		}
 		return nil
 	},
 }

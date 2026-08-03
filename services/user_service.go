@@ -10,6 +10,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
 	"github.com/pilab-dev/shadow-sso/domain"
+	pkgauth "github.com/pilab-dev/shadow-sso/pkg/auth"
 	"github.com/pilab-dev/shadow-sso/internal/audit"
 	"github.com/pilab-dev/shadow-sso/internal/auth/rbac"
 	"github.com/pilab-dev/shadow-sso/internal/auth/totp"
@@ -26,6 +27,19 @@ type UserServer struct {
 	userRepo                                     domain.UserRepository
 	passwordHasher                               domain.PasswordHasher
 	phoneVerificationService                     *domain.PhoneVerificationService
+	realmSettingsRepo                            domain.RealmSettingsRepository
+}
+
+// userServerOption configures a UserServer at construction time.
+type userServerOption func(*UserServer)
+
+// WithUserRealmSettings injects the realm settings repository so password
+// policies persisted in realm settings are enforced on registration, password
+// change and password reset.
+func WithUserRealmSettings(repo domain.RealmSettingsRepository) userServerOption {
+	return func(s *UserServer) {
+		s.realmSettingsRepo = repo
+	}
 }
 
 // mapUserStatusToProto maps domain.UserStatus to ssov1.UserStatus
@@ -57,12 +71,47 @@ func generateSecureOTP(length int) string {
 }
 
 // NewUserServer creates a new UserServer.
-func NewUserServer(userRepo domain.UserRepository, hasher domain.PasswordHasher, phoneVerificationService *domain.PhoneVerificationService) *UserServer {
-	return &UserServer{
+func NewUserServer(userRepo domain.UserRepository, hasher domain.PasswordHasher, phoneVerificationService *domain.PhoneVerificationService, opts ...userServerOption) *UserServer {
+	svc := &UserServer{
 		userRepo:                 userRepo,
 		passwordHasher:           hasher,
 		phoneVerificationService: phoneVerificationService,
 	}
+	for _, opt := range opts {
+		opt(svc)
+	}
+	return svc
+}
+
+// realmPasswordPolicy resolves the password policy to enforce. It falls back
+// to a bare minimum of 8 characters when no realm settings repository is wired
+// or when the persisted settings configure no explicit policy.
+func (s *UserServer) realmPasswordPolicy(ctx context.Context) pkgauth.PasswordPolicy {
+	if s.realmSettingsRepo == nil {
+		return pkgauth.PasswordPolicy{MinLength: 8}
+	}
+	settings, err := s.realmSettingsRepo.GetRealmSettings(ctx)
+	if err != nil {
+		return pkgauth.PasswordPolicy{MinLength: 8}
+	}
+	policy := pkgauth.PasswordPolicyFromRealm(settings)
+	if policy.MinLength == 0 {
+		policy.MinLength = 8
+	}
+	return policy
+}
+
+// resolveUser looks up a user by ID first, falling back to email lookup.
+// This supports CLI commands that pass either a MongoDB _id or an email address.
+func (s *UserServer) resolveUser(ctx context.Context, idOrEmail string) (*domain.User, error) {
+	user, err := s.userRepo.GetUserByID(ctx, idOrEmail)
+	if err == nil {
+		return user, nil
+	}
+	if !errors.Is(err, domain.ErrUserNotFound) {
+		return nil, err
+	}
+	return s.userRepo.GetUserByEmail(ctx, idOrEmail)
 }
 
 // RegisterUser registers a new user with the provided details.
@@ -93,14 +142,20 @@ func (s *UserServer) RegisterUser(ctx context.Context, req *connect.Request[ssov
 		return nil, connect.NewError(connect.CodeAlreadyExists, err)
 	}
 
-	// 3. Hash password using passwordHasher
+	// 3. Enforce realm password policy
+	if err := pkgauth.ValidatePassword(req.Msg.GetPassword(), s.realmPasswordPolicy(ctx)); err != nil {
+		audit.Log("UserService", "RegisterUser", actingUserID, req.Msg.GetEmail(), "Password policy violation", false, err)
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+
+	// 4. Hash password using passwordHasher
 	hashedPassword, err := s.passwordHasher.Hash(req.Msg.GetPassword())
 	if err != nil {
 		audit.Log("UserService", "RegisterUser", actingUserID, req.Msg.GetEmail(), "Failed to hash password", false, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to process password"))
 	}
 
-	// 4. Create domain.User struct
+	// 5. Create domain.User struct
 	newUser := &domain.User{
 		Email:        req.Msg.GetEmail(),
 		PasswordHash: hashedPassword,
@@ -149,7 +204,7 @@ func (s *UserServer) ActivateUser(ctx context.Context, req *connect.Request[ssov
 	}
 
 	// 1. Fetch user by req.UserId from userRepo
-	user, err := s.userRepo.GetUserByID(ctx, userID)
+	user, err := s.resolveUser(ctx, userID)
 	if err != nil {
 		if errors.Is(err, domain.ErrUserNotFound) {
 			audit.Log("UserService", "ActivateUser", actingUserID, userID, "User not found", false, err)
@@ -198,7 +253,7 @@ func (s *UserServer) LockUser(ctx context.Context, req *connect.Request[ssov1.Lo
 	}
 
 	// 1. Fetch user by req.UserId from userRepo
-	user, err := s.userRepo.GetUserByID(ctx, userID)
+	user, err := s.resolveUser(ctx, userID)
 	if err != nil {
 		if errors.Is(err, domain.ErrUserNotFound) {
 			audit.Log("UserService", "LockUser", actingUserID, userID, "User not found", false, err)
@@ -294,7 +349,7 @@ func (s *UserServer) GetUser(ctx context.Context, req *connect.Request[ssov1.Get
 	}
 
 	// 1. Fetch user by req.UserId from userRepo.GetUserByID
-	user, err := s.userRepo.GetUserByID(ctx, targetUserID)
+	user, err := s.resolveUser(ctx, targetUserID)
 	if err != nil {
 		if errors.Is(err, domain.ErrUserNotFound) {
 			audit.Log("UserService", "GetUser", actingUserID, targetUserID, "User not found", false, err)
@@ -342,7 +397,7 @@ func (s *UserServer) ChangePassword(ctx context.Context, req *connect.Request[ss
 	}
 
 	// 1. Fetch target user
-	user, err := s.userRepo.GetUserByID(ctx, targetUserID)
+	user, err := s.resolveUser(ctx, targetUserID)
 	if err != nil {
 		if errors.Is(err, domain.ErrUserNotFound) {
 			audit.Log("UserService", "ChangePassword", actingUserID, targetUserID, "User not found", false, err)
@@ -375,18 +430,24 @@ func (s *UserServer) ChangePassword(ctx context.Context, req *connect.Request[ss
 		audit.Log("UserService", "ChangePassword", actingUserID, targetUserID, "Admin password change", true, nil)
 	}
 
-	// 3. Hash new password
+	// 3. Enforce realm password policy
+	if err := pkgauth.ValidatePassword(req.Msg.GetNewPassword(), s.realmPasswordPolicy(ctx)); err != nil {
+		audit.Log("UserService", "ChangePassword", actingUserID, targetUserID, "Password policy violation", false, err)
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+
+	// 4. Hash new password
 	hashedPassword, err := s.passwordHasher.Hash(req.Msg.GetNewPassword())
 	if err != nil {
 		audit.Log("UserService", "ChangePassword", actingUserID, targetUserID, "Failed to hash new password", false, err)
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to process new password"))
 	}
 
-	// 4. Update password hash and timestamp
+	// 5. Update password hash and timestamp
 	user.PasswordHash = hashedPassword
 	user.UpdatedAt = time.Now()
 
-	// 5. Save user
+	// 6. Save user
 	err = s.userRepo.UpdateUser(ctx, user)
 	if err != nil {
 		audit.Log("UserService", "ChangePassword", actingUserID, targetUserID, "Failed to update user password", false, err)
@@ -529,10 +590,28 @@ func (s *UserServer) DeleteUser(ctx context.Context, req *connect.Request[ssov1.
 	return connect.NewResponse(&emptypb.Empty{}), nil
 }
 
-func (s *UserServer) AddMfaMethod(ctx context.Context, req *connect.Request[ssov1.AddMfaMethodRequest]) (*connect.Response[ssov1.AddMfaMethodResponse], error) {
+// requireSelfOrMFAManager enforces self-or-admin access to a user's MFA/credential data.
+// The authenticated user may act on their own records; anyone else needs the 2FA
+// management permission (admin). Returns the authenticated user's ID on success.
+func (s *UserServer) requireSelfOrMFAManager(ctx context.Context, targetUserID string) (string, error) {
 	actingUserID, err := domain.GetAuthenticatedUserIDFromContext(ctx)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+		return "", connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+	if actingUserID == targetUserID {
+		return actingUserID, nil
+	}
+	tokenInfo, ok := domain.GetAuthenticatedTokenFromContext(ctx)
+	if !ok || !rbac.HasPermission(tokenInfo.Roles, rbac.Perm2FAManageOthers) {
+		return "", connect.NewError(connect.CodePermissionDenied, errors.New("permission denied to manage MFA methods for another user"))
+	}
+	return actingUserID, nil
+}
+
+func (s *UserServer) AddMfaMethod(ctx context.Context, req *connect.Request[ssov1.AddMfaMethodRequest]) (*connect.Response[ssov1.AddMfaMethodResponse], error) {
+	actingUserID, err := s.requireSelfOrMFAManager(ctx, req.Msg.GetUserId())
+	if err != nil {
+		return nil, err
 	}
 
 	user, err := s.userRepo.GetUserByID(ctx, req.Msg.GetUserId())
@@ -572,9 +651,9 @@ func (s *UserServer) AddMfaMethod(ctx context.Context, req *connect.Request[ssov
 }
 
 func (s *UserServer) GetMfaMethod(ctx context.Context, req *connect.Request[ssov1.GetMfaMethodRequest]) (*connect.Response[ssov1.GetMfaMethodResponse], error) {
-	_, err := domain.GetAuthenticatedUserIDFromContext(ctx)
+	_, err := s.requireSelfOrMFAManager(ctx, req.Msg.GetUserId())
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+		return nil, err
 	}
 
 	user, err := s.userRepo.GetUserByID(ctx, req.Msg.GetUserId())
@@ -595,9 +674,9 @@ func (s *UserServer) GetMfaMethod(ctx context.Context, req *connect.Request[ssov
 }
 
 func (s *UserServer) ListMfaMethods(ctx context.Context, req *connect.Request[ssov1.ListMfaMethodsRequest]) (*connect.Response[ssov1.ListMfaMethodsResponse], error) {
-	_, err := domain.GetAuthenticatedUserIDFromContext(ctx)
+	_, err := s.requireSelfOrMFAManager(ctx, req.Msg.GetUserId())
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+		return nil, err
 	}
 
 	methods, err := s.userRepo.ListMfaMethods(ctx, req.Msg.GetUserId())
@@ -617,9 +696,9 @@ func (s *UserServer) ListMfaMethods(ctx context.Context, req *connect.Request[ss
 }
 
 func (s *UserServer) VerifyMfaMethod(ctx context.Context, req *connect.Request[ssov1.VerifyMfaMethodRequest]) (*connect.Response[emptypb.Empty], error) {
-	actingUserID, err := domain.GetAuthenticatedUserIDFromContext(ctx)
+	actingUserID, err := s.requireSelfOrMFAManager(ctx, req.Msg.GetUserId())
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+		return nil, err
 	}
 
 	if err := s.userRepo.VerifyMfaMethod(ctx, req.Msg.GetUserId(), req.Msg.GetMethodId()); err != nil {
@@ -634,9 +713,9 @@ func (s *UserServer) VerifyMfaMethod(ctx context.Context, req *connect.Request[s
 }
 
 func (s *UserServer) RemoveMfaMethod(ctx context.Context, req *connect.Request[ssov1.RemoveMfaMethodRequest]) (*connect.Response[emptypb.Empty], error) {
-	actingUserID, err := domain.GetAuthenticatedUserIDFromContext(ctx)
+	actingUserID, err := s.requireSelfOrMFAManager(ctx, req.Msg.GetUserId())
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+		return nil, err
 	}
 
 	if err := s.userRepo.RemoveMfaMethod(ctx, req.Msg.GetUserId(), req.Msg.GetMethodId()); err != nil {
@@ -651,9 +730,9 @@ func (s *UserServer) RemoveMfaMethod(ctx context.Context, req *connect.Request[s
 }
 
 func (s *UserServer) AddWebAuthnDevice(ctx context.Context, req *connect.Request[ssov1.AddWebAuthnDeviceRequest]) (*connect.Response[ssov1.AddWebAuthnDeviceResponse], error) {
-	actingUserID, err := domain.GetAuthenticatedUserIDFromContext(ctx)
+	actingUserID, err := s.requireSelfOrMFAManager(ctx, req.Msg.GetUserId())
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+		return nil, err
 	}
 
 	user, err := s.userRepo.GetUserByID(ctx, req.Msg.GetUserId())
@@ -694,9 +773,9 @@ func (s *UserServer) AddWebAuthnDevice(ctx context.Context, req *connect.Request
 }
 
 func (s *UserServer) GetWebAuthnDevice(ctx context.Context, req *connect.Request[ssov1.GetWebAuthnDeviceRequest]) (*connect.Response[ssov1.GetWebAuthnDeviceResponse], error) {
-	_, err := domain.GetAuthenticatedUserIDFromContext(ctx)
+	_, err := s.requireSelfOrMFAManager(ctx, req.Msg.GetUserId())
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+		return nil, err
 	}
 
 	device, err := s.userRepo.GetWebAuthnDevice(ctx, req.Msg.GetUserId(), req.Msg.GetDeviceId())
@@ -711,9 +790,9 @@ func (s *UserServer) GetWebAuthnDevice(ctx context.Context, req *connect.Request
 }
 
 func (s *UserServer) ListWebAuthnDevices(ctx context.Context, req *connect.Request[ssov1.ListWebAuthnDevicesRequest]) (*connect.Response[ssov1.ListWebAuthnDevicesResponse], error) {
-	_, err := domain.GetAuthenticatedUserIDFromContext(ctx)
+	_, err := s.requireSelfOrMFAManager(ctx, req.Msg.GetUserId())
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+		return nil, err
 	}
 
 	devices, err := s.userRepo.ListWebAuthnDevices(ctx, req.Msg.GetUserId())
@@ -733,9 +812,9 @@ func (s *UserServer) ListWebAuthnDevices(ctx context.Context, req *connect.Reque
 }
 
 func (s *UserServer) UpdateWebAuthnDeviceCounter(ctx context.Context, req *connect.Request[ssov1.UpdateWebAuthnDeviceCounterRequest]) (*connect.Response[emptypb.Empty], error) {
-	actingUserID, err := domain.GetAuthenticatedUserIDFromContext(ctx)
+	actingUserID, err := s.requireSelfOrMFAManager(ctx, req.Msg.GetUserId())
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+		return nil, err
 	}
 
 	if err := s.userRepo.UpdateWebAuthnDeviceCounter(ctx, req.Msg.GetUserId(), req.Msg.GetDeviceId(), req.Msg.GetNewCounter()); err != nil {
@@ -747,9 +826,9 @@ func (s *UserServer) UpdateWebAuthnDeviceCounter(ctx context.Context, req *conne
 }
 
 func (s *UserServer) RemoveWebAuthnDevice(ctx context.Context, req *connect.Request[ssov1.RemoveWebAuthnDeviceRequest]) (*connect.Response[emptypb.Empty], error) {
-	actingUserID, err := domain.GetAuthenticatedUserIDFromContext(ctx)
+	actingUserID, err := s.requireSelfOrMFAManager(ctx, req.Msg.GetUserId())
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+		return nil, err
 	}
 
 	if err := s.userRepo.RemoveWebAuthnDevice(ctx, req.Msg.GetUserId(), req.Msg.GetDeviceId()); err != nil {
@@ -1011,6 +1090,13 @@ func (s *UserServer) ResetPassword(ctx context.Context, req *connect.Request[sso
 		return connect.NewResponse(&ssov1.ResetPasswordResponse{
 			Success: false,
 			Error:   "reset token expired",
+		}), nil
+	}
+
+	if err := pkgauth.ValidatePassword(req.Msg.GetNewPassword(), s.realmPasswordPolicy(ctx)); err != nil {
+		return connect.NewResponse(&ssov1.ResetPasswordResponse{
+			Success: false,
+			Error:   err.Error(),
 		}), nil
 	}
 

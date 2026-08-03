@@ -115,6 +115,22 @@ func TwoFactorServiceClient(cfg *config.Context) (ssov1connect.TwoFactorServiceC
 	return ssov1connect.NewTwoFactorServiceClient(httpClient, cfg.ServerEndpoint, opts...), nil
 }
 
+// FederationServiceClient returns a new FederationService client.
+func FederationServiceClient(cfg *config.Context) (ssov1connect.FederationServiceClient, error) {
+	if cfg == nil || cfg.ServerEndpoint == "" {
+		return nil, fmt.Errorf("invalid context or server endpoint for FederationService client")
+	}
+	if cfg.UserAuthToken == "" { // Federated identity self-management requires auth
+		return nil, fmt.Errorf("user authentication token not found in current context. Please login using 'ssoctl auth login'")
+	}
+	httpClient := &http.Client{ /* ... consider shared transport ... */ }
+	opts := []connect.ClientOption{
+		connect.WithProtoJSON(),
+		connect.WithInterceptors(&authInterceptor{token: cfg.UserAuthToken}),
+	}
+	return ssov1connect.NewFederationServiceClient(httpClient, cfg.ServerEndpoint, opts...), nil
+}
+
 // UserAttributeServiceClient returns a new UserAttributeService client.
 func UserAttributeServiceClient(cfg *config.Context) (ssov1connect.UserAttributeServiceClient, error) {
 	if cfg == nil || cfg.ServerEndpoint == "" {

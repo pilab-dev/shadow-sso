@@ -24,7 +24,7 @@ type ClientRepository struct {
 }
 
 // NewClientRepository creates a new MongoStore instance.
-func NewClientRepository(db *mongo.Database) *ClientRepository {
+func NewClientRepository(_ context.Context, db *mongo.Database) *ClientRepository {
 	return &ClientRepository{
 		coll: db.Collection("clients"),
 	}
@@ -60,8 +60,7 @@ func (s *ClientRepository) UpdateClient(ctx context.Context, c *domain.Client) e
 	c.UpdatedAt = time.Now()
 
 	filter := bson.M{"client_id": c.ID}
-	update := bson.M{"$set": c}
-	result, err := s.coll.ReplaceOne(ctx, filter, update)
+	result, err := s.coll.ReplaceOne(ctx, filter, c)
 	if err != nil {
 		return err
 	}

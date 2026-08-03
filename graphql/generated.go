@@ -48,6 +48,29 @@ type DirectiveRoot struct {
 }
 
 type ComplexityRoot struct {
+	AuditLog struct {
+		Action    func(childComplexity int) int
+		Details   func(childComplexity int) int
+		Error     func(childComplexity int) int
+		ID        func(childComplexity int) int
+		Service   func(childComplexity int) int
+		Success   func(childComplexity int) int
+		Target    func(childComplexity int) int
+		Timestamp func(childComplexity int) int
+		User      func(childComplexity int) int
+	}
+
+	AuditLogConnection struct {
+		Edges      func(childComplexity int) int
+		PageInfo   func(childComplexity int) int
+		TotalCount func(childComplexity int) int
+	}
+
+	AuditLogEdge struct {
+		Cursor func(childComplexity int) int
+		Node   func(childComplexity int) int
+	}
+
 	AuthenticationExecution struct {
 		AuthenticationConfig func(childComplexity int) int
 		Authenticator        func(childComplexity int) int
@@ -243,6 +266,7 @@ type ComplexityRoot struct {
 	}
 
 	Query struct {
+		AuditLogs                  func(childComplexity int, filter *domain.AuditLogFilter, first *int, after *int) int
 		AuthenticationExecutions   func(childComplexity int, flowID string) int
 		AuthenticationFlows        func(childComplexity int) int
 		Client                     func(childComplexity int, id string) int
@@ -466,7 +490,6 @@ type GroupResolver interface {
 	Members(ctx context.Context, obj *domain.Group) ([]domain.User, error)
 	MemberCount(ctx context.Context, obj *domain.Group) (int, error)
 	Subgroups(ctx context.Context, obj *domain.Group) ([]domain.Group, error)
-	Attributes(ctx context.Context, obj *domain.Group) (map[string]any, error)
 }
 type IdentityProviderResolver interface {
 	Alias(ctx context.Context, obj *domain.IdentityProvider) (string, error)
@@ -573,6 +596,7 @@ type QueryResolver interface {
 	UserAttributes(ctx context.Context, userID string) ([]domain.UserAttribute, error)
 	UserAttributeMappers(ctx context.Context) ([]domain.UserAttributeMapper, error)
 	ClientUserAttributeMappers(ctx context.Context, clientID string) ([]domain.UserAttributeMapper, error)
+	AuditLogs(ctx context.Context, filter *domain.AuditLogFilter, first *int, after *int) (*AuditLogConnection, error)
 }
 type RealmSettingsResolver interface {
 	PasswordPolicy(ctx context.Context, obj *domain.RealmSettings) (*PasswordPolicy, error)
@@ -637,6 +661,93 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 	ec := newExecutionContext(nil, e, nil)
 	_ = ec
 	switch typeName + "." + field {
+
+	case "AuditLog.action":
+		if e.ComplexityRoot.AuditLog.Action == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AuditLog.Action(childComplexity), true
+	case "AuditLog.details":
+		if e.ComplexityRoot.AuditLog.Details == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AuditLog.Details(childComplexity), true
+	case "AuditLog.error":
+		if e.ComplexityRoot.AuditLog.Error == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AuditLog.Error(childComplexity), true
+	case "AuditLog.id":
+		if e.ComplexityRoot.AuditLog.ID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AuditLog.ID(childComplexity), true
+	case "AuditLog.service":
+		if e.ComplexityRoot.AuditLog.Service == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AuditLog.Service(childComplexity), true
+	case "AuditLog.success":
+		if e.ComplexityRoot.AuditLog.Success == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AuditLog.Success(childComplexity), true
+	case "AuditLog.target":
+		if e.ComplexityRoot.AuditLog.Target == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AuditLog.Target(childComplexity), true
+	case "AuditLog.timestamp":
+		if e.ComplexityRoot.AuditLog.Timestamp == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AuditLog.Timestamp(childComplexity), true
+	case "AuditLog.user":
+		if e.ComplexityRoot.AuditLog.User == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AuditLog.User(childComplexity), true
+
+	case "AuditLogConnection.edges":
+		if e.ComplexityRoot.AuditLogConnection.Edges == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AuditLogConnection.Edges(childComplexity), true
+	case "AuditLogConnection.pageInfo":
+		if e.ComplexityRoot.AuditLogConnection.PageInfo == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AuditLogConnection.PageInfo(childComplexity), true
+	case "AuditLogConnection.totalCount":
+		if e.ComplexityRoot.AuditLogConnection.TotalCount == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AuditLogConnection.TotalCount(childComplexity), true
+
+	case "AuditLogEdge.cursor":
+		if e.ComplexityRoot.AuditLogEdge.Cursor == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AuditLogEdge.Cursor(childComplexity), true
+	case "AuditLogEdge.node":
+		if e.ComplexityRoot.AuditLogEdge.Node == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AuditLogEdge.Node(childComplexity), true
 
 	case "AuthenticationExecution.authenticationConfig":
 		if e.ComplexityRoot.AuthenticationExecution.AuthenticationConfig == nil {
@@ -1849,6 +1960,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.ProtocolMapper.ProtocolMapper(childComplexity), true
 
+	case "Query.auditLogs":
+		if e.ComplexityRoot.Query.AuditLogs == nil {
+			break
+		}
+
+		args, err := ec.field_Query_auditLogs_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Query.AuditLogs(childComplexity, args["filter"].(*domain.AuditLogFilter), args["first"].(*int), args["after"].(*int)), true
 	case "Query.authenticationExecutions":
 		if e.ComplexityRoot.Query.AuthenticationExecutions == nil {
 			break
@@ -2834,6 +2956,7 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 	opCtx := graphql.GetOperationContext(ctx)
 	ec := newExecutionContext(opCtx, e, make(chan graphql.DeferredResult))
 	inputUnmarshalMap := graphql.BuildUnmarshalerMap(
+		ec.unmarshalInputAuditLogFilter,
 		ec.unmarshalInputAuthenticationExecutionInput,
 		ec.unmarshalInputClaimMappingInput,
 		ec.unmarshalInputClientFilter,
@@ -3751,6 +3874,27 @@ func (ec *executionContext) field_Query___type_args(ctx context.Context, rawArgs
 	return args, nil
 }
 
+func (ec *executionContext) field_Query_auditLogs_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "filter", ec.unmarshalOAuditLogFilter2ᚖgithubᚗcomᚋpilabᚑdevᚋshadowᚑssoᚋdomainᚐAuditLogFilter)
+	if err != nil {
+		return nil, err
+	}
+	args["filter"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "first", ec.unmarshalOInt2ᚖint)
+	if err != nil {
+		return nil, err
+	}
+	args["first"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "after", ec.unmarshalOInt2ᚖint)
+	if err != nil {
+		return nil, err
+	}
+	args["after"] = arg2
+	return args, nil
+}
+
 func (ec *executionContext) field_Query_authenticationExecutions_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -4116,6 +4260,448 @@ func (ec *executionContext) field___Type_fields_args(ctx context.Context, rawArg
 // endregion ************************** directives.gotpl **************************
 
 // region    **************************** field.gotpl *****************************
+
+func (ec *executionContext) _AuditLog_id(ctx context.Context, field graphql.CollectedField, obj *domain.AuditLog) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AuditLog_id,
+		func(ctx context.Context) (any, error) {
+			return obj.ID, nil
+		},
+		nil,
+		ec.marshalNID2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AuditLog_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AuditLog",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AuditLog_timestamp(ctx context.Context, field graphql.CollectedField, obj *domain.AuditLog) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AuditLog_timestamp,
+		func(ctx context.Context) (any, error) {
+			return obj.Timestamp, nil
+		},
+		nil,
+		ec.marshalNTime2timeᚐTime,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AuditLog_timestamp(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AuditLog",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AuditLog_service(ctx context.Context, field graphql.CollectedField, obj *domain.AuditLog) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AuditLog_service,
+		func(ctx context.Context) (any, error) {
+			return obj.Service, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AuditLog_service(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AuditLog",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AuditLog_action(ctx context.Context, field graphql.CollectedField, obj *domain.AuditLog) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AuditLog_action,
+		func(ctx context.Context) (any, error) {
+			return obj.Action, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AuditLog_action(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AuditLog",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AuditLog_user(ctx context.Context, field graphql.CollectedField, obj *domain.AuditLog) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AuditLog_user,
+		func(ctx context.Context) (any, error) {
+			return obj.User, nil
+		},
+		nil,
+		ec.marshalOString2string,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_AuditLog_user(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AuditLog",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AuditLog_target(ctx context.Context, field graphql.CollectedField, obj *domain.AuditLog) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AuditLog_target,
+		func(ctx context.Context) (any, error) {
+			return obj.Target, nil
+		},
+		nil,
+		ec.marshalOString2string,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_AuditLog_target(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AuditLog",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AuditLog_details(ctx context.Context, field graphql.CollectedField, obj *domain.AuditLog) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AuditLog_details,
+		func(ctx context.Context) (any, error) {
+			return obj.Details, nil
+		},
+		nil,
+		ec.marshalOString2string,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_AuditLog_details(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AuditLog",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AuditLog_success(ctx context.Context, field graphql.CollectedField, obj *domain.AuditLog) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AuditLog_success,
+		func(ctx context.Context) (any, error) {
+			return obj.Success, nil
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AuditLog_success(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AuditLog",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AuditLog_error(ctx context.Context, field graphql.CollectedField, obj *domain.AuditLog) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AuditLog_error,
+		func(ctx context.Context) (any, error) {
+			return obj.Error, nil
+		},
+		nil,
+		ec.marshalOString2string,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_AuditLog_error(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AuditLog",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AuditLogConnection_edges(ctx context.Context, field graphql.CollectedField, obj *AuditLogConnection) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AuditLogConnection_edges,
+		func(ctx context.Context) (any, error) {
+			return obj.Edges, nil
+		},
+		nil,
+		ec.marshalNAuditLogEdge2ᚕgithubᚗcomᚋpilabᚑdevᚋshadowᚑssoᚋgraphqlᚐAuditLogEdgeᚄ,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AuditLogConnection_edges(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AuditLogConnection",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "node":
+				return ec.fieldContext_AuditLogEdge_node(ctx, field)
+			case "cursor":
+				return ec.fieldContext_AuditLogEdge_cursor(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AuditLogEdge", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AuditLogConnection_totalCount(ctx context.Context, field graphql.CollectedField, obj *AuditLogConnection) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AuditLogConnection_totalCount,
+		func(ctx context.Context) (any, error) {
+			return obj.TotalCount, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AuditLogConnection_totalCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AuditLogConnection",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AuditLogConnection_pageInfo(ctx context.Context, field graphql.CollectedField, obj *AuditLogConnection) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AuditLogConnection_pageInfo,
+		func(ctx context.Context) (any, error) {
+			return obj.PageInfo, nil
+		},
+		nil,
+		ec.marshalNPageInfo2ᚖgithubᚗcomᚋpilabᚑdevᚋshadowᚑssoᚋgraphqlᚐPageInfo,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AuditLogConnection_pageInfo(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AuditLogConnection",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "hasNextPage":
+				return ec.fieldContext_PageInfo_hasNextPage(ctx, field)
+			case "hasPreviousPage":
+				return ec.fieldContext_PageInfo_hasPreviousPage(ctx, field)
+			case "startCursor":
+				return ec.fieldContext_PageInfo_startCursor(ctx, field)
+			case "endCursor":
+				return ec.fieldContext_PageInfo_endCursor(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PageInfo", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AuditLogEdge_node(ctx context.Context, field graphql.CollectedField, obj *AuditLogEdge) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AuditLogEdge_node,
+		func(ctx context.Context) (any, error) {
+			return obj.Node, nil
+		},
+		nil,
+		ec.marshalNAuditLog2ᚖgithubᚗcomᚋpilabᚑdevᚋshadowᚑssoᚋdomainᚐAuditLog,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AuditLogEdge_node(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AuditLogEdge",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_AuditLog_id(ctx, field)
+			case "timestamp":
+				return ec.fieldContext_AuditLog_timestamp(ctx, field)
+			case "service":
+				return ec.fieldContext_AuditLog_service(ctx, field)
+			case "action":
+				return ec.fieldContext_AuditLog_action(ctx, field)
+			case "user":
+				return ec.fieldContext_AuditLog_user(ctx, field)
+			case "target":
+				return ec.fieldContext_AuditLog_target(ctx, field)
+			case "details":
+				return ec.fieldContext_AuditLog_details(ctx, field)
+			case "success":
+				return ec.fieldContext_AuditLog_success(ctx, field)
+			case "error":
+				return ec.fieldContext_AuditLog_error(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AuditLog", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AuditLogEdge_cursor(ctx context.Context, field graphql.CollectedField, obj *AuditLogEdge) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AuditLogEdge_cursor,
+		func(ctx context.Context) (any, error) {
+			return obj.Cursor, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AuditLogEdge_cursor(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AuditLogEdge",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
 
 func (ec *executionContext) _AuthenticationExecution_id(ctx context.Context, field graphql.CollectedField, obj *domain.AuthenticationExecution) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
@@ -6290,7 +6876,7 @@ func (ec *executionContext) _Group_attributes(ctx context.Context, field graphql
 		field,
 		ec.fieldContext_Group_attributes,
 		func(ctx context.Context) (any, error) {
-			return ec.Resolvers.Group().Attributes(ctx, obj)
+			return obj.Attributes, nil
 		},
 		nil,
 		ec.marshalOMap2map,
@@ -6303,8 +6889,8 @@ func (ec *executionContext) fieldContext_Group_attributes(_ context.Context, fie
 	fc = &graphql.FieldContext{
 		Object:     "Group",
 		Field:      field,
-		IsMethod:   true,
-		IsResolver: true,
+		IsMethod:   false,
+		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Map does not have child fields")
 		},
@@ -11850,6 +12436,55 @@ func (ec *executionContext) fieldContext_Query_clientUserAttributeMappers(ctx co
 	return fc, nil
 }
 
+func (ec *executionContext) _Query_auditLogs(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_auditLogs,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().AuditLogs(ctx, fc.Args["filter"].(*domain.AuditLogFilter), fc.Args["first"].(*int), fc.Args["after"].(*int))
+		},
+		nil,
+		ec.marshalNAuditLogConnection2ᚖgithubᚗcomᚋpilabᚑdevᚋshadowᚑssoᚋgraphqlᚐAuditLogConnection,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Query_auditLogs(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "edges":
+				return ec.fieldContext_AuditLogConnection_edges(ctx, field)
+			case "totalCount":
+				return ec.fieldContext_AuditLogConnection_totalCount(ctx, field)
+			case "pageInfo":
+				return ec.fieldContext_AuditLogConnection_pageInfo(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AuditLogConnection", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_auditLogs_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query___type(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -16863,6 +17498,57 @@ func (ec *executionContext) fieldContext___Type_isOneOf(_ context.Context, field
 
 // region    **************************** input.gotpl *****************************
 
+func (ec *executionContext) unmarshalInputAuditLogFilter(ctx context.Context, obj any) (domain.AuditLogFilter, error) {
+	var it domain.AuditLogFilter
+	if obj == nil {
+		return it, nil
+	}
+
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"user", "action", "from", "to"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "user":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("user"))
+			data, err := ec.unmarshalOString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.User = data
+		case "action":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("action"))
+			data, err := ec.unmarshalOString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Action = data
+		case "from":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("from"))
+			data, err := ec.unmarshalOTime2ᚖtimeᚐTime(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.From = data
+		case "to":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("to"))
+			data, err := ec.unmarshalOTime2ᚖtimeᚐTime(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.To = data
+		}
+	}
+	return it, nil
+}
+
 func (ec *executionContext) unmarshalInputAuthenticationExecutionInput(ctx context.Context, obj any) (AuthenticationExecutionInput, error) {
 	var it AuthenticationExecutionInput
 	if obj == nil {
@@ -18876,6 +19562,166 @@ func (ec *executionContext) unmarshalInputUserFilter(ctx context.Context, obj an
 
 // region    **************************** object.gotpl ****************************
 
+var auditLogImplementors = []string{"AuditLog"}
+
+func (ec *executionContext) _AuditLog(ctx context.Context, sel ast.SelectionSet, obj *domain.AuditLog) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, auditLogImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("AuditLog")
+		case "id":
+			out.Values[i] = ec._AuditLog_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "timestamp":
+			out.Values[i] = ec._AuditLog_timestamp(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "service":
+			out.Values[i] = ec._AuditLog_service(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "action":
+			out.Values[i] = ec._AuditLog_action(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "user":
+			out.Values[i] = ec._AuditLog_user(ctx, field, obj)
+		case "target":
+			out.Values[i] = ec._AuditLog_target(ctx, field, obj)
+		case "details":
+			out.Values[i] = ec._AuditLog_details(ctx, field, obj)
+		case "success":
+			out.Values[i] = ec._AuditLog_success(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "error":
+			out.Values[i] = ec._AuditLog_error(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var auditLogConnectionImplementors = []string{"AuditLogConnection"}
+
+func (ec *executionContext) _AuditLogConnection(ctx context.Context, sel ast.SelectionSet, obj *AuditLogConnection) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, auditLogConnectionImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("AuditLogConnection")
+		case "edges":
+			out.Values[i] = ec._AuditLogConnection_edges(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "totalCount":
+			out.Values[i] = ec._AuditLogConnection_totalCount(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "pageInfo":
+			out.Values[i] = ec._AuditLogConnection_pageInfo(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var auditLogEdgeImplementors = []string{"AuditLogEdge"}
+
+func (ec *executionContext) _AuditLogEdge(ctx context.Context, sel ast.SelectionSet, obj *AuditLogEdge) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, auditLogEdgeImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("AuditLogEdge")
+		case "node":
+			out.Values[i] = ec._AuditLogEdge_node(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "cursor":
+			out.Values[i] = ec._AuditLogEdge_cursor(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var authenticationExecutionImplementors = []string{"AuthenticationExecution"}
 
 func (ec *executionContext) _AuthenticationExecution(ctx context.Context, sel ast.SelectionSet, obj *domain.AuthenticationExecution) graphql.Marshaler {
@@ -20326,38 +21172,7 @@ func (ec *executionContext) _Group(ctx context.Context, sel ast.SelectionSet, ob
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
 		case "attributes":
-			field := field
-
-			innerFunc := func(ctx context.Context, _ *graphql.FieldSet) (res graphql.Marshaler) {
-				defer func() {
-					if r := recover(); r != nil {
-						ec.Error(ctx, ec.Recover(ctx, r))
-					}
-				}()
-				res = ec._Group_attributes(ctx, field, obj)
-				return res
-			}
-
-			if field.Deferrable != nil {
-				dfs, ok := deferred[field.Deferrable.Label]
-				di := 0
-				if ok {
-					dfs.AddField(field)
-					di = len(dfs.Values) - 1
-				} else {
-					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
-					deferred[field.Deferrable.Label] = dfs
-				}
-				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
-					return innerFunc(ctx, dfs)
-				})
-
-				// don't run the out.Concurrently() call below
-				out.Values[i] = graphql.Null
-				continue
-			}
-
-			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			out.Values[i] = ec._Group_attributes(ctx, field, obj)
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -22063,6 +22878,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_clientUserAttributeMappers(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "auditLogs":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_auditLogs(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -24226,6 +25063,50 @@ func (ec *executionContext) ___Type(ctx context.Context, sel ast.SelectionSet, o
 
 // region    ***************************** type.gotpl *****************************
 
+func (ec *executionContext) marshalNAuditLog2ᚖgithubᚗcomᚋpilabᚑdevᚋshadowᚑssoᚋdomainᚐAuditLog(ctx context.Context, sel ast.SelectionSet, v *domain.AuditLog) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._AuditLog(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNAuditLogConnection2githubᚗcomᚋpilabᚑdevᚋshadowᚑssoᚋgraphqlᚐAuditLogConnection(ctx context.Context, sel ast.SelectionSet, v AuditLogConnection) graphql.Marshaler {
+	return ec._AuditLogConnection(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNAuditLogConnection2ᚖgithubᚗcomᚋpilabᚑdevᚋshadowᚑssoᚋgraphqlᚐAuditLogConnection(ctx context.Context, sel ast.SelectionSet, v *AuditLogConnection) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._AuditLogConnection(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNAuditLogEdge2githubᚗcomᚋpilabᚑdevᚋshadowᚑssoᚋgraphqlᚐAuditLogEdge(ctx context.Context, sel ast.SelectionSet, v AuditLogEdge) graphql.Marshaler {
+	return ec._AuditLogEdge(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNAuditLogEdge2ᚕgithubᚗcomᚋpilabᚑdevᚋshadowᚑssoᚋgraphqlᚐAuditLogEdgeᚄ(ctx context.Context, sel ast.SelectionSet, v []AuditLogEdge) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNAuditLogEdge2githubᚗcomᚋpilabᚑdevᚋshadowᚑssoᚋgraphqlᚐAuditLogEdge(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
 func (ec *executionContext) marshalNAuthenticationExecution2githubᚗcomᚋpilabᚑdevᚋshadowᚑssoᚋdomainᚐAuthenticationExecution(ctx context.Context, sel ast.SelectionSet, v domain.AuthenticationExecution) graphql.Marshaler {
 	return ec._AuthenticationExecution(ctx, sel, &v)
 }
@@ -25228,6 +26109,14 @@ func (ec *executionContext) marshalN__TypeKind2string(ctx context.Context, sel a
 		}
 	}
 	return res
+}
+
+func (ec *executionContext) unmarshalOAuditLogFilter2ᚖgithubᚗcomᚋpilabᚑdevᚋshadowᚑssoᚋdomainᚐAuditLogFilter(ctx context.Context, v any) (*domain.AuditLogFilter, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := ec.unmarshalInputAuditLogFilter(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
 }
 
 func (ec *executionContext) marshalOAuthenticationExecution2ᚕgithubᚗcomᚋpilabᚑdevᚋshadowᚑssoᚋdomainᚐAuthenticationExecutionᚄ(ctx context.Context, sel ast.SelectionSet, v []domain.AuthenticationExecution) graphql.Marshaler {

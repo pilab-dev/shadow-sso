@@ -55,7 +55,7 @@ func setupTokenCacheTest(t *testing.T) (cache.TokenStore, func(), error) {
 	}
 	db := client.Database(dbName)
 
-	tokenCache := mongodb.NewTokenCache(db)
+	tokenCache := mongodb.NewTokenCache(ctx, db)
 
 	cleanupFunc := func() {
 		mainCtx := context.Background()

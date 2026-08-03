@@ -23,12 +23,11 @@ type MongoUserSessionStore struct {
 }
 
 // NewUserSessionStore creates a new MongoUserSessionStore and ensures the TTL index on expires_at.
-func NewUserSessionStore(db *mongo.Database) *MongoUserSessionStore {
+func NewUserSessionStore(ctx context.Context, db *mongo.Database) *MongoUserSessionStore {
 	repo := &MongoUserSessionStore{
 		collection: db.Collection(UserSessionsOIDCCollection),
 	}
 
-	ctx := context.Background()
 	indexModels := []mongo.IndexModel{
 		{
 			Keys:    bson.D{{Key: "expires_at", Value: 1}},

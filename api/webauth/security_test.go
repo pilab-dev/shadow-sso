@@ -1,14 +1,18 @@
 package webauth
 
 import (
+	"context"
 	"crypto/tls"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/pilab-dev/shadow-sso/domain"
+	mock_domain "github.com/pilab-dev/shadow-sso/domain/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
 // ---------------------------------------------------------------------------
@@ -129,4 +133,193 @@ func TestSetCSRFCookie_Insecure(t *testing.T) {
 
 func TestCSRFCookieNameConstant(t *testing.T) {
 	assert.Equal(t, "sso_csrf_token", CSRFCookieName)
+}
+
+// ---------------------------------------------------------------------------
+// Persistent brute-force lockout (accountLockedOut / recordLoginFailure)
+// ---------------------------------------------------------------------------
+
+func TestAccountLockedOut_WhenRealmBruteForceDisabled(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	realmRepo := mock_domain.NewMockRealmSettingsRepository(ctrl)
+	realmRepo.EXPECT().GetRealmSettings(gomock.Any()).Return(&domain.RealmSettings{
+		Realm:               "master",
+		BruteForceProtected: false,
+	}, nil)
+
+	wa := &WebAuth{
+		realmSettingsRepo: realmRepo,
+		config:            DefaultConfig(),
+	}
+	user := &domain.User{
+		ID:                 "user-1",
+		FailedLoginAttempts: 99,
+		LastFailedLoginTime: ptrTime(time.Now().Add(-time.Minute)),
+	}
+
+	assert.False(t, wa.accountLockedOut(context.Background(), user))
+}
+
+func TestAccountLockedOut_WhenBelowMaxAttempts(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	realmRepo := mock_domain.NewMockRealmSettingsRepository(ctrl)
+	realmRepo.EXPECT().GetRealmSettings(gomock.Any()).Return(&domain.RealmSettings{
+		Realm:               "master",
+		BruteForceProtected: true,
+	}, nil)
+
+	wa := &WebAuth{
+		realmSettingsRepo: realmRepo,
+		config:            DefaultConfig(),
+	}
+	user := &domain.User{
+		ID:                  "user-1",
+		FailedLoginAttempts: 4,
+		LastFailedLoginTime: ptrTime(time.Now()),
+	}
+
+	assert.False(t, wa.accountLockedOut(context.Background(), user))
+}
+
+func TestAccountLockedOut_WhenNeverFailed(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	realmRepo := mock_domain.NewMockRealmSettingsRepository(ctrl)
+	realmRepo.EXPECT().GetRealmSettings(gomock.Any()).Return(&domain.RealmSettings{
+		Realm:               "master",
+		BruteForceProtected: true,
+	}, nil)
+
+	wa := &WebAuth{
+		realmSettingsRepo: realmRepo,
+		config:            DefaultConfig(),
+	}
+	user := &domain.User{ID: "user-1", FailedLoginAttempts: 0}
+
+	assert.False(t, wa.accountLockedOut(context.Background(), user))
+}
+
+func TestAccountLockedOut_WhenLockoutExpired(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	realmRepo := mock_domain.NewMockRealmSettingsRepository(ctrl)
+	realmRepo.EXPECT().GetRealmSettings(gomock.Any()).Return(&domain.RealmSettings{
+		Realm:               "master",
+		BruteForceProtected: true,
+	}, nil)
+
+	wa := &WebAuth{
+		realmSettingsRepo: realmRepo,
+		config:            DefaultConfig(),
+	}
+	user := &domain.User{
+		ID:                  "user-1",
+		FailedLoginAttempts: 5,
+		LastFailedLoginTime: ptrTime(time.Now().Add(-16 * time.Minute)),
+	}
+
+	assert.False(t, wa.accountLockedOut(context.Background(), user))
+}
+
+func TestAccountLockedOut_WhenAtMaxAttempts_WithinLockoutWindow(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	realmRepo := mock_domain.NewMockRealmSettingsRepository(ctrl)
+	realmRepo.EXPECT().GetRealmSettings(gomock.Any()).Return(&domain.RealmSettings{
+		Realm:               "master",
+		BruteForceProtected: true,
+	}, nil)
+
+	wa := &WebAuth{
+		realmSettingsRepo: realmRepo,
+		config:            DefaultConfig(),
+	}
+	user := &domain.User{
+		ID:                  "user-1",
+		FailedLoginAttempts: 5,
+		LastFailedLoginTime: ptrTime(time.Now()),
+	}
+
+	assert.True(t, wa.accountLockedOut(context.Background(), user))
+}
+
+func TestAccountLockedOut_NilRepoNeverLocks(t *testing.T) {
+	wa := &WebAuth{config: DefaultConfig()}
+	user := &domain.User{
+		ID:                  "user-1",
+		FailedLoginAttempts: 100,
+		LastFailedLoginTime: ptrTime(time.Now()),
+	}
+
+	assert.False(t, wa.accountLockedOut(context.Background(), user))
+}
+
+func TestRecordLoginFailure_WhenBruteForceEnabled(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	realmRepo := mock_domain.NewMockRealmSettingsRepository(ctrl)
+	realmRepo.EXPECT().GetRealmSettings(gomock.Any()).Return(&domain.RealmSettings{
+		Realm:               "master",
+		BruteForceProtected: true,
+	}, nil)
+	userRepo := mock_domain.NewMockUserRepository(ctrl)
+	userRepo.EXPECT().IncrementFailedLoginAttempts(gomock.Any(), "user-1").Return(int32(5), nil)
+
+	wa := &WebAuth{
+		realmSettingsRepo: realmRepo,
+		userRepo:          userRepo,
+	}
+
+	wa.recordLoginFailure(context.Background(), "user-1")
+}
+
+func TestRecordLoginFailure_WhenBruteForceDisabled_DoesNotTouchRepo(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	realmRepo := mock_domain.NewMockRealmSettingsRepository(ctrl)
+	realmRepo.EXPECT().GetRealmSettings(gomock.Any()).Return(&domain.RealmSettings{
+		Realm:               "master",
+		BruteForceProtected: false,
+	}, nil)
+	userRepo := mock_domain.NewMockUserRepository(ctrl)
+
+	wa := &WebAuth{
+		realmSettingsRepo: realmRepo,
+		userRepo:          userRepo,
+	}
+
+	wa.recordLoginFailure(context.Background(), "user-1")
+}
+
+func TestResetLoginFailures_WhenBruteForceEnabled(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	realmRepo := mock_domain.NewMockRealmSettingsRepository(ctrl)
+	realmRepo.EXPECT().GetRealmSettings(gomock.Any()).Return(&domain.RealmSettings{
+		Realm:               "master",
+		BruteForceProtected: true,
+	}, nil)
+	userRepo := mock_domain.NewMockUserRepository(ctrl)
+	userRepo.EXPECT().ResetFailedLoginAttempts(gomock.Any(), "user-1").Return(nil)
+
+	wa := &WebAuth{
+		realmSettingsRepo: realmRepo,
+		userRepo:          userRepo,
+	}
+
+	wa.resetLoginFailures(context.Background(), "user-1")
+}
+
+func ptrTime(t time.Time) *time.Time {
+	return &t
 }

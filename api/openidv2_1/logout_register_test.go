@@ -623,6 +623,8 @@ func TestRegisterClient_WithInitialAccessToken(t *testing.T) {
 			require.NotEmpty(t, c.Name)
 			require.Equal(t, domain.ClientTypeConfidential, c.Type)
 			require.Equal(t, []string{"https://rp.example.com/cb"}, c.RedirectURIs)
+			require.True(t, strings.HasPrefix(c.Secret, "$2a$") || strings.HasPrefix(c.Secret, "$2b$"),
+				"secret persisted via the register path must be a bcrypt hash, got %q", c.Secret)
 			return nil
 		}).Times(1)
 

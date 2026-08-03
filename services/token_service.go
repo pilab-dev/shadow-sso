@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -44,6 +45,9 @@ type defaultTokenService struct {
 	userAttrMapperRepo domain.UserAttributeMapperRepository
 	userAttrRepo       domain.UserAttributeRepository
 
+	// For Keycloak-style protocol mappers (optional - nil checks when not configured)
+	protocolMapperRepo domain.ProtocolMapperRepository
+
 	// For Keycloak-style role & group claims (optional - nil checks when not configured)
 	groupRepo domain.GroupRepository
 	roleRepo  domain.RoleRepository
@@ -58,19 +62,25 @@ func newDefaultTokenService(
 	pubKeyRepo domain.PublicKeyRepository,
 	saRepo domain.ServiceAccountRepository,
 	userRepo domain.UserRepository,
+	userAttrMapperRepo domain.UserAttributeMapperRepository,
+	userAttrRepo domain.UserAttributeRepository,
+	protocolMapperRepo domain.ProtocolMapperRepository,
 	groupRepo domain.GroupRepository,
 	roleRepo domain.RoleRepository,
 ) *defaultTokenService {
 	return &defaultTokenService{
-		repo:       repo,
-		cache:      tokenCache,
-		issuer:     issuer,
-		signer:     signer,
-		pubKeyRepo: pubKeyRepo,
-		saRepo:     saRepo,
-		userRepo:   userRepo,
-		groupRepo:  groupRepo,
-		roleRepo:   roleRepo,
+		repo:               repo,
+		cache:              tokenCache,
+		issuer:             issuer,
+		signer:             signer,
+		pubKeyRepo:         pubKeyRepo,
+		saRepo:             saRepo,
+		userRepo:           userRepo,
+		userAttrMapperRepo: userAttrMapperRepo,
+		userAttrRepo:       userAttrRepo,
+		protocolMapperRepo: protocolMapperRepo,
+		groupRepo:          groupRepo,
+		roleRepo:           roleRepo,
 	}
 }
 
@@ -208,10 +218,8 @@ func (s *defaultTokenService) CreateToken(ctx context.Context, opts domain.Creat
 		}
 	}
 
-	// Generate access token with the signer
-	// s.signer.Sign now accepts jwt.Claims (which jwt.MapClaims implements)
-		signedToken, err := s.signer.Sign(tokenClaimsMap, opts.SigningKeyID)
-		if err != nil {
+	signedToken, err := s.signer.Sign(tokenClaimsMap, s.resolveSigningKeyID(opts.SigningKeyID, opts.ClientID))
+	if err != nil {
 			telemetry.RecordSpanError(span, err, "failed to sign token")
 			span.SetStatus(codes.Error, "failed to sign token")
 			return nil, err
@@ -332,6 +340,15 @@ func sortedKeys(set map[string]bool) []string {
 	return keys
 }
 
+// resolveSigningKeyID picks the client's dedicated key with realm-default fallback unless explicit is set.
+func (s *defaultTokenService) resolveSigningKeyID(explicit, clientID string) string {
+	if explicit != "" {
+		return explicit
+	}
+	keyID, _ := s.signer.ResolveSigningKeyID(clientID)
+	return keyID
+}
+
 // BuildToken builds the token value for an existing token struct.
 func (s *defaultTokenService) BuildToken(token *domain.Token) error { // Changed to domain.Token
 	// ? This is a default claim object, it can be used for both access and refresh tokens.
@@ -362,9 +379,7 @@ func (s *defaultTokenService) BuildToken(token *domain.Token) error { // Changed
 	// If UserID is present and token.Roles is empty, one might fetch roles here if context was available.
 	// else if token.UserID != "" && s.userRepo != nil { /* fetch roles - needs context */ }
 
-	// Generate access token with the signer
-	// Assuming s.signer.Sign takes jwt.Claims (jwt.MapClaims implements this)
-	signedToken, err := s.signer.Sign(tokenMapClaims, "") // Pass empty keyID for default signer key
+	signedToken, err := s.signer.Sign(tokenMapClaims, s.resolveSigningKeyID("", token.ClientID))
 	if err != nil {
 		return fmt.Errorf("cannot sign token: %w", err)
 	}
@@ -531,6 +546,12 @@ func (s *defaultTokenService) ValidateAccessToken(ctx context.Context, tokenValu
 		}
 		publicKeyInfo, errDb := s.pubKeyRepo.GetPublicKey(ctx, kid)
 		if errDb != nil {
+			// If the kid simply isn't in the SA key store (key not found), signal
+			// errMissingKidSAValidation so the outer fallback tries user-token validation.
+			// This is the normal case for user JWTs whose kid belongs to a realm signing key.
+			if strings.Contains(errDb.Error(), "not found") {
+				return nil, errMissingKidSAValidation
+			}
 			log.Ctx(ctx).Warn().Err(errDb).Str("kid", kid).Msg("Failed to get public key for SA JWT")
 			return nil, fmt.Errorf("SA key retrieval failed for kid %s: %w", kid, errDb)
 		}
@@ -825,7 +846,7 @@ func (s *defaultTokenService) GenerateIDToken(ctx context.Context, userID, clien
 		log.Ctx(ctx).Warn().Err(err).Str("client_id", clientID).Str("user_id", userID).Msg("GenerateIDToken: failed to apply token mappers")
 	}
 
-	return s.signer.Sign(claims, "")
+	return s.signer.Sign(claims, s.resolveSigningKeyID("", clientID))
 }
 
 // ValidateIDToken validates an ID token.
@@ -840,7 +861,7 @@ func (s *defaultTokenService) ValidateIDToken(ctx context.Context, tokenValue st
 func setNestedClaim(claims map[string]interface{}, key string, value interface{}) {
 	parts := strings.SplitN(key, ".", 2)
 	if len(parts) == 1 {
-		claims[key] = value
+		mergeClaimValue(claims, key, value)
 		return
 	}
 	prefix := parts[0]
@@ -850,19 +871,52 @@ func setNestedClaim(claims map[string]interface{}, key string, value interface{}
 		nested = make(map[string]interface{})
 		claims[prefix] = nested
 	}
-	innerParts := strings.SplitN(suffix, ".", 2)
-	if len(innerParts) == 1 {
-		nested[suffix] = value
-	} else {
-		setNestedClaim(nested, suffix, value)
-	}
+	setNestedClaim(nested, suffix, value)
 }
 
-// ApplyTokenMappers applies user attribute mappers to the provided claims map.
-// It fetches mappers configured for the given clientID and tokenType, looks up
-// the user's attributes, and populates claims with mapped values.
-// All steps are logged at debug level for traceability; applied mappings are
-// logged at info level so operators can verify claims in production logs.
+// mergeClaimValue stores value under key, merging with an existing value:
+// maps are merged key-by-key, string slices are appended de-duplicated with
+// order preserved, and any other existing value is replaced.
+func mergeClaimValue(claims map[string]interface{}, key string, value interface{}) {
+	existing, ok := claims[key]
+	if !ok {
+		claims[key] = value
+		return
+	}
+	switch newVal := value.(type) {
+	case map[string]interface{}:
+		if oldMap, ok := existing.(map[string]interface{}); ok {
+			for k, v := range newVal {
+				oldMap[k] = v
+			}
+			return
+		}
+	case []string:
+		if oldSlice, ok := existing.([]string); ok {
+			merged := append([]string{}, oldSlice...)
+			seen := make(map[string]struct{}, len(merged))
+			for _, s := range merged {
+				seen[s] = struct{}{}
+			}
+			for _, s := range newVal {
+				if _, dup := seen[s]; !dup {
+					merged = append(merged, s)
+					seen[s] = struct{}{}
+				}
+			}
+			claims[key] = merged
+			return
+		}
+	}
+	claims[key] = value
+}
+
+// ApplyTokenMappers applies user attribute and Keycloak-style protocol mappers
+// to the provided claims map. Each mapper category is optional and nil-safe:
+// categories whose repositories are not configured are skipped entirely and
+// never touch the claims. All steps are logged at debug level for traceability;
+// applied mappings are logged at info level so operators can verify claims in
+// production logs.
 func (s *defaultTokenService) ApplyTokenMappers(ctx context.Context, claims map[string]interface{}, clientID, userID, tokenType string) error {
 	ctx, span := telemetry.StartSpan(ctx, tokenTracerName, "ApplyTokenMappers",
 		attribute.String("client_id", clientID),
@@ -873,39 +927,50 @@ func (s *defaultTokenService) ApplyTokenMappers(ctx context.Context, claims map[
 
 	logger := log.Ctx(ctx)
 
-	if s.userAttrMapperRepo == nil || s.userAttrRepo == nil {
+	totalApplied := 0
+	totalSkipped := 0
+	categoriesRun := 0
+
+	if s.userAttrMapperRepo != nil && s.userAttrRepo != nil {
+		categoriesRun++
+		applied, skipped, err := s.applyUserAttributeMappers(ctx, claims, clientID, userID, tokenType)
+		if err != nil {
+			logger.Warn().Err(err).
+				Str("client_id", clientID).
+				Str("user_id", userID).
+				Str("token_type", tokenType).
+				Msg("ApplyTokenMappers: user attribute mapper category failed")
+			telemetry.RecordSpanError(span, err, "failed to apply user attribute mappers")
+			span.SetStatus(codes.Error, "failed to apply user attribute mappers")
+			return err
+		}
+		totalApplied += applied
+		totalSkipped += skipped
+	}
+
+	if s.protocolMapperRepo != nil {
+		categoriesRun++
+		applied, skipped, err := s.applyProtocolMappers(ctx, claims, clientID, userID, tokenType)
+		if err != nil {
+			logger.Warn().Err(err).
+				Str("client_id", clientID).
+				Str("user_id", userID).
+				Str("token_type", tokenType).
+				Msg("ApplyTokenMappers: protocol mapper category failed")
+			telemetry.RecordSpanError(span, err, "failed to apply protocol mappers")
+			span.SetStatus(codes.Error, "failed to apply protocol mappers")
+			return err
+		}
+		totalApplied += applied
+		totalSkipped += skipped
+	}
+
+	if categoriesRun == 0 {
 		logger.Debug().
 			Str("client_id", clientID).
 			Str("user_id", userID).
 			Str("token_type", tokenType).
-			Msg("ApplyTokenMappers: skipped — userAttrMapperRepo or userAttrRepo not configured")
-		return nil
-	}
-
-	logger.Debug().
-		Str("client_id", clientID).
-		Str("user_id", userID).
-		Str("token_type", tokenType).
-		Msg("ApplyTokenMappers: fetching mappers for client")
-
-	mappers, err := s.userAttrMapperRepo.GetMappersForClient(ctx, clientID, tokenType)
-	if err != nil {
-		logger.Warn().Err(err).
-			Str("client_id", clientID).
-			Str("user_id", userID).
-			Str("token_type", tokenType).
-			Msg("ApplyTokenMappers: failed to fetch mappers")
-		telemetry.RecordSpanError(span, err, "failed to fetch mappers")
-		span.SetStatus(codes.Error, "failed to fetch mappers")
-		return fmt.Errorf("failed to fetch token mappers: %w", err)
-	}
-
-	if len(mappers) == 0 {
-		logger.Debug().
-			Str("client_id", clientID).
-			Str("user_id", userID).
-			Str("token_type", tokenType).
-			Msg("ApplyTokenMappers: no mappers configured for this client and token type")
+			Msg("ApplyTokenMappers: no mapper repositories configured, nothing to apply")
 		return nil
 	}
 
@@ -913,8 +978,52 @@ func (s *defaultTokenService) ApplyTokenMappers(ctx context.Context, claims map[
 		Str("client_id", clientID).
 		Str("user_id", userID).
 		Str("token_type", tokenType).
+		Int("applied_count", totalApplied).
+		Int("skipped_count", totalSkipped).
+		Int("mapper_categories", categoriesRun).
+		Msg("ApplyTokenMappers: completed")
+
+	return nil
+}
+
+// applyUserAttributeMappers applies the existing user-attribute mapper category.
+// It returns the number of mappers applied and skipped. Individual mappers whose
+// user attribute is missing are skipped; repository failures are returned as
+// errors so token issuance can surface them.
+func (s *defaultTokenService) applyUserAttributeMappers(ctx context.Context, claims map[string]interface{}, clientID, userID, tokenType string) (int, int, error) {
+	logger := log.Ctx(ctx)
+
+	logger.Debug().
+		Str("client_id", clientID).
+		Str("user_id", userID).
+		Str("token_type", tokenType).
+		Msg("ApplyTokenMappers: fetching user attribute mappers for client")
+
+	mappers, err := s.userAttrMapperRepo.GetMappersForClient(ctx, clientID, tokenType)
+	if err != nil {
+		logger.Warn().Err(err).
+			Str("client_id", clientID).
+			Str("user_id", userID).
+			Str("token_type", tokenType).
+			Msg("ApplyTokenMappers: failed to fetch user attribute mappers")
+		return 0, 0, fmt.Errorf("failed to fetch token mappers: %w", err)
+	}
+
+	if len(mappers) == 0 {
+		logger.Debug().
+			Str("client_id", clientID).
+			Str("user_id", userID).
+			Str("token_type", tokenType).
+			Msg("ApplyTokenMappers: no user attribute mappers configured for this client and token type")
+		return 0, 0, nil
+	}
+
+	logger.Info().
+		Str("client_id", clientID).
+		Str("user_id", userID).
+		Str("token_type", tokenType).
 		Int("mapper_count", len(mappers)).
-		Msg("ApplyTokenMappers: found configured mappers")
+		Msg("ApplyTokenMappers: found configured user attribute mappers")
 
 	userAttrs, err := s.userAttrRepo.GetAttributesByUserID(ctx, userID)
 	if err != nil {
@@ -923,9 +1032,7 @@ func (s *defaultTokenService) ApplyTokenMappers(ctx context.Context, claims map[
 			Str("user_id", userID).
 			Str("token_type", tokenType).
 			Msg("ApplyTokenMappers: failed to fetch user attributes")
-		telemetry.RecordSpanError(span, err, "failed to fetch user attributes")
-		span.SetStatus(codes.Error, "failed to fetch user attributes")
-		return fmt.Errorf("failed to fetch user attributes for token mappers: %w", err)
+		return 0, 0, fmt.Errorf("failed to fetch user attributes for token mappers: %w", err)
 	}
 
 	attrMap := make(map[string]string, len(userAttrs))
@@ -968,10 +1075,7 @@ func (s *defaultTokenService) ApplyTokenMappers(ctx context.Context, claims map[
 		}
 
 		if mapper.MultiValued {
-			values := strings.Split(attrValue, ",")
-			for i, v := range values {
-				values[i] = strings.TrimSpace(v)
-			}
+			values := splitCSV(attrValue)
 			setNestedClaim(claims, mapper.TokenClaimName, values)
 			logger.Info().
 				Str("client_id", clientID).
@@ -1000,16 +1104,305 @@ func (s *defaultTokenService) ApplyTokenMappers(ctx context.Context, claims map[
 		appliedCount++
 	}
 
-	logger.Info().
+	logger.Debug().
 		Str("client_id", clientID).
 		Str("user_id", userID).
 		Str("token_type", tokenType).
 		Int("applied_count", appliedCount).
 		Int("skipped_count", skippedCount).
-		Int("total_mappers", len(mappers)).
-		Msg("ApplyTokenMappers: completed")
+		Msg("ApplyTokenMappers: user attribute mappers done")
 
-	return nil
+	return appliedCount, skippedCount, nil
+}
+
+// applyProtocolMappers evaluates Keycloak-style protocol mappers for the client.
+// Only "openid-connect" protocol mappers are honored; other protocols (e.g.
+// SAML) are skipped. The claim target comes from Config["claim.name"]
+// (dot-notation supported) and the value from Config["claim.value"] or is
+// derived per mapper type (realm/client roles, group membership, user
+// attribute). Config["multivalued"] yields an array claim. Unknown mapper types
+// and mappers without data are skipped, never failing token issuance.
+func (s *defaultTokenService) applyProtocolMappers(ctx context.Context, claims map[string]interface{}, clientID, userID, tokenType string) (int, int, error) {
+	logger := log.Ctx(ctx)
+
+	logger.Debug().
+		Str("client_id", clientID).
+		Str("user_id", userID).
+		Str("token_type", tokenType).
+		Msg("ApplyTokenMappers: fetching protocol mappers for client")
+
+	mappers, err := s.protocolMapperRepo.ListClientProtocolMappers(ctx, clientID)
+	if err != nil {
+		logger.Warn().Err(err).
+			Str("client_id", clientID).
+			Str("user_id", userID).
+			Str("token_type", tokenType).
+			Msg("ApplyTokenMappers: failed to fetch protocol mappers")
+		return 0, 0, fmt.Errorf("failed to fetch protocol mappers: %w", err)
+	}
+
+	if len(mappers) == 0 {
+		logger.Debug().
+			Str("client_id", clientID).
+			Str("user_id", userID).
+			Str("token_type", tokenType).
+			Msg("ApplyTokenMappers: no protocol mappers configured for this client")
+		return 0, 0, nil
+	}
+
+	oidcMappers := make([]*domain.ProtocolMapper, 0, len(mappers))
+	for _, mapper := range mappers {
+		if mapper == nil {
+			continue
+		}
+		if mapper.Protocol != "" && mapper.Protocol != "openid-connect" {
+			logger.Debug().
+				Str("client_id", clientID).
+				Str("user_id", userID).
+				Str("token_type", tokenType).
+				Str("mapper_name", mapper.Name).
+				Str("mapper_id", mapper.ID).
+				Str("protocol", mapper.Protocol).
+				Msg("ApplyTokenMappers: skipping non-openid-connect protocol mapper")
+			continue
+		}
+		oidcMappers = append(oidcMappers, mapper)
+	}
+	if len(oidcMappers) == 0 {
+		return 0, 0, nil
+	}
+
+	needsUser, needsGroups, needsAttrs := mapperDataNeeds(oidcMappers)
+
+	var user *domain.User
+	if needsUser && s.userRepo != nil {
+		user, err = s.userRepo.GetUserByID(ctx, userID)
+		if err != nil {
+			logger.Debug().Err(err).
+				Str("client_id", clientID).
+				Str("user_id", userID).
+				Str("token_type", tokenType).
+				Msg("ApplyTokenMappers: failed to load user for protocol mappers, role mappers will be skipped")
+		}
+	}
+
+	var groups []*domain.Group
+	if needsGroups && s.groupRepo != nil {
+		groups, err = s.groupRepo.GetGroupsByUserID(ctx, userID)
+		if err != nil {
+			logger.Debug().Err(err).
+				Str("client_id", clientID).
+				Str("user_id", userID).
+				Str("token_type", tokenType).
+				Msg("ApplyTokenMappers: failed to load groups for protocol mappers, group mappers will be skipped")
+		}
+	}
+
+	attrMap := make(map[string]string)
+	if needsAttrs && s.userAttrRepo != nil {
+		userAttrs, attrErr := s.userAttrRepo.GetAttributesByUserID(ctx, userID)
+		if attrErr != nil {
+			logger.Debug().Err(attrErr).
+				Str("client_id", clientID).
+				Str("user_id", userID).
+				Str("token_type", tokenType).
+				Msg("ApplyTokenMappers: failed to load user attributes for protocol mappers, attribute mappers will be skipped")
+		} else {
+			for _, attr := range userAttrs {
+				attrMap[attr.Name] = attr.Value
+			}
+		}
+	}
+
+	appliedCount := 0
+	skippedCount := 0
+	for _, mapper := range oidcMappers {
+		claimName := configString(mapper.Config, "claim.name")
+		if claimName == "" {
+			logger.Debug().
+				Str("client_id", clientID).
+				Str("user_id", userID).
+				Str("token_type", tokenType).
+				Str("mapper_name", mapper.Name).
+				Str("mapper_id", mapper.ID).
+				Msg("ApplyTokenMappers: protocol mapper has no claim.name, skipping")
+			skippedCount++
+			continue
+		}
+
+		value, ok := s.protocolMapperValue(mapper, user, groups, attrMap)
+		if !ok {
+			logger.Debug().
+				Str("client_id", clientID).
+				Str("user_id", userID).
+				Str("token_type", tokenType).
+				Str("mapper_name", mapper.Name).
+				Str("mapper_id", mapper.ID).
+				Str("mapper_type", mapper.ProtocolMapper).
+				Str("token_claim", claimName).
+				Msg("ApplyTokenMappers: no value available for protocol mapper, skipping")
+			skippedCount++
+			continue
+		}
+
+		if configBool(mapper.Config, "multivalued") {
+			if str, isStr := value.(string); isStr {
+				value = splitCSV(str)
+			}
+		} else if names, isSlice := value.([]string); isSlice {
+			value = strings.Join(names, ",")
+		}
+
+		setNestedClaim(claims, claimName, value)
+		appliedCount++
+		logger.Info().
+			Str("client_id", clientID).
+			Str("user_id", userID).
+			Str("token_type", tokenType).
+			Str("mapper_name", mapper.Name).
+			Str("mapper_id", mapper.ID).
+			Str("mapper_type", mapper.ProtocolMapper).
+			Str("token_claim", claimName).
+			Msg("ApplyTokenMappers: applied protocol mapper")
+	}
+
+	logger.Debug().
+		Str("client_id", clientID).
+		Str("user_id", userID).
+		Str("token_type", tokenType).
+		Int("applied_count", appliedCount).
+		Int("skipped_count", skippedCount).
+		Msg("ApplyTokenMappers: protocol mappers done")
+
+	return appliedCount, skippedCount, nil
+}
+
+// mapperDataNeeds reports which data sources the given protocol mappers require:
+// the user record (role mappers), the user's groups (group mappers) and the
+// user's attributes (attribute mappers), so each source is fetched at most once.
+func mapperDataNeeds(mappers []*domain.ProtocolMapper) (needsUser, needsGroups, needsAttrs bool) {
+	for _, m := range mappers {
+		switch {
+		case isRoleMapper(m):
+			needsUser = true
+		case isGroupMembershipMapper(m):
+			needsGroups = true
+		case isAttributeMapper(m):
+			needsAttrs = true
+		}
+	}
+	return needsUser, needsGroups, needsAttrs
+}
+
+// protocolMapperValue derives the claim value for a protocol mapper. Hardcoded
+// claim mappers read Config["claim.value"]; group membership mappers use the
+// user's group names; role mappers use the user's realm and client roles;
+// user-attribute mappers read the attribute named by Config["user.attribute"].
+// ok is false when the mapper type is unknown or its data is unavailable — the
+// mapper is then skipped without failing token issuance.
+func (s *defaultTokenService) protocolMapperValue(m *domain.ProtocolMapper, user *domain.User, groups []*domain.Group, attrMap map[string]string) (interface{}, bool) {
+	switch {
+	case isHardcodedClaimMapper(m):
+		v := configString(m.Config, "claim.value")
+		if v == "" {
+			return nil, false
+		}
+		return v, true
+	case isGroupMembershipMapper(m):
+		names := make([]string, 0, len(groups))
+		for _, g := range groups {
+			if g == nil {
+				continue
+			}
+			name := g.Name
+			if name == "" {
+				name = g.Path
+			}
+			if name != "" {
+				names = append(names, name)
+			}
+		}
+		if len(names) == 0 {
+			return nil, false
+		}
+		return names, true
+	case isRoleMapper(m):
+		if user == nil {
+			return nil, false
+		}
+		roles := make([]string, 0, len(user.Roles)+len(user.ClientRoles))
+		roles = append(roles, user.Roles...)
+		for _, clientRoleNames := range user.ClientRoles {
+			roles = append(roles, clientRoleNames...)
+		}
+		if len(roles) == 0 {
+			return nil, false
+		}
+		return roles, true
+	case isAttributeMapper(m):
+		attrName := configString(m.Config, "user.attribute")
+		if attrName == "" {
+			attrName = configString(m.Config, "user_attribute")
+		}
+		if attrName == "" {
+			return nil, false
+		}
+		v, ok := attrMap[attrName]
+		if !ok || v == "" {
+			return nil, false
+		}
+		return v, true
+	}
+	return nil, false
+}
+
+func isHardcodedClaimMapper(m *domain.ProtocolMapper) bool {
+	return strings.Contains(m.ProtocolMapper, "hardcoded")
+}
+
+func isGroupMembershipMapper(m *domain.ProtocolMapper) bool {
+	return strings.Contains(m.ProtocolMapper, "group-membership") || strings.Contains(m.ProtocolMapper, "group_membership")
+}
+
+func isRoleMapper(m *domain.ProtocolMapper) bool {
+	return strings.Contains(m.ProtocolMapper, "realm-role") || strings.Contains(m.ProtocolMapper, "realm_role") ||
+		strings.Contains(m.ProtocolMapper, "client-role") || strings.Contains(m.ProtocolMapper, "client_role")
+}
+
+func isAttributeMapper(m *domain.ProtocolMapper) bool {
+	return strings.Contains(m.ProtocolMapper, "attribute")
+}
+
+func configString(cfg map[string]any, key string) string {
+	if cfg == nil {
+		return ""
+	}
+	if v, ok := cfg[key].(string); ok {
+		return v
+	}
+	return ""
+}
+
+func configBool(cfg map[string]any, key string) bool {
+	if cfg == nil {
+		return false
+	}
+	switch v := cfg[key].(type) {
+	case bool:
+		return v
+	case string:
+		b, err := strconv.ParseBool(strings.TrimSpace(v))
+		return err == nil && b
+	}
+	return false
+}
+
+func splitCSV(s string) []string {
+	parts := strings.Split(s, ",")
+	for i, p := range parts {
+		parts[i] = strings.TrimSpace(p)
+	}
+	return parts
 }
 
 func (s *defaultTokenService) GenerateTokenPairWithFamily(ctx context.Context, clientID, userID, scope string, tokenTTL time.Duration, family string, nonce string, authTime time.Time) (*api.TokenResponse, error) {

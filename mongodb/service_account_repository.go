@@ -19,7 +19,7 @@ type ServiceAccountRepositoryMongo struct {
 
 // NewServiceAccountRepositoryMongo creates a new ServiceAccountRepositoryMongo.
 // It also ensures that the necessary indexes are created on the collection.
-func NewServiceAccountRepositoryMongo(db *mongo.Database) (*ServiceAccountRepositoryMongo, error) {
+func NewServiceAccountRepositoryMongo(ctx context.Context, db *mongo.Database) (*ServiceAccountRepositoryMongo, error) {
 	repo := &ServiceAccountRepositoryMongo{
 		collection: db.Collection(ServiceAccountsCollection),
 	}
@@ -43,10 +43,10 @@ func NewServiceAccountRepositoryMongo(db *mongo.Database) (*ServiceAccountReposi
 		},
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	idxCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	_, err := repo.collection.Indexes().CreateMany(ctx, indexModels)
+	_, err := repo.collection.Indexes().CreateMany(idxCtx, indexModels)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to create indexes for service_accounts collection")
 		return nil, err

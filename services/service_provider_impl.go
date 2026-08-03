@@ -121,6 +121,7 @@ func (p *DefaultServiceProvider) OAuthService() OAuthService {
 			p.repoProvider.SessionRepository(initCtx),
 			p.TokenService(),
 			p.config.Issuer,
+			WithRealmSettings(p.repoProvider.RealmSettingsRepository(initCtx)),
 		)
 	}
 	return p.oauthService
@@ -128,6 +129,7 @@ func (p *DefaultServiceProvider) OAuthService() OAuthService {
 
 func (p *DefaultServiceProvider) TokenService() TokenService {
 	if p.tokenService == nil {
+		protocolMapperRepo, userAttrMapperRepo, userAttrRepo := p.keycloakMapperRepositories()
 		p.tokenService = newDefaultTokenService(
 			p.repoProvider.TokenRepository(initCtx),
 			p.tokenCache,
@@ -136,11 +138,34 @@ func (p *DefaultServiceProvider) TokenService() TokenService {
 			p.repoProvider.PublicKeyRepository(initCtx),
 			p.repoProvider.ServiceAccountRepository(initCtx),
 			p.repoProvider.UserRepository(initCtx),
+			userAttrMapperRepo,
+			userAttrRepo,
+			protocolMapperRepo,
 			p.repoProvider.GroupRepository(initCtx),
 			p.repoProvider.RoleRepository(initCtx),
 		)
 	}
 	return p.tokenService
+}
+
+// keycloakMapperProvider is implemented by RepositoryProviders that can serve
+// Keycloak-style token mappers: protocol mappers (realm/client/group/role
+// mappers) plus user attribute mappers.
+type keycloakMapperProvider interface {
+	ProtocolMapperRepository(ctx context.Context) domain.ProtocolMapperRepository
+	UserAttributeMapperRepository(ctx context.Context) domain.UserAttributeMapperRepository
+	UserAttributeRepository(ctx context.Context) domain.UserAttributeRepository
+}
+
+// keycloakMapperRepositories returns the token mapper repositories when the
+// backing RepositoryProvider is a Keycloak-parity provider, or nils otherwise.
+// The token service treats nil repositories as "no mappers configured" and
+// safely skips those categories during token mapping.
+func (p *DefaultServiceProvider) keycloakMapperRepositories() (protocolMapperRepo domain.ProtocolMapperRepository, userAttrMapperRepo domain.UserAttributeMapperRepository, userAttrRepo domain.UserAttributeRepository) {
+	if provider, ok := p.repoProvider.(keycloakMapperProvider); ok {
+		return provider.ProtocolMapperRepository(initCtx), provider.UserAttributeMapperRepository(initCtx), provider.UserAttributeRepository(initCtx)
+	}
+	return nil, nil, nil
 }
 
 func (p *DefaultServiceProvider) PKCEService() PKCEService {
@@ -152,8 +177,13 @@ func (p *DefaultServiceProvider) PKCEService() PKCEService {
 
 func (p *DefaultServiceProvider) JWKSService() JWKSService {
 	if p.jwksService == nil {
-		// Use the actual signing key so JWKS serves the matching public key.
-		if p.tokenSigner != nil && p.tokenSigner.HasRSASigner() {
+		// Registry-backed signers serve the JWKS from the key registry so the
+		// endpoint reflects the exact keys used for signing (realm-default,
+		// per-client and retiring keys during rotation).
+		if p.tokenSigner != nil && p.tokenSigner.IsRegistryBacked() {
+			p.jwksService = NewJWKSServiceFromSigner(p.tokenSigner)
+		} else if p.tokenSigner != nil && p.tokenSigner.HasRSASigner() {
+			// Use the actual signing key so JWKS serves the matching public key.
 			privKey := p.tokenSigner.GetRSAPrivateKey()
 			p.jwksService = NewJWKSServiceWithKey(privKey, "rsa-default")
 		} else {

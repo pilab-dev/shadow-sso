@@ -22,7 +22,7 @@ type DatabaseIndexer struct {
 
 // NewDatabaseIndexer initializes a new DatabaseIndexer.
 func NewDatabaseIndexer(ctx context.Context, db *mongo.Database) (*DatabaseIndexer, error) {
-	repo := &DatabaseIndexer{
+	_ = &DatabaseIndexer{
 		db:         db,
 		clients:    db.Collection(ClientsCollection),
 		tokens:     db.Collection(TokensCollection),
@@ -32,12 +32,6 @@ func NewDatabaseIndexer(ctx context.Context, db *mongo.Database) (*DatabaseIndex
 	}
 
 	return nil, nil
-
-	// if err := repo.createIndexes(ctx); err != nil {
-	// 	return nil, err
-	// }
-
-	return repo, nil
 }
 
 func (r *DatabaseIndexer) createIndexes(ctx context.Context) error {

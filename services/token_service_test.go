@@ -2,7 +2,13 @@ package services_test
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -660,6 +666,61 @@ func TestTokenService_ValidateAccessToken_NotFound(t *testing.T) {
 	assert.Error(t, errVal)
 }
 
+// TestTokenService_ValidateAccessToken_UserJWT_RealmKid reproduces Bug 3 from the F3 QA:
+// a user JWT signed with a realm RSA key (kid present but not in the SA key store) must
+// fall through to validateRS256Token, not be rejected as an SA JWT error.
+func TestTokenService_ValidateAccessToken_UserJWT_RealmKid(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	// Generate an RSA key and load it into a signer so validateRS256Token can verify.
+	privKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	tmpDir := t.TempDir()
+	keyPath := filepath.Join(tmpDir, "realm.pem")
+	pemData := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privKey)})
+	require.NoError(t, os.WriteFile(keyPath, pemData, 0600))
+
+	signer := services.NewTokenSigner()
+	require.NoError(t, signer.AddRSASigner(keyPath))
+
+	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
+	mockCache := mock_cache.NewMockTokenStore(ctrl)
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockPubKeyRepo := mock_domain.NewMockPublicKeyRepository(ctrl)
+	mockSARepo := mock_domain.NewMockServiceAccountRepository(ctrl)
+
+	tokenService := services.NewTokenService(
+		mockTokenRepo, mockCache, "test-issuer", signer,
+		mockPubKeyRepo, mockSARepo, mockUserRepo, nil, nil, nil, nil,
+	)
+
+	// Build a user JWT signed with the realm RSA key. The kid is a realm key ID
+	// that does NOT exist in the SA public key store.
+	realmKid := "realm-signing-key-001"
+	claims := jwt.MapClaims{
+		"sub": "user-123",
+		"exp": float64(time.Now().Add(time.Hour).Unix()),
+		"iat": float64(time.Now().Unix()),
+		"iss": "test-issuer",
+		"jti": "test-jti-001",
+	}
+	rawToken := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	rawToken.Header["kid"] = realmKid
+	tokenValue, err := rawToken.SignedString(privKey)
+	require.NoError(t, err)
+
+	// SA key store returns "not found" for this realm kid.
+	mockPubKeyRepo.EXPECT().
+		GetPublicKey(gomock.Any(), realmKid).
+		Return(nil, errors.New("public key not found or not active"))
+
+	token, err := tokenService.ValidateAccessToken(context.Background(), tokenValue)
+
+	require.NoError(t, err, "user JWT with realm kid must fall through to RS256 validation, not be rejected")
+	assert.Equal(t, "user-123", token.UserID)
+}
+
 func TestTokenService_GenerateIDToken(t *testing.T) {
 	t.Skip("Skipping due to JWKS complexity in test setup")
 }
@@ -830,4 +891,67 @@ func TestTokenService_CreateToken_KeycloakClaims(t *testing.T) {
 	assert.True(t, clientRoleSet["group-client-role"], "expected group-derived client role in resource_access.<client>.roles")
 
 	assert.Equal(t, "session-123", (*claims)["sid"], "expected sid claim from session")
+}
+
+func TestTokenService_CreateToken_SigningKeyResolution(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	encKey := make([]byte, 32)
+	_, err := rand.Read(encKey)
+	require.NoError(t, err)
+
+	mockKeysRepo := mock_domain.NewMockRealmKeysRepository(ctrl)
+	mockKeysRepo.EXPECT().ListAllKeys(gomock.Any()).Return([]*domain.RealmKey{
+		encryptedRealmKey(t, encKey, "realm-active", "", domain.RealmKeyStatusActive, 10),
+		encryptedRealmKey(t, encKey, "client-active", "client-1", domain.RealmKeyStatusActive, 10),
+	}, nil)
+
+	signer := services.NewTokenSigner()
+	require.NoError(t, signer.LoadFromRepository(context.Background(), mockKeysRepo, encKey))
+
+	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
+	mockCache := mock_cache.NewMockTokenStore(ctrl)
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockPubKeyRepo := mock_domain.NewMockPublicKeyRepository(ctrl)
+	mockSARepo := mock_domain.NewMockServiceAccountRepository(ctrl)
+
+	mockTokenRepo.EXPECT().StoreToken(gomock.Any(), gomock.Any()).Return(nil).Times(3)
+	mockCache.EXPECT().Set(gomock.Any(), gomock.Any()).Return(nil).Times(3)
+
+	tokenSvc := services.NewTokenService(
+		mockTokenRepo, mockCache, "test-issuer", signer,
+		mockPubKeyRepo, mockSARepo, mockUserRepo,
+		nil, nil, nil, nil,
+	)
+
+	ctx := context.Background()
+	baseOpts := domain.CreateTokenOptions{
+		TokenID:   "token-1",
+		Scope:     "openid",
+		ClientID:  "client-1",
+		ExpireIn:  time.Hour,
+		TokenType: api.TokenTypeAccessToken,
+	}
+
+	kidOf := func(opts domain.CreateTokenOptions) string {
+		t.Helper()
+		token, err := tokenSvc.CreateToken(ctx, opts, nil)
+		require.NoError(t, err)
+		require.NotNil(t, token)
+		parsed, _, err := jwt.NewParser().ParseUnverified(token.TokenValue, jwt.MapClaims{})
+		require.NoError(t, err)
+		kid, _ := parsed.Header["kid"].(string)
+		return kid
+	}
+
+	assert.Equal(t, "client-active", kidOf(baseOpts), "per-client key must be used when client has a dedicated key")
+
+	realmOpts := baseOpts
+	realmOpts.ClientID = "client-2"
+	assert.Equal(t, "realm-active", kidOf(realmOpts), "realm-default key must be used when client has no dedicated key")
+
+	overrideOpts := baseOpts
+	overrideOpts.SigningKeyID = "realm-active"
+	assert.Equal(t, "realm-active", kidOf(overrideOpts), "explicit SigningKeyID must win over per-client resolution")
 }

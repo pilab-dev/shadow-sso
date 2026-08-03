@@ -19,6 +19,7 @@ import (
 	"github.com/pilab-dev/shadow-sso/domain"
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect" // For Connect-RPC service handlers
 	"github.com/pilab-dev/shadow-sso/graphql"
+	"github.com/pilab-dev/shadow-sso/internal/audit"
 	"github.com/pilab-dev/shadow-sso/internal/notifications"
 	"github.com/pilab-dev/shadow-sso/internal/oidcflow"   // Still needed for concrete in-memory store instantiation
 	"github.com/pilab-dev/shadow-sso/internal/oidclogout" // For the OIDC back-channel logout notifier
@@ -130,12 +131,19 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 		}
 	}
 
+	// Install the async audit persistence sink so audit.Log events are also
+	// written to the repository without blocking the auth path. Fire-and-forget:
+	// a slow or unavailable MongoDB never delays or fails the caller.
+	audit.SetSink(repoProvider.AuditLogRepository(context.Background()))
+
 	// Initialize TokenSigner
 	tokenSigner := opts.TokenSigner
 	if tokenSigner == nil {
-		// Default token signer (e.g., with a generated key for HS256 for simplicity in example, or from file)
+		if opts.AppConfig == nil || !opts.AppConfig.AllowInsecureDefaults {
+			return nil, errors.New("TokenSigner is required (set SSSO_ALLOW_INSECURE_DEFAULTS=true to fall back to an insecure placeholder key for local development only)")
+		}
+		log.Warn().Msg("No TokenSigner provided. Using insecure dev placeholder key - REPLACE IN PRODUCTION.")
 		tokenSigner = services.NewTokenSigner()
-		// For a real setup, this key should be loaded securely
 		tokenSigner.AddKeySigner("super-secret-default-key-replace-me-in-production")
 	}
 
@@ -195,6 +203,13 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 	serviceProvider, err := services.NewDefaultServiceProvider(spOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize service provider: %w", err)
+	}
+
+	// Seed realm settings from config on first boot so grant paths read the
+	// persisted AccessTokenLifespan/AccessCodeLifespan instead of hardcoded
+	// values. No-op once the realm_settings collection already holds documents.
+	if err := seedRealmSettingsFromConfig(repoProvider, opts.Config); err != nil {
+		return nil, err
 	}
 
 	// Initialize password hasher (moved here as it's a service)
@@ -267,18 +282,25 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 		}
 	}
 
+	var authFlowRepo domain.AuthenticationFlowRepository
+	if mongoRp, ok := repoProvider.(*mongodb.MongoRepositoryProvider); ok {
+		authFlowRepo = mongoRp.AuthenticationFlowRepository(context.Background())
+	}
+
 	webauthAPI := webauth.New(&webauth.Options{
-		UserRepo:          repoProvider.UserRepository(context.Background()),
-		PasswordHasher:    passwordHasher,
-		FlowStore:         serviceProvider.FlowStore(),
-		UserSessionStore:  serviceProvider.UserSessionStore(),
-		IdPRepository:     repoProvider.IdPRepository(context.Background()),
-		FederationService: serviceProvider.FederationService(),
-		OAuthService:      serviceProvider.OAuthService(),
-		TokenService:      serviceProvider.TokenService(),
-		ClientService:     serviceProvider.ClientService(),
-		Config:            webauthConfig,
-		SSOCookieSecret:   opts.CookieSigningSecret,
+		UserRepo:           repoProvider.UserRepository(context.Background()),
+		PasswordHasher:     passwordHasher,
+		FlowStore:          serviceProvider.FlowStore(),
+		UserSessionStore:   serviceProvider.UserSessionStore(),
+		IdPRepository:      repoProvider.IdPRepository(context.Background()),
+		FederationService:  serviceProvider.FederationService(),
+		OAuthService:       serviceProvider.OAuthService(),
+		TokenService:       serviceProvider.TokenService(),
+		ClientService:      serviceProvider.ClientService(),
+		Config:             webauthConfig,
+		SSOCookieSecret:    opts.CookieSigningSecret,
+		AuthFlowRepo:       authFlowRepo,
+		RealmSettingsRepo:  repoProvider.RealmSettingsRepository(context.Background()),
 	})
 
 	router.GET("/", webauthAPI.LandingPageHandler)
@@ -321,6 +343,7 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 		opts.RepositoryProvider.UserRepository(ctx),
 		connectPasswordHasher,
 		nil,
+		services.WithUserRealmSettings(opts.RepositoryProvider.RealmSettingsRepository(ctx)),
 	)
 	userPath, userHandler := ssov1connect.NewUserServiceHandler(userServer, interceptors)
 	router.Any(userPath+"*action", gin.WrapH(userHandler))
@@ -384,6 +407,11 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 	attrMapperPath, attrMapperHandler := ssov1connect.NewUserAttributeMapperServiceHandler(attrServer, interceptors)
 	router.Any(attrMapperPath+"*action", gin.WrapH(attrMapperHandler))
 
+	// Audit Service — read-only admin access to persisted audit events
+	auditServer := services.NewAuditServer(repoProvider.AuditLogRepository(ctx))
+	auditPath, auditHandler := ssov1connect.NewAuditServiceHandler(auditServer, interceptors)
+	router.Any(auditPath+"*action", gin.WrapH(auditHandler))
+
 	log.Info().Msg("Connect-RPC handlers registered successfully")
 	// ---------- End Connect-RPC handlers ----------
 
@@ -409,23 +437,28 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 	})
 
 	// --- GraphQL API wiring ---
+	// Reuses the same cached repository instances as the REST/Connect-RPC APIs
+	// above (via repoProvider) instead of constructing a second, independent
+	// set — avoids duplicate index-creation calls and swallowed constructor
+	// errors on every boot.
 	if mongoRp, ok := repoProvider.(*mongodb.MongoRepositoryProvider); ok {
-		db := mongoRp.Database()
 		gqlCtx := context.Background()
 
-		userRepo, _ := mongodb.NewUserRepository(gqlCtx, db)
-		clientRepo := mongodb.NewClientRepository(db)
-		sessionRepo, _ := mongodb.NewSessionRepositoryMongo(gqlCtx, db)
-		idpRepo, _ := mongodb.NewIdPRepositoryMongo(gqlCtx, db)
-		groupRepo, _ := mongodb.NewGroupRepository(gqlCtx, db)
-		roleRepo, _ := mongodb.NewRoleRepository(gqlCtx, db)
-		protocolMapperRepo, _ := mongodb.NewProtocolMapperRepository(gqlCtx, db)
-		authFlowRepo, _ := mongodb.NewAuthenticationFlowRepository(gqlCtx, db)
-		clientScopeRepo, _ := mongodb.NewClientScopeRepository(gqlCtx, db)
-		realmSettingsRepo, _ := mongodb.NewRealmSettingsRepository(gqlCtx, db)
-		realmKeysRepo, _ := mongodb.NewRealmKeysRepository(gqlCtx, db)
-		userAttrRepo, _ := mongodb.NewUserAttributeRepository(gqlCtx, db)
-		userAttrMapperRepo, _ := mongodb.NewUserAttributeMapperRepository(gqlCtx, db)
+		userRepo := mongoRp.UserRepository(gqlCtx)
+		clientRepo := mongoRp.ClientRepository(gqlCtx)
+		sessionRepo := mongoRp.SessionRepository(gqlCtx)
+		idpRepo := mongoRp.IdPRepository(gqlCtx)
+		groupRepo := mongoRp.GroupRepository(gqlCtx)
+		roleRepo := mongoRp.RoleRepository(gqlCtx)
+		protocolMapperRepo := mongoRp.ProtocolMapperRepository(gqlCtx)
+		authFlowRepo := mongoRp.AuthenticationFlowRepository(gqlCtx)
+		clientScopeRepo := mongoRp.ClientScopeRepository(gqlCtx)
+		realmSettingsRepo := mongoRp.RealmSettingsRepository(gqlCtx)
+		realmKeysRepo := mongoRp.RealmKeysRepository(gqlCtx)
+		userAttrRepo := mongoRp.UserAttributeRepository(gqlCtx)
+		userAttrMapperRepo := mongoRp.UserAttributeMapperRepository(gqlCtx)
+		auditRepo := mongoRp.AuditLogRepository(gqlCtx)
+		fedIDRepo := mongoRp.UserFederatedIdentityRepository(gqlCtx)
 
 		var emailService domain.EmailService
 		if opts.AppConfig != nil {
@@ -454,6 +487,8 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 			RealmKeysRepo:           realmKeysRepo,
 			EmailService:            emailService,
 			PasswordHasher:          passwordHasher,
+			AuditLogRepo:            auditRepo,
+			FederatedIdentityRepo:   fedIDRepo,
 		}
 
 		var bootstrapToken string
@@ -472,6 +507,47 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 	}
 
 	return router, nil
+}
+
+// seedRealmSettingsFromConfig persists realm settings derived from config on
+// the first boot of a fresh MongoDB database. It is a no-op when a non-MongoDB
+// repository provider is in use or when realm settings already exist, so
+// admin-applied settings are never clobbered.
+func seedRealmSettingsFromConfig(repoProvider services.RepositoryProvider, cfg *api.OpenIDProviderConfig) error {
+	mongoRp, ok := repoProvider.(*mongodb.MongoRepositoryProvider)
+	if !ok {
+		return nil
+	}
+
+	ctx := context.Background()
+	repo, ok := mongoRp.RealmSettingsRepository(ctx).(*mongodb.RealmSettingsRepository)
+	if !ok {
+		return nil
+	}
+
+	accessTokenLifespan := int(cfg.AccessTokenTTL.Seconds())
+	if accessTokenLifespan <= 0 {
+		accessTokenLifespan = 300
+	}
+	accessCodeLifespan := int(cfg.AuthCodeTTL.Seconds())
+	if accessCodeLifespan <= 0 {
+		accessCodeLifespan = 60
+	}
+
+	settings := &domain.RealmSettings{
+		Realm:               "master",
+		DisplayName:         "Shadow SSO",
+		Enabled:             true,
+		BruteForceProtected: true,
+		SSLRequired:         "external",
+		AccessTokenLifespan: accessTokenLifespan,
+		AccessCodeLifespan:  accessCodeLifespan,
+	}
+
+	if _, err := repo.SeedRealmSettingsIfEmpty(ctx, settings); err != nil {
+		return fmt.Errorf("failed to seed realm settings: %w", err)
+	}
+	return nil
 }
 
 var (

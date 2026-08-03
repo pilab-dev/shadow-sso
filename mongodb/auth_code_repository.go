@@ -17,7 +17,7 @@ type AuthCodeRepository struct {
 	challenges *mongo.Collection
 }
 
-func NewAuthCodeRepository(db *mongo.Database) *AuthCodeRepository {
+func NewAuthCodeRepository(_ context.Context, db *mongo.Database) *AuthCodeRepository {
 	return &AuthCodeRepository{
 		authCodes:  db.Collection(CodesCollection),
 		challenges: db.Collection(ChallengesCollection),

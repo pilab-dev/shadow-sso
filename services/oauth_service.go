@@ -61,14 +61,27 @@ func generateUserCode(length int, charset string, chunkSize int) string {
 }
 
 type defaultOAuthService struct {
-	tokenRepo      domain.TokenRepository
-	authCodeRepo   domain.AuthorizationCodeRepository
-	deviceAuthRepo domain.DeviceAuthorizationRepository
-	clientRepo     domain.ClientRepository // Changed from client.ClientStore for consistency
-	userRepo       domain.UserRepository
-	sessionRepo    domain.SessionRepository
-	tokenService   domain.TokenServiceInterface
-	issuer         string
+	tokenRepo        domain.TokenRepository
+	authCodeRepo     domain.AuthorizationCodeRepository
+	deviceAuthRepo   domain.DeviceAuthorizationRepository
+	clientRepo       domain.ClientRepository // Changed from client.ClientStore for consistency
+	userRepo         domain.UserRepository
+	sessionRepo      domain.SessionRepository
+	tokenService     domain.TokenServiceInterface
+	issuer           string
+	realmSettingsRepo domain.RealmSettingsRepository
+}
+
+// oauthServiceOption configures a defaultOAuthService at construction time.
+type oauthServiceOption func(*defaultOAuthService)
+
+// WithRealmSettings injects the realm settings repository so grant paths use
+// the persisted AccessTokenLifespan/AccessCodeLifespan instead of hardcoded
+// values. When absent, legacy hardcoded TTLs are used.
+func WithRealmSettings(repo domain.RealmSettingsRepository) oauthServiceOption {
+	return func(s *defaultOAuthService) {
+		s.realmSettingsRepo = repo
+	}
 }
 
 // tokenServiceAdapter wraps the services.TokenService interface to satisfy domain.TokenServiceInterface
@@ -90,8 +103,9 @@ func newDefaultOAuthService(
 	sessionRepo domain.SessionRepository,
 	tokenService TokenService,
 	issuer string,
+	opts ...oauthServiceOption,
 ) OAuthService {
-	return &defaultOAuthService{
+	svc := &defaultOAuthService{
 		tokenRepo:      tokenRepo,
 		authCodeRepo:   authCodeRepo,
 		deviceAuthRepo: deviceAuthRepo,
@@ -101,6 +115,10 @@ func newDefaultOAuthService(
 		tokenService:   &tokenServiceAdapter{tokenService},
 		issuer:         issuer,
 	}
+	for _, opt := range opts {
+		opt(svc)
+	}
+	return svc
 }
 
 // NewOAuthService creates a new OAuth service (public constructor returning concrete type for backward compatibility).
@@ -113,8 +131,9 @@ func NewOAuthService(
 	sessionRepo domain.SessionRepository,
 	tokenService domain.TokenServiceInterface,
 	issuer string,
+	opts ...oauthServiceOption,
 ) *defaultOAuthService {
-	return &defaultOAuthService{
+	svc := &defaultOAuthService{
 		tokenRepo:      tokenRepo,
 		authCodeRepo:   authCodeRepo,
 		deviceAuthRepo: deviceAuthRepo,
@@ -124,6 +143,50 @@ func NewOAuthService(
 		tokenService:   tokenService,
 		issuer:         issuer,
 	}
+	for _, opt := range opts {
+		opt(svc)
+	}
+	return svc
+}
+
+// legacyAccessTokenTTL is the hardcoded lifetime used when no realm settings
+// repository is wired (pre-realm-settings behavior).
+const legacyAccessTokenTTL = time.Hour
+
+// legacyAccessCodeTTL mirrors the hardcoded authorization-code lifetime.
+const legacyAccessCodeTTL = 10 * time.Minute
+
+// realmAccessTokenLifespan returns the access-token TTL persisted in realm
+// settings. It errors when the configured lifespan is non-positive so callers
+// fail with a clear error instead of issuing degenerate tokens.
+func (s *defaultOAuthService) realmAccessTokenLifespan(ctx context.Context) (time.Duration, error) {
+	if s.realmSettingsRepo == nil {
+		return legacyAccessTokenTTL, nil
+	}
+	settings, err := s.realmSettingsRepo.GetRealmSettings(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if settings.AccessTokenLifespan <= 0 {
+		return 0, fmt.Errorf("invalid realm settings: access token lifespan must be positive, got %d", settings.AccessTokenLifespan)
+	}
+	return time.Duration(settings.AccessTokenLifespan) * time.Second, nil
+}
+
+// realmAccessCodeLifespan returns the authorization-code TTL persisted in
+// realm settings. It errors when the configured lifespan is non-positive.
+func (s *defaultOAuthService) realmAccessCodeLifespan(ctx context.Context) (time.Duration, error) {
+	if s.realmSettingsRepo == nil {
+		return legacyAccessCodeTTL, nil
+	}
+	settings, err := s.realmSettingsRepo.GetRealmSettings(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if settings.AccessCodeLifespan <= 0 {
+		return 0, fmt.Errorf("invalid realm settings: access code lifespan must be positive, got %d", settings.AccessCodeLifespan)
+	}
+	return time.Duration(settings.AccessCodeLifespan) * time.Second, nil
 }
 
 func (s *defaultOAuthService) RegisterUser(ctx context.Context, username, password string) (*domain.User, error) {
@@ -203,7 +266,14 @@ func (s *defaultOAuthService) Login(ctx context.Context, username, password, dev
 	// Generate tokens for the client
 	clientIdentifier := "oauth-service-login-client"
 	loginScope := "openid profile email"
-	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientIdentifier, user.ID, loginScope, time.Hour, session.ID)
+	tokenTTL, err := s.realmAccessTokenLifespan(ctx)
+	if err != nil {
+		telemetry.RecordSpanError(span, err, "invalid realm settings access token lifespan")
+		span.SetStatus(codes.Error, err.Error())
+		log.Ctx(ctx).Error().Err(err).Str("user_id", user.ID).Msg("Failed to resolve access token lifespan in Login")
+		return nil, err
+	}
+	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientIdentifier, user.ID, loginScope, tokenTTL, session.ID)
 	if err != nil {
 		telemetry.RecordSpanError(span, err, "failed to generate token pair")
 		span.SetStatus(codes.Error, err.Error())
@@ -273,7 +343,14 @@ func (s *defaultOAuthService) RefreshToken(ctx context.Context, refreshTokenValu
 		return nil, fmt.Errorf("failed to revoke refresh token: %w", err)
 	}
 
-	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, tokenInfo.UserID, tokenInfo.Scope, time.Hour, "")
+	tokenTTL, err := s.realmAccessTokenLifespan(ctx)
+	if err != nil {
+		telemetry.RecordSpanError(span, err, "invalid realm settings access token lifespan")
+		span.SetStatus(codes.Error, err.Error())
+		log.Ctx(ctx).Error().Err(err).Str("client_id", clientID).Str("user_id", tokenInfo.UserID).Msg("Failed to resolve access token lifespan in RefreshToken")
+		return nil, err
+	}
+	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, tokenInfo.UserID, tokenInfo.Scope, tokenTTL, "")
 	if err != nil {
 		telemetry.RecordSpanError(span, err, "failed to generate token pair")
 		span.SetStatus(codes.Error, err.Error())
@@ -378,7 +455,13 @@ func (s *defaultOAuthService) DirectGrant(ctx context.Context,
 		log.Ctx(ctx).Warn().Err(err).Str("session_id", session.ID).Str("user_id", user.ID).Msg("Failed to store session in OAuthService.DirectGrant")
 	}
 
-	tokenTTL := 1 * time.Hour
+	tokenTTL, err := s.realmAccessTokenLifespan(ctx)
+	if err != nil {
+		telemetry.RecordSpanError(span, err, "invalid realm settings access token lifespan")
+		span.SetStatus(codes.Error, err.Error())
+		log.Ctx(ctx).Error().Err(err).Str("client_id", clientID).Str("user_id", user.ID).Msg("Failed to resolve access token lifespan in DirectGrant")
+		return nil, err
+	}
 	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, user.ID, scope, tokenTTL, session.ID)
 	if err != nil {
 		telemetry.RecordSpanError(span, err, "token pair generation failed")
@@ -424,13 +507,21 @@ func (s *defaultOAuthService) ClientCredentials(ctx context.Context,
 		return nil, errScope
 	}
 
+	tokenTTL, err := s.realmAccessTokenLifespan(ctx)
+	if err != nil {
+		telemetry.RecordSpanError(span, err, "invalid realm settings access token lifespan")
+		span.SetStatus(codes.Error, err.Error())
+		log.Ctx(ctx).Error().Err(err).Str("client_id", clientID).Msg("Failed to resolve access token lifespan in ClientCredentials")
+		return nil, err
+	}
+
 	token, err := s.tokenService.CreateToken(ctx, domain.CreateTokenOptions{
 		TokenID:      uuid.NewString(),
 		Scope:        scope,
 		ClientID:     clientID,
 		UserID:       "", // No user for client_credentials
 		TokenType:    "access_token",
-		ExpireIn:     time.Hour,
+		ExpireIn:     tokenTTL,
 		SigningKeyID: "",
 		Roles:        cli.ServiceAccountRoles,
 	}, nil)
@@ -445,7 +536,7 @@ func (s *defaultOAuthService) ClientCredentials(ctx context.Context,
 	return &api.TokenResponse{
 		AccessToken: token.TokenValue,
 		TokenType:   "Bearer",
-		ExpiresIn:   int(time.Hour.Seconds()),
+		ExpiresIn:   int(tokenTTL.Seconds()),
 	}, nil
 }
 
@@ -507,7 +598,15 @@ func (s *defaultOAuthService) PasswordGrant(ctx context.Context,
 		return nil, domain.ErrInvalidCredentials
 	}
 
-	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, cli.ID, user.ID, scope, time.Hour, "")
+	tokenTTL, err := s.realmAccessTokenLifespan(ctx)
+	if err != nil {
+		telemetry.RecordSpanError(span, err, "invalid realm settings access token lifespan")
+		span.SetStatus(codes.Error, err.Error())
+		log.Ctx(ctx).Error().Err(err).Str("client_id", cli.ID).Str("user_id", user.ID).Msg("Failed to resolve access token lifespan in PasswordGrant")
+		return nil, err
+	}
+
+	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, cli.ID, user.ID, scope, tokenTTL, "")
 	if err != nil {
 		telemetry.RecordSpanError(span, err, "token pair generation failed")
 		span.SetStatus(codes.Error, err.Error())
@@ -581,7 +680,14 @@ func (s *defaultOAuthService) ExchangeAuthorizationCode(ctx context.Context,
 		return nil, fmt.Errorf("failed to mark auth code as used: %w", err)
 	}
 
-	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, authCodeDomain.UserID, authCodeDomain.Scope, time.Hour, "")
+	tokenTTL, err := s.realmAccessTokenLifespan(ctx)
+	if err != nil {
+		telemetry.RecordSpanError(span, err, "invalid realm settings access token lifespan")
+		span.SetStatus(codes.Error, err.Error())
+		log.Ctx(ctx).Error().Err(err).Str("client_id", clientID).Str("user_id", authCodeDomain.UserID).Msg("Failed to resolve access token lifespan in auth code exchange")
+		return nil, err
+	}
+	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, authCodeDomain.UserID, authCodeDomain.Scope, tokenTTL, "")
 	if err != nil {
 		telemetry.RecordSpanError(span, err, "failed to generate token pair")
 		span.SetStatus(codes.Error, err.Error())
@@ -754,6 +860,13 @@ func (s *defaultOAuthService) GenerateAuthCode(
 		log.Ctx(ctx).Error().Err(err).Msg("Failed to generate random bytes for auth code")
 		return "", fmt.Errorf("failed to generate random bytes for auth code: %w", err)
 	}
+	codeTTL, err := s.realmAccessCodeLifespan(ctx)
+	if err != nil {
+		telemetry.RecordSpanError(span, err, "invalid realm settings access code lifespan")
+		span.SetStatus(codes.Error, err.Error())
+		log.Ctx(ctx).Error().Err(err).Str("clientID", clientID).Str("userID", userID).Msg("Failed to resolve access code lifespan in GenerateAuthCode")
+		return "", err
+	}
 	code := base64.RawURLEncoding.EncodeToString(b)
 	authCode := &domain.AuthCode{
 		Code:                code,
@@ -761,7 +874,7 @@ func (s *defaultOAuthService) GenerateAuthCode(
 		UserID:              userID,
 		RedirectURI:         redirectURI,
 		Scope:               scope,
-		ExpiresAt:           time.Now().Add(10 * time.Minute),
+		ExpiresAt:           time.Now().Add(codeTTL),
 		CreatedAt:           time.Now(),
 		Used:                false,
 		CodeChallenge:       codeChallenge,
@@ -947,7 +1060,14 @@ func (s *defaultOAuthService) IssueTokenForDeviceFlow(ctx context.Context, devic
 		return nil, domain.ErrAuthorizationPending
 
 	case domain.DeviceCodeStatusAuthorized:
-		tokenResponse, tokenErr := s.tokenService.GenerateTokenPair(ctx, deviceAuth.ClientID, deviceAuth.UserID, deviceAuth.Scope, time.Hour, "")
+		tokenTTL, ttlErr := s.realmAccessTokenLifespan(ctx)
+		if ttlErr != nil {
+			telemetry.RecordSpanError(span, ttlErr, "invalid realm settings access token lifespan")
+			span.SetStatus(codes.Error, ttlErr.Error())
+			log.Ctx(ctx).Error().Err(ttlErr).Str("client_id", clientID).Str("user_id", deviceAuth.UserID).Msg("Failed to resolve access token lifespan in device flow")
+			return nil, ttlErr
+		}
+		tokenResponse, tokenErr := s.tokenService.GenerateTokenPair(ctx, deviceAuth.ClientID, deviceAuth.UserID, deviceAuth.Scope, tokenTTL, "")
 		if tokenErr != nil {
 			telemetry.RecordSpanError(span, tokenErr, "token generation failed for device flow")
 			span.SetStatus(codes.Error, tokenErr.Error())
@@ -1075,7 +1195,14 @@ func (s *defaultOAuthService) TokenExchange(ctx context.Context, subjectToken, s
 		return nil, err
 	}
 
-	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, tokenInfo.UserID, effectiveScope, time.Hour, "")
+	tokenTTL, err := s.realmAccessTokenLifespan(ctx)
+	if err != nil {
+		telemetry.RecordSpanError(span, err, "invalid realm settings access token lifespan")
+		span.SetStatus(codes.Error, err.Error())
+		log.Ctx(ctx).Error().Err(err).Str("client_id", clientID).Str("user_id", tokenInfo.UserID).Msg("Failed to resolve access token lifespan in token exchange")
+		return nil, err
+	}
+	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, tokenInfo.UserID, effectiveScope, tokenTTL, "")
 	if err != nil {
 		telemetry.RecordSpanError(span, err, "failed to generate token pair")
 		span.SetStatus(codes.Error, err.Error())

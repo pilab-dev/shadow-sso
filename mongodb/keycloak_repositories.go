@@ -717,6 +717,33 @@ func (r *RealmSettingsRepository) UpdateRealmSettings(ctx context.Context, s *do
 	return err
 }
 
+// SeedRealmSettingsIfEmpty persists the given settings only when the realm
+// settings collection is empty (first boot). It returns true when a seed was
+// written and false when settings already exist, leaving any admin-applied
+// configuration untouched. This intentionally never calls UpdateRealmSettings
+// so the delete-all + re-insert semantics stay reserved for explicit updates.
+func (r *RealmSettingsRepository) SeedRealmSettingsIfEmpty(ctx context.Context, s *domain.RealmSettings) (bool, error) {
+	count, err := r.settings.CountDocuments(ctx, bson.M{})
+	if err != nil {
+		return false, err
+	}
+	if count > 0 {
+		return false, nil
+	}
+
+	if s.ID == "" {
+		s.ID = "master"
+	}
+	s.CreatedAt = time.Now().UTC()
+	s.UpdatedAt = time.Now().UTC()
+
+	_, err = r.settings.InsertOne(ctx, s)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 const RealmKeysCollection = "realm_keys"
 
 // RealmKeysRepository implements domain.RealmKeysRepository
@@ -735,7 +762,19 @@ func NewRealmKeysRepository(ctx context.Context, db *mongo.Database) (domain.Rea
 }
 
 func (r *RealmKeysRepository) ListRealmKeys(ctx context.Context) ([]*domain.RealmKey, error) {
-	cursor, err := r.keys.Find(ctx, bson.M{})
+	return r.find(ctx, bson.M{"client_id": ""})
+}
+
+func (r *RealmKeysRepository) ListClientKeys(ctx context.Context, clientID string) ([]*domain.RealmKey, error) {
+	return r.find(ctx, bson.M{"client_id": clientID})
+}
+
+func (r *RealmKeysRepository) ListAllKeys(ctx context.Context) ([]*domain.RealmKey, error) {
+	return r.find(ctx, bson.M{})
+}
+
+func (r *RealmKeysRepository) find(ctx context.Context, filter bson.M) ([]*domain.RealmKey, error) {
+	cursor, err := r.keys.Find(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
@@ -748,9 +787,32 @@ func (r *RealmKeysRepository) ListRealmKeys(ctx context.Context) ([]*domain.Real
 	return keys, nil
 }
 
+// SaveRealmKey creates or updates a single key without touching others.
+func (r *RealmKeysRepository) SaveRealmKey(ctx context.Context, key *domain.RealmKey) error {
+	if key.ID == "" {
+		key.ID = NewID()
+	}
+	if key.CreatedAt.IsZero() {
+		key.CreatedAt = time.Now().UTC()
+	}
+	_, err := r.keys.ReplaceOne(ctx, bson.M{"_id": key.ID}, key, options.Replace().SetUpsert(true))
+	return err
+}
+
+// UpdateRealmKeyStatus transitions a single key to a new lifecycle status,
+// keeping the legacy Active bool in sync for GraphQL schema compatibility.
+func (r *RealmKeysRepository) UpdateRealmKeyStatus(ctx context.Context, keyID string, status domain.RealmKeyStatus) error {
+	_, err := r.keys.UpdateOne(ctx,
+		bson.M{"_id": keyID},
+		bson.M{"$set": bson.M{"status": status, "active": status == domain.RealmKeyStatusActive}},
+	)
+	return err
+}
+
+// UpdateRealmKeys bulk-replaces the realm-default key set (ClientID == "")
+// only — client-specific keys are left untouched.
 func (r *RealmKeysRepository) UpdateRealmKeys(ctx context.Context, keys []*domain.RealmKey) error {
-	// Delete existing and insert new
-	_, err := r.keys.DeleteMany(ctx, bson.M{})
+	_, err := r.keys.DeleteMany(ctx, bson.M{"client_id": ""})
 	if err != nil {
 		return err
 	}
@@ -762,6 +824,7 @@ func (r *RealmKeysRepository) UpdateRealmKeys(ctx context.Context, keys []*domai
 		if k.ID == "" {
 			k.ID = NewID()
 		}
+		k.ClientID = ""
 		docs[i] = k
 	}
 	_, err = r.keys.InsertMany(ctx, docs)

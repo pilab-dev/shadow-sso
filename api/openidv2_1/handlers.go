@@ -651,8 +651,24 @@ func (oa *OAuth2API) completeAuthorizeAfterAuth(c *gin.Context, authReqData *aut
 		return
 	}
 
+	oa.persistCodeChallenge(ctx, authCode, authReqData.codeChallenge)
+
 	_ = oa.flowStore.DeleteFlow(ctx, flowState.FlowID)
 	oa.redirectToClient(c, authReqData.redirectURI, authCode, authReqData.state)
+}
+
+// persistCodeChallenge stores the PKCE code challenge for a freshly generated
+// authorization code so that token exchange can later validate the code_verifier
+// against it. The save must go through the PKCE service (wired to the
+// pkce_challenges repository) because ValidateCodeVerifier reads from the same
+// storage. It is a no-op when the client did not send a code_challenge.
+func (oa *OAuth2API) persistCodeChallenge(ctx context.Context, code, codeChallenge string) {
+	if codeChallenge == "" || oa.pkceService == nil {
+		return
+	}
+	if err := oa.pkceService.SavePKCEChallenge(ctx, code, codeChallenge); err != nil {
+		log.Error().Err(err).Str("code", code).Msg("failed to persist PKCE code challenge for authorization code")
+	}
 }
 
 // authorizeRequestData holds extracted and initially validated parameters from an authorization request.
@@ -822,6 +838,7 @@ func (oa *OAuth2API) tryHandleWithExistingSession(c *gin.Context, data *authoriz
 			oa.sendHTMLError(c, http.StatusInternalServerError, domain.NewServerError("failed to generate authorization code"))
 			return true, errGen // Error occurred, but considered "handled" in terms of flow decision
 		}
+		oa.persistCodeChallenge(ctx, authCode, data.codeChallenge)
 		oa.redirectToClient(c, data.redirectURI, authCode, data.state)
 		return true, nil // Handled successfully
 	}
@@ -1127,6 +1144,7 @@ func (oa *OAuth2API) FederatedCallbackHandler(c *gin.Context) {
 					time.Now(),
 				)
 				if errGen == nil {
+					oa.persistCodeChallenge(c.Request.Context(), authCode, flowState.CodeChallenge)
 					oa.redirectToClient(c, flowState.RedirectURI, authCode, flowState.State)
 					return
 				}
@@ -2169,6 +2187,8 @@ func (oa *OAuth2API) AuthenticateUserHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error", "error_description": "Could not complete authorization."})
 		return
 	}
+
+	oa.persistCodeChallenge(ctx, authCode, flowState.CodeChallenge)
 
 	// Delete the flow state as it's now been used
 	_ = oa.flowStore.DeleteFlow(ctx, req.FlowID)

@@ -41,7 +41,7 @@ func setupPublicKeyRepoTest(t *testing.T) (domain.PublicKeyRepository, func(), e
 	}
 	db := client.Database(dbName)
 
-	pubKeyRepo, err := mongodb.NewPublicKeyRepositoryMongo(db) // Creates collection and indexes
+	pubKeyRepo, err := mongodb.NewPublicKeyRepositoryMongo(ctx, db) // Creates collection and indexes
 	if err != nil {
 		client.Disconnect(ctx)
 		return nil, func() {}, fmt.Errorf("NewPublicKeyRepositoryMongo failed: %w", err)

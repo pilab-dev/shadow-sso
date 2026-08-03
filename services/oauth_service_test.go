@@ -802,6 +802,122 @@ func TestOAuthService_PasswordGrant_Success(t *testing.T) {
 	assert.NotEmpty(t, resp.AccessToken)
 }
 
+func TestOAuthService_PasswordGrant_UsesRealmAccessTokenLifespan(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
+	mockAuthCodeRepo := mock_domain.NewMockAuthorizationCodeRepository(ctrl)
+	mockDeviceAuthRepo := mock_domain.NewMockDeviceAuthorizationRepository(ctrl)
+	mockClientRepo := mock_domain.NewMockClientRepository(ctrl)
+	mockSessionRepo := mock_domain.NewMockSessionRepository(ctrl)
+	mockTokenServiceInterface := mock_domain.NewMockTokenServiceInterface(ctrl)
+	mockRealmSettingsRepo := mock_domain.NewMockRealmSettingsRepository(ctrl)
+
+	oauthService := services.NewOAuthService(
+		mockTokenRepo,
+		mockAuthCodeRepo,
+		mockDeviceAuthRepo,
+		mockClientRepo,
+		mockUserRepo,
+		mockSessionRepo,
+		mockTokenServiceInterface,
+		"test-issuer",
+		services.WithRealmSettings(mockRealmSettingsRepo),
+	)
+
+	ctx := context.Background()
+	username := "user@example.com"
+	password := "password"
+	scope := "openid"
+
+	client := &domain.Client{
+		ID:            "client-id",
+		AllowedScopes: []string{"openid", "profile"},
+	}
+
+	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+
+	user := &domain.User{
+		ID:           "user-id",
+		Email:        username,
+		PasswordHash: string(hashedPassword),
+	}
+
+	mockUserRepo.EXPECT().GetUserByEmail(ctx, username).Return(user, nil)
+	mockRealmSettingsRepo.EXPECT().GetRealmSettings(ctx).Return(&domain.RealmSettings{
+		Realm:               "master",
+		AccessTokenLifespan: 1500,
+	}, nil)
+	mockTokenServiceInterface.EXPECT().GenerateTokenPair(ctx, client.ID, user.ID, scope, 1500*time.Second, "").Return(&api.TokenResponse{
+		AccessToken:  "access-token",
+		RefreshToken: "refresh-token",
+		TokenType:    "Bearer",
+		ExpiresIn:    1500,
+	}, nil)
+
+	resp, err := oauthService.PasswordGrant(ctx, username, password, scope, client)
+
+	require.NoError(t, err)
+	assert.NotEmpty(t, resp.AccessToken)
+}
+
+func TestOAuthService_PasswordGrant_RealmTTLZero_ReturnsError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
+	mockAuthCodeRepo := mock_domain.NewMockAuthorizationCodeRepository(ctrl)
+	mockDeviceAuthRepo := mock_domain.NewMockDeviceAuthorizationRepository(ctrl)
+	mockClientRepo := mock_domain.NewMockClientRepository(ctrl)
+	mockSessionRepo := mock_domain.NewMockSessionRepository(ctrl)
+	mockTokenServiceInterface := mock_domain.NewMockTokenServiceInterface(ctrl)
+	mockRealmSettingsRepo := mock_domain.NewMockRealmSettingsRepository(ctrl)
+
+	oauthService := services.NewOAuthService(
+		mockTokenRepo,
+		mockAuthCodeRepo,
+		mockDeviceAuthRepo,
+		mockClientRepo,
+		mockUserRepo,
+		mockSessionRepo,
+		mockTokenServiceInterface,
+		"test-issuer",
+		services.WithRealmSettings(mockRealmSettingsRepo),
+	)
+
+	ctx := context.Background()
+	username := "user@example.com"
+	password := "password"
+	scope := "openid"
+
+	client := &domain.Client{
+		ID:            "client-id",
+		AllowedScopes: []string{"openid", "profile"},
+	}
+
+	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+
+	user := &domain.User{
+		ID:           "user-id",
+		Email:        username,
+		PasswordHash: string(hashedPassword),
+	}
+
+	mockUserRepo.EXPECT().GetUserByEmail(ctx, username).Return(user, nil)
+	mockRealmSettingsRepo.EXPECT().GetRealmSettings(ctx).Return(&domain.RealmSettings{
+		Realm:               "master",
+		AccessTokenLifespan: 0,
+	}, nil)
+
+	_, err := oauthService.PasswordGrant(ctx, username, password, scope, client)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "access token lifespan")
+}
+
 func TestOAuthService_ExchangeAuthorizationCode_Success(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()

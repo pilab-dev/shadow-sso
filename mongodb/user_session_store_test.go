@@ -38,7 +38,7 @@ func setupUserSessionStoreTest(t *testing.T) (domain.UserSessionStore, func(), e
 	}
 	db := client.Database(dbName)
 
-	store := mongodb.NewUserSessionStore(db) // Creates collection and TTL index
+	store := mongodb.NewUserSessionStore(ctx, db) // Creates collection and TTL index
 
 	cleanupFunc := func() {
 		mainCtx := context.Background()

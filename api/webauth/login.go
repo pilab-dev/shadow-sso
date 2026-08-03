@@ -1,6 +1,7 @@
 package webauth
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -11,18 +12,6 @@ import (
 	"github.com/pilab-dev/shadow-sso/internal/ssosession"
 	"github.com/rs/zerolog/log"
 )
-
-func hasMFAEnabled(user *domain.User) bool {
-	if user.IsTwoFactorEnabled || user.EmailMFAEnabled || user.PushMFAEnabled {
-		return true
-	}
-	for _, m := range user.MfaMethods {
-		if m.Verified {
-			return true
-		}
-	}
-	return false
-}
 
 func (wa *WebAuth) renderLoginPage(c *gin.Context, flowID string, providers []*domain.IdentityProvider, errMsg string) {
 	csrfToken, err := generateCSRFToken()
@@ -95,6 +84,59 @@ func (wa *WebAuth) LoginPageHandler(c *gin.Context) {
 	wa.renderLoginPage(c, flowID, providers, errorMsg)
 }
 
+// accountLockedOut reports whether a user's account is currently locked due to
+// repeated failed login attempts. Persistent lockout is only applied when the
+// realm has brute-force protection enabled; the in-memory RateLimiter remains
+// a secondary, per-IP defense layer.
+func (wa *WebAuth) accountLockedOut(ctx context.Context, user *domain.User) bool {
+	if wa.realmSettingsRepo == nil {
+		return false
+	}
+	settings, err := wa.realmSettingsRepo.GetRealmSettings(ctx)
+	if err != nil || settings == nil || !settings.BruteForceProtected {
+		return false
+	}
+	if user.FailedLoginAttempts < wa.config.RateLimitMaxAttempts {
+		return false
+	}
+	if user.LastFailedLoginTime == nil {
+		return false
+	}
+	return time.Since(*user.LastFailedLoginTime) < wa.config.RateLimitLockoutDuration
+}
+
+// recordLoginFailure increments the persistent failed-attempt counter when the
+// realm has brute-force protection enabled. It is best-effort: repository
+// errors are logged and swallowed so the login flow's own error path is not
+// masked by bookkeeping failures.
+func (wa *WebAuth) recordLoginFailure(ctx context.Context, userID string) {
+	if wa.realmSettingsRepo == nil {
+		return
+	}
+	settings, err := wa.realmSettingsRepo.GetRealmSettings(ctx)
+	if err != nil || settings == nil || !settings.BruteForceProtected {
+		return
+	}
+	if _, err := wa.userRepo.IncrementFailedLoginAttempts(ctx, userID); err != nil {
+		log.Warn().Err(err).Str("user_id", userID).Msg("login: failed to increment failed login attempts")
+	}
+}
+
+// resetLoginFailures clears the persistent failed-attempt counter on a
+// successful login when brute-force protection is enabled.
+func (wa *WebAuth) resetLoginFailures(ctx context.Context, userID string) {
+	if wa.realmSettingsRepo == nil {
+		return
+	}
+	settings, err := wa.realmSettingsRepo.GetRealmSettings(ctx)
+	if err != nil || settings == nil || !settings.BruteForceProtected {
+		return
+	}
+	if err := wa.userRepo.ResetFailedLoginAttempts(ctx, userID); err != nil {
+		log.Warn().Err(err).Str("user_id", userID).Msg("login: failed to reset failed login attempts")
+	}
+}
+
 // LoginSubmitHandler processes the POST /login form submission.
 // It validates CSRF, checks rate limits, authenticates the user, creates an
 // SSO session cookie, and redirects to the next step in the flow.
@@ -152,8 +194,17 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 		return
 	}
 
-	if err := wa.passwordHasher.Verify(user.PasswordHash, password); err != nil {
+	if wa.accountLockedOut(ctx, user) {
 		wa.rateLimiter.RecordFailure(rateLimitKey)
+		log.Warn().Str("email", email).Str("user_id", user.ID).Msg("login: account locked out due to repeated failed attempts")
+		wa.renderLoginPage(c, flowID, nil, "Account is temporarily locked. Please try again later.")
+		return
+	}
+
+	requiresMFA, err := wa.runner.Authenticate(ctx, user, password)
+	if err != nil {
+		wa.rateLimiter.RecordFailure(rateLimitKey)
+		wa.recordLoginFailure(ctx, user.ID)
 		log.Warn().Str("email", email).Msg("login: password verification failed")
 		wa.renderLoginPage(c, flowID, nil, "Invalid email or password.")
 		return
@@ -161,14 +212,16 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 
 	if user.Status != domain.UserStatusActive {
 		wa.rateLimiter.RecordFailure(rateLimitKey)
+		wa.recordLoginFailure(ctx, user.ID)
 		log.Warn().Str("email", email).Str("status", string(user.Status)).Msg("login: account not active")
 		wa.renderLoginPage(c, flowID, nil, "Account is not active. Please contact support.")
 		return
 	}
 
 	wa.rateLimiter.Reset(rateLimitKey)
+	wa.resetLoginFailures(ctx, user.ID)
 
-	if hasMFAEnabled(user) {
+	if requiresMFA {
 		flowState.UserID = user.ID
 		flowState.UserAuthenticatedAt = time.Now()
 		if err := wa.flowStore.UpdateFlow(ctx, flowID, flowState); err != nil {

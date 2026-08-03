@@ -38,7 +38,7 @@ func setupServiceAccountRepoTest(t *testing.T) (domain.ServiceAccountRepository,
 	}
 	db := client.Database(dbName)
 
-	saRepo, err := mongodb.NewServiceAccountRepositoryMongo(db) // Creates collection and indexes
+	saRepo, err := mongodb.NewServiceAccountRepositoryMongo(ctx, db) // Creates collection and indexes
 	if err != nil {
 		client.Disconnect(ctx)
 		return nil, func() {}, fmt.Errorf("NewServiceAccountRepositoryMongo failed: %w", err)

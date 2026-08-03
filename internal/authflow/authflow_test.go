@@ -228,8 +228,10 @@ func TestAuthenticate_NoFlowDataFallsBackToLegacy(t *testing.T) {
 		t.Fatal("expected legacy fallback to skip MFA for a user without MFA")
 	}
 
-	// Wrong password in the fallback is still rejected.
-	_, err = runner.Authenticate(context.Background(), userWithMFA(), "wrong")
+	// Wrong password in the fallback is still rejected. Use a separate runner
+	// whose hasher always rejects — the original runner's hasher accepts all.
+	wrongPwRunner := authflow.NewRunner(nil, &stubHasher{err: errors.New("password mismatch")})
+	_, err = wrongPwRunner.Authenticate(context.Background(), userWithMFA(), "wrong")
 	if err == nil {
 		t.Fatal("expected password rejection error in legacy fallback")
 	}

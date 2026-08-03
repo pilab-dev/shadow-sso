@@ -30,6 +30,13 @@ func setupMockRepoProvider(ctrl *gomock.Controller) *mock_services.MockRepositor
 	mockRepoProvider.EXPECT().PublicKeyRepository(gomock.Any()).Return(mock_domain.NewMockPublicKeyRepository(ctrl)).AnyTimes()
 	mockRepoProvider.EXPECT().ServiceAccountRepository(gomock.Any()).Return(mock_domain.NewMockServiceAccountRepository(ctrl)).AnyTimes()
 	mockRepoProvider.EXPECT().IdPRepository(gomock.Any()).Return(mock_domain.NewMockIdPRepository(ctrl)).AnyTimes()
+	mockRepoProvider.EXPECT().GroupRepository(gomock.Any()).Return(mock_domain.NewMockGroupRepository(ctrl)).AnyTimes()
+	mockRepoProvider.EXPECT().RoleRepository(gomock.Any()).Return(mock_domain.NewMockRoleRepository(ctrl)).AnyTimes()
+	mockRepoProvider.EXPECT().RealmKeysRepository(gomock.Any()).Return(mock_domain.NewMockRealmKeysRepository(ctrl)).AnyTimes()
+	mockRepoProvider.EXPECT().UserAttributeRepository(gomock.Any()).Return(mock_domain.NewMockUserAttributeRepository(ctrl)).AnyTimes()
+	mockRepoProvider.EXPECT().UserAttributeMapperRepository(gomock.Any()).Return(mock_domain.NewMockUserAttributeMapperRepository(ctrl)).AnyTimes()
+	mockRepoProvider.EXPECT().RealmSettingsRepository(gomock.Any()).Return(mock_domain.NewMockRealmSettingsRepository(ctrl)).AnyTimes()
+	mockRepoProvider.EXPECT().AuditLogRepository(gomock.Any()).Return(mock_domain.NewMockAuditLogRepository(ctrl)).AnyTimes()
 	return mockRepoProvider
 }
 
@@ -76,6 +83,63 @@ func TestNewSSOServer_HealthzEndpoint(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, "OK", w.Body.String())
+}
+
+func TestValidateConfig_NonPositiveAccessTokenTTL_ReturnsError(t *testing.T) {
+	cfg := &api.OpenIDProviderConfig{
+		Issuer:         "http://localhost:8080",
+		AccessTokenTTL: 0,
+		TokenConfig: api.TokenConfig{
+			AccessTokenFormat: "jwt",
+		},
+		SecurityConfig: api.SecurityConfig{
+			AllowedSigningAlgs: []string{"HS256"},
+		},
+	}
+	cfg.AuthCodeTTL = 10 * time.Minute
+	cfg.RefreshTokenTTL = 24 * time.Hour
+
+	err := ssso.ValidateConfig(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "access token TTL must be positive")
+}
+
+func TestValidateConfig_NegativeRefreshTokenTTL_ReturnsError(t *testing.T) {
+	cfg := &api.OpenIDProviderConfig{
+		Issuer:          "http://localhost:8080",
+		AccessTokenTTL:  1 * time.Hour,
+		RefreshTokenTTL: -5 * time.Minute,
+		AuthCodeTTL:     10 * time.Minute,
+		TokenConfig: api.TokenConfig{
+			AccessTokenFormat: "jwt",
+		},
+		SecurityConfig: api.SecurityConfig{
+			AllowedSigningAlgs: []string{"HS256"},
+		},
+	}
+
+	err := ssso.ValidateConfig(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "refresh token TTL must be positive")
+}
+
+func TestValidateConfig_NegativeAuthCodeTTL_ReturnsError(t *testing.T) {
+	cfg := &api.OpenIDProviderConfig{
+		Issuer:          "http://localhost:8080",
+		AccessTokenTTL:  1 * time.Hour,
+		RefreshTokenTTL: 24 * time.Hour,
+		AuthCodeTTL:     0,
+		TokenConfig: api.TokenConfig{
+			AccessTokenFormat: "jwt",
+		},
+		SecurityConfig: api.SecurityConfig{
+			AllowedSigningAlgs: []string{"HS256"},
+		},
+	}
+
+	err := ssso.ValidateConfig(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "auth code TTL must be positive")
 }
 
 func TestNewSSOServer_ReadyzEndpoint(t *testing.T) {

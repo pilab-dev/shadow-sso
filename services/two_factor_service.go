@@ -89,6 +89,7 @@ func (s *TwoFactorServer) InitiateTOTPSetup(ctx context.Context, req *connect.Re
 	}
 
 	resp := &ssov1.InitiateTOTPSetupResponse{
+		Secret:    otpKey.Secret(),
 		QrCodeUri: otpAuthURI,
 	}
 	return connect.NewResponse(resp), nil

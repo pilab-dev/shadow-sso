@@ -64,6 +64,11 @@ const (
 	PermTokenMappersManage   = "token_mappers:manage"
 )
 
+// Audit Management (Admin only)
+const (
+	PermAuditRead = "audit:read"
+)
+
 // RoleToPermissionsMap maps roles to their granted permissions.
 // This can be used by the authorization interceptor.
 var RoleToPermissionsMap = map[string][]string{
@@ -113,6 +118,8 @@ var RoleToPermissionsMap = map[string][]string{
 
 		PermUserAttributesManage,
 		PermTokenMappersManage,
+
+		PermAuditRead,
 	},
 }
 
@@ -174,4 +181,7 @@ var MethodPermissions = map[string]string{
 	"/sso.v1.UserAttributeMapperService/ListUserAttributeMappers":  PermTokenMappersManage,
 	"/sso.v1.UserAttributeMapperService/UpdateUserAttributeMapper": PermTokenMappersManage,
 	"/sso.v1.UserAttributeMapperService/DeleteUserAttributeMapper": PermTokenMappersManage,
+
+	// AuditService (All admin)
+	"/sso.v1.AuditService/ListAuditEvents": PermAuditRead,
 }

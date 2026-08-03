@@ -44,14 +44,16 @@ func newTestResolver(t *testing.T) *graphql.Resolver {
 	t.Cleanup(ctrl.Finish)
 
 	return &graphql.Resolver{
-		UserRepo:          mock_domain.NewMockUserRepository(ctrl),
-		ClientRepo:        mock_domain.NewMockClientRepository(ctrl),
-		SessionRepo:       mock_domain.NewMockSessionRepository(ctrl),
-		IdPRepo:           mock_domain.NewMockIdPRepository(ctrl),
-		EmailService:      &MockEmailService{},
-		PasswordHasher:    &MockPasswordHasher{},
-		GroupRepo:         &stubGroupRepo{},
-		RealmSettingsRepo: &stubRealmSettingsRepo{},
+		UserRepo:             mock_domain.NewMockUserRepository(ctrl),
+		ClientRepo:           mock_domain.NewMockClientRepository(ctrl),
+		SessionRepo:          mock_domain.NewMockSessionRepository(ctrl),
+		IdPRepo:              mock_domain.NewMockIdPRepository(ctrl),
+		EmailService:         &MockEmailService{},
+		PasswordHasher:       &MockPasswordHasher{},
+		GroupRepo:            &stubGroupRepo{},
+		RealmSettingsRepo:    &stubRealmSettingsRepo{},
+		AuditLogRepo:         mock_domain.NewMockAuditLogRepository(ctrl),
+		FederatedIdentityRepo: mock_domain.NewMockUserFederatedIdentityRepository(ctrl),
 	}
 }
 
@@ -291,6 +293,76 @@ func TestRevokeAllSessions_NoToken(t *testing.T) {
 	}
 }
 
+func TestFederatedIdentities_SelfAllowed(t *testing.T) {
+	r := newTestResolver(t)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	fedRepo := r.FederatedIdentityRepo.(*mock_domain.MockUserFederatedIdentityRepository)
+	idpRepo := r.IdPRepo.(*mock_domain.MockIdPRepository)
+
+	fedRepo.EXPECT().ListByUserID(gomock.Any(), "user-1").Return([]*domain.UserFederatedIdentity{
+		{ProviderID: "google", ProviderUserID: "ext-1", ProviderUsername: "alice@google"},
+	}, nil)
+	idpRepo.EXPECT().GetIdPByID(gomock.Any(), "google").Return(&domain.IdentityProvider{ID: "google", Name: "Google"}, nil)
+
+	identities, err := r.User().FederatedIdentities(userCtx(), &domain.User{ID: "user-1"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(identities) != 1 {
+		t.Fatalf("expected 1 identity, got %d", len(identities))
+	}
+	if identities[0].IdentityProvider != "Google" {
+		t.Fatalf("expected provider name Google, got %s", identities[0].IdentityProvider)
+	}
+	if identities[0].UserID != "ext-1" {
+		t.Fatalf("expected ext-1, got %s", identities[0].UserID)
+	}
+}
+
+func TestFederatedIdentities_AdminAllowedOtherUser(t *testing.T) {
+	r := newTestResolver(t)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	fedRepo := r.FederatedIdentityRepo.(*mock_domain.MockUserFederatedIdentityRepository)
+	idpRepo := r.IdPRepo.(*mock_domain.MockIdPRepository)
+
+	fedRepo.EXPECT().ListByUserID(gomock.Any(), "user-2").Return(nil, nil)
+	idpRepo.EXPECT().GetIdPByID(gomock.Any(), gomock.Any()).Return(nil, errors.New("not found")).AnyTimes()
+
+	identities, err := r.User().FederatedIdentities(adminCtx(), &domain.User{ID: "user-2"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(identities) != 0 {
+		t.Fatalf("expected 0 identities, got %d", len(identities))
+	}
+}
+
+func TestFederatedIdentities_NonOwnerDenied(t *testing.T) {
+	r := newTestResolver(t)
+	_, err := r.User().FederatedIdentities(userCtx(), &domain.User{ID: "user-2"})
+	if err == nil {
+		t.Fatal("expected error for non-owner without admin permission")
+	}
+	if connectErrCode(err) != connect.CodePermissionDenied {
+		t.Fatalf("expected PermissionDenied, got %v", connectErrCode(err))
+	}
+}
+
+func TestFederatedIdentities_NoToken(t *testing.T) {
+	r := newTestResolver(t)
+	_, err := r.User().FederatedIdentities(noTokenCtx(), &domain.User{ID: "user-1"})
+	if err == nil {
+		t.Fatal("expected error for unauthenticated caller")
+	}
+	if connectErrCode(err) != connect.CodeUnauthenticated {
+		t.Fatalf("expected Unauthenticated, got %v", connectErrCode(err))
+	}
+}
+
 func TestUpdateRealm_AdminAllowed(t *testing.T) {
 	r := newTestResolver(t)
 
@@ -516,5 +588,82 @@ func TestGenerateClientSecret_UserDenied(t *testing.T) {
 	}
 	if connectErrCode(err) != connect.CodePermissionDenied {
 		t.Fatalf("expected PermissionDenied, got %v", connectErrCode(err))
+	}
+}
+
+func TestAuditLogs_AdminAllowed(t *testing.T) {
+	r := newTestResolver(t)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	auditRepo := r.AuditLogRepo.(*mock_domain.MockAuditLogRepository)
+	auditRepo.EXPECT().List(gomock.Any(), gomock.Any(), 50, 0).
+		Return([]*domain.AuditLog{{ID: "a1", Service: "user", Action: "create"}}, nil)
+	auditRepo.EXPECT().Count(gomock.Any(), gomock.Any()).Return(int64(1), nil)
+
+	conn, err := r.Query().AuditLogs(adminCtx(), nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if conn == nil {
+		t.Fatal("expected connection")
+	}
+	if len(conn.Edges) != 1 {
+		t.Fatalf("expected 1 edge, got %d", len(conn.Edges))
+	}
+	if conn.Edges[0].Cursor != "a1" {
+		t.Fatalf("expected cursor a1, got %q", conn.Edges[0].Cursor)
+	}
+	if conn.TotalCount != 1 {
+		t.Fatalf("expected total 1, got %d", conn.TotalCount)
+	}
+}
+
+func TestAuditLogs_AdminAllowedPagination(t *testing.T) {
+	r := newTestResolver(t)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	first := 10
+	after := 20
+	auditRepo := r.AuditLogRepo.(*mock_domain.MockAuditLogRepository)
+	auditRepo.EXPECT().List(gomock.Any(), gomock.Any(), 10, 20).
+		Return([]*domain.AuditLog{{ID: "a1"}}, nil)
+	auditRepo.EXPECT().Count(gomock.Any(), gomock.Any()).Return(int64(35), nil)
+
+	conn, err := r.Query().AuditLogs(adminCtx(), nil, &first, &after)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if conn.PageInfo == nil {
+		t.Fatal("expected page info")
+	}
+	if !conn.PageInfo.HasNextPage {
+		t.Fatal("expected HasNextPage true when more events remain")
+	}
+	if !conn.PageInfo.HasPreviousPage {
+		t.Fatal("expected HasPreviousPage true when offset > 0")
+	}
+}
+
+func TestAuditLogs_UserDenied(t *testing.T) {
+	r := newTestResolver(t)
+	_, err := r.Query().AuditLogs(userCtx(), nil, nil, nil)
+	if err == nil {
+		t.Fatal("expected error for non-admin user")
+	}
+	if connectErrCode(err) != connect.CodePermissionDenied {
+		t.Fatalf("expected PermissionDenied, got %v", connectErrCode(err))
+	}
+}
+
+func TestAuditLogs_NoToken(t *testing.T) {
+	r := newTestResolver(t)
+	_, err := r.Query().AuditLogs(noTokenCtx(), nil, nil, nil)
+	if err == nil {
+		t.Fatal("expected error for unauthenticated caller")
+	}
+	if connectErrCode(err) != connect.CodeUnauthenticated {
+		t.Fatalf("expected Unauthenticated, got %v", connectErrCode(err))
 	}
 }

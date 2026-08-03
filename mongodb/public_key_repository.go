@@ -19,7 +19,7 @@ type PublicKeyRepositoryMongo struct {
 
 // NewPublicKeyRepositoryMongo creates a new PublicKeyRepositoryMongo.
 // It also ensures that the necessary indexes are created on the collection.
-func NewPublicKeyRepositoryMongo(db *mongo.Database) (*PublicKeyRepositoryMongo, error) {
+func NewPublicKeyRepositoryMongo(ctx context.Context, db *mongo.Database) (*PublicKeyRepositoryMongo, error) {
 	repo := &PublicKeyRepositoryMongo{
 		collection: db.Collection(PublicKeysCollection),
 	}
@@ -43,10 +43,10 @@ func NewPublicKeyRepositoryMongo(db *mongo.Database) (*PublicKeyRepositoryMongo,
 		},
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	idxCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	_, err := repo.collection.Indexes().CreateMany(ctx, indexModels)
+	_, err := repo.collection.Indexes().CreateMany(idxCtx, indexModels)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to create indexes for public_keys collection")
 		return nil, err

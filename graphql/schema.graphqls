@@ -76,6 +76,9 @@ type Query {
   userAttributes(userId: ID!): [UserAttribute!]!
   userAttributeMappers: [UserAttributeMapper!]!
   clientUserAttributeMappers(clientId: String!): [UserAttributeMapper!]!
+
+  # Audit event queries (admin only)
+  auditLogs(filter: AuditLogFilter, first: Int, after: Int): AuditLogConnection!
 }
 
 # =============================================================================
@@ -723,6 +726,40 @@ type SessionConnection {
 
 type SessionEdge {
   node: Session!
+  cursor: String!
+}
+
+# =============================================================================
+# TYPES - Audit Log
+# =============================================================================
+
+type AuditLog {
+  id: ID!
+  timestamp: Time!
+  service: String!
+  action: String!
+  user: String
+  target: String
+  details: String
+  success: Boolean!
+  error: String
+}
+
+input AuditLogFilter {
+  user: String
+  action: String
+  from: Time
+  to: Time
+}
+
+type AuditLogConnection {
+  edges: [AuditLogEdge!]!
+  totalCount: Int!
+  pageInfo: PageInfo!
+}
+
+type AuditLogEdge {
+  node: AuditLog!
   cursor: String!
 }
 

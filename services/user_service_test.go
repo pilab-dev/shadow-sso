@@ -9,6 +9,7 @@ import (
 	"github.com/pilab-dev/shadow-sso/domain"
 	mock_domain "github.com/pilab-dev/shadow-sso/domain/mocks"
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
+	"github.com/pilab-dev/shadow-sso/internal/auth/rbac"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -18,6 +19,10 @@ import (
 
 func createAuthenticatedContext(ctx context.Context, userID string) context.Context {
 	return context.WithValue(ctx, domain.TokenContextKey, &domain.TokenInfo{UserID: userID})
+}
+
+func createAuthenticatedContextWithRoles(ctx context.Context, userID string, roles ...string) context.Context {
+	return context.WithValue(ctx, domain.TokenContextKey, &domain.TokenInfo{UserID: userID, Roles: roles})
 }
 
 func TestUserServer_UpdateUser(t *testing.T) {
@@ -237,6 +242,102 @@ func TestUserServer_RemoveWebAuthnDevice(t *testing.T) {
 	assert.Equal(t, &emptypb.Empty{}, resp.Msg)
 }
 
+func TestUserServer_ListMfaMethods_DeniedNonOwner(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	userRepo := mock_domain.NewMockUserRepository(ctrl)
+	service := NewUserServer(userRepo, nil, nil)
+
+	req := connect.NewRequest(&ssov1.ListMfaMethodsRequest{UserId: "user-other"})
+	ctx := createAuthenticatedContext(context.Background(), "user-123")
+	_, err := service.ListMfaMethods(ctx, req)
+
+	require.Error(t, err)
+	assert.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
+}
+
+func TestUserServer_ListMfaMethods_AdminAllowed(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	userRepo := mock_domain.NewMockUserRepository(ctrl)
+	service := NewUserServer(userRepo, nil, nil)
+
+	userRepo.EXPECT().ListMfaMethods(gomock.Any(), "user-other").Return([]domain.MfaMethod{
+		{ID: "mfa-1", Type: domain.MfaMethodTypeTOTP, Name: "Authenticator", Verified: true},
+	}, nil)
+
+	req := connect.NewRequest(&ssov1.ListMfaMethodsRequest{UserId: "user-other"})
+	ctx := createAuthenticatedContextWithRoles(context.Background(), "user-admin", rbac.RoleAdmin)
+	resp, err := service.ListMfaMethods(ctx, req)
+
+	require.NoError(t, err)
+	require.Len(t, resp.Msg.Methods, 1)
+}
+
+func TestUserServer_RemoveMfaMethod_DeniedNonOwner(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	userRepo := mock_domain.NewMockUserRepository(ctrl)
+	service := NewUserServer(userRepo, nil, nil)
+
+	req := connect.NewRequest(&ssov1.RemoveMfaMethodRequest{UserId: "user-other", MethodId: "mfa-1"})
+	ctx := createAuthenticatedContext(context.Background(), "user-123")
+	_, err := service.RemoveMfaMethod(ctx, req)
+
+	require.Error(t, err)
+	assert.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
+}
+
+func TestUserServer_RemoveMfaMethod_AdminAllowed(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	userRepo := mock_domain.NewMockUserRepository(ctrl)
+	service := NewUserServer(userRepo, nil, nil)
+
+	userRepo.EXPECT().RemoveMfaMethod(gomock.Any(), "user-other", "mfa-1").Return(nil)
+
+	req := connect.NewRequest(&ssov1.RemoveMfaMethodRequest{UserId: "user-other", MethodId: "mfa-1"})
+	ctx := createAuthenticatedContextWithRoles(context.Background(), "user-admin", rbac.RoleAdmin)
+	resp, err := service.RemoveMfaMethod(ctx, req)
+
+	require.NoError(t, err)
+	assert.Equal(t, &emptypb.Empty{}, resp.Msg)
+}
+
+func TestUserServer_ListWebAuthnDevices_DeniedNonOwner(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	userRepo := mock_domain.NewMockUserRepository(ctrl)
+	service := NewUserServer(userRepo, nil, nil)
+
+	req := connect.NewRequest(&ssov1.ListWebAuthnDevicesRequest{UserId: "user-other"})
+	ctx := createAuthenticatedContext(context.Background(), "user-123")
+	_, err := service.ListWebAuthnDevices(ctx, req)
+
+	require.Error(t, err)
+	assert.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
+}
+
+func TestUserServer_RemoveWebAuthnDevice_DeniedNonOwner(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	userRepo := mock_domain.NewMockUserRepository(ctrl)
+	service := NewUserServer(userRepo, nil, nil)
+
+	req := connect.NewRequest(&ssov1.RemoveWebAuthnDeviceRequest{UserId: "user-other", DeviceId: "webauthn-1"})
+	ctx := createAuthenticatedContext(context.Background(), "user-123")
+	_, err := service.RemoveWebAuthnDevice(ctx, req)
+
+	require.Error(t, err)
+	assert.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
+}
+
 func TestUserServer_IncrementFailedLoginAttempts(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -254,7 +355,7 @@ func TestUserServer_IncrementFailedLoginAttempts(t *testing.T) {
 	assert.Equal(t, int32(3), resp.Msg.CurrentAttempts)
 }
 
-func TestTwoFactorServer_InitiateTOTPSetup_SecretNotReturned(t *testing.T) {
+func TestTwoFactorServer_InitiateTOTPSetup_ReturnsSecret(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -275,7 +376,7 @@ func TestTwoFactorServer_InitiateTOTPSetup_SecretNotReturned(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, resp.Msg)
-	assert.Empty(t, resp.Msg.Secret, "TOTP secret must not be returned in API response")
+	assert.NotEmpty(t, resp.Msg.Secret, "TOTP secret must be returned in API response for CLI enrollment")
 	assert.NotEmpty(t, resp.Msg.QrCodeUri, "QR code URI must be returned")
 }
 
@@ -675,4 +776,127 @@ func TestUserServer_RegisterUser_DefaultRole(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp.Msg.User)
 	assert.Equal(t, []string{"ROLE_USER"}, resp.Msg.User.Roles)
+}
+
+func TestUserServer_RegisterUser_RejectsWeakPasswordPerRealmPolicy(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	userRepo := mock_domain.NewMockUserRepository(ctrl)
+	hasher := mock_domain.NewMockPasswordHasher(ctrl)
+	realmSettingsRepo := mock_domain.NewMockRealmSettingsRepository(ctrl)
+	service := NewUserServer(userRepo, hasher, nil, WithUserRealmSettings(realmSettingsRepo))
+
+	userRepo.EXPECT().GetUserByEmail(gomock.Any(), "new@example.com").Return(nil, domain.ErrUserNotFound)
+	realmSettingsRepo.EXPECT().GetRealmSettings(gomock.Any()).Return(&domain.RealmSettings{
+		Realm:             "master",
+		PasswordMinLength: 12,
+		PasswordUpperCase: 1,
+		PasswordDigits:    1,
+	}, nil)
+
+	req := connect.NewRequest(&ssov1.RegisterUserRequest{
+		Email:    "new@example.com",
+		Password: "weak",
+	})
+	ctx := createAuthenticatedContext(context.Background(), "admin-1")
+	_, err := service.RegisterUser(ctx, req)
+
+	require.Error(t, err)
+	assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
+}
+
+func TestUserServer_RegisterUser_AcceptsPasswordMeetingRealmPolicy(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	userRepo := mock_domain.NewMockUserRepository(ctrl)
+	hasher := mock_domain.NewMockPasswordHasher(ctrl)
+	realmSettingsRepo := mock_domain.NewMockRealmSettingsRepository(ctrl)
+	service := NewUserServer(userRepo, hasher, nil, WithUserRealmSettings(realmSettingsRepo))
+
+	realmSettingsRepo.EXPECT().GetRealmSettings(gomock.Any()).Return(&domain.RealmSettings{
+		Realm:             "master",
+		PasswordMinLength: 8,
+		PasswordUpperCase: 1,
+		PasswordDigits:    1,
+	}, nil)
+	userRepo.EXPECT().GetUserByEmail(gomock.Any(), "new@example.com").Return(nil, domain.ErrUserNotFound)
+	hasher.EXPECT().Hash("StrongPass1").Return("hashed", nil)
+	userRepo.EXPECT().CreateUser(gomock.Any(), gomock.Any()).Return(nil)
+
+	req := connect.NewRequest(&ssov1.RegisterUserRequest{
+		Email:    "new@example.com",
+		Password: "StrongPass1",
+	})
+	ctx := createAuthenticatedContext(context.Background(), "admin-1")
+	resp, err := service.RegisterUser(ctx, req)
+
+	require.NoError(t, err)
+	require.NotNil(t, resp.Msg.User)
+}
+
+func TestUserServer_ChangePassword_RejectsWeakPasswordPerRealmPolicy(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	userRepo := mock_domain.NewMockUserRepository(ctrl)
+	hasher := mock_domain.NewMockPasswordHasher(ctrl)
+	realmSettingsRepo := mock_domain.NewMockRealmSettingsRepository(ctrl)
+	service := NewUserServer(userRepo, hasher, nil, WithUserRealmSettings(realmSettingsRepo))
+
+	existingUser := &domain.User{ID: "user-123", Email: "user@example.com", PasswordHash: "hashed-old"}
+	userRepo.EXPECT().GetUserByID(gomock.Any(), "user-123").Return(existingUser, nil)
+	hasher.EXPECT().Verify("hashed-old", "old-password").Return(nil)
+	realmSettingsRepo.EXPECT().GetRealmSettings(gomock.Any()).Return(&domain.RealmSettings{
+		Realm:             "master",
+		PasswordMinLength: 12,
+	}, nil)
+
+	req := connect.NewRequest(&ssov1.ChangePasswordRequest{
+		UserId:      "user-123",
+		OldPassword: "old-password",
+		NewPassword: "short",
+	})
+	ctx := createAuthenticatedContext(context.Background(), "user-123")
+	_, err := service.ChangePassword(ctx, req)
+
+	require.Error(t, err)
+	assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
+}
+
+func TestResolveUser(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	userRepo := mock_domain.NewMockUserRepository(ctrl)
+	service := NewUserServer(userRepo, nil, nil)
+
+	t.Run("returns user by ID when found", func(t *testing.T) {
+		expected := &domain.User{ID: "mongo-id-123", Email: "user@example.com"}
+		userRepo.EXPECT().GetUserByID(gomock.Any(), "mongo-id-123").Return(expected, nil)
+
+		user, err := service.resolveUser(context.Background(), "mongo-id-123")
+		require.NoError(t, err)
+		assert.Equal(t, expected, user)
+	})
+
+	t.Run("falls back to email when ID not found", func(t *testing.T) {
+		expected := &domain.User{ID: "mongo-id-456", Email: "fallback@example.com"}
+		userRepo.EXPECT().GetUserByID(gomock.Any(), "fallback@example.com").Return(nil, domain.ErrUserNotFound)
+		userRepo.EXPECT().GetUserByEmail(gomock.Any(), "fallback@example.com").Return(expected, nil)
+
+		user, err := service.resolveUser(context.Background(), "fallback@example.com")
+		require.NoError(t, err)
+		assert.Equal(t, expected, user)
+	})
+
+	t.Run("propagates not-found when both ID and email miss", func(t *testing.T) {
+		userRepo.EXPECT().GetUserByID(gomock.Any(), "nobody@example.com").Return(nil, domain.ErrUserNotFound)
+		userRepo.EXPECT().GetUserByEmail(gomock.Any(), "nobody@example.com").Return(nil, domain.ErrUserNotFound)
+
+		user, err := service.resolveUser(context.Background(), "nobody@example.com")
+		require.Nil(t, user)
+		assert.ErrorIs(t, err, domain.ErrUserNotFound)
+	})
 }

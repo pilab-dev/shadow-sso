@@ -13,8 +13,6 @@ import (
 
 	"github.com/pilab-dev/shadow-sso/graphql"
 	"github.com/pilab-dev/shadow-sso/mongodb"
-	"go.mongodb.org/mongo-driver/v2/mongo"
-	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 // MockEmailService implements domain.EmailService for testing
@@ -52,52 +50,30 @@ func main() {
 		mongoURI = "mongodb://localhost:27017/sso_dev"
 	}
 
-	// Connect to MongoDB
-	clientOptions := options.Client().ApplyURI(mongoURI)
-	client, err := mongo.Connect(clientOptions)
+	// Connect to MongoDB via the same repository provider the real server
+	// uses, instead of hand-rolling a separate connection + repository set.
+	repoProvider, err := mongodb.NewMongoRepositoryProvider(mongoURI, "sso_dev")
 	if err != nil {
 		log.Fatal("Failed to connect to MongoDB:", err)
 	}
-	defer client.Disconnect(ctx)
-
-	if err := client.Ping(ctx, nil); err != nil {
-		log.Fatal("Failed to ping MongoDB:", err)
-	}
+	defer repoProvider.Disconnect(ctx)
 	fmt.Println("Connected to MongoDB!")
-
-	db := client.Database("sso_dev")
-
-	// Create repositories
-	userRepo, err := mongodb.NewUserRepository(ctx, db)
-	if err != nil {
-		log.Fatal("Failed to create user repo:", err)
-	}
-	clientRepo := mongodb.NewClientRepository(db)
-	sessionRepo, _ := mongodb.NewSessionRepositoryMongo(ctx, db)
-	idpRepo, _ := mongodb.NewIdPRepositoryMongo(ctx, db)
-	groupRepo, _ := mongodb.NewGroupRepository(ctx, db)
-	roleRepo, _ := mongodb.NewRoleRepository(ctx, db)
-	protocolMapperRepo, _ := mongodb.NewProtocolMapperRepository(ctx, db)
-	authFlowRepo, _ := mongodb.NewAuthenticationFlowRepository(ctx, db)
-	clientScopeRepo, _ := mongodb.NewClientScopeRepository(ctx, db)
-	realmSettingsRepo, _ := mongodb.NewRealmSettingsRepository(ctx, db)
-	realmKeysRepo, _ := mongodb.NewRealmKeysRepository(ctx, db)
 
 	// Create resolver
 	resolver := &graphql.Resolver{
-		UserRepo:            userRepo,
-		ClientRepo:          clientRepo,
-		SessionRepo:        sessionRepo,
-		IdPRepo:            idpRepo,
-		GroupRepo:          groupRepo,
-		RoleRepo:           roleRepo,
-		ProtocolMapperRepo: protocolMapperRepo,
-		AuthFlowRepo:       authFlowRepo,
-		ClientScopeRepo:    clientScopeRepo,
-		RealmSettingsRepo:  realmSettingsRepo,
-		RealmKeysRepo:      realmKeysRepo,
-		EmailService:       &MockEmailService{},
-		PasswordHasher:     &MockPasswordHasher{},
+		UserRepo:            repoProvider.UserRepository(ctx),
+		ClientRepo:          repoProvider.ClientRepository(ctx),
+		SessionRepo:         repoProvider.SessionRepository(ctx),
+		IdPRepo:             repoProvider.IdPRepository(ctx),
+		GroupRepo:           repoProvider.GroupRepository(ctx),
+		RoleRepo:            repoProvider.RoleRepository(ctx),
+		ProtocolMapperRepo:  repoProvider.ProtocolMapperRepository(ctx),
+		AuthFlowRepo:        repoProvider.AuthenticationFlowRepository(ctx),
+		ClientScopeRepo:     repoProvider.ClientScopeRepository(ctx),
+		RealmSettingsRepo:   repoProvider.RealmSettingsRepository(ctx),
+		RealmKeysRepo:       repoProvider.RealmKeysRepository(ctx),
+		EmailService:        &MockEmailService{},
+		PasswordHasher:      &MockPasswordHasher{},
 	}
 
 	mutation := resolver.Mutation()

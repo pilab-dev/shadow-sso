@@ -38,7 +38,7 @@ func setupPkceRepositoryTest(t *testing.T) (domain.PkceRepository, func(), error
 	}
 	db := client.Database(dbName)
 
-	pkceRepo := mongodb.NewPkceRepository(db) // Creates collection and indexes
+	pkceRepo := mongodb.NewPkceRepository(ctx, db) // Creates collection and indexes
 
 	cleanupFunc := func() {
 		mainCtx := context.Background()

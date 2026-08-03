@@ -31,12 +31,11 @@ type MongoPkceRepository struct {
 
 // NewPkceRepository creates a new MongoPkceRepository and ensures a TTL index
 // on created_at that expires documents after 10 minutes.
-func NewPkceRepository(db *mongo.Database) *MongoPkceRepository {
+func NewPkceRepository(ctx context.Context, db *mongo.Database) *MongoPkceRepository {
 	repo := &MongoPkceRepository{
 		collection: db.Collection(PkceChallengesCollection),
 	}
 
-	ctx := context.Background()
 	indexModels := []mongo.IndexModel{
 		{
 			Keys:    bson.D{{Key: "created_at", Value: 1}},

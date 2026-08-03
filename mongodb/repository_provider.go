@@ -4,12 +4,58 @@ import (
 	"context"
 	"errors" // Standard Go errors package
 	"fmt"
+	"os"
+	"strconv"
+	"time"
 
 	"github.com/pilab-dev/shadow-sso/cache"
 	"github.com/pilab-dev/shadow-sso/domain"
+	"github.com/rs/zerolog/log"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
+	"go.opentelemetry.io/contrib/instrumentation/go.mongodb.org/mongo-driver/v2/mongo/otelmongo"
 )
+
+// mongoConnectTimeout bounds each connect+ping attempt in
+// NewMongoRepositoryProvider so an unreachable MongoDB doesn't hang the
+// caller (e.g. server startup, or a test harness) indefinitely.
+const mongoConnectTimeout = 10 * time.Second
+
+// mongoConnectBackoff paces retries when SSSO_MONGO_CONNECT_RETRIES > 0.
+var mongoConnectBackoff = []time.Duration{1 * time.Second, 2 * time.Second, 4 * time.Second}
+
+// mongoConnectRetriesFromEnv returns how many extra connect attempts to make
+// after the first failure. Defaults to 0 (fail fast on the first attempt) —
+// tests and local dev want an unreachable MongoDB to fail immediately, not
+// hang behind retries. Production deployments that want to tolerate a brief
+// MongoDB blip during a rolling restart can opt in via SSSO_MONGO_CONNECT_RETRIES.
+func mongoConnectRetriesFromEnv() int {
+	v := os.Getenv("SSSO_MONGO_CONNECT_RETRIES")
+	if v == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		log.Warn().Str("value", v).Msg("Invalid SSSO_MONGO_CONNECT_RETRIES, defaulting to 0")
+		return 0
+	}
+	return n
+}
+
+// mongoPoolSizeFromEnv reads an optional pool size knob from the environment.
+// Returns 0 (meaning "use the driver default") if unset or invalid.
+func mongoPoolSizeFromEnv(envVar string) uint64 {
+	v := os.Getenv(envVar)
+	if v == "" {
+		return 0
+	}
+	n, err := strconv.ParseUint(v, 10, 64)
+	if err != nil {
+		log.Warn().Str("env", envVar).Str("value", v).Msg("Invalid MongoDB pool size, ignoring")
+		return 0
+	}
+	return n
+}
 
 // MongoRepositoryProvider implements the domain.RepositoryProvider interface
 // using MongoDB as the backing store.
@@ -40,6 +86,11 @@ type MongoRepositoryProvider struct {
 	groupRepo          domain.GroupRepository
 	roleRepo           domain.RoleRepository
 	realmKeysRepo      domain.RealmKeysRepository
+	protocolMapperRepo domain.ProtocolMapperRepository
+	authFlowRepo       domain.AuthenticationFlowRepository
+	clientScopeRepo    domain.ClientScopeRepository
+	realmSettingsRepo  domain.RealmSettingsRepository
+	auditLogRepo       domain.AuditLogRepository
 }
 
 // NewMongoRepositoryProvider creates a new instance of MongoRepositoryProvider.
@@ -49,22 +100,48 @@ func NewMongoRepositoryProvider(mongoURI, dbName string) (*MongoRepositoryProvid
 		return nil, errors.New("mongoURI and dbName must be provided")
 	}
 
-	// Context for initial connection setup.
-	// Using a timeout for the connection attempt is good practice.
-	// For simplicity in this refactor, context.TODO() is used, but a timed context is better.
+	log.Info().Str("uri", maskMongoURI(mongoURI)).Str("db", dbName).Msg("Connecting to MongoDB")
 
-	clientOptions := options.Client().ApplyURI(mongoURI)
-	clientInst, err := mongo.Connect(clientOptions)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to MongoDB: %w", err)
+	clientOptions := options.Client().ApplyURI(mongoURI).
+		SetConnectTimeout(mongoConnectTimeout).
+		SetMonitor(otelmongo.NewMonitor())
+	if maxPoolSize := mongoPoolSizeFromEnv("SSSO_MONGO_MAX_POOL_SIZE"); maxPoolSize > 0 {
+		clientOptions.SetMaxPoolSize(maxPoolSize)
+	}
+	if minPoolSize := mongoPoolSizeFromEnv("SSSO_MONGO_MIN_POOL_SIZE"); minPoolSize > 0 {
+		clientOptions.SetMinPoolSize(minPoolSize)
 	}
 
-	// Ping the primary to verify connection.
-	pingCtx := context.TODO()
-	if err := clientInst.Ping(pingCtx, nil); err != nil {
-		// Attempt to disconnect if ping fails to clean up resources.
-		_ = clientInst.Disconnect(context.Background()) // Use background context for cleanup disconnect
-		return nil, fmt.Errorf("failed to ping MongoDB: %w", err)
+	// Connect + ping, optionally retrying a few times (SSSO_MONGO_CONNECT_RETRIES)
+	// so a transient outage at boot doesn't immediately crash the caller.
+	// Each attempt is bounded so a genuinely unreachable MongoDB still fails
+	// fast rather than hanging (retries default to 0, see mongoConnectRetriesFromEnv).
+	retries := mongoConnectRetriesFromEnv()
+	var clientInst *mongo.Client
+	var err error
+	for attempt := 0; attempt <= retries; attempt++ {
+		if attempt > 0 {
+			backoff := mongoConnectBackoff[min(attempt-1, len(mongoConnectBackoff)-1)]
+			log.Warn().Err(err).Int("attempt", attempt).Dur("backoff", backoff).Msg("Retrying MongoDB connection")
+			time.Sleep(backoff)
+		}
+
+		clientInst, err = mongo.Connect(clientOptions)
+		if err != nil {
+			continue
+		}
+
+		pingCtx, cancel := context.WithTimeout(context.Background(), mongoConnectTimeout)
+		err = clientInst.Ping(pingCtx, nil)
+		cancel()
+		if err == nil {
+			break
+		}
+		// Attempt to disconnect if ping fails to clean up resources before retrying.
+		_ = clientInst.Disconnect(context.Background())
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to MongoDB after %d attempts: %w", retries+1, err)
 	}
 
 	db := clientInst.Database(dbName)
@@ -168,7 +245,7 @@ func (p *MongoRepositoryProvider) UserAttributeMapperRepository(ctx context.Cont
 // TokenRepository returns a MongoDB-backed TokenRepository.
 func (p *MongoRepositoryProvider) TokenRepository(ctx context.Context) domain.TokenRepository {
 	if p.tokenRepo == nil && p.db != nil {
-		p.tokenRepo = NewTokenRepository(p.db)
+		p.tokenRepo = NewTokenRepository(ctx, p.db)
 	}
 	return p.tokenRepo
 }
@@ -176,35 +253,35 @@ func (p *MongoRepositoryProvider) TokenRepository(ctx context.Context) domain.To
 // AuthorizationCodeRepository returns a MongoDB-backed AuthorizationCodeRepository.
 func (p *MongoRepositoryProvider) AuthorizationCodeRepository(ctx context.Context) domain.AuthorizationCodeRepository {
 	if p.authCodeRepo == nil && p.db != nil {
-		p.authCodeRepo = NewAuthCodeRepository(p.db)
+		p.authCodeRepo = NewAuthCodeRepository(ctx, p.db)
 	}
 	return p.authCodeRepo
 }
 
 func (p *MongoRepositoryProvider) PkceRepository(ctx context.Context) domain.PkceRepository {
 	if p.pkceRepo == nil && p.db != nil {
-		p.pkceRepo = NewPkceRepository(p.db)
+		p.pkceRepo = NewPkceRepository(ctx, p.db)
 	}
 	return p.pkceRepo
 }
 
 func (p *MongoRepositoryProvider) FlowStore(ctx context.Context) domain.FlowStore {
 	if p.flowStore == nil && p.db != nil {
-		p.flowStore = NewFlowStore(p.db)
+		p.flowStore = NewFlowStore(ctx, p.db)
 	}
 	return p.flowStore
 }
 
 func (p *MongoRepositoryProvider) UserSessionStore(ctx context.Context) domain.UserSessionStore {
 	if p.userSessionStore == nil && p.db != nil {
-		p.userSessionStore = NewUserSessionStore(p.db)
+		p.userSessionStore = NewUserSessionStore(ctx, p.db)
 	}
 	return p.userSessionStore
 }
 
 func (p *MongoRepositoryProvider) TokenStore(ctx context.Context) cache.TokenStore {
 	if p.tokenCache == nil && p.db != nil {
-		p.tokenCache = NewTokenCache(p.db)
+		p.tokenCache = NewTokenCache(ctx, p.db)
 	}
 	return p.tokenCache
 }
@@ -212,7 +289,7 @@ func (p *MongoRepositoryProvider) TokenStore(ctx context.Context) cache.TokenSto
 // DeviceAuthorizationRepository returns a MongoDB-backed DeviceAuthorizationRepository.
 func (p *MongoRepositoryProvider) DeviceAuthorizationRepository(ctx context.Context) domain.DeviceAuthorizationRepository {
 	if p.deviceAuthRepo == nil && p.db != nil {
-		p.deviceAuthRepo = NewDeviceAuthRepository(p.db)
+		p.deviceAuthRepo = NewDeviceAuthRepository(ctx, p.db)
 	}
 	return p.deviceAuthRepo
 }
@@ -220,7 +297,7 @@ func (p *MongoRepositoryProvider) DeviceAuthorizationRepository(ctx context.Cont
 // PublicKeyRepository returns a MongoDB-backed PublicKeyRepository.
 func (p *MongoRepositoryProvider) PublicKeyRepository(ctx context.Context) domain.PublicKeyRepository {
 	if p.pubKeyRepo == nil && p.db != nil {
-		repo, err := NewPublicKeyRepositoryMongo(p.db)
+		repo, err := NewPublicKeyRepositoryMongo(ctx, p.db)
 		if err == nil {
 			p.pubKeyRepo = repo
 		}
@@ -231,7 +308,7 @@ func (p *MongoRepositoryProvider) PublicKeyRepository(ctx context.Context) domai
 // ServiceAccountRepository returns a MongoDB-backed ServiceAccountRepository.
 func (p *MongoRepositoryProvider) ServiceAccountRepository(ctx context.Context) domain.ServiceAccountRepository {
 	if p.saRepo == nil && p.db != nil {
-		repo, err := NewServiceAccountRepositoryMongo(p.db)
+		repo, err := NewServiceAccountRepositoryMongo(ctx, p.db)
 		if err == nil {
 			p.saRepo = repo
 		}
@@ -252,7 +329,7 @@ func (p *MongoRepositoryProvider) IdPRepository(ctx context.Context) domain.IdPR
 
 func (p *MongoRepositoryProvider) ClientRepository(ctx context.Context) domain.ClientRepository {
 	if p.clientRepo == nil && p.db != nil {
-		p.clientRepo = NewClientRepository(p.db)
+		p.clientRepo = NewClientRepository(ctx, p.db)
 	}
 	return p.clientRepo
 }
@@ -300,7 +377,62 @@ func (p *MongoRepositoryProvider) RealmKeysRepository(ctx context.Context) domai
 // ConfigurationRepository returns a MongoDB-backed ConfigurationRepository.
 func (p *MongoRepositoryProvider) ConfigurationRepository(ctx context.Context) domain.ConfigurationRepository {
 	if p.configRepo == nil {
-		p.configRepo = NewConfigurationRepository(p.db)
+		p.configRepo = NewConfigurationRepository(ctx, p.db)
 	}
 	return p.configRepo
+}
+
+// ProtocolMapperRepository returns a MongoDB-backed ProtocolMapperRepository.
+func (p *MongoRepositoryProvider) ProtocolMapperRepository(ctx context.Context) domain.ProtocolMapperRepository {
+	if p.protocolMapperRepo == nil && p.db != nil {
+		repo, err := NewProtocolMapperRepository(ctx, p.db)
+		if err == nil {
+			p.protocolMapperRepo = repo
+		}
+	}
+	return p.protocolMapperRepo
+}
+
+// AuthenticationFlowRepository returns a MongoDB-backed AuthenticationFlowRepository.
+func (p *MongoRepositoryProvider) AuthenticationFlowRepository(ctx context.Context) domain.AuthenticationFlowRepository {
+	if p.authFlowRepo == nil && p.db != nil {
+		repo, err := NewAuthenticationFlowRepository(ctx, p.db)
+		if err == nil {
+			p.authFlowRepo = repo
+		}
+	}
+	return p.authFlowRepo
+}
+
+// ClientScopeRepository returns a MongoDB-backed ClientScopeRepository.
+func (p *MongoRepositoryProvider) ClientScopeRepository(ctx context.Context) domain.ClientScopeRepository {
+	if p.clientScopeRepo == nil && p.db != nil {
+		repo, err := NewClientScopeRepository(ctx, p.db)
+		if err == nil {
+			p.clientScopeRepo = repo
+		}
+	}
+	return p.clientScopeRepo
+}
+
+// RealmSettingsRepository returns a MongoDB-backed RealmSettingsRepository.
+func (p *MongoRepositoryProvider) RealmSettingsRepository(ctx context.Context) domain.RealmSettingsRepository {
+	if p.realmSettingsRepo == nil && p.db != nil {
+		repo, err := NewRealmSettingsRepository(ctx, p.db)
+		if err == nil {
+			p.realmSettingsRepo = repo
+		}
+	}
+	return p.realmSettingsRepo
+}
+
+// AuditLogRepository returns a MongoDB-backed AuditLogRepository.
+func (p *MongoRepositoryProvider) AuditLogRepository(ctx context.Context) domain.AuditLogRepository {
+	if p.auditLogRepo == nil && p.db != nil {
+		repo, err := NewAuditRepository(ctx, p.db)
+		if err == nil {
+			p.auditLogRepo = repo
+		}
+	}
+	return p.auditLogRepo
 }

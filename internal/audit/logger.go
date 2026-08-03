@@ -58,4 +58,6 @@ func Log(service, action, user, target, details string, success bool, err error)
 	// a new zerolog.Logger instance should be created and configured for that.
 	auditLogger.Log().RawJSON("audit_event", entry).Msg("")
 
+	// Async persistence: never blocks the auth path; failures are logged only.
+	persistAsync(event)
 }

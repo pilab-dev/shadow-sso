@@ -32,6 +32,8 @@ type Resolver struct {
 	RealmKeysRepo           domain.RealmKeysRepository
 	EmailService           domain.EmailService
 	PasswordHasher        domain.PasswordHasher
+	AuditLogRepo           domain.AuditLogRepository
+	FederatedIdentityRepo  domain.UserFederatedIdentityRepository
 }
 
 // Executions is the resolver for the executions field.
@@ -1442,6 +1444,53 @@ func (r *queryResolver) Session(ctx context.Context, id string) (*domain.Session
 	return r.SessionRepo.GetSessionByID(ctx, id)
 }
 
+// AuditLogs is the resolver for the auditLogs field.
+func (r *queryResolver) AuditLogs(ctx context.Context, filter *domain.AuditLogFilter, first *int, after *int) (*AuditLogConnection, error) {
+	if err := requireAdmin(ctx); err != nil {
+		return nil, err
+	}
+
+	var f domain.AuditLogFilter
+	if filter != nil {
+		f = *filter
+	}
+
+	limit := 50
+	if first != nil && *first > 0 {
+		limit = *first
+	}
+	offset := 0
+	if after != nil && *after > 0 {
+		offset = *after
+	}
+
+	events, err := r.AuditLogRepo.List(ctx, f, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	total, err := r.AuditLogRepo.Count(ctx, f)
+	if err != nil {
+		return nil, err
+	}
+
+	edges := make([]AuditLogEdge, len(events))
+	for i, e := range events {
+		edges[i] = AuditLogEdge{
+			Node:   e,
+			Cursor: e.ID,
+		}
+	}
+
+	return &AuditLogConnection{
+		Edges:      edges,
+		TotalCount: int(total),
+		PageInfo: &PageInfo{
+			HasNextPage:     offset+len(events) < int(total),
+			HasPreviousPage: offset > 0,
+		},
+	}, nil
+}
+
 // IdentityProviders is the resolver for the identityProviders field.
 func (r *queryResolver) IdentityProviders(ctx context.Context) ([]domain.IdentityProvider, error) {
 	idps, err := r.IdPRepo.ListIdPs(ctx, false)
@@ -1872,8 +1921,32 @@ func (r *userResolver) Groups(ctx context.Context, obj *domain.User) ([]domain.G
 
 // FederatedIdentities is the resolver for the federatedIdentities field.
 func (r *userResolver) FederatedIdentities(ctx context.Context, obj *domain.User) ([]FederatedIdentity, error) {
-	// Would need to look up federated identities - not yet implemented
-	return nil, nil
+	tokenInfo, ok := domain.GetAuthenticatedTokenFromContext(ctx)
+	if !ok || tokenInfo == nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+	if obj.ID != tokenInfo.UserID && !rbac.HasPermission(tokenInfo.Roles, rbac.PermUsersReadAll) {
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("permission denied to list federated identities"))
+	}
+
+	identities, err := r.FederatedIdentityRepo.ListByUserID(ctx, obj.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]FederatedIdentity, 0, len(identities))
+	for _, ident := range identities {
+		providerName := ident.ProviderID
+		if provider, pErr := r.IdPRepo.GetIdPByID(ctx, ident.ProviderID); pErr == nil && provider != nil {
+			providerName = provider.Name
+		}
+		result = append(result, FederatedIdentity{
+			IdentityProvider: providerName,
+			UserID:           ident.ProviderUserID,
+			Username:         ident.ProviderUsername,
+		})
+	}
+	return result, nil
 }
 
 // Credentials is the resolver for the credentials field.
