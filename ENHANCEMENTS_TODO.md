@@ -7,7 +7,7 @@ This document outlines potential enhancements based on the initial CI/CD and Kub
 -   [ ] **Semantic Versioning & Release Automation:**
     -   [ ] Integrate `semantic-release` or conventional commits.
     -   [ ] Automate version bumping and GitHub Release creation on merge to `main`/`v1`.
-    -   [ ] Update `publish-v1.yaml` to tag Docker images with semantic versions (e.g., `1.2.3`) alongside `:v1`.
+    -   [x] Update `publish-v1.yaml` to tag Docker images with semantic versions (e.g., `1.2.3`) alongside `:v1` (done via `.github/workflows/semantic-release.yaml`).
 -   [ ] **Automated Helm Chart Publishing:**
     -   [ ] Add step to `publish-v1.yaml` (or new workflow) to package Helm chart.
     -   [ ] Publish Helm chart to a chosen repository (GitHub Pages, ChartMuseum, OCI).
