@@ -2,33 +2,34 @@
 package ssso
 
 import (
-	"context" // For context.Background()
+	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
-	"connectrpc.com/connect"                           // For connect.WithInterceptors
-	"connectrpc.com/otelconnect"                       // For OpenTelemetry Connect interceptor
-	"github.com/gin-gonic/gin"                         // For *gin.Engine
-	"github.com/golang-jwt/jwt/v5"                     // For jwt.Claims in the logout-token signer closure
-	"github.com/pilab-dev/shadow-sso/api"              // For api.OpenIDProviderConfig
-	"github.com/pilab-dev/shadow-sso/api/openidv2_1"   // For api.NewOAuth2API
-	"github.com/pilab-dev/shadow-sso/api/webauth"      // For webauth.New, WebAuth login UI
-	"github.com/pilab-dev/shadow-sso/apps/ssso/config" // For config.Config
-	"github.com/pilab-dev/shadow-sso/cache"            // For cache.NewMemoryTokenStore
+	"connectrpc.com/connect"
+	"connectrpc.com/otelconnect"
+	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/pilab-dev/shadow-sso/api"
+	"github.com/pilab-dev/shadow-sso/api/openidv2_1"
+	"github.com/pilab-dev/shadow-sso/api/webauth"
+	"github.com/pilab-dev/shadow-sso/apps/ssso/config"
+	"github.com/pilab-dev/shadow-sso/cache"
 	"github.com/pilab-dev/shadow-sso/domain"
-	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect" // For Connect-RPC service handlers
+	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
 	"github.com/pilab-dev/shadow-sso/graphql"
 	"github.com/pilab-dev/shadow-sso/internal/audit"
 	"github.com/pilab-dev/shadow-sso/internal/notifications"
-	"github.com/pilab-dev/shadow-sso/internal/oidcflow"   // Still needed for concrete in-memory store instantiation
-	"github.com/pilab-dev/shadow-sso/internal/oidclogout" // For the OIDC back-channel logout notifier
+	"github.com/pilab-dev/shadow-sso/internal/oidcflow"
+	"github.com/pilab-dev/shadow-sso/internal/oidclogout"
+	"github.com/pilab-dev/shadow-sso/internal/telemetry"
 	"github.com/pilab-dev/shadow-sso/middleware"
-	"github.com/pilab-dev/shadow-sso/mongodb"          // For mongodb.NewMongoRepositoryProvider
-	pkgAuth "github.com/pilab-dev/shadow-sso/pkg/auth" // For auth.NewBcryptPasswordHasher
-	"github.com/pilab-dev/shadow-sso/services"         // For services.NewTokenSigner, services.NewDefaultServiceProvider
+	"github.com/pilab-dev/shadow-sso/mongodb"
+	pkgAuth "github.com/pilab-dev/shadow-sso/pkg/auth"
+	"github.com/pilab-dev/shadow-sso/services"
 	"github.com/rs/zerolog/log"
-	"sync" // For InMemoryPkceRepository
 )
 
 // NewInMemoryFlowStore creates a new in-memory implementation of domain.FlowStore.
@@ -108,7 +109,10 @@ type SSOServerOptions struct {
 }
 
 // NewSSOServer initializes and returns a configured Gin engine for the SSO server.
-func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
+func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, error) {
+	ctx, span := telemetry.StartSpan(ctx, "shadow-sso", "NewSSOServer")
+	defer span.End()
+
 	gin.SetMode(gin.ReleaseMode)
 
 	if opts.Config == nil {
@@ -200,7 +204,9 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 		EncryptionKey:      opts.EncryptionKey,
 	}
 
+	_, spSpan := telemetry.StartSpan(ctx, "shadow-sso", "NewSSOServer.serviceProvider")
 	serviceProvider, err := services.NewDefaultServiceProvider(spOpts)
+	spSpan.End()
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize service provider: %w", err)
 	}
@@ -310,7 +316,8 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 	router.GET("/consent", webauthAPI.ConsentPageHandler)
 	router.POST("/consent", webauthAPI.ConsentSubmitHandler)
 	// ---------- Connect-RPC handlers ----------
-	ctx := context.Background()
+	connectCtx, connectSpan := telemetry.StartSpan(ctx, "shadow-sso", "NewSSOServer.connectrpc")
+	defer connectSpan.End()
 
 	tokenService := serviceProvider.TokenService()
 	authInterceptor := middleware.NewAuthInterceptor(tokenService)
@@ -323,14 +330,12 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 	interceptors := connect.WithInterceptors(
 		otelConnectInterceptor, authInterceptor, authzInterceptor)
 
-	connectPasswordHasher := pkgAuth.NewBcryptPasswordHasher(0)
-
 	// Auth Service — used by frontend login
 	authServer := services.NewAuthServer(
-		opts.RepositoryProvider.UserRepository(ctx),
-		opts.RepositoryProvider.SessionRepository(ctx),
+		opts.RepositoryProvider.UserRepository(connectCtx),
+		opts.RepositoryProvider.SessionRepository(connectCtx),
 		tokenService,
-		connectPasswordHasher,
+		passwordHasher,
 		serviceProvider.FlowStore(),
 		serviceProvider.OAuthService(),
 		serviceProvider.ClientService(),
@@ -340,8 +345,8 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 
 	// User Service
 	userServer := services.NewUserServer(
-		opts.RepositoryProvider.UserRepository(ctx),
-		connectPasswordHasher,
+		opts.RepositoryProvider.UserRepository(connectCtx),
+		passwordHasher,
 		nil,
 		services.WithUserRealmSettings(opts.RepositoryProvider.RealmSettingsRepository(ctx)),
 	)
@@ -350,8 +355,8 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 
 	// TwoFactor Service
 	twoFactorServer := services.NewTwoFactorServer(
-		opts.RepositoryProvider.UserRepository(ctx),
-		connectPasswordHasher,
+		opts.RepositoryProvider.UserRepository(connectCtx),
+		passwordHasher,
 		serviceProvider.MFAService(),
 		serviceProvider.PushMFAService(),
 		"ShadowSSO",
@@ -361,15 +366,15 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 
 	// Client Management Service
 	clientManagementServer := services.NewClientManagementServer(
-		opts.RepositoryProvider.ClientRepository(ctx),
-		connectPasswordHasher,
+		opts.RepositoryProvider.ClientRepository(connectCtx),
+		passwordHasher,
 	)
 	clientPath, clientHandler := ssov1connect.NewClientManagementServiceHandler(clientManagementServer, interceptors)
 	router.Any(clientPath+"*action", gin.WrapH(clientHandler))
 
 	// IDP Management Service
 	idpManagementServer := services.NewIdPManagementServer(
-		opts.RepositoryProvider.IdPRepository(ctx),
+		opts.RepositoryProvider.IdPRepository(connectCtx),
 	)
 	idpPath, idpHandler := ssov1connect.NewIdPManagementServiceHandler(idpManagementServer, interceptors)
 	router.Any(idpPath+"*action", gin.WrapH(idpHandler))
@@ -378,8 +383,8 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 	defaultKeyGen := &services.DefaultSAKeyGenerator{}
 	saServer := services.NewServiceAccountServer(
 		defaultKeyGen,
-		opts.RepositoryProvider.ServiceAccountRepository(ctx),
-		opts.RepositoryProvider.PublicKeyRepository(ctx),
+		opts.RepositoryProvider.ServiceAccountRepository(connectCtx),
+		opts.RepositoryProvider.PublicKeyRepository(connectCtx),
 	)
 	saPath, saHandler := ssov1connect.NewServiceAccountServiceHandler(saServer, interceptors)
 	router.Any(saPath+"*action", gin.WrapH(saHandler))
@@ -387,20 +392,20 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 	// Federation Service
 	federationServer := services.NewFederationServer(
 		serviceProvider.FederationService(),
-		opts.RepositoryProvider.UserRepository(ctx),
-		opts.RepositoryProvider.UserFederatedIdentityRepository(ctx),
-		opts.RepositoryProvider.IdPRepository(ctx),
+		opts.RepositoryProvider.UserRepository(connectCtx),
+		opts.RepositoryProvider.UserFederatedIdentityRepository(connectCtx),
+		opts.RepositoryProvider.IdPRepository(connectCtx),
 		tokenService,
-		opts.RepositoryProvider.SessionRepository(ctx),
-		connectPasswordHasher,
+		opts.RepositoryProvider.SessionRepository(connectCtx),
+		passwordHasher,
 	)
 	federationPath, federationHandler := ssov1connect.NewFederationServiceHandler(federationServer, interceptors)
 	router.Any(federationPath+"*action", gin.WrapH(federationHandler))
 
 	// User Attribute + User Attribute Mapper Service
 	attrServer := services.NewUserAttributeServiceServer(
-		opts.RepositoryProvider.UserAttributeRepository(ctx),
-		opts.RepositoryProvider.UserAttributeMapperRepository(ctx),
+		opts.RepositoryProvider.UserAttributeRepository(connectCtx),
+		opts.RepositoryProvider.UserAttributeMapperRepository(connectCtx),
 	)
 	attrPath, attrHandler := ssov1connect.NewUserAttributeServiceHandler(attrServer, interceptors)
 	router.Any(attrPath+"*action", gin.WrapH(attrHandler))
@@ -408,33 +413,13 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 	router.Any(attrMapperPath+"*action", gin.WrapH(attrMapperHandler))
 
 	// Audit Service — read-only admin access to persisted audit events
-	auditServer := services.NewAuditServer(repoProvider.AuditLogRepository(ctx))
+	auditServer := services.NewAuditServer(repoProvider.AuditLogRepository(connectCtx))
 	auditPath, auditHandler := ssov1connect.NewAuditServiceHandler(auditServer, interceptors)
 	router.Any(auditPath+"*action", gin.WrapH(auditHandler))
 
+	connectSpan.End()
 	log.Info().Msg("Connect-RPC handlers registered successfully")
 	// ---------- End Connect-RPC handlers ----------
-
-	// Add health check endpoint
-	router.GET("/healthz", func(c *gin.Context) {
-		c.String(200, "OK")
-	})
-
-	// Add readiness check endpoint - verifies MongoDB connection
-	router.GET("/readyz", func(c *gin.Context) {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-
-		// Try to ping MongoDB if using MongoDB repository provider
-		if mongoRp, ok := repoProvider.(*mongodb.MongoRepositoryProvider); ok {
-			if err := mongoRp.Ping(ctx); err != nil {
-				c.String(503, "Service Unavailable: MongoDB connection failed")
-				return
-			}
-		}
-		// If we got here, MongoDB is accessible (or not using MongoDB)
-		c.String(200, "OK")
-	})
 
 	// --- GraphQL API wiring ---
 	// Reuses the same cached repository instances as the REST/Connect-RPC APIs
@@ -442,23 +427,27 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 	// set — avoids duplicate index-creation calls and swallowed constructor
 	// errors on every boot.
 	if mongoRp, ok := repoProvider.(*mongodb.MongoRepositoryProvider); ok {
-		gqlCtx := context.Background()
+		gqlCtx, gqlSpan := telemetry.StartSpan(ctx, "shadow-sso", "NewSSOServer.graphql")
+		defer gqlSpan.End()
 
-		userRepo := mongoRp.UserRepository(gqlCtx)
-		clientRepo := mongoRp.ClientRepository(gqlCtx)
-		sessionRepo := mongoRp.SessionRepository(gqlCtx)
-		idpRepo := mongoRp.IdPRepository(gqlCtx)
-		groupRepo := mongoRp.GroupRepository(gqlCtx)
-		roleRepo := mongoRp.RoleRepository(gqlCtx)
+		// Repos available via RepositoryProvider interface — reuse cached instances.
+		userRepo := repoProvider.UserRepository(gqlCtx)
+		clientRepo := repoProvider.ClientRepository(gqlCtx)
+		sessionRepo := repoProvider.SessionRepository(gqlCtx)
+		idpRepo := repoProvider.IdPRepository(gqlCtx)
+		groupRepo := repoProvider.GroupRepository(gqlCtx)
+		roleRepo := repoProvider.RoleRepository(gqlCtx)
+		realmKeysRepo := repoProvider.RealmKeysRepository(gqlCtx)
+		userAttrRepo := repoProvider.UserAttributeRepository(gqlCtx)
+		userAttrMapperRepo := repoProvider.UserAttributeMapperRepository(gqlCtx)
+		auditRepo := repoProvider.AuditLogRepository(gqlCtx)
+		fedIDRepo := repoProvider.UserFederatedIdentityRepository(gqlCtx)
+
+		// Repos not on the RepositoryProvider interface — use MongoRepositoryProvider directly.
 		protocolMapperRepo := mongoRp.ProtocolMapperRepository(gqlCtx)
 		authFlowRepo := mongoRp.AuthenticationFlowRepository(gqlCtx)
 		clientScopeRepo := mongoRp.ClientScopeRepository(gqlCtx)
 		realmSettingsRepo := mongoRp.RealmSettingsRepository(gqlCtx)
-		realmKeysRepo := mongoRp.RealmKeysRepository(gqlCtx)
-		userAttrRepo := mongoRp.UserAttributeRepository(gqlCtx)
-		userAttrMapperRepo := mongoRp.UserAttributeMapperRepository(gqlCtx)
-		auditRepo := mongoRp.AuditLogRepository(gqlCtx)
-		fedIDRepo := mongoRp.UserFederatedIdentityRepository(gqlCtx)
 
 		var emailService domain.EmailService
 		if opts.AppConfig != nil {
@@ -489,11 +478,6 @@ func NewSSOServer(opts SSOServerOptions) (*gin.Engine, error) {
 			PasswordHasher:          passwordHasher,
 			AuditLogRepo:            auditRepo,
 			FederatedIdentityRepo:   fedIDRepo,
-		}
-
-		var bootstrapToken string
-		if opts.AppConfig != nil {
-			bootstrapToken = opts.AppConfig.BootstrapToken
 		}
 
 		graphqlHandler := graphql.AuthMiddleware(

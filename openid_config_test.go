@@ -1,6 +1,7 @@
 package ssso_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -37,52 +38,50 @@ func setupMockRepoProvider(ctrl *gomock.Controller) *mock_services.MockRepositor
 	mockRepoProvider.EXPECT().UserAttributeMapperRepository(gomock.Any()).Return(mock_domain.NewMockUserAttributeMapperRepository(ctrl)).AnyTimes()
 	mockRepoProvider.EXPECT().RealmSettingsRepository(gomock.Any()).Return(mock_domain.NewMockRealmSettingsRepository(ctrl)).AnyTimes()
 	mockRepoProvider.EXPECT().AuditLogRepository(gomock.Any()).Return(mock_domain.NewMockAuditLogRepository(ctrl)).AnyTimes()
+	mockRepoProvider.EXPECT().PkceRepository(gomock.Any()).Return(mock_domain.NewMockPkceRepository(ctrl)).AnyTimes()
+	mockRepoProvider.EXPECT().ConfigurationRepository(gomock.Any()).Return(mock_domain.NewMockConfigurationRepository(ctrl)).AnyTimes()
 	return mockRepoProvider
 }
 
-func TestNewSSOServer_HealthzEndpoint(t *testing.T) {
+func buildTestOpts(ctrl *gomock.Controller) ssso.SSOServerOptions {
+	return ssso.SSOServerOptions{
+		Config: &api.OpenIDProviderConfig{
+			Issuer:            "http://localhost:8080",
+			AccessTokenTTL:    1 * time.Hour,
+			RefreshTokenTTL:   24 * time.Hour,
+			AuthCodeTTL:       10 * time.Minute,
+			KeyRotationPeriod: 24 * time.Hour,
+			SecurityConfig: api.SecurityConfig{
+				AllowedSigningAlgs: []string{"HS256"},
+			},
+			TokenConfig: api.TokenConfig{
+				AccessTokenFormat: "jwt",
+			},
+		},
+		RepositoryProvider: setupMockRepoProvider(ctrl),
+		TokenSigner:        services.NewTokenSigner(),
+		TokenCache:         cache.NewMemoryTokenStore(1 * time.Hour),
+	}
+}
+
+// /healthz and /readyz are served exclusively by the management server (separate port).
+// The main SSO router must not expose them so that probe traffic never hits the SSO listener.
+
+func TestNewSSOServer_HealthzNotOnSSORouter(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	// Create minimal mocks
-	mockRepoProvider := setupMockRepoProvider(ctrl)
-	mockTokenSigner := services.NewTokenSigner()
-	mockTokenCache := cache.NewMemoryTokenStore(1 * time.Hour)
-
-	config := &api.OpenIDProviderConfig{
-		Issuer:            "http://localhost:8080",
-		AccessTokenTTL:    1 * time.Hour,
-		RefreshTokenTTL:   24 * time.Hour,
-		AuthCodeTTL:       10 * time.Minute,
-		KeyRotationPeriod: 24 * time.Hour,
-		SecurityConfig: api.SecurityConfig{
-			AllowedSigningAlgs: []string{"HS256"},
-		},
-		TokenConfig: api.TokenConfig{
-			AccessTokenFormat: "jwt",
-		},
-	}
-
-	opts := ssso.SSOServerOptions{
-		Config:             config,
-		RepositoryProvider: mockRepoProvider,
-		TokenSigner:        mockTokenSigner,
-		TokenCache:         mockTokenCache,
-	}
-
-	router, err := ssso.NewSSOServer(opts)
+	router, err := ssso.NewSSOServer(context.Background(), buildTestOpts(ctrl))
 	require.NoError(t, err)
 	require.NotNil(t, router)
 
-	// Test /healthz endpoint
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/healthz", nil)
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, "OK", w.Body.String())
+	assert.Equal(t, http.StatusNotFound, w.Code, "/healthz must not be registered on the SSO router")
 }
 
 func TestValidateConfig_NonPositiveAccessTokenTTL_ReturnsError(t *testing.T) {
@@ -142,47 +141,19 @@ func TestValidateConfig_NegativeAuthCodeTTL_ReturnsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "auth code TTL must be positive")
 }
 
-func TestNewSSOServer_ReadyzEndpoint(t *testing.T) {
+func TestNewSSOServer_ReadyzNotOnSSORouter(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	// Create minimal mocks
-	mockRepoProvider := setupMockRepoProvider(ctrl)
-	mockTokenSigner := services.NewTokenSigner()
-	mockTokenCache := cache.NewMemoryTokenStore(1 * time.Hour)
-
-	config := &api.OpenIDProviderConfig{
-		Issuer:            "http://localhost:8080",
-		AccessTokenTTL:    1 * time.Hour,
-		RefreshTokenTTL:   24 * time.Hour,
-		AuthCodeTTL:       10 * time.Minute,
-		KeyRotationPeriod: 24 * time.Hour,
-		SecurityConfig: api.SecurityConfig{
-			AllowedSigningAlgs: []string{"HS256"},
-		},
-		TokenConfig: api.TokenConfig{
-			AccessTokenFormat: "jwt",
-		},
-	}
-
-	opts := ssso.SSOServerOptions{
-		Config:             config,
-		RepositoryProvider: mockRepoProvider,
-		TokenSigner:        mockTokenSigner,
-		TokenCache:         mockTokenCache,
-	}
-
-	router, err := ssso.NewSSOServer(opts)
+	router, err := ssso.NewSSOServer(context.Background(), buildTestOpts(ctrl))
 	require.NoError(t, err)
 	require.NotNil(t, router)
 
-	// Test /readyz endpoint (should work for non-MongoDB providers)
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/readyz", nil)
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, "OK", w.Body.String())
+	assert.Equal(t, http.StatusNotFound, w.Code, "/readyz must not be registered on the SSO router")
 }

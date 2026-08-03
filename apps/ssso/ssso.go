@@ -130,6 +130,9 @@ func main() {
 		log.Info().Msg("Tracing disabled — skip InitTracer (set SSSO_TRACING_ENABLED=true to enable)")
 	}
 
+	// Root startup span — covers all initialization until the server is listening.
+	startupCtx, startupSpan := telemetry.StartSpan(context.Background(), "shadow-sso", "server.startup")
+
 	// Create a new Prometheus registry
 	promRegistry := prometheus.NewRegistry()
 	// Register standard Go collectors
@@ -163,27 +166,26 @@ func main() {
 
 	// Bootstrap default configurations from environment variables
 	log.Info().Msg("Bootstrapping default configurations...")
-	configRepo := repoProvider.ConfigurationRepository(context.Background())
-	if err := configRepo.CreateDefaultConfigs(context.Background()); err != nil {
+	configRepo := repoProvider.ConfigurationRepository(startupCtx)
+	if err := configRepo.CreateDefaultConfigs(startupCtx); err != nil {
 		log.Warn().Err(err).Msg("Failed to bootstrap default configurations, some features may not work correctly")
 	} else {
 		log.Info().Msg("Default configurations bootstrapped successfully")
 	}
 
 	// Seed default realm roles (ROLE_ADMIN/ROLE_USER) and the default group (idempotent)
-	seedCtx := context.Background()
-	if err := mongodb.SeedDefaultRealmRoles(seedCtx, repoProvider.RoleRepository(seedCtx), rbac.RoleAdmin, rbac.RoleUser); err != nil {
+	if err := mongodb.SeedDefaultRealmRoles(startupCtx, repoProvider.RoleRepository(startupCtx), rbac.RoleAdmin, rbac.RoleUser); err != nil {
 		log.Warn().Err(err).Msg("Failed to seed default realm roles, role mappings may be incomplete")
 	} else {
 		log.Info().Msg("Default realm roles seeded")
 	}
-	if err := mongodb.SeedDefaultGroup(seedCtx, repoProvider.GroupRepository(seedCtx), "default", "/default"); err != nil {
+	if err := mongodb.SeedDefaultGroup(startupCtx, repoProvider.GroupRepository(startupCtx), "default", "/default"); err != nil {
 		log.Warn().Err(err).Msg("Failed to seed default group")
 	} else {
 		log.Info().Msg("Default group seeded")
 	}
 	if mongoRp, ok := repoProvider.(*mongodb.MongoRepositoryProvider); ok {
-		if err := mongodb.SeedDefaultBrowserFlow(seedCtx, mongoRp.AuthenticationFlowRepository(seedCtx)); err != nil {
+		if err := mongodb.SeedDefaultBrowserFlow(startupCtx, mongoRp.AuthenticationFlowRepository(startupCtx)); err != nil {
 			log.Warn().Err(err).Msg("Failed to seed default browser flow")
 		} else {
 			log.Info().Msg("Default browser flow seeded")
@@ -192,7 +194,7 @@ func main() {
 
 	// Bootstrap initial admin user and client from environment variables
 	if cfg.InitialAdminEnabled && cfg.InitialAdminEmail != "" && cfg.InitialAdminPassword != "" {
-		bCtx := context.Background()
+		bCtx := startupCtx
 
 		// Create admin user if not exists
 		userRepo := repoProvider.UserRepository(bCtx)
@@ -308,7 +310,7 @@ func main() {
 	}
 
 	// Start SSO server
-	mainSrv, err := server.StartServer(cfg, repoProvider,
+	mainSrv, err := server.StartServer(startupCtx, cfg, repoProvider,
 		server.WithExtraMiddlewares(
 			corsMiddleware(cfg.AllowedOrigins),
 			requestIDMiddleware(),
@@ -319,6 +321,9 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to start SSO server")
 	}
+
+	// Startup complete — end the root startup span before entering the serve loop.
+	startupSpan.End()
 
 	// Start management server on a separate port for health, metrics, pprof
 	mgmtSrv := server.StartManagementServer(cfg.MgmtHTTPAddr, repoProvider, promRegistry)

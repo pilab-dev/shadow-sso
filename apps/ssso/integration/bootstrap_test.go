@@ -338,7 +338,7 @@ func TestBootstrap_Idempotent(t *testing.T) {
 	bootstrapAdminUIClient(t, provider1, "")
 
 	// Start the first SSO server
-	srv1, err := server.StartServer(cfg, provider1)
+	srv1, err := server.StartServer(context.Background(), cfg, provider1)
 	if err != nil {
 		t.Fatalf("Failed to start first SSO server: %v", err)
 	}
@@ -384,7 +384,7 @@ func TestBootstrap_Idempotent(t *testing.T) {
 	bootstrapAdminUIClient(t, provider2, "")
 
 	// Start the second SSO server
-	srv2, err := server.StartServer(cfg, provider2)
+	srv2, err := server.StartServer(context.Background(), cfg, provider2)
 	if err != nil {
 		t.Fatalf("Failed to start second SSO server: %v", err)
 	}

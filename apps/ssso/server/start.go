@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
@@ -8,13 +9,12 @@ import (
 	"net/http"
 	"time"
 
-	"context"
-
 	"github.com/gin-gonic/gin"
 	ssso "github.com/pilab-dev/shadow-sso"
 	"github.com/pilab-dev/shadow-sso/apps/ssso/config"
 	"github.com/pilab-dev/shadow-sso/cache"
 	"github.com/pilab-dev/shadow-sso/domain"
+	"github.com/pilab-dev/shadow-sso/internal/telemetry"
 	"github.com/pilab-dev/shadow-sso/mongodb"
 	pkgcrypto "github.com/pilab-dev/shadow-sso/pkg/crypto"
 	"github.com/pilab-dev/shadow-sso/services"
@@ -160,7 +160,9 @@ func seedRealmDefaultKey(ctx context.Context, cfg config.Config, repo domain.Rea
 // It handles TokenSigner initialization, SSOServerOptions creation,
 // and returns a running *http.Server.
 // The caller is responsible for Shutdown().
-func StartServer(cfg config.Config, repoProvider services.RepositoryProvider, extraOpts ...ServerOption) (*http.Server, error) {
+func StartServer(ctx context.Context, cfg config.Config, repoProvider services.RepositoryProvider, extraOpts ...ServerOption) (*http.Server, error) {
+	ctx, span := telemetry.StartSpan(ctx, "shadow-sso", "server.start")
+	defer span.End()
 	// Map internal config to public api.OpenIDProviderConfig
 	oidcConfig := cfg.ToOpenIDProviderConfig()
 
@@ -202,7 +204,7 @@ func StartServer(cfg config.Config, repoProvider services.RepositoryProvider, ex
 	}
 
 	// Initialize the SSO server router
-	router, err := ssso.NewSSOServer(opts)
+	router, err := ssso.NewSSOServer(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize SSO server: %w", err)
 	}

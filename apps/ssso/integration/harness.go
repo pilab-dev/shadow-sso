@@ -77,7 +77,7 @@ func StartTestServer(t testing.TB, extraCfg ...func(*config.Config)) (*http.Serv
 	}
 
 	// Start the SSO server
-	srv, err := server.StartServer(cfg, repoProvider)
+	srv, err := server.StartServer(bCtx, cfg, repoProvider)
 	if err != nil {
 		// Cleanup on failure
 		if mongoRp, ok := repoProvider.(*mongodb.MongoRepositoryProvider); ok {
