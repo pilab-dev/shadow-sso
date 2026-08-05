@@ -1,6 +1,15 @@
 # Production values for Shadow SSO Backend deployment
 # This file configures the application for production use with existing MongoDB
 #
+# SECRET INJECTION: Bank-Vaults vault-secrets-webhook + OpenBao
+# ----------------------------------------------------------------
+# Config secrets (SSSO_MONGO_URI, SSSO_CONFIG_ENCRYPTION_KEY) are injected at
+# pod start from OpenBao via the Bank-Vaults mutating webhook
+# (vault.security.banzaicloud.io/mutate annotation). They are stored in the
+# cluster's OpenBao at secret/data/ShadowSSO and referenced as
+# "vault:secret/data/ShadowSSO#<KEY>". No plaintext Kubernetes Secret is
+# needed for these two values.
+#
 # REQUIRED KUBERNETES SECRETS (must be created before deployment):
 #
 # 1. sso-signing-key - RSA private key for JWT token signing
@@ -16,17 +25,14 @@
 #    Keys: SSSO_INITIAL_ADMIN_EMAIL, SSSO_INITIAL_ADMIN_PASSWORD,
 #          SSSO_INITIAL_ADMIN_FIRST_NAME, SSSO_INITIAL_ADMIN_LAST_NAME
 #
-# 3. ssso-config - Application configuration secrets (MongoDB URI, config encryption key)
-#    kubectl create secret generic ssso-config \
-#      --from-literal=SSSO_MONGO_URI='mongodb://user:pass@host:27017/shadow_sso?authSource=shadow_sso' \
-#      --from-literal=SSSO_CONFIG_ENCRYPTION_KEY='<32-byte-random-string>'
-#    Keys: SSSO_MONGO_URI, SSSO_CONFIG_ENCRYPTION_KEY
+# 3. OpenBao secret/data/ShadowSSO (injected via Bank-Vaults webhook):
+#    SSSO_MONGO_URI=<mongodb connection string>
+#    SSSO_CONFIG_ENCRYPTION_KEY=<32-byte-random-string>
 #    SSSO_CONFIG_ENCRYPTION_KEY MUST be exactly 32 bytes and MUST be set here — without it the
 #    app now refuses to start (see SSSO_ALLOW_INSECURE_DEFAULTS). Generate with:
 #      openssl rand -hex 16
 #
 # Secrets are stored in KeePassXC vault at ~/Workspace/Passwords.kdbx (group: shadow-sso/)
-# TODO: Evaluate OpenBao for dynamic secret management if scale demands it
 #
 # TLS: the Go server itself performs no TLS termination (no ListenAndServeTLS,
 # no cert loading) — it must always run behind a TLS-terminating proxy/ingress.
@@ -94,13 +100,15 @@ ingress:
       hosts:
         - sso.pilab.hu
 
-# SSSO_MONGO_URI must be provided via extraEnvFrom referencing ssso-config Secret
+# SSSO_MONGO_URI is injected from OpenBao (secret/data/ShadowSSO) by the
+# Bank-Vaults webhook at pod start — value below is the vault reference.
 config:
   SSSO_TRACING_ENABLED: "true"
   SSSO_LOG_LEVEL: "trace"
   SSSO_JSON_LOG: "false"
   SSSO_ISSUER_URL: "https://sso.pilab.hu"
   SSSO_MONGO_DB_NAME: "sso_dev"
+  SSSO_MONGO_URI: "vault:secret/data/ShadowSSO#SSSO_MONGO_URI"
   SSSO_SIGNING_KEY_PATH: "/etc/sso/keys/private.pem"
   # SSSO_ALLOWED_ORIGINS now defaults to closed (no cross-origin requests
   # allowed) instead of "*" — set the actual browser-facing RP origin(s)
@@ -160,7 +168,8 @@ frontend:
   imagePullSecrets:
     - name: ghcr-secret
   
-  podAnnotations: {}
+podAnnotations:
+  vault.security.banzaicloud.io/mutate: "true"
   podSecurityContext: {}
   
   securityContext:
@@ -223,11 +232,11 @@ tracing:
   serviceName: "shadow-sso"
   # otlpProtocol: "grpc"      # grpc (default, port 4317) or http/protobuf (port 4318)
 
-extraEnv: []
-
-extraEnvFrom:
-  - secretRef:
-      name: ssso-config
+# SSSO_CONFIG_ENCRYPTION_KEY is injected from OpenBao (secret/data/ShadowSSO)
+# by the Bank-Vaults webhook at pod start.
+extraEnv:
+  - name: SSSO_CONFIG_ENCRYPTION_KEY
+    value: "vault:secret/data/ShadowSSO#SSSO_CONFIG_ENCRYPTION_KEY"
 
 # Expected Kubernetes Secrets (must be pre-created before deployment):
 # secrets:
@@ -239,5 +248,5 @@ extraEnvFrom:
 #     keys: ["SSSO_INITIAL_ADMIN_EMAIL", "SSSO_INITIAL_ADMIN_PASSWORD",
 #            "SSSO_INITIAL_ADMIN_FIRST_NAME", "SSSO_INITIAL_ADMIN_LAST_NAME"]
 #   config:
-#     secretName: "ssso-config"
+#     OpenBao secret/data/ShadowSSO (injected via Bank-Vaults webhook)
 #     keys: ["SSSO_MONGO_URI", "SSSO_CONFIG_ENCRYPTION_KEY"]

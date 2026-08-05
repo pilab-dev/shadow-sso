@@ -52,8 +52,10 @@ spec:
               value: {{ .Values.config.SSSO_NEXTJS_LOGIN_URL | quote }}
             - name: SSSO_JSON_LOG
               value: {{ .Values.config.SSSO_JSON_LOG | quote }}
-            - name: SSSO_TRACING_ENABLE
-              value: {{ .Values.config.SSSO_TRACING_ENABLE | quote }}
+            {{- if not .Values.tracing.enabled }}
+            - name: SSSO_TRACING_ENABLED
+              value: {{ .Values.config.SSSO_TRACING_ENABLED | quote }}
+            {{- end }}
             {{- if include "ssso-backend.mongodb.uri" . }}
             - name: SSSO_MONGO_URI
               value: {{ include "ssso-backend.mongodb.uri" . | quote }}
@@ -118,13 +120,13 @@ spec:
           livenessProbe:
             httpGet:
               path: /healthz
-              port: http
+              port: metrics
             initialDelaySeconds: 30
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /readyz
-              port: http
+              port: metrics
             initialDelaySeconds: 5
             periodSeconds: 10
           resources:
