@@ -126,12 +126,24 @@ func (r *clientResolver) TokenEndpointAuthMethod(ctx context.Context, obj *domai
 
 // ClientType is the resolver for the clientType field.
 func (r *clientResolver) ClientType(ctx context.Context, obj *domain.Client) (*string, error) {
-	panic("not implemented")
+	t := string(obj.Type)
+	if t == "" {
+		return nil, nil
+	}
+	return &t, nil
 }
 
 // Jwks is the resolver for the jwks field.
 func (r *clientResolver) Jwks(ctx context.Context, obj *domain.Client) (*string, error) {
-	panic("not implemented")
+	if obj.JWKS == nil {
+		return nil, nil
+	}
+	b, err := json.Marshal(obj.JWKS)
+	if err != nil {
+		return nil, err
+	}
+	s := string(b)
+	return &s, nil
 }
 
 // Roles is the resolver for the roles field.
@@ -996,7 +1008,8 @@ func (r *mutationResolver) DeleteUserAttribute(ctx context.Context, id string) (
 
 // DeleteUserAttributesByUserID is the resolver for the deleteUserAttributesByUserId field.
 func (r *mutationResolver) DeleteUserAttributesByUserID(ctx context.Context, userID string) (bool, error) {
-	panic("not implemented")
+	err := r.UserAttributeRepo.DeleteAttributesByUserID(ctx, userID)
+	return err == nil, err
 }
 
 // CreateUserAttributeMapper is the resolver for the createUserAttributeMapper field.
@@ -1516,9 +1529,22 @@ func (r *queryResolver) Realm(ctx context.Context) (*domain.RealmSettings, error
 
 // IntrospectToken is the resolver for the introspectToken field.
 func (r *queryResolver) IntrospectToken(ctx context.Context, token string) (*domain.TokenIntrospection, error) {
-	// This would typically validate the token using TokenService
-	// For now, return a placeholder - this needs the token service
-	return &domain.TokenIntrospection{Active: false}, nil
+	// The auth middleware already validated the Bearer token and stored TokenInfo in context.
+	// For the admin UI (which passes its own Bearer token as the query parameter), we use that.
+	tokenInfo, ok := domain.GetAuthenticatedTokenFromContext(ctx)
+	if !ok || tokenInfo == nil || tokenInfo.IsRevoked || time.Now().After(tokenInfo.ExpiresAt) {
+		return &domain.TokenIntrospection{Active: false}, nil
+	}
+	return &domain.TokenIntrospection{
+		Active:    true,
+		Sub:       tokenInfo.UserID,
+		ClientID:  tokenInfo.ClientID,
+		Scope:     tokenInfo.Scope,
+		TokenType: tokenInfo.TokenType,
+		Exp:       tokenInfo.ExpiresAt.Unix(),
+		Iat:       tokenInfo.IssuedAt.Unix(),
+		Jti:       tokenInfo.ID,
+	}, nil
 }
 
 // AuthenticationExecutions is the resolver for the authenticationExecutions field.

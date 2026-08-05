@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -196,9 +197,9 @@ func main() {
 	if cfg.InitialAdminEnabled && cfg.InitialAdminEmail != "" && cfg.InitialAdminPassword != "" {
 		bCtx := startupCtx
 
-		// Create admin user if not exists
+		// Create admin user if not exists; ensure ROLE_ADMIN is assigned either way
 		userRepo := repoProvider.UserRepository(bCtx)
-		_, uErr := userRepo.GetUserByEmail(bCtx, cfg.InitialAdminEmail)
+		existingAdminUser, uErr := userRepo.GetUserByEmail(bCtx, cfg.InitialAdminEmail)
 		if errors.Is(uErr, domain.ErrUserNotFound) {
 			passwordHasher := pkgauth.NewBcryptPasswordHasher(bcrypt.DefaultCost)
 			hash, pHashErr := passwordHasher.Hash(cfg.InitialAdminPassword)
@@ -211,17 +212,35 @@ func main() {
 					FirstName:    cfg.InitialAdminFirstName,
 					LastName:     cfg.InitialAdminLastName,
 					Status:       domain.UserStatusActive,
+					Roles:        []string{rbac.RoleAdmin, rbac.RoleUser},
 				}
 				if createErr := userRepo.CreateUser(bCtx, user); createErr != nil {
 					log.Warn().Err(createErr).Str("email", cfg.InitialAdminEmail).Msg("Failed to create initial admin user")
 				} else {
-					log.Info().Str("email", cfg.InitialAdminEmail).Msg("Initial admin user created")
+					log.Info().Str("email", cfg.InitialAdminEmail).Msg("Initial admin user created with ROLE_ADMIN")
 				}
 			}
 		} else if uErr != nil {
 			log.Warn().Err(uErr).Msg("Failed to check for existing admin user")
 		} else {
-			log.Info().Str("email", cfg.InitialAdminEmail).Msg("Initial admin user already exists, skipping creation")
+			// User already exists — ensure ROLE_ADMIN is present
+			hasAdminRole := false
+			for _, r := range existingAdminUser.Roles {
+				if r == rbac.RoleAdmin {
+					hasAdminRole = true
+					break
+				}
+			}
+			if !hasAdminRole {
+				existingAdminUser.Roles = append(existingAdminUser.Roles, rbac.RoleAdmin, rbac.RoleUser)
+				if updateErr := userRepo.UpdateUser(bCtx, existingAdminUser); updateErr != nil {
+					log.Warn().Err(updateErr).Str("email", cfg.InitialAdminEmail).Msg("Failed to assign ROLE_ADMIN to existing admin user")
+				} else {
+					log.Info().Str("email", cfg.InitialAdminEmail).Msg("ROLE_ADMIN assigned to existing admin user")
+				}
+			} else {
+				log.Info().Str("email", cfg.InitialAdminEmail).Msg("Initial admin user already exists with ROLE_ADMIN")
+			}
 		}
 
 		// Create or update confidential admin-ui client
@@ -240,13 +259,35 @@ func main() {
 			if hashErr != nil {
 				log.Warn().Err(hashErr).Msg("Failed to hash admin-ui client secret, skipping client creation")
 			} else {
+				redirectURIs := []string{}
+				if cfg.NextJSLoginURL != "" {
+					// Derive callback URL from the Next.js login URL origin
+					if loginURL, parseErr := url.Parse(cfg.NextJSLoginURL); parseErr == nil {
+						callbackURL := fmt.Sprintf("%s://%s/callback", loginURL.Scheme, loginURL.Host)
+						redirectURIs = append(redirectURIs, callbackURL)
+					}
+				}
+				// Always include common local dev redirect URIs
+				for _, devURI := range []string{"http://localhost:3000/callback", "http://localhost:8080/callback"} {
+					found := false
+					for _, r := range redirectURIs {
+						if r == devURI {
+							found = true
+							break
+						}
+					}
+					if !found {
+						redirectURIs = append(redirectURIs, devURI)
+					}
+				}
 				client := &domain.Client{
 					ID:                "admin-ui",
 					Secret:            string(hashedSecret),
 					Type:              domain.ClientTypeConfidential,
 					Name:              "Admin UI",
-					AllowedGrantTypes: []string{"password", "refresh_token", "client_credentials"},
+					AllowedGrantTypes: []string{"authorization_code", "password", "refresh_token", "client_credentials"},
 					AllowedScopes:     []string{"openid", "profile", "email"},
+					RedirectURIs:      redirectURIs,
 					IsActive:          true,
 					IsConfidential:    true,
 					TokenEndpointAuth: "client_secret_post",
@@ -272,18 +313,28 @@ func main() {
 				}
 			}
 		} else {
-			// Client exists — ensure it has client_credentials grant and admin roles
+			// Client exists — ensure it has required grant types and redirect URIs
 			needsUpdate := false
-			hasCC := false
+			grantSet := make(map[string]bool)
 			for _, gt := range existingClient.AllowedGrantTypes {
-				if gt == "client_credentials" {
-					hasCC = true
-					break
+				grantSet[gt] = true
+			}
+			for _, required := range []string{"authorization_code", "client_credentials"} {
+				if !grantSet[required] {
+					existingClient.AllowedGrantTypes = append(existingClient.AllowedGrantTypes, required)
+					needsUpdate = true
 				}
 			}
-			if !hasCC {
-				existingClient.AllowedGrantTypes = append(existingClient.AllowedGrantTypes, "client_credentials")
-				needsUpdate = true
+			// Ensure local dev redirect URIs are registered
+			redirectSet := make(map[string]bool)
+			for _, r := range existingClient.RedirectURIs {
+				redirectSet[r] = true
+			}
+			for _, devURI := range []string{"http://localhost:3000/callback", "http://localhost:8080/callback"} {
+				if !redirectSet[devURI] {
+					existingClient.RedirectURIs = append(existingClient.RedirectURIs, devURI)
+					needsUpdate = true
+				}
 			}
 			if len(existingClient.ServiceAccountRoles) == 0 {
 				existingClient.ServiceAccountRoles = []string{"ROLE_ADMIN"}

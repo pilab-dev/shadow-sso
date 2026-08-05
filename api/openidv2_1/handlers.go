@@ -1591,13 +1591,29 @@ type TokenRequest struct {
 }
 
 func (oa *OAuth2API) OpenIDConfigurationHandler(c *gin.Context) {
-	scheme := c.Request.URL.Scheme
-	if scheme == "" {
-		scheme = "http"
-	}
-
-	baseURL := scheme + "://" + c.Request.Host
 	cfg := oa.config // Use the injected OpenIDProviderConfig
+
+	// Derive baseURL from the configured issuer when available — this is the
+	// authoritative source and avoids the TLS-termination proxy problem where
+	// c.Request.URL.Scheme is always empty (giving "http" instead of "https").
+	// Fall back to sniffing X-Forwarded-Proto / the request scheme only when
+	// no issuer is configured.
+	var baseURL string
+	if cfg.Issuer != "" {
+		if u, err := url.Parse(cfg.Issuer); err == nil {
+			baseURL = u.Scheme + "://" + u.Host
+		}
+	}
+	if baseURL == "" {
+		scheme := c.GetHeader("X-Forwarded-Proto")
+		if scheme == "" {
+			scheme = c.Request.URL.Scheme
+		}
+		if scheme == "" {
+			scheme = "http"
+		}
+		baseURL = scheme + "://" + c.Request.Host
+	}
 
 	// Initialize the response struct
 	resp := sssoapi.OpenIDConfiguration{}
@@ -1878,9 +1894,16 @@ func (oa *OAuth2API) handlePasswordGrant(c *gin.Context, cli *domain.Client) (*s
 func (oa *OAuth2API) handleClientCredentialsGrant(c *gin.Context, cli *domain.Client) (*sssoapi.TokenResponse, error) {
 	scope := c.PostForm("scope")
 
+	// Use the original plaintext secret from the request, not the hash stored
+	// on cli.Secret — ClientCredentials validates credentials again internally.
+	clientSecret := c.PostForm("client_secret")
+	if clientSecret == "" {
+		_, clientSecret, _ = c.Request.BasicAuth()
+	}
+
 	ctx := c.Request.Context()
 
-	return oa.service.ClientCredentials(ctx, cli.ID, cli.Secret, scope)
+	return oa.service.ClientCredentials(ctx, cli.ID, clientSecret, scope)
 }
 
 func (oa *OAuth2API) handleRefreshTokenGrant(c *gin.Context, cli *domain.Client) (*sssoapi.TokenResponse, error) {
@@ -1892,7 +1915,7 @@ func (oa *OAuth2API) handleRefreshTokenGrant(c *gin.Context, cli *domain.Client)
 	ctx := c.Request.Context()
 
 	tokenResponse, err := oa.service.RefreshToken(ctx, refreshToken, cli.ID)
-	if err == nil && tokenResponse != nil {
+	if err == nil && tokenResponse != nil && metrics.TokensRefreshedTotal != nil {
 		metrics.TokensRefreshedTotal.Inc()
 	}
 	return tokenResponse, err
