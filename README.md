@@ -20,7 +20,7 @@ Shadow SSO provides a complete suite of tools to implement secure authentication
 
 ## Activity
 
-![Activity](https://repobeats.axiom.co/api/embed/d3928fa3b3baa758e899f0e6924a65bc10622127.svg "Repobeats analytics image")
+![Alt](https://repobeats.axiom.co/api/embed/d3928fa3b3baa758e899f0e6924a65bc10622127.svg "Repobeats analytics image")
 
 ## ✨ Key Features
 
