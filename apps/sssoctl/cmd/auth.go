@@ -45,6 +45,19 @@ var loginCmd = &cobra.Command{
 			}
 		}
 
+		// Device flow login: RFC 8628 device authorization grant. Does not use gRPC.
+		if useDeviceFlow, err := cmd.Flags().GetBool("device"); err == nil && useDeviceFlow {
+			deviceLoginClientID, err = cmd.Flags().GetString("client-id")
+			if err != nil {
+				return fmt.Errorf("failed to read --client-id flag: %w", err)
+			}
+			deviceLoginScope, err = cmd.Flags().GetString("scope")
+			if err != nil {
+				return fmt.Errorf("failed to read --scope flag: %w", err)
+			}
+			return runDeviceLogin(currentCtx)
+		}
+
 		fmt.Print("Enter email: ")
 		reader := bufio.NewReader(os.Stdin)
 		email, _ := reader.ReadString('\n')
@@ -135,4 +148,7 @@ func init() {
 	authCmd.AddCommand(loginCmd)
 	authCmd.AddCommand(logoutCmd)
 	// loginCmd can have flags for --endpoint, --username, etc. to override context or for non-interactive login
+	loginCmd.Flags().Bool("device", false, "Use the OAuth 2.0 device authorization flow (RFC 8628) instead of gRPC login")
+	loginCmd.Flags().String("client-id", "sssoctl", "OAuth client ID to use for device flow login")
+	loginCmd.Flags().String("scope", "openid profile email", "Space-separated OAuth scopes to request for device flow login")
 }
