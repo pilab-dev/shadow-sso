@@ -169,15 +169,6 @@ func (oa *OAuth2API) RegisterRoutes(e *gin.Engine) {
 	// Client JWKS endpoints
 	e.GET("/clients/:clientId/jwks", oa.ClientJWKSHandler)
 
-	// Device Verification User-Facing Endpoints
-	deviceGroup := e.Group("/oauth2/device")
-	{
-		// Assuming some auth middleware (e.g., EnsureAuthenticated) might be applied to this group or individual routes.
-		// For this subtask, handlers will manually check for userID in context.
-		deviceGroup.GET("/verify", oa.DeviceVerificationPageHandler)
-		deviceGroup.POST("/verify", oa.DeviceVerificationSubmitHandler)
-	}
-
 	// API Endpoints for Next.js UI driven OIDC flow
 	oidcAPIGroup := e.Group("/api/oidc")
 	{
@@ -194,48 +185,6 @@ func (oa *OAuth2API) RegisterRoutes(e *gin.Engine) {
 }
 
 // ... (DeviceAuthorizationHandler, TokenHandler, handleDeviceCodeGrant, etc. - no changes here) ...
-
-const deviceVerificationHTML = `
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Activate Device</title>
-    <style>
-        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 90vh; background-color: #f4f4f4; color: #333; }
-        .container { background-color: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center; }
-        input[type="text"] { padding: 10px; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 4px; width: calc(100%% - 22px); }
-        button { padding: 10px 20px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
-        button:hover { background-color: #0056b3; }
-        .message { margin-top: 20px; padding: 10px; border-radius: 4px; }
-        .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb;}
-        .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb;}
-        .user-code-display { font-size: 1.2em; font-weight: bold; margin-bottom: 15px; color: #555; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h2>Activate Device</h2>
-        <p>Please enter the code displayed on your device.</p>
-        {{if .UserCodePreFill}}
-        <p class="user-code-display">Code: {{.UserCodePreFill}}</p>
-        <form method="POST" action="/oauth2/device/verify">
-            <input type="hidden" name="user_code" value="{{.UserCodePreFill}}" />
-            <button type="submit">Confirm Activation</button>
-        </form>
-        {{else}}
-        <form method="POST" action="/oauth2/device/verify">
-            <input type="text" name="user_code" placeholder="Enter code (e.g., ABCD-EFGH)" required autofocus />
-            <button type="submit">Submit</button>
-        </form>
-        {{end}}
-        {{if .Message}}
-        <div class="message {{.MessageType}}">{{.Message}}</div>
-        {{end}}
-    </div>
-</body>
-</html>`
-
-var deviceVerificationTemplate = template.Must(template.New("deviceVerify").Parse(deviceVerificationHTML))
 
 const federatedErrorHTML = `
 <!DOCTYPE html>
@@ -350,120 +299,6 @@ func extractRawState(state string) string {
 		return parts[1]
 	}
 	return ""
-}
-
-// DeviceVerificationPageHandler serves the HTML page for user to enter their device code.
-// It can optionally pre-fill the user_code if provided as a query parameter.
-func (oa *OAuth2API) DeviceVerificationPageHandler(c *gin.Context) {
-	// This endpoint must be accessed by an authenticated user.
-	// For now, we'll simulate checking for a userID. A real app uses middleware.
-	_, userIDExists := c.Get("userID") // Example: userID set by auth middleware
-	if !userIDExists {
-		// In a real app, redirect to login page with a `return_to` parameter.
-		// For now, show an error or a simplified login prompt.
-		log.Warn().Msg("DeviceVerificationPageHandler: User not authenticated. Cannot display verification page.")
-		c.HTML(http.StatusUnauthorized, "deviceVerify", gin.H{
-			"Message":     "You must be logged in to activate a device.",
-			"MessageType": "error",
-		})
-		return
-	}
-
-	userCode := c.Query("user_code") // Allow pre-filling from query param e.g. /device/verify?user_code=XXXX-YYYY
-
-	c.Header("Content-Type", "text/html; charset=utf-8")
-	data := gin.H{
-		"UserCodePreFill": userCode,
-	}
-	err := deviceVerificationTemplate.Execute(c.Writer, data)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to render device verification page template")
-		c.String(http.StatusInternalServerError, "Error rendering page")
-	}
-}
-
-// DeviceVerificationSubmitHandler handles the submission of the device code by the user.
-func (oa *OAuth2API) DeviceVerificationSubmitHandler(c *gin.Context) {
-	userCode := c.PostForm("user_code")
-	if userCode == "" {
-		c.Header("Content-Type", "text/html; charset=utf-8")
-		err := deviceVerificationTemplate.Execute(c.Writer, gin.H{
-			"Message":     "User code cannot be empty.",
-			"MessageType": "error",
-		})
-		if err != nil {
-			log.Error().Err(err).Msg("Failed to render template for empty user code")
-		}
-		return
-	}
-
-	// This endpoint MUST be accessed by an authenticated user.
-	// The userID should be available from the session or a JWT token processed by middleware.
-	// Example: userID, ok := c.Get("userID").(string)
-	userIDVal, userIDExists := c.Get("userID") // Assume userID is string
-	if !userIDExists {
-		log.Error().Msg("DeviceVerificationSubmitHandler: User not authenticated. Cannot verify code.")
-		c.Header("Content-Type", "text/html; charset=utf-8")
-		err := deviceVerificationTemplate.Execute(c.Writer, gin.H{
-			"UserCodePreFill": userCode, // Keep the code in the form
-			"Message":         "Authentication required. Please log in to activate your device.",
-			"MessageType":     "error",
-		})
-		if err != nil {
-			log.Error().Err(err).Msg("Failed to render template for auth required")
-		}
-		return
-	}
-	userID, ok := userIDVal.(string)
-	if !ok || userID == "" {
-		log.Error().Interface("userIDVal", userIDVal).Msg("DeviceVerificationSubmitHandler: UserID is not a string or is empty.")
-		c.Header("Content-Type", "text/html; charset=utf-8")
-		err := deviceVerificationTemplate.Execute(c.Writer, gin.H{
-			"UserCodePreFill": userCode,
-			"Message":         "Invalid user session. Please log in again.",
-			"MessageType":     "error",
-		})
-		if err != nil {
-			log.Error().Err(err).Msg("Failed to render template for invalid session")
-		}
-		return
-	}
-
-	ctx := c.Request.Context()
-	_, err := oa.service.VerifyUserCode(ctx, userCode, userID)
-
-	renderData := gin.H{"UserCodePreFill": userCode} // Keep code in display if re-showing form context
-
-	if err != nil {
-		log.Warn().Err(err).Str("userID", userID).Msg("Failed to verify user code")
-		renderData["MessageType"] = "error"
-		if goerrors.Is(err, domain.ErrUserCodeNotFound) {
-			renderData["Message"] = "Invalid or expired code. Please check the code and try again."
-		} else if goerrors.Is(err, domain.ErrCannotApproveDeviceAuth) {
-			// This might mean it was already used, or status wasn't pending.
-			renderData["Message"] = "This code cannot be used. It might have already been activated or is invalid."
-		} else {
-			renderData["Message"] = "An unexpected error occurred. Please try again later."
-		}
-		c.Header("Content-Type", "text/html; charset=utf-8")
-		tmplErr := deviceVerificationTemplate.Execute(c.Writer, renderData)
-		if tmplErr != nil {
-			log.Error().Err(tmplErr).Msg("Failed to render template for verification error")
-		}
-		return
-	}
-
-	log.Info().Str("user_code", userCode).Str("userID", userID).Msg("Device code successfully verified and linked to user.")
-	renderData["MessageType"] = "success"
-	renderData["Message"] = "Device activated successfully! You can now return to your device."
-	// Optionally, remove UserCodePreFill if success, so form is clear if they land here again.
-	renderData["UserCodePreFill"] = ""
-
-	c.Header("Content-Type", "text/html; charset=utf-8")
-	tmplErr := deviceVerificationTemplate.Execute(c.Writer, renderData)
-	if tmplErr != nil {
-		log.Error().Err(tmplErr).Msg("Failed to render template for verification success")
-	}
 }
 
 // DeviceAuthorizationHandler handles POST /oauth2/device_authorization

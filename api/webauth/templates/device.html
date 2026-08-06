@@ -1,0 +1,60 @@
+{{template "base_start" .}}
+<h2 class="page-title">Activate Device</h2>
+<p class="page-subtitle">Approve this request to sign in on your device</p>
+
+{{if .Message}}
+<div class="alert {{if eq .MessageType "success"}}alert-success{{else}}alert-error{{end}}" role="alert">
+    <span class="alert-icon">
+        {{if eq .MessageType "success"}}
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        {{else}}
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        {{end}}
+    </span>
+    <span>{{.Message}}</span>
+</div>
+{{end}}
+
+<div class="info-box">
+    <p class="info-box-title">Requesting application</p>
+    <p style="font-size:0.9375rem;color:var(--text);">{{if .ClientName}}{{.ClientName}}{{else}}an application{{end}}</p>
+</div>
+
+<form method="POST" action="/oauth2/device/verify">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+    {{if .UserCode}}
+    <div class="info-box" style="text-align:center;">
+        <p class="info-box-title">Your code</p>
+        <p class="otp-input" style="font-size:1.25rem;letter-spacing:0.25em;">{{.UserCode}}</p>
+    </div>
+    <input type="hidden" name="user_code" value="{{.UserCode}}">
+    {{else}}
+    <div class="form-group">
+        <label for="user_code" class="form-label">Device code</label>
+        <input
+            type="text"
+            id="user_code"
+            name="user_code"
+            class="form-input"
+            placeholder="Enter the code from your device (e.g., ABCD-EFGH)"
+            required
+            autofocus
+        >
+    </div>
+    {{end}}
+
+    <div class="actions">
+        <button type="submit" name="action" value="approve" class="btn btn-primary">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            Approve
+        </button>
+        <button type="submit" name="action" value="deny" class="btn btn-danger">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+            Deny
+        </button>
+    </div>
+</form>
+
+<p class="page-subtitle" style="margin-top:16px;">The code expires shortly after it is shown on your device.</p>
+{{template "base_end" .}}
