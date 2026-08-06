@@ -1,7 +1,11 @@
 package webauth
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"net/http"
@@ -20,6 +24,13 @@ const (
 	// FlowCookieName is the name of the cookie carrying the server-side flow ID.
 	// The client never sees this value — it is only read from the cookie.
 	FlowCookieName = "sso_oidc_flow_id"
+	// ReturnToCookieName is the name of the signed cookie carrying the
+	// validated same-origin destination for flow-less logins. The return_to
+	// value travels in this cookie (HMAC-signed), never in a form field.
+	ReturnToCookieName = "sso_return_to"
+	// syntheticFlowLifetime is the expiry of synthetic (ClientID-less) login
+	// flows and their sso_oidc_flow_id / sso_return_to cookies.
+	syntheticFlowLifetime = 15 * time.Minute
 )
 
 // ---------------------------------------------------------------------------
@@ -170,4 +181,99 @@ func GetFlowIDFromCookie(r *http.Request) string {
 		return ""
 	}
 	return cookie.Value
+}
+
+// ---------------------------------------------------------------------------
+// Flow-less login (return_to) helpers
+// ---------------------------------------------------------------------------
+
+// validReturnTo guards against open redirects: only same-origin, root-relative
+// paths are accepted. Absolute URLs (http/https), protocol-relative URLs (//),
+// backslash escapes, and dot-segment traversal (/../) are rejected.
+func validReturnTo(rt string) bool {
+	return strings.HasPrefix(rt, "/") &&
+		!strings.HasPrefix(rt, "//") &&
+		!strings.Contains(rt, "\\") &&
+		!strings.HasPrefix(rt, "http://") &&
+		!strings.HasPrefix(rt, "https://") &&
+		!strings.Contains(rt, "/../")
+}
+
+// setFlowCookie sets the sso_oidc_flow_id cookie with the same attributes the
+// OIDC authorize flow uses, so GetFlowIDFromCookie reads it back.
+func setFlowCookie(w http.ResponseWriter, flowID string, isSecure bool) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     FlowCookieName,
+		Value:    flowID,
+		Path:     "/",
+		MaxAge:   int(syntheticFlowLifetime.Seconds()),
+		HttpOnly: true,
+		Secure:   isSecure,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+// setReturnToCookie signs the return_to value with the cookie signing secret
+// (HMAC-SHA256 over the raw value, base64url payload.signature — the same
+// scheme the sso_session cookie uses) and stores it in an HttpOnly,
+// SameSite=Lax cookie.
+func setReturnToCookie(w http.ResponseWriter, returnTo string, isSecure bool, secret string) {
+	payload := base64.RawURLEncoding.EncodeToString([]byte(returnTo))
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(returnTo))
+	signature := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     ReturnToCookieName,
+		Value:    payload + "." + signature,
+		Path:     "/",
+		MaxAge:   int(syntheticFlowLifetime.Seconds()),
+		HttpOnly: true,
+		Secure:   isSecure,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+// readReturnToCookie verifies the signature of the sso_return_to cookie and
+// returns the return_to value, or "" when the cookie is missing, malformed,
+// or the signature does not verify.
+func readReturnToCookie(r *http.Request, secret string) string {
+	cookie, err := r.Cookie(ReturnToCookieName)
+	if err != nil || cookie.Value == "" {
+		return ""
+	}
+
+	dotIdx := strings.LastIndexByte(cookie.Value, '.')
+	if dotIdx <= 0 || dotIdx == len(cookie.Value)-1 {
+		return ""
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(cookie.Value[:dotIdx])
+	if err != nil {
+		return ""
+	}
+	signature, err := base64.RawURLEncoding.DecodeString(cookie.Value[dotIdx+1:])
+	if err != nil {
+		return ""
+	}
+
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(payload)
+	if subtle.ConstantTimeCompare(signature, mac.Sum(nil)) != 1 {
+		return ""
+	}
+	return string(payload)
+}
+
+// clearReturnToCookie immediately expires the sso_return_to cookie. It is
+// called after the destination has been consumed on login completion.
+func clearReturnToCookie(w http.ResponseWriter, isSecure bool) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     ReturnToCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   isSecure,
+		SameSite: http.SameSiteLaxMode,
+	})
 }

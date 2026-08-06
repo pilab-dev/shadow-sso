@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/pilab-dev/shadow-sso/domain"
 	"github.com/pilab-dev/shadow-sso/internal/ssosession"
 	"github.com/rs/zerolog/log"
@@ -45,6 +46,37 @@ func (wa *WebAuth) LoginPageHandler(c *gin.Context) {
 	flowID := GetFlowIDFromCookie(c.Request)
 
 	if flowID == "" {
+		// Flow-less login: when no sso_oidc_flow_id cookie exists but a
+		// validated same-origin return_to is present (e.g. the device
+		// verification redirect), start a synthetic flow so the login page
+		// renders instead of failing with 400.
+		if rt := c.Query("return_to"); rt != "" && validReturnTo(rt) {
+			ctx := c.Request.Context()
+			flowID = uuid.NewString()
+			flowState := &domain.LoginFlowState{
+				FlowID:    flowID,
+				ExpiresAt: time.Now().Add(syntheticFlowLifetime),
+			}
+			if err := wa.flowStore.StoreFlow(ctx, flowID, *flowState); err != nil {
+				log.Error().Err(err).Str("flow_id", flowID).Msg("login: failed to store synthetic flow")
+				c.HTML(http.StatusInternalServerError, "error.html", gin.H{
+					"PageTitle": "Error",
+					"Message":   "Internal error. Please try again.",
+				})
+				return
+			}
+			isSecure := IsSecureRequest(c.Request)
+			setFlowCookie(c.Writer, flowID, isSecure)
+			setReturnToCookie(c.Writer, rt, isSecure, wa.ssoCookieSecret)
+
+			providers, err := wa.idpRepo.ListIdPs(ctx, true)
+			if err != nil {
+				log.Error().Err(err).Msg("login: failed to load identity providers")
+				providers = nil
+			}
+			wa.renderLoginPage(c, flowID, providers, "")
+			return
+		}
 		c.HTML(http.StatusBadRequest, "error.html", gin.H{
 			"PageTitle": "Error",
 			"Message":   "Missing login request identifier.",
@@ -286,6 +318,19 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 	}
 	if requiresConsent {
 		c.Redirect(http.StatusFound, "/consent?flow_id="+url.QueryEscape(flowID))
+		return
+	}
+	if flowState.ClientID == "" {
+		// Flow-less login (no OIDC client): complete by redirecting to the
+		// signed return_to destination captured when the synthetic flow began.
+		// The cookie is cleared on use; fall back to "/" when absent or invalid.
+		rt := readReturnToCookie(c.Request, wa.ssoCookieSecret)
+		clearReturnToCookie(c.Writer, isSecure)
+		if rt != "" && validReturnTo(rt) {
+			c.Redirect(http.StatusFound, rt)
+			return
+		}
+		c.Redirect(http.StatusFound, "/")
 		return
 	}
 	c.Redirect(http.StatusFound, "/oauth2/authorize?flow_id="+url.QueryEscape(flowID))
