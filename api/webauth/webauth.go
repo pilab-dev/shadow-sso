@@ -17,37 +17,43 @@ var templatesFS embed.FS
 // WebAuth holds all dependencies for the server-side web authentication UI.
 // Methods for handling login, consent, and social flows will be added in subsequent todos.
 type WebAuth struct {
-	userRepo           domain.UserRepository
-	passwordHasher     domain.PasswordHasher
-	flowStore          domain.FlowStore
-	userSessionStore   domain.UserSessionStore
-	idpRepo            domain.IdPRepository
-	federationService  services.FederationService
-	oauthService       services.OAuthService
-	tokenService       services.TokenService
-	clientService      services.ClientService
-	config             *Config
-	ssoCookieSecret    string
-	rateLimiter        *RateLimiter
-	runner             *authflow.Runner
-	realmSettingsRepo  domain.RealmSettingsRepository
+	userRepo          domain.UserRepository
+	passwordHasher    domain.PasswordHasher
+	flowStore         domain.FlowStore
+	userSessionStore  domain.UserSessionStore
+	idpRepo           domain.IdPRepository
+	federationService services.FederationService
+	oauthService      services.OAuthService
+	tokenService      services.TokenService
+	clientService     services.ClientService
+	config            *Config
+	ssoCookieSecret   string
+	rateLimiter       *RateLimiter
+	runner            *authflow.Runner
+	realmSettingsRepo domain.RealmSettingsRepository
+	// deviceAuthRepo backs the device authorization flow verification UI.
+	// It is nil-safe: consumers MUST check for nil and degrade gracefully
+	// (e.g. render an error page) rather than panic when unset.
+	deviceAuthRepo domain.DeviceAuthorizationRepository
 }
 
 // Options configures the WebAuth instance with all required dependencies.
 type Options struct {
-	UserRepo           domain.UserRepository
-	PasswordHasher     domain.PasswordHasher
-	FlowStore          domain.FlowStore
-	UserSessionStore   domain.UserSessionStore
-	IdPRepository      domain.IdPRepository
-	FederationService  services.FederationService
-	OAuthService       services.OAuthService
-	TokenService       services.TokenService
-	ClientService      services.ClientService
-	Config             *Config
-	SSOCookieSecret    string
-	AuthFlowRepo       domain.AuthenticationFlowRepository
-	RealmSettingsRepo  domain.RealmSettingsRepository
+	UserRepo          domain.UserRepository
+	PasswordHasher    domain.PasswordHasher
+	FlowStore         domain.FlowStore
+	UserSessionStore  domain.UserSessionStore
+	IdPRepository     domain.IdPRepository
+	FederationService services.FederationService
+	OAuthService      services.OAuthService
+	TokenService      services.TokenService
+	ClientService     services.ClientService
+	Config            *Config
+	SSOCookieSecret   string
+	AuthFlowRepo      domain.AuthenticationFlowRepository
+	RealmSettingsRepo domain.RealmSettingsRepository
+	// DeviceAuthRepo is optional; when nil, device-flow handlers must not panic.
+	DeviceAuthRepo domain.DeviceAuthorizationRepository
 }
 
 // New creates a new WebAuth instance with the provided dependencies.
@@ -73,6 +79,7 @@ func New(opts *Options) *WebAuth {
 		rateLimiter:       NewRateLimiter(cfg.RateLimitMaxAttempts, cfg.RateLimitLockoutDuration),
 		runner:            authflow.NewRunner(opts.AuthFlowRepo, opts.PasswordHasher),
 		realmSettingsRepo: opts.RealmSettingsRepo,
+		deviceAuthRepo:    opts.DeviceAuthRepo,
 	}
 }
 

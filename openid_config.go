@@ -302,19 +302,20 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 	}
 
 	webauthAPI := webauth.New(&webauth.Options{
-		UserRepo:           repoProvider.UserRepository(context.Background()),
-		PasswordHasher:     passwordHasher,
-		FlowStore:          serviceProvider.FlowStore(),
-		UserSessionStore:   serviceProvider.UserSessionStore(),
-		IdPRepository:      repoProvider.IdPRepository(context.Background()),
-		FederationService:  serviceProvider.FederationService(),
-		OAuthService:       serviceProvider.OAuthService(),
-		TokenService:       serviceProvider.TokenService(),
-		ClientService:      serviceProvider.ClientService(),
-		Config:             webauthConfig,
-		SSOCookieSecret:    opts.CookieSigningSecret,
-		AuthFlowRepo:       authFlowRepo,
-		RealmSettingsRepo:  repoProvider.RealmSettingsRepository(context.Background()),
+		UserRepo:          repoProvider.UserRepository(context.Background()),
+		PasswordHasher:    passwordHasher,
+		FlowStore:         serviceProvider.FlowStore(),
+		UserSessionStore:  serviceProvider.UserSessionStore(),
+		IdPRepository:     repoProvider.IdPRepository(context.Background()),
+		FederationService: serviceProvider.FederationService(),
+		OAuthService:      serviceProvider.OAuthService(),
+		TokenService:      serviceProvider.TokenService(),
+		ClientService:     serviceProvider.ClientService(),
+		Config:            webauthConfig,
+		SSOCookieSecret:   opts.CookieSigningSecret,
+		AuthFlowRepo:      authFlowRepo,
+		RealmSettingsRepo: repoProvider.RealmSettingsRepository(context.Background()),
+		DeviceAuthRepo:    repoProvider.DeviceAuthorizationRepository(context.Background()),
 	})
 
 	router.GET("/", webauthAPI.LandingPageHandler)
