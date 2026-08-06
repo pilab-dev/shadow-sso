@@ -264,10 +264,22 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 			})
 			return
 		}
+		csrfToken, cErr := generateCSRFToken()
+		if cErr != nil {
+			log.Error().Err(cErr).Msg("login: failed to generate CSRF token")
+			c.HTML(http.StatusInternalServerError, "error.html", gin.H{
+				"PageTitle": "Error",
+				"Message":   "Internal error. Please try again.",
+			})
+			return
+		}
+		isSecure := IsSecureRequest(c.Request)
+		setCSRFCookie(c.Writer, csrfToken, 10*time.Minute, isSecure)
 		c.HTML(http.StatusOK, "mfa.html", gin.H{
 			"PageTitle": "Two-Factor Authentication",
 			"FlowID":    flowID,
-			"UserID":    user.ID,
+			"CSRFToken": csrfToken,
+			"Error":     "",
 			"BrandName": wa.config.BrandOrganizationName,
 		})
 		return
