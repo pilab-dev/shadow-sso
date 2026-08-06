@@ -7,6 +7,7 @@ import (
 
 	"github.com/pilab-dev/shadow-sso/domain"
 	mock_domain "github.com/pilab-dev/shadow-sso/domain/mocks"
+	"github.com/pilab-dev/shadow-sso/mongodb"
 	"github.com/rs/zerolog"
 	"go.uber.org/mock/gomock"
 )
@@ -92,6 +93,26 @@ func TestEnsureBootstrapSSSOCTLClient_LeavesExistingClientUntouched(t *testing.T
 	}
 	if existing.Type != domain.ClientTypeConfidential || existing.AllowedGrantTypes[0] != "client_credentials" {
 		t.Fatal("existing client was mutated by bootstrap")
+	}
+}
+
+// TestEnsureBootstrapSSSOCTLClient_CreatesOnMongoNotFound verifies the real
+// repository path: mongodb.ClientRepository.GetClient returns its own
+// mongodb.ErrClientNotFound sentinel (mongodb/client_repository.go:20), which
+// is a different error instance from domain.ErrClientNotFound. The bootstrap
+// must accept it as "not found" and create the client.
+func TestEnsureBootstrapSSSOCTLClient_CreatesOnMongoNotFound(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repo := mock_domain.NewMockClientRepository(ctrl)
+
+	repo.EXPECT().GetClient(gomock.Any(), "sssoctl").Return(nil, mongodb.ErrClientNotFound)
+	repo.EXPECT().
+		CreateClient(gomock.Any(), gomock.Eq(wantBootstrapClient())).
+		Return(nil).
+		Times(1)
+
+	if err := ensureBootstrapSSSOCTLClient(context.Background(), repo, zerolog.Nop()); err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
 	}
 }
 

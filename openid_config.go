@@ -549,7 +549,7 @@ func seedRealmSettingsFromConfig(repoProvider services.RepositoryProvider, cfg *
 // is never overwritten.
 func ensureBootstrapSSSOCTLClient(ctx context.Context, clientRepo domain.ClientRepository, log zerolog.Logger) error {
 	if _, err := clientRepo.GetClient(ctx, "sssoctl"); err != nil {
-		if !errors.Is(err, domain.ErrClientNotFound) {
+		if !errors.Is(err, domain.ErrClientNotFound) && !errors.Is(err, mongodb.ErrClientNotFound) {
 			return fmt.Errorf("failed to look up sssoctl client: %w", err)
 		}
 		client := &domain.Client{
