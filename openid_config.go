@@ -29,6 +29,7 @@ import (
 	"github.com/pilab-dev/shadow-sso/mongodb"
 	pkgAuth "github.com/pilab-dev/shadow-sso/pkg/auth"
 	"github.com/pilab-dev/shadow-sso/services"
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
 
@@ -215,6 +216,13 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 	// persisted AccessTokenLifespan/AccessCodeLifespan instead of hardcoded
 	// values. No-op once the realm_settings collection already holds documents.
 	if err := seedRealmSettingsFromConfig(repoProvider, opts.Config); err != nil {
+		return nil, err
+	}
+
+	// Bootstrap the built-in public "sssoctl" OAuth client used by the ssoctl
+	// CLI device-code login flow. Create-if-missing only: an existing client
+	// with that ID is never modified.
+	if err := ensureBootstrapSSSOCTLClient(ctx, repoProvider.ClientRepository(context.Background()), log.Logger); err != nil {
 		return nil, err
 	}
 
@@ -531,6 +539,37 @@ func seedRealmSettingsFromConfig(repoProvider services.RepositoryProvider, cfg *
 	if _, err := repo.SeedRealmSettingsIfEmpty(ctx, settings); err != nil {
 		return fmt.Errorf("failed to seed realm settings: %w", err)
 	}
+	return nil
+}
+
+// ensureBootstrapSSSOCTLClient idempotently creates the built-in public
+// "sssoctl" OAuth client used by the ssoctl CLI device-code login flow. It is
+// a no-op when the client already exists, so a customized client with that ID
+// is never overwritten.
+func ensureBootstrapSSSOCTLClient(ctx context.Context, clientRepo domain.ClientRepository, log zerolog.Logger) error {
+	if _, err := clientRepo.GetClient(ctx, "sssoctl"); err != nil {
+		if !errors.Is(err, domain.ErrClientNotFound) {
+			return fmt.Errorf("failed to look up sssoctl client: %w", err)
+		}
+		client := &domain.Client{
+			ID:                "sssoctl",
+			Name:              "ssoctl CLI",
+			Type:              domain.ClientTypePublic,
+			IsActive:          true,
+			IsConfidential:    false,
+			TokenEndpointAuth: "none",
+			AllowedGrantTypes: []string{"urn:ietf:params:oauth:grant-type:device_code", "refresh_token"},
+			AllowedScopes:     []string{"openid", "profile", "email"},
+			RequirePKCE:       false,
+			RequireConsent:    false,
+		}
+		if err := clientRepo.CreateClient(ctx, client); err != nil {
+			return fmt.Errorf("failed to create sssoctl client: %w", err)
+		}
+		log.Info().Str("client_id", "sssoctl").Msg("bootstrapped built-in sssoctl OAuth client")
+		return nil
+	}
+	log.Debug().Str("client_id", "sssoctl").Msg("sssoctl OAuth client already exists, skipping bootstrap")
 	return nil
 }
 
