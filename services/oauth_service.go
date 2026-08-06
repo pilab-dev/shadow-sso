@@ -948,7 +948,7 @@ func (s *defaultOAuthService) InitiateDeviceAuthorization(ctx context.Context, c
 		return nil, fmt.Errorf("failed to save device authorization request: %w", err)
 	}
 
-	verificationURI := fmt.Sprintf("%s/device", verificationBaseURI)
+	verificationURI := fmt.Sprintf("%s/oauth2/device/verify", verificationBaseURI)
 	verificationURIComplete := fmt.Sprintf("%s?user_code=%s", verificationURI, userCodeVal)
 
 	log.Ctx(ctx).Info().Str("client_id", clientID).Str("user_code", userCodeVal).Msg("Device authorization flow initiated successfully")

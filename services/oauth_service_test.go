@@ -1310,7 +1310,8 @@ func TestOAuthService_InitiateDeviceAuthorization_Success(t *testing.T) {
 	assert.NotNil(t, resp)
 	assert.NotEmpty(t, resp.DeviceCode)
 	assert.NotEmpty(t, resp.UserCode)
-	assert.NotEmpty(t, resp.VerificationURI)
+	assert.Equal(t, "https://device/oauth2/device/verify", resp.VerificationURI)
+	assert.Equal(t, "https://device/oauth2/device/verify?user_code="+resp.UserCode, resp.VerificationURIComplete)
 }
 
 func TestOAuthService_InitiateDeviceAuthorization_InvalidScope(t *testing.T) {
