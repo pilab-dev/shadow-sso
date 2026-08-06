@@ -191,11 +191,12 @@ func StartServer(ctx context.Context, cfg config.Config, repoProvider services.R
 			}
 			return cache.NewMemoryTokenStore(oidcConfig.AccessTokenTTL)
 		}(),
-		PkceRepository:   nil, // Let NewSSOServer default to in-memory
-		FlowStore:        nil, // Let NewSSOServer default to in-memory
-		UserSessionStore: nil, // Let NewSSOServer default to in-memory
-		EncryptionKey:    encryptionKey,
-		ExtraMiddlewares: nil,
+		PkceRepository:      nil, // Let NewSSOServer default to in-memory
+		FlowStore:           nil, // Let NewSSOServer default to in-memory
+		UserSessionStore:    nil, // Let NewSSOServer default to in-memory
+		EncryptionKey:       encryptionKey,
+		CookieSigningSecret: cfg.CookieSigningSecret,
+		ExtraMiddlewares:    nil,
 	}
 
 	// Apply functional options

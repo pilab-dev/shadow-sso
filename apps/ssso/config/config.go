@@ -51,6 +51,9 @@ type Config struct {
 	// Configuration service encryption key
 	ConfigEncryptionKey string `mapstructure:"config_encryption_key"`
 
+	// HMAC signing secret for the ssosession (s_session) cookie
+	CookieSigningSecret string `mapstructure:"cookie_signing_secret"`
+
 	// Token signing
 	TokenSigningKey     string `mapstructure:"token_signing_key"`
 	TokenSigningKeyFile string `mapstructure:"token_signing_key_file"`
@@ -192,6 +195,7 @@ func LoadConfig() (config Config, err error) {
 	viper.SetDefault("key_rotation_interval", "24h")
 	viper.SetDefault("default_redirect_uri", "http://localhost:3000/login")
 	viper.SetDefault("token_cache_default_ttl", "1h")
+	viper.SetDefault("cookie_signing_secret", "")
 	// signing_key_path has no default, should be provided or generated on first run.
 	// nextjs_login_url has no default, should be configured if UI flow is used.
 
@@ -240,6 +244,7 @@ func LoadConfig() (config Config, err error) {
 	// Explicitly bind env vars so viper.Unmarshal picks them up
 	_ = viper.BindEnv("mgmt_http_addr")
 	_ = viper.BindEnv("config_encryption_key")
+	_ = viper.BindEnv("cookie_signing_secret")
 	_ = viper.BindEnv("signing_key_path")
 	viper.BindEnv("token_signing_key")
 	viper.BindEnv("initial_admin_enabled")
@@ -280,6 +285,18 @@ func LoadConfig() (config Config, err error) {
 		}
 		config.ConfigEncryptionKey = hex.EncodeToString(key)
 		log.Warn().Msgf("No SSSO_CONFIG_ENCRYPTION_KEY set — auto-generated ephemeral key for dev session (SSSO_ALLOW_INSECURE_DEFAULTS=true): %s", config.ConfigEncryptionKey)
+	}
+
+	if config.CookieSigningSecret == "" {
+		if !config.AllowInsecureDefaults {
+			return Config{}, fmt.Errorf("FATAL: cookie_signing_secret is required. Set SSSO_COOKIE_SIGNING_SECRET environment variable (or set SSSO_ALLOW_INSECURE_DEFAULTS=true for local development only)")
+		}
+		key := make([]byte, 32)
+		if _, err := rand.Read(key); err != nil {
+			return Config{}, fmt.Errorf("failed to generate cookie signing secret: %w", err)
+		}
+		config.CookieSigningSecret = hex.EncodeToString(key)
+		log.Warn().Msg("No SSSO_COOKIE_SIGNING_SECRET set — auto-generated ephemeral secret for dev session (SSSO_ALLOW_INSECURE_DEFAULTS=true)")
 	}
 
 	// Viper doesn't automatically convert string to custom types like StorageType

@@ -26,11 +26,13 @@ func resetConfigEnv(t *testing.T) {
 	os.Unsetenv("SSSO_DTS_CONNECT_TIMEOUT")
 	os.Unsetenv("SSSO_DTS_DEFAULT_PKCE_TTL")
 	os.Unsetenv("SSSO_CONFIG_ENCRYPTION_KEY")
+	os.Unsetenv("SSSO_COOKIE_SIGNING_SECRET")
 }
 
 func TestLoadConfig_Defaults(t *testing.T) {
 	resetConfigEnv(t)
 	t.Setenv("SSSO_CONFIG_ENCRYPTION_KEY", "test-encryption-key-32bytes-long!!")
+	t.Setenv("SSSO_COOKIE_SIGNING_SECRET", "test-cookie-signing-secret")
 
 	cfg, err := config.LoadConfig()
 	require.NoError(t, err)
@@ -51,6 +53,7 @@ func TestLoadConfig_Defaults(t *testing.T) {
 func TestLoadConfig_EnvOverrides(t *testing.T) {
 	resetConfigEnv(t)
 	t.Setenv("SSSO_CONFIG_ENCRYPTION_KEY", "test-encryption-key-32bytes-long!!")
+	t.Setenv("SSSO_COOKIE_SIGNING_SECRET", "test-cookie-signing-secret")
 
 	// Set environment variables
 	os.Setenv("SSSO_HTTP_ADDR", "127.0.0.1:9090")
@@ -98,6 +101,7 @@ func TestLoadConfig_EnvOverrides(t *testing.T) {
 func TestLoadConfig_InvalidStorageBackend(t *testing.T) {
 	resetConfigEnv(t)
 	t.Setenv("SSSO_CONFIG_ENCRYPTION_KEY", "test-encryption-key-32bytes-long!!")
+	t.Setenv("SSSO_COOKIE_SIGNING_SECRET", "test-cookie-signing-secret")
 	os.Setenv("SSSO_STORAGE_BACKEND", "invalid_backend")
 	defer os.Unsetenv("SSSO_STORAGE_BACKEND")
 
@@ -137,4 +141,24 @@ func TestLoadConfig_InvalidDuration(t *testing.T) {
 	// If Unmarshal fails due to duration parsing, err will be non-nil.
 	// If it silently uses default, err is nil and value is default.
 	require.Error(t, err, "Expected error due to invalid duration")
+}
+
+func TestLoadConfig_CookieSigningSecretOverride(t *testing.T) {
+	resetConfigEnv(t)
+	t.Setenv("SSSO_CONFIG_ENCRYPTION_KEY", "test-encryption-key-32bytes-long!!")
+	t.Setenv("SSSO_COOKIE_SIGNING_SECRET", "custom-secret-value-123")
+
+	cfg, err := config.LoadConfig()
+	require.NoError(t, err)
+
+	assert.Equal(t, "custom-secret-value-123", cfg.CookieSigningSecret)
+}
+
+func TestLoadConfig_MissingCookieSigningSecret_FailsClosed(t *testing.T) {
+	resetConfigEnv(t)
+	t.Setenv("SSSO_CONFIG_ENCRYPTION_KEY", "test-encryption-key-32bytes-long!!")
+
+	_, err := config.LoadConfig()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cookie_signing_secret")
 }
