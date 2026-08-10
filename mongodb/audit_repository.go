@@ -2,6 +2,7 @@ package mongodb
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/pilab-dev/shadow-sso/domain"
@@ -12,6 +13,15 @@ import (
 )
 
 const AuditEventsCollection = "audit_events"
+
+// auditSortFields maps the sort keys accepted by AuditLogFilter.SortBy to the
+// underlying MongoDB field names. Only these keys are honored; buildSort
+// silently falls back to the default newest-first ordering for anything else.
+var auditSortFields = map[string]string{
+	"created_at": "timestamp",
+	"action":     "action",
+	"actor":      "user",
+}
 
 // AuditRepository implements domain.AuditLogRepository backed by MongoDB.
 type AuditRepository struct {
@@ -69,7 +79,7 @@ func (r *AuditRepository) List(ctx context.Context, filter domain.AuditLogFilter
 	}
 
 	findOpts := options.Find().
-		SetSort(bson.D{{Key: "timestamp", Value: -1}}).
+		SetSort(r.buildSort(filter)).
 		SetSkip(int64(offset)).
 		SetLimit(int64(limit))
 
@@ -84,6 +94,23 @@ func (r *AuditRepository) List(ctx context.Context, filter domain.AuditLogFilter
 		return nil, err
 	}
 	return events, nil
+}
+
+// buildSort translates AuditLogFilter.SortBy/SortDir into a MongoDB sort
+// document. Only the allowlisted keys in auditSortFields are honored; an
+// empty or unknown SortBy falls back to timestamp desc (newest-first) so
+// existing callers keep their ordering. SortDir accepts "asc"/"desc" and
+// defaults to asc for known fields.
+func (r *AuditRepository) buildSort(filter domain.AuditLogFilter) bson.D {
+	field, ok := auditSortFields[filter.SortBy]
+	if !ok {
+		return bson.D{{Key: "timestamp", Value: -1}}
+	}
+	dir := 1
+	if strings.ToLower(filter.SortDir) == "desc" {
+		dir = -1
+	}
+	return bson.D{{Key: field, Value: dir}}
 }
 
 func (r *AuditRepository) Count(ctx context.Context, filter domain.AuditLogFilter) (int64, error) {

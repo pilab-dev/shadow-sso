@@ -977,6 +977,22 @@ func (mr *MockUserRepositoryMockRecorder) ListUsers(ctx, pageToken, pageSize any
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListUsers", reflect.TypeOf((*MockUserRepository)(nil).ListUsers), ctx, pageToken, pageSize)
 }
 
+// ListUsersPage mocks base method.
+func (m *MockUserRepository) ListUsersPage(ctx context.Context, filter domain.UserFilter, sort domain.SortSpec, skip, limit int) ([]*domain.User, int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListUsersPage", ctx, filter, sort, skip, limit)
+	ret0, _ := ret[0].([]*domain.User)
+	ret1, _ := ret[1].(int64)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// ListUsersPage indicates an expected call of ListUsersPage.
+func (mr *MockUserRepositoryMockRecorder) ListUsersPage(ctx, filter, sort, skip, limit any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListUsersPage", reflect.TypeOf((*MockUserRepository)(nil).ListUsersPage), ctx, filter, sort, skip, limit)
+}
+
 // ListWebAuthnDevices mocks base method.
 func (m *MockUserRepository) ListWebAuthnDevices(ctx context.Context, userID string) ([]domain.WebAuthnDevice, error) {
 	m.ctrl.T.Helper()

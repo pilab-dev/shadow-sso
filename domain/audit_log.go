@@ -25,10 +25,12 @@ type AuditLog struct {
 // AuditLogFilter restricts audit event listing to a user, an action and/or a
 // time window. Zero-valued fields are ignored.
 type AuditLogFilter struct {
-	User   string
-	Action string
-	From   *time.Time
-	To     *time.Time
+	User    string
+	Action  string
+	From    *time.Time
+	To      *time.Time
+	SortBy  string
+	SortDir string
 }
 
 // AuditLogRepository defines persistence for audit events. The interface is

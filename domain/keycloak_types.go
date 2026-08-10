@@ -176,8 +176,11 @@ type RealmSettings struct {
 	PasswordSpecialChars int  `bson:"password_special_chars,omitempty" json:"passwordSpecialChars,omitempty"`
 
 	// Token settings
-	AccessTokenLifespan int `bson:"access_token_lifespan,omitempty" json:"accessTokenLifespan,omitempty"`
-	AccessCodeLifespan  int `bson:"access_code_lifespan,omitempty" json:"accessCodeLifespan,omitempty"`
+	AccessTokenLifespan   int `bson:"access_token_lifespan,omitempty" json:"accessTokenLifespan,omitempty"`
+	AccessCodeLifespan    int `bson:"access_code_lifespan,omitempty" json:"accessCodeLifespan,omitempty"`
+	RefreshTokenLifespan  int `bson:"refresh_token_lifespan,omitempty" json:"refreshTokenLifespan,omitempty"`
+	SSOSessionIdleTimeout int `bson:"sso_session_idle_timeout,omitempty" json:"ssoSessionIdleTimeout,omitempty"`
+	SSOSessionMaxLifespan int `bson:"sso_session_max_lifespan,omitempty" json:"ssoSessionMaxLifespan,omitempty"`
 
 	CreatedAt time.Time `bson:"created_at" json:"createdAt"`
 	UpdatedAt time.Time `bson:"updated_at" json:"updatedAt"`

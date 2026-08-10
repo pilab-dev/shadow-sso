@@ -34,7 +34,7 @@ type Query {
   group(id: ID!): Group
 
   # Session queries
-  sessions(userId: ID, first: Int, after: Int): SessionConnection!
+  sessions(userId: ID, clientId: String, first: Int, after: Int): SessionConnection!
   session(id: ID!): Session
 
   # Identity provider queries
@@ -185,6 +185,8 @@ input UserFilter {
   enabled: Boolean
   emailVerified: Boolean
   search: String
+  sortBy: String
+  sortDir: SortDir
 }
 
 input CreateUserInput {
@@ -225,6 +227,9 @@ input ClientFilter {
   clientName: String
   enabled: Boolean
   search: String
+  publicClient: Boolean
+  sortBy: String
+  sortDir: SortDir
 }
 
 input CreateClientInput {
@@ -372,6 +377,13 @@ input UpdateRealmInput {
   quickLoginCheckSMTPHost: String
   maxTemporaryLockouts: Int
   enabled: Boolean
+
+  # Token settings
+  accessTokenLifespan: Int
+  accessCodeLifespan: Int
+  refreshTokenLifespan: Int
+  ssoSessionIdleTimeout: Int
+  ssoSessionMaxLifespan: Int
   sslRequired: String
   passwordCredentialConfig: PasswordPolicyConfigInput
 }
@@ -536,6 +548,11 @@ enum UserStatus {
   VERIFIED
   Federated_VERIFIED
   LINKED
+}
+
+enum SortDir {
+  ASC
+  DESC
 }
 
 type FederatedIdentity {
@@ -750,6 +767,8 @@ input AuditLogFilter {
   action: String
   from: Time
   to: Time
+  sortBy: String
+  sortDir: SortDir
 }
 
 type AuditLogConnection {
@@ -808,6 +827,9 @@ type RealmSettings {
   # Tokens
   accessTokenLifespan: Int
   accessCodeLifespan: Int
+  refreshTokenLifespan: Int
+  ssoSessionIdleTimeout: Int
+  ssoSessionMaxLifespan: Int
 
   # Endpoints
   tokenEndpoint: String
