@@ -41,7 +41,9 @@ type ResolverRoot interface {
 	Session() SessionResolver
 	TokenIntrospection() TokenIntrospectionResolver
 	User() UserResolver
+	AuditLogFilter() AuditLogFilterResolver
 	ClientFilter() ClientFilterResolver
+	UserFilter() UserFilterResolver
 }
 
 type DirectiveRoot struct {
@@ -290,14 +292,14 @@ type ComplexityRoot struct {
 		RoleMappings               func(childComplexity int, userID string) int
 		Roles                      func(childComplexity int) int
 		Session                    func(childComplexity int, id string) int
-		Sessions                   func(childComplexity int, userID *string, first *int, after *int) int
+		Sessions                   func(childComplexity int, userID *string, clientID *string, first *int, after *int) int
 		TokenMappers               func(childComplexity int) int
 		User                       func(childComplexity int, id string) int
 		UserAttributeMappers       func(childComplexity int) int
 		UserAttributes             func(childComplexity int, userID string) int
 		UserGroups                 func(childComplexity int, userID string) int
 		UserSessions               func(childComplexity int, userID string) int
-		Users                      func(childComplexity int, filter *UserFilter, first *int, after *int) int
+		Users                      func(childComplexity int, filter *domain.UserFilter, first *int, after *int) int
 	}
 
 	RealmKey struct {
@@ -325,9 +327,12 @@ type ComplexityRoot struct {
 		LoginWithEmailAllowed  func(childComplexity int) int
 		PasswordPolicy         func(childComplexity int) int
 		Realm                  func(childComplexity int) int
+		RefreshTokenLifespan   func(childComplexity int) int
 		RegistrationAllowed    func(childComplexity int) int
 		ResetPasswordAllowed   func(childComplexity int) int
 		SSLRequired            func(childComplexity int) int
+		SSOSessionIdleTimeout  func(childComplexity int) int
+		SSOSessionMaxLifespan  func(childComplexity int) int
 		TokenEndpoint          func(childComplexity int) int
 	}
 
@@ -565,7 +570,7 @@ type ProtocolMapperResolver interface {
 	Client(ctx context.Context, obj *domain.ProtocolMapper) (*domain.Client, error)
 }
 type QueryResolver interface {
-	Users(ctx context.Context, filter *UserFilter, first *int, after *int) (*UserConnection, error)
+	Users(ctx context.Context, filter *domain.UserFilter, first *int, after *int) (*UserConnection, error)
 	User(ctx context.Context, id string) (*domain.User, error)
 	Clients(ctx context.Context, filter *domain.ClientFilter, first *int, after *int) (*ClientConnection, error)
 	Client(ctx context.Context, id string) (*domain.Client, error)
@@ -576,7 +581,7 @@ type QueryResolver interface {
 	ClientRoles(ctx context.Context, clientID string) ([]domain.Role, error)
 	Groups(ctx context.Context) ([]domain.Group, error)
 	Group(ctx context.Context, id string) (*domain.Group, error)
-	Sessions(ctx context.Context, userID *string, first *int, after *int) (*SessionConnection, error)
+	Sessions(ctx context.Context, userID *string, clientID *string, first *int, after *int) (*SessionConnection, error)
 	Session(ctx context.Context, id string) (*domain.Session, error)
 	IdentityProviders(ctx context.Context) ([]domain.IdentityProvider, error)
 	IdentityProvider(ctx context.Context, id string) (*domain.IdentityProvider, error)
@@ -642,10 +647,15 @@ type UserResolver interface {
 	GroupIds(ctx context.Context, obj *domain.User) ([]string, error)
 }
 
+type AuditLogFilterResolver interface {
+	SortDir(ctx context.Context, obj *domain.AuditLogFilter, data *SortDir) error
+}
 type ClientFilterResolver interface {
-	ClientID(ctx context.Context, obj *domain.ClientFilter, data *string) error
-	ClientName(ctx context.Context, obj *domain.ClientFilter, data *string) error
-	Enabled(ctx context.Context, obj *domain.ClientFilter, data *bool) error
+	SortDir(ctx context.Context, obj *domain.ClientFilter, data *SortDir) error
+}
+type UserFilterResolver interface {
+	SortBy(ctx context.Context, obj *domain.UserFilter, data *string) error
+	SortDir(ctx context.Context, obj *domain.UserFilter, data *SortDir) error
 }
 
 type executableSchema graphql.ExecutableSchemaState[ResolverRoot, DirectiveRoot, ComplexityRoot]
@@ -2201,7 +2211,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.ComplexityRoot.Query.Sessions(childComplexity, args["userId"].(*string), args["first"].(*int), args["after"].(*int)), true
+		return e.ComplexityRoot.Query.Sessions(childComplexity, args["userId"].(*string), args["clientId"].(*string), args["first"].(*int), args["after"].(*int)), true
 	case "Query.tokenMappers":
 		if e.ComplexityRoot.Query.TokenMappers == nil {
 			break
@@ -2268,7 +2278,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.ComplexityRoot.Query.Users(childComplexity, args["filter"].(*UserFilter), args["first"].(*int), args["after"].(*int)), true
+		return e.ComplexityRoot.Query.Users(childComplexity, args["filter"].(*domain.UserFilter), args["first"].(*int), args["after"].(*int)), true
 
 	case "RealmKey.active":
 		if e.ComplexityRoot.RealmKey.Active == nil {
@@ -2397,6 +2407,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.RealmSettings.Realm(childComplexity), true
+	case "RealmSettings.refreshTokenLifespan":
+		if e.ComplexityRoot.RealmSettings.RefreshTokenLifespan == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RealmSettings.RefreshTokenLifespan(childComplexity), true
 	case "RealmSettings.registrationAllowed":
 		if e.ComplexityRoot.RealmSettings.RegistrationAllowed == nil {
 			break
@@ -2415,6 +2431,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.RealmSettings.SSLRequired(childComplexity), true
+	case "RealmSettings.ssoSessionIdleTimeout":
+		if e.ComplexityRoot.RealmSettings.SSOSessionIdleTimeout == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RealmSettings.SSOSessionIdleTimeout(childComplexity), true
+	case "RealmSettings.ssoSessionMaxLifespan":
+		if e.ComplexityRoot.RealmSettings.SSOSessionMaxLifespan == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RealmSettings.SSOSessionMaxLifespan(childComplexity), true
 	case "RealmSettings.tokenEndpoint":
 		if e.ComplexityRoot.RealmSettings.TokenEndpoint == nil {
 			break
@@ -4109,16 +4137,21 @@ func (ec *executionContext) field_Query_sessions_args(ctx context.Context, rawAr
 		return nil, err
 	}
 	args["userId"] = arg0
-	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "first", ec.unmarshalOInt2ᚖint)
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "clientId", ec.unmarshalOString2ᚖstring)
 	if err != nil {
 		return nil, err
 	}
-	args["first"] = arg1
-	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "after", ec.unmarshalOInt2ᚖint)
+	args["clientId"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "first", ec.unmarshalOInt2ᚖint)
 	if err != nil {
 		return nil, err
 	}
-	args["after"] = arg2
+	args["first"] = arg2
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "after", ec.unmarshalOInt2ᚖint)
+	if err != nil {
+		return nil, err
+	}
+	args["after"] = arg3
 	return args, nil
 }
 
@@ -4169,7 +4202,7 @@ func (ec *executionContext) field_Query_user_args(ctx context.Context, rawArgs m
 func (ec *executionContext) field_Query_users_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "filter", ec.unmarshalOUserFilter2ᚖgithubᚗcomᚋpilabᚑdevᚋshadowᚑssoᚋgraphqlᚐUserFilter)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "filter", ec.unmarshalOUserFilter2ᚖgithubᚗcomᚋpilabᚑdevᚋshadowᚑssoᚋdomainᚐUserFilter)
 	if err != nil {
 		return nil, err
 	}
@@ -8984,6 +9017,12 @@ func (ec *executionContext) fieldContext_Mutation_updateRealm(ctx context.Contex
 				return ec.fieldContext_RealmSettings_accessTokenLifespan(ctx, field)
 			case "accessCodeLifespan":
 				return ec.fieldContext_RealmSettings_accessCodeLifespan(ctx, field)
+			case "refreshTokenLifespan":
+				return ec.fieldContext_RealmSettings_refreshTokenLifespan(ctx, field)
+			case "ssoSessionIdleTimeout":
+				return ec.fieldContext_RealmSettings_ssoSessionIdleTimeout(ctx, field)
+			case "ssoSessionMaxLifespan":
+				return ec.fieldContext_RealmSettings_ssoSessionMaxLifespan(ctx, field)
 			case "tokenEndpoint":
 				return ec.fieldContext_RealmSettings_tokenEndpoint(ctx, field)
 			case "authorizationEndpoint":
@@ -10623,7 +10662,7 @@ func (ec *executionContext) _Query_users(ctx context.Context, field graphql.Coll
 		ec.fieldContext_Query_users,
 		func(ctx context.Context) (any, error) {
 			fc := graphql.GetFieldContext(ctx)
-			return ec.Resolvers.Query().Users(ctx, fc.Args["filter"].(*UserFilter), fc.Args["first"].(*int), fc.Args["after"].(*int))
+			return ec.Resolvers.Query().Users(ctx, fc.Args["filter"].(*domain.UserFilter), fc.Args["first"].(*int), fc.Args["after"].(*int))
 		},
 		nil,
 		ec.marshalNUserConnection2ᚖgithubᚗcomᚋpilabᚑdevᚋshadowᚑssoᚋgraphqlᚐUserConnection,
@@ -11324,7 +11363,7 @@ func (ec *executionContext) _Query_sessions(ctx context.Context, field graphql.C
 		ec.fieldContext_Query_sessions,
 		func(ctx context.Context) (any, error) {
 			fc := graphql.GetFieldContext(ctx)
-			return ec.Resolvers.Query().Sessions(ctx, fc.Args["userId"].(*string), fc.Args["first"].(*int), fc.Args["after"].(*int))
+			return ec.Resolvers.Query().Sessions(ctx, fc.Args["userId"].(*string), fc.Args["clientId"].(*string), fc.Args["first"].(*int), fc.Args["after"].(*int))
 		},
 		nil,
 		ec.marshalNSessionConnection2ᚖgithubᚗcomᚋpilabᚑdevᚋshadowᚑssoᚋgraphqlᚐSessionConnection,
@@ -11600,6 +11639,12 @@ func (ec *executionContext) fieldContext_Query_realm(_ context.Context, field gr
 				return ec.fieldContext_RealmSettings_accessTokenLifespan(ctx, field)
 			case "accessCodeLifespan":
 				return ec.fieldContext_RealmSettings_accessCodeLifespan(ctx, field)
+			case "refreshTokenLifespan":
+				return ec.fieldContext_RealmSettings_refreshTokenLifespan(ctx, field)
+			case "ssoSessionIdleTimeout":
+				return ec.fieldContext_RealmSettings_ssoSessionIdleTimeout(ctx, field)
+			case "ssoSessionMaxLifespan":
+				return ec.fieldContext_RealmSettings_ssoSessionMaxLifespan(ctx, field)
 			case "tokenEndpoint":
 				return ec.fieldContext_RealmSettings_tokenEndpoint(ctx, field)
 			case "authorizationEndpoint":
@@ -13237,6 +13282,93 @@ func (ec *executionContext) _RealmSettings_accessCodeLifespan(ctx context.Contex
 }
 
 func (ec *executionContext) fieldContext_RealmSettings_accessCodeLifespan(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RealmSettings",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RealmSettings_refreshTokenLifespan(ctx context.Context, field graphql.CollectedField, obj *domain.RealmSettings) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_RealmSettings_refreshTokenLifespan,
+		func(ctx context.Context) (any, error) {
+			return obj.RefreshTokenLifespan, nil
+		},
+		nil,
+		ec.marshalOInt2int,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_RealmSettings_refreshTokenLifespan(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RealmSettings",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RealmSettings_ssoSessionIdleTimeout(ctx context.Context, field graphql.CollectedField, obj *domain.RealmSettings) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_RealmSettings_ssoSessionIdleTimeout,
+		func(ctx context.Context) (any, error) {
+			return obj.SSOSessionIdleTimeout, nil
+		},
+		nil,
+		ec.marshalOInt2int,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_RealmSettings_ssoSessionIdleTimeout(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RealmSettings",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RealmSettings_ssoSessionMaxLifespan(ctx context.Context, field graphql.CollectedField, obj *domain.RealmSettings) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_RealmSettings_ssoSessionMaxLifespan,
+		func(ctx context.Context) (any, error) {
+			return obj.SSOSessionMaxLifespan, nil
+		},
+		nil,
+		ec.marshalOInt2int,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_RealmSettings_ssoSessionMaxLifespan(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "RealmSettings",
 		Field:      field,
@@ -17509,7 +17641,7 @@ func (ec *executionContext) unmarshalInputAuditLogFilter(ctx context.Context, ob
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"user", "action", "from", "to"}
+	fieldsInOrder := [...]string{"user", "action", "from", "to", "sortBy", "sortDir"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -17544,6 +17676,22 @@ func (ec *executionContext) unmarshalInputAuditLogFilter(ctx context.Context, ob
 				return it, err
 			}
 			it.To = data
+		case "sortBy":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sortBy"))
+			data, err := ec.unmarshalOString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SortBy = data
+		case "sortDir":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sortDir"))
+			data, err := ec.unmarshalOSortDir2ᚖgithubᚗcomᚋpilabᚑdevᚋshadowᚑssoᚋgraphqlᚐSortDir(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			if err = ec.Resolvers.AuditLogFilter().SortDir(ctx, &it, data); err != nil {
+				return it, err
+			}
 		}
 	}
 	return it, nil
@@ -17641,7 +17789,7 @@ func (ec *executionContext) unmarshalInputClientFilter(ctx context.Context, obj 
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"clientId", "clientName", "enabled", "search"}
+	fieldsInOrder := [...]string{"clientId", "clientName", "enabled", "search", "publicClient", "sortBy", "sortDir"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -17650,31 +17798,25 @@ func (ec *executionContext) unmarshalInputClientFilter(ctx context.Context, obj 
 		switch k {
 		case "clientId":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("clientId"))
-			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			data, err := ec.unmarshalOString2string(ctx, v)
 			if err != nil {
 				return it, err
 			}
-			if err = ec.Resolvers.ClientFilter().ClientID(ctx, &it, data); err != nil {
-				return it, err
-			}
+			it.ClientID = data
 		case "clientName":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("clientName"))
-			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			data, err := ec.unmarshalOString2string(ctx, v)
 			if err != nil {
 				return it, err
 			}
-			if err = ec.Resolvers.ClientFilter().ClientName(ctx, &it, data); err != nil {
-				return it, err
-			}
+			it.ClientName = data
 		case "enabled":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("enabled"))
 			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
 			if err != nil {
 				return it, err
 			}
-			if err = ec.Resolvers.ClientFilter().Enabled(ctx, &it, data); err != nil {
-				return it, err
-			}
+			it.Enabled = data
 		case "search":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("search"))
 			data, err := ec.unmarshalOString2string(ctx, v)
@@ -17682,6 +17824,29 @@ func (ec *executionContext) unmarshalInputClientFilter(ctx context.Context, obj 
 				return it, err
 			}
 			it.Search = data
+		case "publicClient":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("publicClient"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.PublicClient = data
+		case "sortBy":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sortBy"))
+			data, err := ec.unmarshalOString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SortBy = data
+		case "sortDir":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sortDir"))
+			data, err := ec.unmarshalOSortDir2ᚖgithubᚗcomᚋpilabᚑdevᚋshadowᚑssoᚋgraphqlᚐSortDir(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			if err = ec.Resolvers.ClientFilter().SortDir(ctx, &it, data); err != nil {
+				return it, err
+			}
 		}
 	}
 	return it, nil
@@ -19052,7 +19217,7 @@ func (ec *executionContext) unmarshalInputUpdateRealmInput(ctx context.Context, 
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"displayName", "registrationAllowed", "loginWithEmailAllowed", "duplicateEmailsAllowed", "resetPasswordAllowed", "editUsernameAllowed", "bruteForceProtected", "permanentLockout", "waitIncrementSeconds", "minimumQuickLoginWaitSeconds", "quickLoginCheckSMTPPort", "quickLoginCheckSMTPHost", "maxTemporaryLockouts", "enabled", "sslRequired", "passwordCredentialConfig"}
+	fieldsInOrder := [...]string{"displayName", "registrationAllowed", "loginWithEmailAllowed", "duplicateEmailsAllowed", "resetPasswordAllowed", "editUsernameAllowed", "bruteForceProtected", "permanentLockout", "waitIncrementSeconds", "minimumQuickLoginWaitSeconds", "quickLoginCheckSMTPPort", "quickLoginCheckSMTPHost", "maxTemporaryLockouts", "enabled", "accessTokenLifespan", "accessCodeLifespan", "refreshTokenLifespan", "ssoSessionIdleTimeout", "ssoSessionMaxLifespan", "sslRequired", "passwordCredentialConfig"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -19157,6 +19322,41 @@ func (ec *executionContext) unmarshalInputUpdateRealmInput(ctx context.Context, 
 				return it, err
 			}
 			it.Enabled = data
+		case "accessTokenLifespan":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("accessTokenLifespan"))
+			data, err := ec.unmarshalOInt2ᚖint(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.AccessTokenLifespan = data
+		case "accessCodeLifespan":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("accessCodeLifespan"))
+			data, err := ec.unmarshalOInt2ᚖint(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.AccessCodeLifespan = data
+		case "refreshTokenLifespan":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("refreshTokenLifespan"))
+			data, err := ec.unmarshalOInt2ᚖint(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.RefreshTokenLifespan = data
+		case "ssoSessionIdleTimeout":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("ssoSessionIdleTimeout"))
+			data, err := ec.unmarshalOInt2ᚖint(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SsoSessionIdleTimeout = data
+		case "ssoSessionMaxLifespan":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("ssoSessionMaxLifespan"))
+			data, err := ec.unmarshalOInt2ᚖint(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SsoSessionMaxLifespan = data
 		case "sslRequired":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sslRequired"))
 			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
@@ -19482,8 +19682,8 @@ func (ec *executionContext) unmarshalInputUserCredentialInput(ctx context.Contex
 	return it, nil
 }
 
-func (ec *executionContext) unmarshalInputUserFilter(ctx context.Context, obj any) (UserFilter, error) {
-	var it UserFilter
+func (ec *executionContext) unmarshalInputUserFilter(ctx context.Context, obj any) (domain.UserFilter, error) {
+	var it domain.UserFilter
 	if obj == nil {
 		return it, nil
 	}
@@ -19493,7 +19693,7 @@ func (ec *executionContext) unmarshalInputUserFilter(ctx context.Context, obj an
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"email", "username", "firstName", "lastName", "enabled", "emailVerified", "search"}
+	fieldsInOrder := [...]string{"email", "username", "firstName", "lastName", "enabled", "emailVerified", "search", "sortBy", "sortDir"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -19549,6 +19749,24 @@ func (ec *executionContext) unmarshalInputUserFilter(ctx context.Context, obj an
 				return it, err
 			}
 			it.Search = data
+		case "sortBy":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sortBy"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			if err = ec.Resolvers.UserFilter().SortBy(ctx, &it, data); err != nil {
+				return it, err
+			}
+		case "sortDir":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sortDir"))
+			data, err := ec.unmarshalOSortDir2ᚖgithubᚗcomᚋpilabᚑdevᚋshadowᚑssoᚋgraphqlᚐSortDir(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			if err = ec.Resolvers.UserFilter().SortDir(ctx, &it, data); err != nil {
+				return it, err
+			}
 		}
 	}
 	return it, nil
@@ -23117,6 +23335,12 @@ func (ec *executionContext) _RealmSettings(ctx context.Context, sel ast.Selectio
 			out.Values[i] = ec._RealmSettings_accessTokenLifespan(ctx, field, obj)
 		case "accessCodeLifespan":
 			out.Values[i] = ec._RealmSettings_accessCodeLifespan(ctx, field, obj)
+		case "refreshTokenLifespan":
+			out.Values[i] = ec._RealmSettings_refreshTokenLifespan(ctx, field, obj)
+		case "ssoSessionIdleTimeout":
+			out.Values[i] = ec._RealmSettings_ssoSessionIdleTimeout(ctx, field, obj)
+		case "ssoSessionMaxLifespan":
+			out.Values[i] = ec._RealmSettings_ssoSessionMaxLifespan(ctx, field, obj)
 		case "tokenEndpoint":
 			field := field
 
@@ -26493,6 +26717,22 @@ func (ec *executionContext) marshalOSession2ᚖgithubᚗcomᚋpilabᚑdevᚋshad
 	return ec._Session(ctx, sel, v)
 }
 
+func (ec *executionContext) unmarshalOSortDir2ᚖgithubᚗcomᚋpilabᚑdevᚋshadowᚑssoᚋgraphqlᚐSortDir(ctx context.Context, v any) (*SortDir, error) {
+	if v == nil {
+		return nil, nil
+	}
+	var res = new(SortDir)
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalOSortDir2ᚖgithubᚗcomᚋpilabᚑdevᚋshadowᚑssoᚋgraphqlᚐSortDir(ctx context.Context, sel ast.SelectionSet, v *SortDir) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return v
+}
+
 func (ec *executionContext) unmarshalOString2string(ctx context.Context, v any) (string, error) {
 	res, err := graphql.UnmarshalString(v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -26640,7 +26880,7 @@ func (ec *executionContext) unmarshalOUserCredentialInput2ᚕgithubᚗcomᚋpila
 	return res, nil
 }
 
-func (ec *executionContext) unmarshalOUserFilter2ᚖgithubᚗcomᚋpilabᚑdevᚋshadowᚑssoᚋgraphqlᚐUserFilter(ctx context.Context, v any) (*UserFilter, error) {
+func (ec *executionContext) unmarshalOUserFilter2ᚖgithubᚗcomᚋpilabᚑdevᚋshadowᚑssoᚋdomainᚐUserFilter(ctx context.Context, v any) (*domain.UserFilter, error) {
 	if v == nil {
 		return nil, nil
 	}

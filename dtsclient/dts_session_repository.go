@@ -63,6 +63,8 @@ func protoUserSessionToDomainSession(protoUS *ssov1.UserSession) *domain.Session
 		UserAgent: protoUS.UserAgent,
 		IPAddress: protoUS.IpAddress,
 		IsRevoked: false, // If retrieved from DTS, it's considered not revoked
+		// ClientID: // Documented limitation: ssov1.UserSession carries NO client_id field,
+		// so a DTS-backed session can never be attributed to a client. Left empty.
 		// UpdatedAt: // Not in ssov1.UserSession, could use AuthenticatedAt or leave as zero
 		// TokenID: // Not in ssov1.UserSession
 		// ACR/AMR could be mapped if domain.Session is extended

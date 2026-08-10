@@ -99,6 +99,22 @@ func (mr *MockClientRepositoryMockRecorder) ListClients(ctx, filter any) *gomock
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListClients", reflect.TypeOf((*MockClientRepository)(nil).ListClients), ctx, filter)
 }
 
+// ListClientsPage mocks base method.
+func (m *MockClientRepository) ListClientsPage(ctx context.Context, filter domain.ClientFilter, skip, limit int) ([]*domain.Client, int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListClientsPage", ctx, filter, skip, limit)
+	ret0, _ := ret[0].([]*domain.Client)
+	ret1, _ := ret[1].(int64)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// ListClientsPage indicates an expected call of ListClientsPage.
+func (mr *MockClientRepositoryMockRecorder) ListClientsPage(ctx, filter, skip, limit any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListClientsPage", reflect.TypeOf((*MockClientRepository)(nil).ListClientsPage), ctx, filter, skip, limit)
+}
+
 // UpdateClient mocks base method.
 func (m *MockClientRepository) UpdateClient(ctx context.Context, client *domain.Client) error {
 	m.ctrl.T.Helper()
