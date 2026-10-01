@@ -9,11 +9,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"time"
 
 	"connectrpc.com/connect"
 	"github.com/pilab-dev/shadow-sso/domain"
 	"github.com/pilab-dev/shadow-sso/internal/auth/rbac"
+	pkgauth "github.com/pilab-dev/shadow-sso/pkg/auth"
 )
 
 type Resolver struct {
@@ -31,6 +33,8 @@ type Resolver struct {
 	RealmSettingsRepo       domain.RealmSettingsRepository
 	RealmKeysRepo           domain.RealmKeysRepository
 	EmailService           domain.EmailService
+	// PublicBaseURL is the SSO's public origin (no trailing slash) used for links in emails.
+	PublicBaseURL string
 	PasswordHasher        domain.PasswordHasher
 	AuditLogRepo           domain.AuditLogRepository
 	FederatedIdentityRepo  domain.UserFederatedIdentityRepository
@@ -394,40 +398,55 @@ func (r *mutationResolver) DeleteUser(ctx context.Context, id string) (bool, err
 
 // SendVerificationEmail is the resolver for the sendVerificationEmail field.
 func (r *mutationResolver) SendVerificationEmail(ctx context.Context, userID string) (bool, error) {
+	if err := requireAdmin(ctx); err != nil {
+		return false, err
+	}
+	if r.EmailService == nil {
+		return false, errors.New("email delivery is not configured")
+	}
 	user, err := r.UserRepo.GetUserByID(ctx, userID)
 	if err != nil {
 		return false, err
 	}
-	// Generate verification token if not exists
-	if user.EmailVerificationToken == "" {
-		token := generateToken()
-		user.EmailVerificationToken = token
-		if err := r.UserRepo.StoreEmailVerificationToken(ctx, userID, token, time.Now().Add(24*time.Hour)); err != nil {
-			return false, err
-		}
+	// A fresh single-use token each time; only its digest is stored (see /verify-email).
+	token, digest, err := pkgauth.NewEmailToken()
+	if err != nil {
+		return false, err
 	}
-	verificationLink := "https://example.com/verify?token=" + user.EmailVerificationToken
-	err = r.EmailService.SendVerificationEmail(user.Email, user.FirstName, verificationLink)
-	return err == nil, err
+	if err := r.UserRepo.StoreEmailVerificationToken(ctx, userID, digest, time.Now().Add(24*time.Hour)); err != nil {
+		return false, err
+	}
+	link := r.PublicBaseURL + "/verify-email?token=" + url.QueryEscape(token)
+	if err := r.EmailService.SendVerificationEmail(user.Email, user.FirstName, link); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // SendPasswordResetEmail is the resolver for the sendPasswordResetEmail field.
 func (r *mutationResolver) SendPasswordResetEmail(ctx context.Context, userID string) (bool, error) {
+	if err := requireAdmin(ctx); err != nil {
+		return false, err
+	}
+	if r.EmailService == nil {
+		return false, errors.New("email delivery is not configured")
+	}
 	user, err := r.UserRepo.GetUserByID(ctx, userID)
 	if err != nil {
 		return false, err
 	}
-	// Generate password reset token if not exists
-	if user.PasswordResetToken == "" {
-		token := generateToken()
-		user.PasswordResetToken = token
-		if err := r.UserRepo.StorePasswordResetToken(ctx, userID, token, time.Now().Add(1*time.Hour)); err != nil {
-			return false, err
-		}
+	token, digest, err := pkgauth.NewEmailToken()
+	if err != nil {
+		return false, err
 	}
-	resetLink := "https://example.com/reset-password?token=" + user.PasswordResetToken
-	err = r.EmailService.SendPasswordResetEmail(user.Email, user.FirstName, resetLink)
-	return err == nil, err
+	if err := r.UserRepo.StorePasswordResetToken(ctx, userID, digest, time.Now().Add(1*time.Hour)); err != nil {
+		return false, err
+	}
+	link := r.PublicBaseURL + "/reset-password?token=" + url.QueryEscape(token)
+	if err := r.EmailService.SendPasswordResetEmail(user.Email, user.FirstName, link); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // ResetPassword is the resolver for the resetPassword field.
@@ -456,8 +475,26 @@ func (r *mutationResolver) ResetPassword(ctx context.Context, userID string, new
 
 // ExecuteActions is the resolver for the executeActions field.
 func (r *mutationResolver) ExecuteActions(ctx context.Context, userID string, actions []string) (bool, error) {
-	// Complex action execution - would need implementation
-	return false, nil
+	if err := requireAdmin(ctx); err != nil {
+		return false, err
+	}
+	for _, a := range actions {
+		if !domain.IsKnownRequiredAction(a) {
+			return false, fmt.Errorf("unknown required action %q", a)
+		}
+	}
+	user, err := r.UserRepo.GetUserByID(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	// The actions run at the user's next login, before any token is issued.
+	for _, a := range actions {
+		user.AddRequiredAction(a)
+	}
+	if err := r.UserRepo.UpdateUser(ctx, user); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // CreateClient is the resolver for the createClient field.
@@ -2235,12 +2272,6 @@ func contains(slice []string, val string) bool {
 		}
 	}
 	return false
-}
-
-func generateToken() string {
-	b := make([]byte, 32)
-	rand.Read(b)
-	return hex.EncodeToString(b)
 }
 
 func generateRandomSecret() string {
