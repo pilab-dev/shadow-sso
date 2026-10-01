@@ -324,6 +324,18 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		nil,
 	)
 
+	// Passkeys need a relying party derived from the public issuer URL; without a valid one the
+	// feature simply stays off.
+	rpName := brandOrgName
+	if rpName == "" {
+		rpName = "Shadow SSO"
+	}
+	passkeyRP, rpErr := webauth.NewWebAuthn(opts.Config.Issuer, rpName)
+	if rpErr != nil {
+		log.Warn().Err(rpErr).Msg("passkeys disabled: could not configure WebAuthn relying party")
+		passkeyRP = nil
+	}
+
 	webauthAPI := webauth.New(&webauth.Options{
 		UserRepo:          repoProvider.UserRepository(context.Background()),
 		PasswordHasher:    passwordHasher,
@@ -343,6 +355,7 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		EmailService:      webauthMailer,
 		PublicBaseURL:     opts.Config.Issuer,
 		SessionRepo:       repoProvider.SessionRepository(context.Background()),
+		WebAuthn:          passkeyRP,
 	})
 
 	router.GET("/", webauthAPI.LandingPageHandler)
@@ -354,6 +367,13 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 	router.POST("/consent", webauthAPI.ConsentSubmitHandler)
 	router.GET("/oauth2/device/verify", webauthAPI.DeviceVerificationPageHandler)
 	router.POST("/oauth2/device/verify", webauthAPI.DeviceVerificationSubmitHandler)
+	router.GET("/static/:name", webauthAPI.StaticAssetHandler)
+	router.POST("/login/passkey/begin", webauthAPI.PasskeyLoginBeginHandler)
+	router.POST("/login/passkey/finish", webauthAPI.PasskeyLoginFinishHandler)
+	router.GET("/account/passkeys", webauthAPI.AccountPasskeysPageHandler())
+	router.POST("/account/passkeys/register/begin", webauthAPI.PasskeyRegisterBeginHandler())
+	router.POST("/account/passkeys/register/finish", webauthAPI.PasskeyRegisterFinishHandler())
+	router.POST("/account/passkeys/delete", webauthAPI.PasskeyDeleteSubmitHandler())
 	router.GET("/account", webauthAPI.AccountOverviewHandler())
 	router.POST("/account/profile", webauthAPI.AccountProfileSubmitHandler())
 	router.GET("/account/security", webauthAPI.AccountSecurityHandler())

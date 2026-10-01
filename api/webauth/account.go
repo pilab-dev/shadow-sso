@@ -25,6 +25,8 @@ var accountMessages = map[string]string{
 	"mfa_disabled":     "Two-factor authentication was turned off.",
 	"session_revoked":  "The session was signed out.",
 	"identity_removed": "The linked account was removed.",
+	"passkey_added":    "Your passkey was added.",
+	"passkey_removed":  "The passkey was removed.",
 }
 
 // accountHandler is an account page handler that receives the authenticated user.
@@ -73,6 +75,7 @@ func (wa *WebAuth) accountPost(next accountHandler) gin.HandlerFunc {
 
 func (wa *WebAuth) renderAccount(c *gin.Context, tmpl, title, active string, user *domain.User, data gin.H) {
 	data["Active"] = active
+	data["PasskeysNav"] = wa.passkeysEnabled()
 	data["User"] = user
 	data["Email"] = user.Email
 	if _, ok := data["Flash"]; !ok {
