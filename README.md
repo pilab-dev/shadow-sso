@@ -98,7 +98,7 @@ go get github.com/pilab-dev/shadow-sso
 To install the server application and CLI tool:
 ```bash
 go install github.com/pilab-dev/shadow-sso/apps/ssso@latest
-go install github.com/pilab-dev/shadow-sso/apps/ssoctl@latest
+go install github.com/pilab-dev/shadow-sso/apps/sssoctl@latest
 ```
 This will install `ssso` (the server) and `ssoctl` (the CLI) to your `$GOPATH/bin` directory.
 
@@ -330,7 +330,7 @@ mongo_db_name: shadow_sso_db
 
 ###  CLI Tool (`ssoctl`)
 
-The `ssoctl` CLI tool helps manage your Shadow SSO instance. It's located in `apps/ssoctl`.
+The `ssoctl` CLI tool helps manage your Shadow SSO instance. It's located in `apps/sssoctl`.
 
 1.  **Configuration:**
     `ssoctl` manages its configuration, including server endpoints and authentication tokens, in a file typically located at `$HOME/.ssoctl/config.yaml`.

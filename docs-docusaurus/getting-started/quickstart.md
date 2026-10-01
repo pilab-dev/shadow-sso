@@ -79,7 +79,7 @@ Install and configure `ssoctl`:
 
 ```bash
 # Install ssoctl
-go install github.com/pilab-dev/shadow-sso/apps/ssoctl@latest
+go install github.com/pilab-dev/shadow-sso/apps/sssoctl@latest
 
 # Set up context
 ssoctl config set-context local --server http://localhost:8080

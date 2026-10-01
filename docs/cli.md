@@ -22,7 +22,7 @@ mv ssoctl /usr/local/bin/
 ### Using Go Install
 
 ```bash
-go install github.com/pilab-dev/shadow-sso/apps/ssoctl@latest
+go install github.com/pilab-dev/shadow-sso/apps/sssoctl@latest
 ```
 
 ### Docker Image

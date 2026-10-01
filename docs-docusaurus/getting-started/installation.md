@@ -28,7 +28,7 @@ Install the server and CLI tools directly using `go install`:
 go install github.com/pilab-dev/shadow-sso/apps/ssso@latest
 
 # Install the CLI tool
-go install github.com/pilab-dev/shadow-sso/apps/ssoctl@latest
+go install github.com/pilab-dev/shadow-sso/apps/sssoctl@latest
 ```
 
 The binaries will be installed to `$GOPATH/bin/`. Ensure this directory is in your `PATH`:
@@ -50,7 +50,7 @@ cd shadow-sso
 go build -o ssso ./apps/ssso/
 
 # Build the CLI
-go build -o ssoctl ./apps/ssoctl/
+go build -o ssoctl ./apps/sssoctl/
 
 # (Optional) Build the DTS service
 go build -o ssso-dts ./apps/ssso-dts/cmd/server/

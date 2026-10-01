@@ -14,12 +14,12 @@ sidebar_label: CLI Reference
 
 ```bash
 # Install from source
-go install github.com/pilab-dev/shadow-sso/apps/ssoctl@latest
+go install github.com/pilab-dev/shadow-sso/apps/sssoctl@latest
 
 # Or build locally
 git clone https://github.com/pilab-dev/shadow-sso.git
 cd shadow-sso
-go build -o ssoctl ./apps/ssoctl/
+go build -o ssoctl ./apps/sssoctl/
 ```
 
 ### Docker Image
