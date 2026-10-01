@@ -20,20 +20,64 @@ import (
 type requiredActionHandler interface {
 	// Render shows the action's form; errMsg is a user-facing validation message.
 	Render(c *gin.Context, wa *WebAuth, flowID string, user *domain.User, errMsg string)
-	// Submit processes the form. done=true means the action is complete and user
-	// has been persisted by the handler; otherwise errMsg is re-rendered.
-	Submit(c *gin.Context, wa *WebAuth, user *domain.User) (done bool, errMsg string, err error)
+	// Submit processes the form and reports what to do next.
+	Submit(c *gin.Context, wa *WebAuth, user *domain.User) (actionResult, error)
+}
+
+// actionResult is the outcome of requiredActionHandler.Submit.
+type actionResult struct {
+	// Done: the action is complete; the framework removes it from the user,
+	// persists the user and continues the login.
+	Done bool
+	// Err: validation message; the action's form is re-rendered with it.
+	Err string
+	// Rendered: the handler already wrote the response (e.g. an interstitial
+	// page). The framework does nothing further for this request.
+	Rendered bool
 }
 
 // requiredActionHandlers is the registry of implemented actions. Pending actions
 // without a handler are skipped (and logged) instead of locking the user out.
 var requiredActionHandlers = map[string]requiredActionHandler{
 	domain.RequiredActionUpdatePassword: updatePasswordAction{},
+	domain.RequiredActionConfigureTOTP:  configureTOTPAction{},
+	domain.RequiredActionVerifyEmail:    verifyEmailAction{},
 }
 
-func supportsRequiredAction(alias string) bool {
-	_, ok := requiredActionHandlers[alias]
-	return ok
+// actionSatisfied reports whether a pending action no longer needs doing (the user
+// already has the thing it would collect), so it can be dropped silently.
+func actionSatisfied(user *domain.User, alias string) bool {
+	switch alias {
+	case domain.RequiredActionConfigureTOTP:
+		return user.IsTwoFactorEnabled || user.EmailMFAEnabled || user.PushMFAEnabled
+	case domain.RequiredActionVerifyEmail:
+		return user.IsEmailVerified
+	}
+	return false
+}
+
+// pruneSatisfiedActions removes already-satisfied actions from user and reports whether it changed anything.
+func pruneSatisfiedActions(user *domain.User) bool {
+	changed := false
+	for _, alias := range append([]string(nil), user.RequiredActions...) {
+		if actionSatisfied(user, alias) {
+			user.RemoveRequiredAction(alias)
+			changed = true
+		}
+	}
+	return changed
+}
+
+// supportsRequiredAction reports whether alias can be completed right now. VERIFY_EMAIL needs a
+// mail provider; without one it is skipped (and logged) rather than locking the user out.
+func (wa *WebAuth) supportsRequiredAction(alias string) bool {
+	if _, ok := requiredActionHandlers[alias]; !ok {
+		return false
+	}
+	if alias == domain.RequiredActionVerifyEmail && wa.emailService == nil {
+		return false
+	}
+	return true
 }
 
 // finishLogin is the single completion point for every successful login
@@ -47,7 +91,12 @@ func (wa *WebAuth) finishLogin(c *gin.Context, ctx context.Context, flowID strin
 		flowState.UserAuthenticatedAt = time.Now()
 	}
 
-	next, skipped := authflow.NextRequiredAction(user, supportsRequiredAction)
+	if pruneSatisfiedActions(user) {
+		if err := wa.userRepo.UpdateUser(ctx, user); err != nil {
+			log.Warn().Err(err).Str("user_id", user.ID).Msg("login: failed to persist pruned required actions")
+		}
+	}
+	next, skipped := authflow.NextRequiredAction(user, wa.supportsRequiredAction)
 	if len(skipped) > 0 {
 		log.Warn().Str("user_id", user.ID).Strs("actions", skipped).Msg("login: pending required actions have no handler yet; skipping")
 	}
@@ -116,7 +165,7 @@ func (wa *WebAuth) loadRequiredActionFlow(c *gin.Context, flowID string) (*domai
 		return fail(http.StatusBadRequest, "Invalid or expired login request. Please try again.")
 	}
 	handler, ok := requiredActionHandlers[alias]
-	if !ok {
+	if !ok || !wa.supportsRequiredAction(alias) {
 		return fail(http.StatusBadRequest, "This step is not available. Please contact support.")
 	}
 	user, err := wa.userRepo.GetUserByID(ctx, flowState.UserID)
@@ -129,8 +178,14 @@ func (wa *WebAuth) loadRequiredActionFlow(c *gin.Context, flowID string) (*domai
 // RequiredActionPageHandler serves GET /required-action.
 func (wa *WebAuth) RequiredActionPageHandler(c *gin.Context) {
 	flowID := c.Query("flow_id")
-	_, user, handler, _, ok := wa.loadRequiredActionFlow(c, flowID)
+	flowState, user, handler, alias, ok := wa.loadRequiredActionFlow(c, flowID)
 	if !ok {
+		return
+	}
+	// The action may have been completed out of band (e.g. the verification link was opened
+	// in another tab): carry on with the login instead of showing a stale form.
+	if !user.HasRequiredAction(alias) || actionSatisfied(user, alias) {
+		wa.finishLogin(c, c.Request.Context(), flowID, flowState, user)
 		return
 	}
 	handler.Render(c, wa, flowID, user, "")
@@ -152,14 +207,24 @@ func (wa *WebAuth) RequiredActionSubmitHandler(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 
-	done, errMsg, err := handler.Submit(c, wa, user)
+	// "continue" is posted by interstitial pages (e.g. recovery codes) after the action was
+	// already completed and persisted.
+	if c.PostForm("continue") == "1" && (!user.HasRequiredAction(alias) || actionSatisfied(user, alias)) {
+		wa.finishLogin(c, ctx, flowID, flowState, user)
+		return
+	}
+
+	res, err := handler.Submit(c, wa, user)
 	if err != nil {
 		log.Error().Err(err).Str("flow_id", flowID).Str("action", alias).Msg("required action: submit failed")
 		wa.renderInternalError(c, "Could not complete this step. Please try again.")
 		return
 	}
-	if !done {
-		handler.Render(c, wa, flowID, user, errMsg)
+	if res.Rendered {
+		return
+	}
+	if !res.Done {
+		handler.Render(c, wa, flowID, user, res.Err)
 		return
 	}
 
@@ -203,23 +268,23 @@ func (updatePasswordAction) Render(c *gin.Context, wa *WebAuth, flowID string, _
 	wa.renderRequiredActionPage(c, "update_password.html", "Update password", flowID, errMsg)
 }
 
-func (updatePasswordAction) Submit(c *gin.Context, wa *WebAuth, user *domain.User) (bool, string, error) {
+func (updatePasswordAction) Submit(c *gin.Context, wa *WebAuth, user *domain.User) (actionResult, error) {
 	newPassword := c.PostForm("new_password")
 	if newPassword != c.PostForm("confirm_password") {
-		return false, "The passwords do not match.", nil
+		return actionResult{Err: "The passwords do not match."}, nil
 	}
 	if err := pkgauth.ValidatePassword(newPassword, wa.passwordPolicy(c.Request.Context())); err != nil {
-		return false, err.Error(), nil
+		return actionResult{Err: err.Error()}, nil
 	}
 	if wa.passwordHasher.Verify(user.PasswordHash, newPassword) == nil {
-		return false, "The new password must be different from the current one.", nil
+		return actionResult{Err: "The new password must be different from the current one."}, nil
 	}
 	hash, err := wa.passwordHasher.Hash(newPassword)
 	if err != nil {
-		return false, "", err
+		return actionResult{}, err
 	}
 	user.PasswordHash = hash
-	return true, "", nil
+	return actionResult{Done: true}, nil
 }
 
 // passwordPolicy resolves the realm password policy, falling back to a minimum length of 8.

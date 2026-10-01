@@ -4,6 +4,7 @@ import (
 	"embed"
 	"html/template"
 	"io/fs"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/pilab-dev/shadow-sso/domain"
@@ -39,6 +40,12 @@ type WebAuth struct {
 	// push) for the login flow. Nil-safe: EMAIL MFA users see an error page
 	// rather than panic when unset.
 	mfaService *domain.MFAService
+	// emailService sends verification and password-reset mail. Nil-safe: flows that
+	// need it degrade to an explicit "not available" page, never a silent success.
+	emailService domain.EmailService
+	// publicBaseURL (no trailing slash) is the externally reachable SSO origin used to
+	// build links in emails.
+	publicBaseURL string
 }
 
 // Options configures the WebAuth instance with all required dependencies.
@@ -61,6 +68,10 @@ type Options struct {
 	// MFAService is optional; when nil, EMAIL/PUSH MFA login attempts fail
 	// gracefully with an error page instead of panicking. TOTP does not need it.
 	MFAService *domain.MFAService
+	// EmailService is optional; without it forgot-password and email verification are unavailable.
+	EmailService domain.EmailService
+	// PublicBaseURL is the SSO's public origin, e.g. https://sso.example.com (used for email links).
+	PublicBaseURL string
 }
 
 // New creates a new WebAuth instance with the provided dependencies.
@@ -88,6 +99,8 @@ func New(opts *Options) *WebAuth {
 		realmSettingsRepo: opts.RealmSettingsRepo,
 		deviceAuthRepo:    opts.DeviceAuthRepo,
 		mfaService:        opts.MFAService,
+		emailService:      opts.EmailService,
+		publicBaseURL:     strings.TrimRight(opts.PublicBaseURL, "/"),
 	}
 }
 
