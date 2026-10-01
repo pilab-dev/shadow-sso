@@ -50,6 +50,13 @@
 <a href="/forgot-password" class="link link-center">Forgot your password?</a>
 {{if .RegistrationAllowed}}<a href="/register" class="link link-center">Create an account</a>{{end}}
 
+{{if .PasskeysEnabled}}
+<div class="social-divider"><span>or</span></div>
+<p id="passkey-error" class="alert alert-error" role="alert" hidden></p>
+<button type="button" class="btn btn-secondary" data-passkey="login" data-csrf="{{.CSRFToken}}">Sign in with a passkey</button>
+<script src="/static/webauthn.js" defer></script>
+{{end}}
+
 {{if .Providers}}
 <div class="social-divider">
     <span>or continue with</span>

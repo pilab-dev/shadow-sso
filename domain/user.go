@@ -51,6 +51,9 @@ type WebAuthnDevice struct {
 	Counter      int32     `bson:"counter" json:"counter"`
 	CreatedAt    time.Time `bson:"created_at" json:"created_at"`
 	Transports   []string  `bson:"transports,omitempty" json:"transports"`
+	// CredentialJSON is the serialized go-webauthn Credential (public key, flags, sign counter).
+	// It is authoritative for verification; the flat fields above are kept for display/legacy use.
+	CredentialJSON string `bson:"credential_json,omitempty" json:"-"`
 }
 
 // PushMFAChallenge represents an active push MFA challenge

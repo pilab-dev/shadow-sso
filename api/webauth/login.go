@@ -39,6 +39,7 @@ func (wa *WebAuth) renderLoginPage(c *gin.Context, flowID string, providers []*d
 		"Error":      errMsg,
 		// Show the "Create account" link only when the realm allows self-registration.
 		"RegistrationAllowed": wa.realmAllowsRegistration(c),
+		"PasskeysEnabled":     wa.passkeysEnabled(),
 	})
 }
 
@@ -360,6 +361,13 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 // account selection) by sending the browser to consent, the return_to
 // destination for flow-less logins, or back into the OIDC authorize step.
 func (wa *WebAuth) redirectAfterAuthentication(c *gin.Context, ctx context.Context, flowID string, flowState *domain.LoginFlowState, isSecure bool) {
+	c.Redirect(http.StatusFound, wa.afterAuthenticationURL(c, ctx, flowID, flowState, isSecure))
+}
+
+// afterAuthenticationURL returns where a completed login continues: consent, the signed return_to
+// destination for flow-less logins, or back into the OIDC authorize step. It may clear the
+// return_to cookie as a side effect.
+func (wa *WebAuth) afterAuthenticationURL(c *gin.Context, ctx context.Context, flowID string, flowState *domain.LoginFlowState, isSecure bool) string {
 	requiresConsent := false
 	if flowState.ClientID != "" && wa.oauthService != nil {
 		client, cErr := wa.oauthService.ValidateClient(ctx, flowState.ClientID, "")
@@ -368,8 +376,7 @@ func (wa *WebAuth) redirectAfterAuthentication(c *gin.Context, ctx context.Conte
 		}
 	}
 	if requiresConsent {
-		c.Redirect(http.StatusFound, "/consent?flow_id="+url.QueryEscape(flowID))
-		return
+		return "/consent?flow_id=" + url.QueryEscape(flowID)
 	}
 	if flowState.ClientID == "" {
 		// Flow-less login (no OIDC client): complete by redirecting to the
@@ -378,13 +385,11 @@ func (wa *WebAuth) redirectAfterAuthentication(c *gin.Context, ctx context.Conte
 		rt := readReturnToCookie(c.Request, wa.ssoCookieSecret)
 		clearReturnToCookie(c.Writer, isSecure)
 		if rt != "" && validReturnTo(rt) {
-			c.Redirect(http.StatusFound, rt)
-			return
+			return rt
 		}
-		c.Redirect(http.StatusFound, "/")
-		return
+		return "/"
 	}
-	c.Redirect(http.StatusFound, "/oauth2/authorize?flow_id="+url.QueryEscape(flowID))
+	return "/oauth2/authorize?flow_id=" + url.QueryEscape(flowID)
 }
 
 // SelectAccountSubmitHandler processes POST /login/select-account: the user

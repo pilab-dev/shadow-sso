@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/pilab-dev/shadow-sso/domain"
 	"github.com/pilab-dev/shadow-sso/internal/authflow"
 	"github.com/pilab-dev/shadow-sso/services"
@@ -48,6 +49,8 @@ type WebAuth struct {
 	publicBaseURL string
 	// sessionRepo backs the account console's device-activity page. Optional.
 	sessionRepo domain.SessionRepository
+	// webAuthn is the passkey relying party. Nil disables passkey UI and endpoints.
+	webAuthn *webauthn.WebAuthn
 }
 
 // Options configures the WebAuth instance with all required dependencies.
@@ -77,6 +80,8 @@ type Options struct {
 	// SessionRepo is optional; without it the device-activity page is empty and password changes
 	// cannot revoke other sessions.
 	SessionRepo domain.SessionRepository
+	// WebAuthn enables passkeys (see NewWebAuthn). Optional.
+	WebAuthn *webauthn.WebAuthn
 }
 
 // New creates a new WebAuth instance with the provided dependencies.
@@ -107,6 +112,7 @@ func New(opts *Options) *WebAuth {
 		emailService:      opts.EmailService,
 		publicBaseURL:     strings.TrimRight(opts.PublicBaseURL, "/"),
 		sessionRepo:       opts.SessionRepo,
+		webAuthn:          opts.WebAuthn,
 	}
 }
 

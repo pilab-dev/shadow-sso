@@ -81,11 +81,23 @@ func (wa *WebAuth) supportsRequiredAction(alias string) bool {
 }
 
 // finishLogin is the single completion point for every successful login
-// (password, MFA, account selection, completed required action). If the user
+// (password, MFA, passkey, account selection, completed required action). If the user
 // still has a supported required action pending it parks the flow on that action
 // WITHOUT issuing the SSO cookie; otherwise it clears the pending marker, issues
 // the SSO session cookie and continues to consent / authorization.
 func (wa *WebAuth) finishLogin(c *gin.Context, ctx context.Context, flowID string, flowState *domain.LoginFlowState, user *domain.User) {
+	next, failure := wa.completeLogin(c, ctx, flowID, flowState, user)
+	if failure != "" {
+		wa.renderInternalError(c, failure)
+		return
+	}
+	c.Redirect(http.StatusFound, next)
+}
+
+// completeLogin performs finishLogin's work and returns the URL to continue at instead of
+// redirecting, so JSON endpoints (passkey login) can hand it to the browser. A non-empty
+// failure is a user-facing message for an internal error.
+func (wa *WebAuth) completeLogin(c *gin.Context, ctx context.Context, flowID string, flowState *domain.LoginFlowState, user *domain.User) (next, failure string) {
 	flowState.UserID = user.ID
 	if flowState.UserAuthenticatedAt.IsZero() {
 		flowState.UserAuthenticatedAt = time.Now()
@@ -96,27 +108,24 @@ func (wa *WebAuth) finishLogin(c *gin.Context, ctx context.Context, flowID strin
 			log.Warn().Err(err).Str("user_id", user.ID).Msg("login: failed to persist pruned required actions")
 		}
 	}
-	next, skipped := authflow.NextRequiredAction(user, wa.supportsRequiredAction)
+	action, skipped := authflow.NextRequiredAction(user, wa.supportsRequiredAction)
 	if len(skipped) > 0 {
 		log.Warn().Str("user_id", user.ID).Strs("actions", skipped).Msg("login: pending required actions have no handler yet; skipping")
 	}
 
-	if next != "" {
-		flowState.Pending = domain.FlowPendingActionPrefix + next
+	if action != "" {
+		flowState.Pending = domain.FlowPendingActionPrefix + action
 		if err := wa.flowStore.UpdateFlow(ctx, flowID, flowState); err != nil {
 			log.Error().Err(err).Str("flow_id", flowID).Msg("login: failed to park flow on required action")
-			wa.renderInternalError(c, "Internal error. Please try again.")
-			return
+			return "", "Internal error. Please try again."
 		}
-		c.Redirect(http.StatusFound, "/required-action?flow_id="+url.QueryEscape(flowID))
-		return
+		return "/required-action?flow_id=" + url.QueryEscape(flowID), ""
 	}
 
 	flowState.Pending = ""
 	if err := wa.flowStore.UpdateFlow(ctx, flowID, flowState); err != nil {
 		log.Error().Err(err).Str("flow_id", flowID).Msg("login: failed to update flow state after auth")
-		wa.renderInternalError(c, "Internal error. Please try again.")
-		return
+		return "", "Internal error. Please try again."
 	}
 
 	displayName := user.Email
@@ -132,11 +141,10 @@ func (wa *WebAuth) finishLogin(c *gin.Context, ctx context.Context, flowID strin
 	})
 	if err := SetSSOSessionCookie(c.Writer, session, isSecure, wa.ssoCookieSecret); err != nil {
 		log.Error().Err(err).Msg("login: failed to set SSO session cookie")
-		wa.renderInternalError(c, "Failed to create session. Please try again.")
-		return
+		return "", "Failed to create session. Please try again."
 	}
 
-	wa.redirectAfterAuthentication(c, ctx, flowID, flowState, isSecure)
+	return wa.afterAuthenticationURL(c, ctx, flowID, flowState, isSecure), ""
 }
 
 func (wa *WebAuth) renderInternalError(c *gin.Context, msg string) {

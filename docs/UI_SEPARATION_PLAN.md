@@ -119,7 +119,14 @@ Sections mirroring Keycloak's account console, all server-rendered:
 
 Cross-cutting: step-up check middleware, flash messages, account-level audit trail.
 
-### Phase 4 — Hardening and integration
+### Phase 4 — Hardening and integration — DONE on `feat/hardening` and `feat/passkeys`
+
+Delivered: passkeys (registration + username-less login, signed-cookie challenge state, replay and clone
+guards, verified against a software authenticator in tests), realm `displayName` branding, a full
+password → MFA → required action → authorize chain test, CSP fix (QR `data:` images), docs
+(`login-and-account-ui.md`). Remaining: browser-level E2E (Playwright against a real stack) and
+Terms / Update-profile required actions.
+
 - Passkeys/WebAuthn in the Login UI + Account UI with **persistent** challenge storage (Mongo/DTS, not in memory) and a token-issuing path; drop the "WebAuthn without tokens" workaround.
 - Realm theming settings (display name, logo, colour) consumed by `base.html`.
 - Playwright (or Go `httptest`) E2E: register → verify email → login → required MFA → consent; reset-password flow; account password change with step-up.
