@@ -23,7 +23,7 @@
     <code style="font-family:var(--font-mono);word-break:break-all;">{{.Secret}}</code>
 </div>
 
-<form method="POST" action="/required-action">
+<form method="POST" action="{{.Action}}">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
     <input type="hidden" name="flow_id" value="{{.FlowID}}">
     <div class="form-group">

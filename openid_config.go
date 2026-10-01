@@ -342,6 +342,7 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		MFAService:        webauthMFAService,
 		EmailService:      webauthMailer,
 		PublicBaseURL:     opts.Config.Issuer,
+		SessionRepo:       repoProvider.SessionRepository(context.Background()),
 	})
 
 	router.GET("/", webauthAPI.LandingPageHandler)
@@ -353,6 +354,19 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 	router.POST("/consent", webauthAPI.ConsentSubmitHandler)
 	router.GET("/oauth2/device/verify", webauthAPI.DeviceVerificationPageHandler)
 	router.POST("/oauth2/device/verify", webauthAPI.DeviceVerificationSubmitHandler)
+	router.GET("/account", webauthAPI.AccountOverviewHandler())
+	router.POST("/account/profile", webauthAPI.AccountProfileSubmitHandler())
+	router.GET("/account/security", webauthAPI.AccountSecurityHandler())
+	router.POST("/account/password", webauthAPI.AccountPasswordSubmitHandler())
+	router.GET("/account/mfa/totp", webauthAPI.AccountTOTPPageHandler())
+	router.POST("/account/mfa/totp", webauthAPI.AccountTOTPSubmitHandler())
+	router.POST("/account/mfa/recovery", webauthAPI.AccountRecoveryCodesSubmitHandler())
+	router.POST("/account/mfa/disable", webauthAPI.AccountMFADisableSubmitHandler())
+	router.GET("/account/sessions", webauthAPI.AccountSessionsHandler())
+	router.POST("/account/sessions/revoke", webauthAPI.AccountSessionRevokeHandler())
+	router.GET("/account/linked", webauthAPI.AccountLinkedHandler())
+	router.POST("/account/linked/unlink", webauthAPI.AccountUnlinkSubmitHandler())
+	router.POST("/account/logout", webauthAPI.AccountLogoutSubmitHandler())
 	router.GET("/forgot-password", webauthAPI.ForgotPasswordPageHandler)
 	router.POST("/forgot-password", webauthAPI.ForgotPasswordSubmitHandler)
 	router.GET("/reset-password", webauthAPI.ResetPasswordPageHandler)

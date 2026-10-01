@@ -1,0 +1,66 @@
+{{template "base_start" .}}
+{{template "account_nav" .}}
+<h2 class="page-title">Security</h2>
+<p class="page-subtitle">Password and two-factor authentication.</p>
+
+{{if .Flash}}
+<div class="alert alert-success" role="status">
+    <span class="alert-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="9 12 11 14 15 10"/></svg>
+    </span>
+    <span>{{.Flash}}</span>
+</div>
+{{end}}
+{{if .Error}}
+<div class="alert alert-error" role="alert">
+    <span class="alert-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    </span>
+    <span>{{.Error}}</span>
+</div>
+{{end}}
+
+<h3 class="page-subtitle" style="font-weight:600;">Password</h3>
+<form method="POST" action="/account/password">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+{{if .HasPassword}}    <div class="form-group">
+        <label for="current_password" class="form-label">Current password</label>
+        <input type="password" id="current_password" name="current_password" class="form-input" autocomplete="current-password" required>
+    </div>
+{{end}}    <div class="form-group">
+        <label for="new_password" class="form-label">New password</label>
+        <input type="password" id="new_password" name="new_password" class="form-input" autocomplete="new-password" required>
+    </div>
+    <div class="form-group">
+        <label for="confirm_password" class="form-label">Confirm new password</label>
+        <input type="password" id="confirm_password" name="confirm_password" class="form-input" autocomplete="new-password" required>
+    </div>
+    <button type="submit" class="btn btn-primary">{{if .HasPassword}}Change password{{else}}Set password{{end}}</button>
+</form>
+
+<h3 class="page-subtitle" style="font-weight:600;margin-top:28px;">Authenticator app</h3>
+{{if .TOTPEnabled}}
+<p class="page-subtitle">Two-factor authentication is on.</p>
+<form method="POST" action="/account/mfa/recovery" style="margin-bottom:12px;">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <div class="form-group">
+        <label for="current_password" class="form-label">Password or authenticator code</label>
+        <input type="password" id="current_password" name="current_password" class="form-input" autocomplete="current-password" required>
+    </div>
+    <button type="submit" class="btn btn-secondary">Generate new recovery codes</button>
+</form>
+<form method="POST" action="/account/mfa/disable">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <div class="form-group">
+        <label for="current_password" class="form-label">Password or authenticator code</label>
+        <input type="password" id="current_password" name="current_password" class="form-input" autocomplete="current-password" required>
+    </div>
+    <button type="submit" class="btn btn-secondary">Turn off two-factor authentication</button>
+</form>
+{{else if .MFAEnabled}}
+<p class="page-subtitle">Another second factor (email or push) is enabled on your account.</p>
+{{else}}
+<p class="page-subtitle">Add a second step to sign-in with an authenticator app.</p>
+<a class="btn btn-primary" href="/account/mfa/totp" style="display:block;text-align:center;text-decoration:none;">Set up authenticator</a>
+{{end}}
+{{template "base_end" .}}

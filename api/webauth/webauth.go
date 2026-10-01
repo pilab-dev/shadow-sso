@@ -46,6 +46,8 @@ type WebAuth struct {
 	// publicBaseURL (no trailing slash) is the externally reachable SSO origin used to
 	// build links in emails.
 	publicBaseURL string
+	// sessionRepo backs the account console's device-activity page. Optional.
+	sessionRepo domain.SessionRepository
 }
 
 // Options configures the WebAuth instance with all required dependencies.
@@ -72,6 +74,9 @@ type Options struct {
 	EmailService domain.EmailService
 	// PublicBaseURL is the SSO's public origin, e.g. https://sso.example.com (used for email links).
 	PublicBaseURL string
+	// SessionRepo is optional; without it the device-activity page is empty and password changes
+	// cannot revoke other sessions.
+	SessionRepo domain.SessionRepository
 }
 
 // New creates a new WebAuth instance with the provided dependencies.
@@ -101,6 +106,7 @@ func New(opts *Options) *WebAuth {
 		mfaService:        opts.MFAService,
 		emailService:      opts.EmailService,
 		publicBaseURL:     strings.TrimRight(opts.PublicBaseURL, "/"),
+		sessionRepo:       opts.SessionRepo,
 	}
 }
 
