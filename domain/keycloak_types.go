@@ -163,6 +163,8 @@ type RealmSettings struct {
 	LoginWithEmailAllowed bool      `bson:"login_with_email_allowed" json:"loginWithEmailAllowed"`
 	DuplicateEmailsAllowed bool     `bson:"duplicate_emails_allowed" json:"duplicateEmailsAllowed"`
 	ResetPasswordAllowed  bool      `bson:"reset_password_allowed" json:"resetPasswordAllowed"`
+	// VerifyEmail makes newly self-registered users confirm their address (VERIFY_EMAIL required action).
+	VerifyEmail           bool      `bson:"verify_email" json:"verifyEmail"`
 	EditUsernameAllowed   bool      `bson:"edit_username_allowed" json:"editUsernameAllowed"`
 	BruteForceProtected   bool      `bson:"brute_force_protected" json:"bruteForceProtected"`
 	SSLRequired           string    `bson:"ssl_required" json:"sslRequired"`

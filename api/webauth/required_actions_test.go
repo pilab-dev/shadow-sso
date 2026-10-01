@@ -149,7 +149,8 @@ func TestRequiredAction_RejectsFlowsNotParkedOnAnAction(t *testing.T) {
 func TestRequiredAction_UpdatePasswordRenders(t *testing.T) {
 	e := setupRequiredActionTest(t)
 	e.flows.EXPECT().GetFlow(gomock.Any(), "f1").Return(raFlow("action:UPDATE_PASSWORD"), nil)
-	e.users.EXPECT().GetUserByID(gomock.Any(), "u1").Return(&domain.User{ID: "u1", Status: domain.UserStatusActive}, nil)
+	e.users.EXPECT().GetUserByID(gomock.Any(), "u1").Return(&domain.User{ID: "u1", Status: domain.UserStatusActive,
+		RequiredActions: []string{domain.RequiredActionUpdatePassword}}, nil)
 	w := httptest.NewRecorder()
 	e.router.ServeHTTP(w, httptest.NewRequest("GET", "/required-action?flow_id=f1", nil))
 	require.Equal(t, http.StatusOK, w.Code)

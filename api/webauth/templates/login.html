@@ -48,6 +48,7 @@
 </form>
 
 <a href="/forgot-password" class="link link-center">Forgot your password?</a>
+{{if .RegistrationAllowed}}<a href="/register" class="link link-center">Create an account</a>{{end}}
 
 {{if .Providers}}
 <div class="social-divider">

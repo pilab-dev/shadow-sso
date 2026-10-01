@@ -79,7 +79,15 @@ nothing is issued, and no SSO cookie is set, until it is clear. Not covered yet:
 
 **Done when:** a user flagged `UPDATE_PASSWORD` cannot obtain a code without changing the password; unit tests in `authflow`.
 
-### Phase 2 — Login-side screens
+### Phase 2 — Login-side screens — DONE on `feat/login-screens` (except Terms / Update profile)
+
+Delivered: `/forgot-password` + `/reset-password` (digest-only token storage, anti-enumeration, realm
+`ResetPasswordAllowed`), `CONFIGURE_TOTP` (QR, verify, one-time recovery codes), `VERIFY_EMAIL`
+(+ `/verify-email` link), `/register` (realm `RegistrationAllowed`, new `RealmSettings.VerifyEmail`,
+never grants admin). Mail-dependent screens are only enabled when a Resend key and from-address are
+configured. Follow-ups: expose `verifyEmail` in the GraphQL realm settings, sendRequiredActionsEmail,
+revoke other sessions after a password change.
+
 Order by value:
 1. **Update password** (required action) — reuses password policy + hasher; invalidates other sessions on success.
 2. **Forgot / reset password** (`/reset-credentials`, `/reset-credentials/confirm`) gated by `ResetPasswordAllowed`; single-use hashed token, constant-time response (no user enumeration), rate limited.

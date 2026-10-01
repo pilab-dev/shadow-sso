@@ -37,7 +37,14 @@ func (wa *WebAuth) renderLoginPage(c *gin.Context, flowID string, providers []*d
 		"BrandName":  wa.config.BrandOrganizationName,
 		"BrandColor": wa.config.BrandPrimaryColor,
 		"Error":      errMsg,
+		// Show the "Create account" link only when the realm allows self-registration.
+		"RegistrationAllowed": wa.realmAllowsRegistration(c),
 	})
+}
+
+func (wa *WebAuth) realmAllowsRegistration(c *gin.Context) bool {
+	s := wa.realm(c)
+	return s != nil && s.RegistrationAllowed
 }
 
 // tryRenderAccountSelector renders account_selector.html (a Google-style

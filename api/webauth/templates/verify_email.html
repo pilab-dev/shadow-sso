@@ -1,0 +1,36 @@
+{{template "base_start" .}}
+<div class="mfa-icon">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+    </svg>
+</div>
+
+<h2 class="page-title">Verify your email</h2>
+<p class="page-subtitle">Open the link we sent you to verify your address, then come back here.</p>
+
+{{if .Error}}
+<div class="alert alert-error" role="alert">
+    <span class="alert-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    </span>
+    <span>{{.Error}}</span>
+</div>
+{{end}}
+
+{{if .Info}}
+<div class="alert alert-success" role="status">
+    <span class="alert-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="9 12 11 14 15 10"/></svg>
+    </span>
+    <span>{{.Info}}</span>
+</div>
+{{end}}
+
+<a class="btn btn-primary" href="/required-action?flow_id={{.FlowID}}" style="display:block;text-align:center;text-decoration:none;">I have verified my email</a>
+
+<form method="POST" action="/required-action" style="margin-top:12px;">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input type="hidden" name="flow_id" value="{{.FlowID}}">
+    <button type="submit" class="btn btn-secondary">Resend email</button>
+</form>
+{{template "base_end" .}}

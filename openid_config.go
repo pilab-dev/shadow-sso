@@ -311,6 +311,13 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 	} else {
 		webauthEmailService = notifications.NewResendEmailService("", "", "")
 	}
+	// Only hand the mail provider to the web UI when it can actually send; otherwise flows that
+	// depend on email (forgot password, VERIFY_EMAIL) are reported as unavailable instead of
+	// failing silently or trapping users on a page that can never complete.
+	var webauthMailer domain.EmailService
+	if opts.AppConfig != nil && opts.AppConfig.ResendAPIKey != "" && opts.AppConfig.FromEmail != "" {
+		webauthMailer = webauthEmailService
+	}
 	webauthMFAService := domain.NewMFAService(
 		repoProvider.UserRepository(context.Background()),
 		webauthEmailService,
@@ -333,6 +340,8 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		RealmSettingsRepo: repoProvider.RealmSettingsRepository(context.Background()),
 		DeviceAuthRepo:    repoProvider.DeviceAuthorizationRepository(context.Background()),
 		MFAService:        webauthMFAService,
+		EmailService:      webauthMailer,
+		PublicBaseURL:     opts.Config.Issuer,
 	})
 
 	router.GET("/", webauthAPI.LandingPageHandler)
@@ -344,6 +353,13 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 	router.POST("/consent", webauthAPI.ConsentSubmitHandler)
 	router.GET("/oauth2/device/verify", webauthAPI.DeviceVerificationPageHandler)
 	router.POST("/oauth2/device/verify", webauthAPI.DeviceVerificationSubmitHandler)
+	router.GET("/forgot-password", webauthAPI.ForgotPasswordPageHandler)
+	router.POST("/forgot-password", webauthAPI.ForgotPasswordSubmitHandler)
+	router.GET("/reset-password", webauthAPI.ResetPasswordPageHandler)
+	router.POST("/reset-password", webauthAPI.ResetPasswordSubmitHandler)
+	router.GET("/register", webauthAPI.RegisterPageHandler)
+	router.POST("/register", webauthAPI.RegisterSubmitHandler)
+	router.GET("/verify-email", webauthAPI.VerifyEmailHandler)
 	router.GET("/required-action", webauthAPI.RequiredActionPageHandler)
 	router.POST("/required-action", webauthAPI.RequiredActionSubmitHandler)
 	router.POST("/mfa", webauthAPI.MFASubmitHandler)

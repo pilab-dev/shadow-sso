@@ -1,0 +1,21 @@
+{{template "base_start" .}}
+<div class="mfa-icon">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+    </svg>
+</div>
+
+<h2 class="page-title">Save your recovery codes</h2>
+<p class="page-subtitle">Each code works once if you lose your authenticator. They will not be shown again.</p>
+
+<div style="font-family:var(--font-mono);display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:16px 0;text-align:center;">
+    {{range .Codes}}<code>{{.}}</code>{{end}}
+</div>
+
+<form method="POST" action="/required-action">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input type="hidden" name="flow_id" value="{{.FlowID}}">
+    <input type="hidden" name="continue" value="1">
+    <button type="submit" class="btn btn-primary">I have saved my codes — continue</button>
+</form>
+{{template "base_end" .}}
