@@ -35,6 +35,10 @@ type WebAuth struct {
 	// It is nil-safe: consumers MUST check for nil and degrade gracefully
 	// (e.g. render an error page) rather than panic when unset.
 	deviceAuthRepo domain.DeviceAuthorizationRepository
+	// mfaService dispatches and verifies non-TOTP MFA challenges (email OTP,
+	// push) for the login flow. Nil-safe: EMAIL MFA users see an error page
+	// rather than panic when unset.
+	mfaService *domain.MFAService
 }
 
 // Options configures the WebAuth instance with all required dependencies.
@@ -54,6 +58,9 @@ type Options struct {
 	RealmSettingsRepo domain.RealmSettingsRepository
 	// DeviceAuthRepo is optional; when nil, device-flow handlers must not panic.
 	DeviceAuthRepo domain.DeviceAuthorizationRepository
+	// MFAService is optional; when nil, EMAIL/PUSH MFA login attempts fail
+	// gracefully with an error page instead of panicking. TOTP does not need it.
+	MFAService *domain.MFAService
 }
 
 // New creates a new WebAuth instance with the provided dependencies.
@@ -80,6 +87,7 @@ func New(opts *Options) *WebAuth {
 		runner:            authflow.NewRunner(opts.AuthFlowRepo, opts.PasswordHasher),
 		realmSettingsRepo: opts.RealmSettingsRepo,
 		deviceAuthRepo:    opts.DeviceAuthRepo,
+		mfaService:        opts.MFAService,
 	}
 }
 

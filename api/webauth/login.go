@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -40,6 +41,51 @@ func (wa *WebAuth) renderLoginPage(c *gin.Context, flowID string, providers []*d
 	})
 }
 
+// tryRenderAccountSelector renders account_selector.html (a Google-style
+// "choose an account" chooser) when the browser already carries an
+// sso_session cookie with one or more cached accounts, and the caller has not
+// asked to bypass it with ?new_account=1 (the "Use another account" link).
+// Returns true if it rendered a response, in which case the caller must not
+// render anything else.
+func (wa *WebAuth) tryRenderAccountSelector(c *gin.Context, flowID string) bool {
+	if c.Query("new_account") != "" {
+		return false
+	}
+	session, err := GetSSOSession(c.Request, wa.ssoCookieSecret)
+	if err != nil || session == nil || len(session.Accounts) == 0 {
+		return false
+	}
+
+	accounts := make([]ssosession.Account, len(session.Accounts))
+	copy(accounts, session.Accounts)
+	sort.SliceStable(accounts, func(i, j int) bool {
+		return accounts[i].LastUsed.After(accounts[j].LastUsed)
+	})
+
+	csrfToken, err := generateCSRFToken()
+	if err != nil {
+		log.Error().Err(err).Msg("login: failed to generate CSRF token for account selector")
+		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
+			"PageTitle": "Error",
+			"Message":   "Internal error. Please try again.",
+		})
+		return true
+	}
+	isSecure := IsSecureRequest(c.Request)
+	setCSRFCookie(c.Writer, csrfToken, 10*time.Minute, isSecure)
+
+	c.HTML(http.StatusOK, "account_selector.html", gin.H{
+		"PageTitle":  "Choose an account",
+		"FlowID":     flowID,
+		"CSRFToken":  csrfToken,
+		"Accounts":   accounts,
+		"BrandLogo":  wa.config.BrandLogoURL,
+		"BrandName":  wa.config.BrandOrganizationName,
+		"BrandColor": wa.config.BrandPrimaryColor,
+	})
+	return true
+}
+
 // LoginPageHandler serves the GET /login page.
 // It validates the flow, loads social providers, and renders the login form.
 func (wa *WebAuth) LoginPageHandler(c *gin.Context) {
@@ -68,6 +114,10 @@ func (wa *WebAuth) LoginPageHandler(c *gin.Context) {
 			isSecure := IsSecureRequest(c.Request)
 			setFlowCookie(c.Writer, flowID, isSecure)
 			setReturnToCookie(c.Writer, rt, isSecure, wa.ssoCookieSecret)
+
+			if wa.tryRenderAccountSelector(c, flowID) {
+				return
+			}
 
 			providers, err := wa.idpRepo.ListIdPs(ctx, true)
 			if err != nil {
@@ -102,6 +152,10 @@ func (wa *WebAuth) LoginPageHandler(c *gin.Context) {
 			"PageTitle": "Error",
 			"Message":   "Login request has expired. Please try again.",
 		})
+		return
+	}
+
+	if wa.tryRenderAccountSelector(c, flowID) {
 		return
 	}
 
@@ -264,24 +318,27 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 			})
 			return
 		}
-		csrfToken, cErr := generateCSRFToken()
-		if cErr != nil {
-			log.Error().Err(cErr).Msg("login: failed to generate CSRF token")
-			c.HTML(http.StatusInternalServerError, "error.html", gin.H{
-				"PageTitle": "Error",
-				"Message":   "Internal error. Please try again.",
-			})
-			return
+
+		if user.TwoFactorMethod == "EMAIL" {
+			if wa.mfaService == nil {
+				log.Error().Str("flow_id", flowID).Msg("login: email MFA required but MFA service is not configured")
+				c.HTML(http.StatusInternalServerError, "error.html", gin.H{
+					"PageTitle": "Error",
+					"Message":   "Email verification is not available. Please contact support.",
+				})
+				return
+			}
+			if _, _, _, err := wa.mfaService.SendMFAChallenge(ctx, user.ID); err != nil {
+				log.Error().Err(err).Str("flow_id", flowID).Msg("login: failed to send email MFA challenge")
+				c.HTML(http.StatusInternalServerError, "error.html", gin.H{
+					"PageTitle": "Error",
+					"Message":   "Failed to send verification code. Please try again.",
+				})
+				return
+			}
 		}
-		isSecure := IsSecureRequest(c.Request)
-		setCSRFCookie(c.Writer, csrfToken, 10*time.Minute, isSecure)
-		c.HTML(http.StatusOK, "mfa.html", gin.H{
-			"PageTitle": "Two-Factor Authentication",
-			"FlowID":    flowID,
-			"CSRFToken": csrfToken,
-			"Error":     "",
-			"BrandName": wa.config.BrandOrganizationName,
-		})
+
+		wa.renderMFAPage(c, flowID, user.TwoFactorMethod, user.Email, "")
 		return
 	}
 
@@ -303,15 +360,12 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 		displayName = fmt.Sprintf("%s %s", user.FirstName, user.LastName)
 	}
 	isSecure := IsSecureRequest(c.Request)
-	session := &ssosession.Session{
-		SessionID: ssosession.NewID(),
-		Accounts: []ssosession.Account{{
-			UserID:   user.ID,
-			Email:    user.Email,
-			Name:     displayName,
-			LastUsed: time.Now(),
-		}},
-	}
+	session := mergeSessionAccount(c.Request, wa.ssoCookieSecret, ssosession.Account{
+		UserID:   user.ID,
+		Email:    user.Email,
+		Name:     displayName,
+		LastUsed: time.Now(),
+	})
 	if err := SetSSOSessionCookie(c.Writer, session, isSecure, wa.ssoCookieSecret); err != nil {
 		log.Error().Err(err).Msg("login: failed to set SSO session cookie")
 		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
@@ -321,6 +375,13 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 		return
 	}
 
+	wa.redirectAfterAuthentication(c, ctx, flowID, flowState, isSecure)
+}
+
+// redirectAfterAuthentication completes a login (password, MFA, or cached
+// account selection) by sending the browser to consent, the return_to
+// destination for flow-less logins, or back into the OIDC authorize step.
+func (wa *WebAuth) redirectAfterAuthentication(c *gin.Context, ctx context.Context, flowID string, flowState *domain.LoginFlowState, isSecure bool) {
 	requiresConsent := false
 	if flowState.ClientID != "" {
 		client, cErr := wa.oauthService.ValidateClient(ctx, flowState.ClientID, "")
@@ -346,6 +407,115 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 		return
 	}
 	c.Redirect(http.StatusFound, "/oauth2/authorize?flow_id="+url.QueryEscape(flowID))
+}
+
+// SelectAccountSubmitHandler processes POST /login/select-account: the user
+// picked a cached account from account_selector.html. It re-authenticates by
+// trust in the existing sso_session cookie (the account was already fully
+// authenticated, including MFA, when it was added to the session) rather than
+// prompting for a password again — the same behavior as Google's account
+// chooser.
+func (wa *WebAuth) SelectAccountSubmitHandler(c *gin.Context) {
+	if !validateCSRFTokenForm(c) {
+		c.HTML(http.StatusBadRequest, "error.html", gin.H{
+			"PageTitle": "Error",
+			"Message":   "Invalid form submission. Please try again.",
+		})
+		return
+	}
+
+	flowID := c.PostForm("flow_id")
+	userID := c.PostForm("user_id")
+	if flowID == "" || userID == "" {
+		c.HTML(http.StatusBadRequest, "error.html", gin.H{
+			"PageTitle": "Error",
+			"Message":   "Invalid or expired login request. Please try again.",
+		})
+		return
+	}
+
+	ctx := c.Request.Context()
+
+	flowState, err := wa.flowStore.GetFlow(ctx, flowID)
+	if err != nil {
+		log.Warn().Err(err).Str("flow_id", flowID).Msg("select-account: flow not found")
+		c.HTML(http.StatusBadRequest, "error.html", gin.H{
+			"PageTitle": "Error",
+			"Message":   "Invalid or expired login request.",
+		})
+		return
+	}
+	if time.Now().After(flowState.ExpiresAt) {
+		log.Warn().Str("flow_id", flowID).Msg("select-account: flow expired")
+		_ = wa.flowStore.DeleteFlow(ctx, flowID)
+		c.HTML(http.StatusBadRequest, "error.html", gin.H{
+			"PageTitle": "Error",
+			"Message":   "Login request has expired. Please try again.",
+		})
+		return
+	}
+
+	session, err := GetSSOSession(c.Request, wa.ssoCookieSecret)
+	if err != nil || session == nil {
+		log.Warn().Str("flow_id", flowID).Msg("select-account: no sso_session cookie")
+		c.Redirect(http.StatusFound, "/login?new_account=1")
+		return
+	}
+	found := false
+	for _, a := range session.Accounts {
+		if a.UserID == userID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		log.Warn().Str("flow_id", flowID).Str("user_id", userID).Msg("select-account: user not in sso_session cookie")
+		c.Redirect(http.StatusFound, "/login?new_account=1")
+		return
+	}
+
+	user, err := wa.userRepo.GetUserByID(ctx, userID)
+	if err != nil || user.Status != domain.UserStatusActive {
+		log.Warn().Err(err).Str("flow_id", flowID).Str("user_id", userID).Msg("select-account: user not found or inactive")
+		c.HTML(http.StatusBadRequest, "error.html", gin.H{
+			"PageTitle": "Error",
+			"Message":   "This account is no longer available. Please sign in again.",
+		})
+		return
+	}
+
+	flowState.UserID = user.ID
+	flowState.UserAuthenticatedAt = time.Now()
+	if err := wa.flowStore.UpdateFlow(ctx, flowID, flowState); err != nil {
+		log.Error().Err(err).Str("flow_id", flowID).Msg("select-account: failed to update flow state")
+		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
+			"PageTitle": "Error",
+			"Message":   "Internal error. Please try again.",
+		})
+		return
+	}
+
+	displayName := user.Email
+	if user.FirstName != "" || user.LastName != "" {
+		displayName = fmt.Sprintf("%s %s", user.FirstName, user.LastName)
+	}
+	isSecure := IsSecureRequest(c.Request)
+	newSession := mergeSessionAccount(c.Request, wa.ssoCookieSecret, ssosession.Account{
+		UserID:   user.ID,
+		Email:    user.Email,
+		Name:     displayName,
+		LastUsed: time.Now(),
+	})
+	if err := SetSSOSessionCookie(c.Writer, newSession, isSecure, wa.ssoCookieSecret); err != nil {
+		log.Error().Err(err).Msg("select-account: failed to set SSO session cookie")
+		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
+			"PageTitle": "Error",
+			"Message":   "Failed to create session. Please try again.",
+		})
+		return
+	}
+
+	wa.redirectAfterAuthentication(c, ctx, flowID, flowState, isSecure)
 }
 
 // validateCSRFTokenForm validates CSRF using a hidden form field compared against

@@ -1,0 +1,30 @@
+{{template "base_start" .}}
+<h2 class="page-title">Choose an account</h2>
+<p class="page-subtitle">to continue{{if .BrandName}} to {{.BrandName}}{{end}}</p>
+
+<div class="account-list">
+    {{range .Accounts}}
+    <form method="POST" action="/login/select-account" class="account-item-form">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+        <input type="hidden" name="flow_id" value="{{$.FlowID}}">
+        <input type="hidden" name="user_id" value="{{.UserID}}">
+        <button type="submit" class="account-item">
+            {{if .Picture}}
+            <img src="{{.Picture}}" alt="" class="account-avatar">
+            {{else}}
+            <span class="account-avatar account-avatar-initial">{{if .Name}}{{slice .Name 0 1}}{{else}}{{slice .Email 0 1}}{{end}}</span>
+            {{end}}
+            <span class="account-details">
+                <span class="account-name">{{if .Name}}{{.Name}}{{else}}{{.Email}}{{end}}</span>
+                {{if .Name}}<span class="account-email">{{.Email}}</span>{{end}}
+            </span>
+        </button>
+    </form>
+    {{end}}
+</div>
+
+<a href="/login?new_account=1" class="btn-social" style="margin-top:8px;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+    Use another account
+</a>
+{{template "base_end" .}}
