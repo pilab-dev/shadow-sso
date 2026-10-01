@@ -14,8 +14,8 @@ initialAdmin:
   secretName: "ssso-initial-admin-credentials"
   credentials:
     email: "admin@example.com"
-    # !!IMPORTANT!!: This default password MUST be changed in a values override file for any real deployment.
-    password: "changemeStrongPassword123!"
+    # REQUIRED when createSecret is true: supply via --set / a values override (well-known defaults are rejected by the server).
+    password: ""
     firstName: "Admin" # Optional, defaults in server if not provided
     lastName: "User"   # Optional, defaults in server if not provided
 

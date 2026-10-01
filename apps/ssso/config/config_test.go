@@ -162,3 +162,22 @@ func TestLoadConfig_MissingCookieSigningSecret_FailsClosed(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cookie_signing_secret")
 }
+
+func TestLoadConfig_RejectsWeakDefaultSecrets(t *testing.T) {
+	resetConfigEnv(t)
+	t.Setenv("SSSO_CONFIG_ENCRYPTION_KEY", "test-encryption-key-32bytes-long!!")
+	t.Setenv("SSSO_COOKIE_SIGNING_SECRET", "test-cookie-signing-secret")
+	t.Setenv("SSSO_INITIAL_ADMIN_PASSWORD", "admin123")
+
+	_, err := config.LoadConfig()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "initial_admin_password")
+
+	resetConfigEnv(t)
+	t.Setenv("SSSO_CONFIG_ENCRYPTION_KEY", "test-encryption-key-32bytes-long!!")
+	t.Setenv("SSSO_COOKIE_SIGNING_SECRET", "test-cookie-signing-secret")
+	t.Setenv("SSSO_INITIAL_ADMIN_PASSWORD", "admin123")
+	t.Setenv("SSSO_ALLOW_INSECURE_DEFAULTS", "true")
+	_, err = config.LoadConfig()
+	require.NoError(t, err)
+}

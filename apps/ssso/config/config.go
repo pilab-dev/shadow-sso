@@ -299,6 +299,12 @@ func LoadConfig() (config Config, err error) {
 		log.Warn().Msg("No SSSO_COOKIE_SIGNING_SECRET set — auto-generated ephemeral secret for dev session (SSSO_ALLOW_INSECURE_DEFAULTS=true)")
 	}
 
+	if !config.AllowInsecureDefaults {
+		if err := rejectWeakSecrets(config); err != nil {
+			return Config{}, err
+		}
+	}
+
 	// Viper doesn't automatically convert string to custom types like StorageType
 	// when unmarshalling from environment variables that were not in the config file.
 	// We need to handle StorageBackend specifically if it comes from env var directly.
@@ -330,4 +336,30 @@ func LoadConfig() (config Config, err error) {
 	// The current setup with AutomaticEnv and Unmarshal should work if env vars are SSSO_DTS_CONNECT_TIMEOUT=5s
 
 	return
+}
+
+// knownWeakSecrets are example/default values shipped in compose files, Helm values and docs.
+var knownWeakSecrets = map[string]struct{}{
+	"admin123":                         {},
+	"changeme":                         {},
+	"changemeStrongPassword123!":       {},
+	"dev-encryption-key-32-chars-long": {},
+	"test-encryption-key-32bytes!!!!!": {},
+}
+
+// rejectWeakSecrets fails startup when a credential still holds a well-known default value.
+// SSSO_ALLOW_INSECURE_DEFAULTS=true (local development only) bypasses the check.
+func rejectWeakSecrets(c Config) error {
+	checks := map[string]string{
+		"initial_admin_password":      c.InitialAdminPassword,
+		"initial_admin_client_secret": c.InitialAdminClientSecret,
+		"config_encryption_key":       c.ConfigEncryptionKey,
+		"cookie_signing_secret":       c.CookieSigningSecret,
+	}
+	for name, v := range checks {
+		if _, weak := knownWeakSecrets[v]; weak {
+			return fmt.Errorf("FATAL: %s is set to a well-known default value; choose a strong secret (or set SSSO_ALLOW_INSECURE_DEFAULTS=true for local development only)", name)
+		}
+	}
+	return nil
 }
