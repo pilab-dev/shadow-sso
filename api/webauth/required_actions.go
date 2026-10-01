@@ -257,7 +257,7 @@ func (wa *WebAuth) renderRequiredActionPage(c *gin.Context, tmpl, title, flowID,
 		"FlowID":    flowID,
 		"CSRFToken": csrfToken,
 		"Error":     errMsg,
-		"BrandName": wa.config.BrandOrganizationName,
+		"BrandName": wa.brandName(c),
 	})
 }
 

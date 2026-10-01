@@ -37,7 +37,7 @@ func (wa *WebAuth) renderMFAPageWithInfo(c *gin.Context, flowID, method, email, 
 		"CSRFToken":   csrfToken,
 		"Error":       errMsg,
 		"Info":        infoMsg,
-		"BrandName":   wa.config.BrandOrganizationName,
+		"BrandName":   wa.brandName(c),
 		"IsEmail":     method == "EMAIL",
 		"MaskedEmail": maskEmail(email),
 	})

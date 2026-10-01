@@ -126,7 +126,7 @@ func (wa *WebAuth) renderPage(c *gin.Context, tmpl, title string, data gin.H) {
 	setCSRFCookie(c.Writer, csrfToken, 10*time.Minute, IsSecureRequest(c.Request))
 	data["PageTitle"] = title
 	data["CSRFToken"] = csrfToken
-	data["BrandName"] = wa.config.BrandOrganizationName
+	data["BrandName"] = wa.brandName(c)
 	status := http.StatusOK
 	if e, _ := data["Error"].(string); e != "" {
 		status = http.StatusUnprocessableEntity
@@ -142,6 +142,6 @@ func (wa *WebAuth) renderMessage(c *gin.Context, status int, title, message, lin
 		"Message":   message,
 		"LinkURL":   linkURL,
 		"LinkText":  linkText,
-		"BrandName": wa.config.BrandOrganizationName,
+		"BrandName": wa.brandName(c),
 	})
 }

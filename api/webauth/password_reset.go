@@ -27,6 +27,14 @@ func (wa *WebAuth) realm(c *gin.Context) *domain.RealmSettings {
 	return settings
 }
 
+// brandName is the realm display name when set, falling back to the configured organization name.
+func (wa *WebAuth) brandName(c *gin.Context) string {
+	if s := wa.realm(c); s != nil && strings.TrimSpace(s.DisplayName) != "" {
+		return s.DisplayName
+	}
+	return wa.config.BrandOrganizationName
+}
+
 // resetPasswordAvailable renders a "not available" page and returns false when the realm
 // disallows password reset or no mail provider is configured.
 func (wa *WebAuth) resetPasswordAvailable(c *gin.Context) bool {
