@@ -2,8 +2,14 @@ package federation
 
 import (
 	"context"
-	"errors" // Added import for errors.New
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"net/http"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/pilab-dev/shadow-sso/domain"
 	"golang.org/x/oauth2"
@@ -57,6 +63,10 @@ type OAuth2Provider interface {
 // Specific providers can embed this and override methods as needed.
 type BaseProvider struct {
 	Config *domain.IdentityProvider // Holds the configuration loaded from the database
+
+	discoveryMu  sync.Mutex
+	discoveryDoc *oidcDiscovery
+	discoveryAt  time.Time
 }
 
 func NewBaseProvider(idpConfig *domain.IdentityProvider) *BaseProvider {
@@ -72,36 +82,17 @@ func (b *BaseProvider) GetType() domain.IdPType {
 }
 
 // GetOAuth2Config constructs an oauth2.Config from the stored IdP configuration.
+// Endpoints are resolved through OIDC discovery (<issuer>/.well-known/openid-configuration).
 // This method can be overridden if a provider has non-standard endpoint discovery.
 func (b *BaseProvider) GetOAuth2Config(redirectURL string) (*oauth2.Config, error) {
 	if b.Config.OIDCClientID == "" || b.Config.OIDCClientSecret == "" || b.Config.OIDCIssuerURL == "" {
 		return nil, ErrProviderMisconfigured
 	}
 
-	// For many OIDC providers, endpoints can be discovered from the IssuerURL.
-	// However, oauth2.Config requires AuthURL and TokenURL directly.
-	// We'll need a mechanism to either store these explicitly in IdentityProvider
-	// or discover them (e.g. using an OIDC discovery library).
-	// For now, let's assume common patterns or that they might be pre-filled.
-	// This part will likely need enhancement for robust OIDC endpoint discovery.
-
-	// Placeholder: Assume IssuerURL is the base and common endpoints are appended.
-	// This is NOT a robust way for all OIDC providers.
-	// A proper OIDC client library would use discovery (/.well-known/openid-configuration).
-	// For now, we'll assume these are correctly configured in `b.Config` or we'll construct them.
-	// Let's assume OIDCIssuerURL might be the base for constructing auth/token URLs if not explicitly set.
-	// This is a simplification and will be a point of extension for specific providers.
-	authURL := b.Config.OIDCIssuerURL + "/auth"   // Placeholder
-	tokenURL := b.Config.OIDCIssuerURL + "/token" // Placeholder
-
-	// If specific endpoint fields exist in domain.IdentityProvider, use them.
-	// For example, if we add OIDCAuthEndpointURL and OICTokenEndpointURL to domain.IdentityProvider:
-	// if b.Config.OIDCAuthEndpointURL != "" { authURL = b.Config.OIDCAuthEndpointURL }
-	// if b.Config.OIDCTokenEndpointURL != "" { tokenURL = b.Config.OIDCTokenEndpointURL }
-
-	// TODO: Implement proper OIDC discovery or ensure these URLs are accurately configured.
-	// For now, this is a placeholder and will likely fail for real providers without specific URLs.
-	// The `golang.org/x/oauth2/google`, `.../facebook` packages often provide these endpoints.
+	doc, err := b.discover(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrProviderMisconfigured, err)
+	}
 
 	return &oauth2.Config{
 		ClientID:     b.Config.OIDCClientID,
@@ -109,8 +100,8 @@ func (b *BaseProvider) GetOAuth2Config(redirectURL string) (*oauth2.Config, erro
 		RedirectURL:  redirectURL,
 		Scopes:       b.Config.OIDCScopes,
 		Endpoint: oauth2.Endpoint{
-			AuthURL:  authURL,  // This needs to be the provider's actual authorization endpoint
-			TokenURL: tokenURL, // This needs to be the provider's actual token endpoint
+			AuthURL:  doc.AuthorizationEndpoint,
+			TokenURL: doc.TokenEndpoint,
 		},
 	}, nil
 }
@@ -140,14 +131,113 @@ func (b *BaseProvider) GetHttpClient(ctx context.Context, token *oauth2.Token) *
 	return conf.Client(ctx, token)
 }
 
-// FetchUserInfo is a placeholder and MUST be implemented by each specific provider
-// as the user info endpoint and response structure varies.
+// FetchUserInfo retrieves claims from the discovered OIDC userinfo endpoint and maps the
+// standard claims. Providers with non-standard responses should override it.
 func (b *BaseProvider) FetchUserInfo(ctx context.Context, token *oauth2.Token) (*ExternalUserInfo, error) {
-	// Example structure:
-	// client := b.GetHttpClient(ctx, token)
-	// resp, err := client.Get("USER_INFO_ENDPOINT_URL")
-	// if err != nil { return nil, ErrFetchUserInfoFailed }
-	// defer resp.Body.Close()
-	// ... parse body into ExternalUserInfo ...
-	return nil, errors.New("FetchUserInfo not implemented in BaseProvider; must be overridden")
+	doc, err := b.discover(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrFetchUserInfoFailed, err)
+	}
+	if doc.UserinfoEndpoint == "" {
+		return nil, fmt.Errorf("%w: provider exposes no userinfo_endpoint", ErrFetchUserInfoFailed)
+	}
+
+	resp, err := b.GetHttpClient(ctx, token).Get(doc.UserinfoEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrFetchUserInfoFailed, err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrFetchUserInfoFailed, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%w: status %d", ErrFetchUserInfoFailed, resp.StatusCode)
+	}
+
+	var claims struct {
+		Sub               string `json:"sub"`
+		Email             string `json:"email"`
+		EmailVerified     bool   `json:"email_verified"`
+		GivenName         string `json:"given_name"`
+		FamilyName        string `json:"family_name"`
+		PreferredUsername string `json:"preferred_username"`
+		Picture           string `json:"picture"`
+	}
+	if err := json.Unmarshal(body, &claims); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrFetchUserInfoFailed, err)
+	}
+	if claims.Sub == "" {
+		return nil, fmt.Errorf("%w: userinfo response has no sub claim", ErrFetchUserInfoFailed)
+	}
+	if claims.Email != "" && !claims.EmailVerified {
+		return nil, ErrEmailNotVerified
+	}
+
+	raw := map[string]any{}
+	_ = json.Unmarshal(body, &raw)
+
+	username := claims.PreferredUsername
+	if username == "" {
+		username = claims.Email
+	}
+	return &ExternalUserInfo{
+		ProviderUserID: claims.Sub,
+		Email:          claims.Email,
+		FirstName:      claims.GivenName,
+		LastName:       claims.FamilyName,
+		Username:       username,
+		PictureURL:     claims.Picture,
+		RawData:        raw,
+	}, nil
+}
+
+// oidcDiscovery is the subset of the OIDC discovery document the provider needs.
+type oidcDiscovery struct {
+	Issuer                string `json:"issuer"`
+	AuthorizationEndpoint string `json:"authorization_endpoint"`
+	TokenEndpoint         string `json:"token_endpoint"`
+	UserinfoEndpoint      string `json:"userinfo_endpoint"`
+}
+
+const discoveryTTL = time.Hour
+
+// discover fetches and caches the provider's discovery document.
+func (b *BaseProvider) discover(ctx context.Context) (*oidcDiscovery, error) {
+	b.discoveryMu.Lock()
+	defer b.discoveryMu.Unlock()
+
+	if b.discoveryDoc != nil && time.Since(b.discoveryAt) < discoveryTTL {
+		return b.discoveryDoc, nil
+	}
+
+	issuer := strings.TrimRight(b.Config.OIDCIssuerURL, "/")
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, issuer+"/.well-known/openid-configuration", nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("OIDC discovery failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("OIDC discovery returned status %d", resp.StatusCode)
+	}
+
+	var doc oidcDiscovery
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&doc); err != nil {
+		return nil, fmt.Errorf("invalid OIDC discovery document: %w", err)
+	}
+	if doc.AuthorizationEndpoint == "" || doc.TokenEndpoint == "" {
+		return nil, errors.New("OIDC discovery document lacks authorization/token endpoints")
+	}
+	if strings.TrimRight(doc.Issuer, "/") != issuer {
+		return nil, fmt.Errorf("OIDC discovery issuer mismatch: got %q, want %q", doc.Issuer, issuer)
+	}
+
+	b.discoveryDoc, b.discoveryAt = &doc, time.Now()
+	return b.discoveryDoc, nil
 }

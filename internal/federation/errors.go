@@ -12,4 +12,5 @@ var (
 	ErrLocalUserLinkConflict = errors.New("this local user is already linked to an account from this provider")
 	ErrUserNotFound          = errors.New("user not found")
 	ErrInvalidCredentials    = errors.New("invalid credentials")
+	ErrEmailNotVerified      = errors.New("the email address is not verified by the provider")
 )

@@ -150,8 +150,11 @@ func (g *GoogleProvider) FetchUserInfo(ctx context.Context, token *oauth2.Token)
 		// log.Printf("Warning: could not unmarshal raw Google user data into map: %v", err)
 	}
 
-	// TODO: Consider email_verified status. For now, we take the email as is.
-	// If EmailVerified is false, application might want to handle it differently.
+	// An unverified email must never be used for account linking or creation:
+	// anyone could claim another user's address at the provider.
+	if rawUserInfo.Email != "" && !rawUserInfo.EmailVerified {
+		return nil, ErrEmailNotVerified
+	}
 
 	return &ExternalUserInfo{
 		ProviderUserID: rawUserInfo.Sub,
