@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -532,15 +533,15 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		clientScopeRepo := mongoRp.ClientScopeRepository(gqlCtx)
 		realmSettingsRepo := mongoRp.RealmSettingsRepository(gqlCtx)
 
+		// Nil unless a Resend key and from-address are configured, so the admin mutations report
+		// "email delivery is not configured" instead of failing deep inside the provider.
 		var emailService domain.EmailService
-		if opts.AppConfig != nil {
+		if opts.AppConfig != nil && opts.AppConfig.ResendAPIKey != "" && opts.AppConfig.FromEmail != "" {
 			emailService = notifications.NewResendEmailService(
 				opts.AppConfig.ResendAPIKey,
 				opts.AppConfig.FromEmail,
 				opts.AppConfig.NextPublicBaseURL,
 			)
-		} else {
-			emailService = notifications.NewResendEmailService("", "", "")
 		}
 
 		resolver := &graphql.Resolver{
@@ -558,6 +559,7 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 			RealmSettingsRepo:       realmSettingsRepo,
 			RealmKeysRepo:           realmKeysRepo,
 			EmailService:            emailService,
+			PublicBaseURL:           strings.TrimRight(opts.Config.Issuer, "/"),
 			PasswordHasher:          passwordHasher,
 			AuditLogRepo:            auditRepo,
 			FederatedIdentityRepo:   fedIDRepo,
