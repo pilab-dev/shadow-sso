@@ -34,7 +34,7 @@ func (wa *WebAuth) renderLoginPage(c *gin.Context, flowID string, providers []*d
 		"CSRFToken":  csrfToken,
 		"Providers":  providers,
 		"BrandLogo":  wa.config.BrandLogoURL,
-		"BrandName":  wa.config.BrandOrganizationName,
+		"BrandName":  wa.brandName(c),
 		"BrandColor": wa.config.BrandPrimaryColor,
 		"Error":      errMsg,
 		// Show the "Create account" link only when the realm allows self-registration.
@@ -86,7 +86,7 @@ func (wa *WebAuth) tryRenderAccountSelector(c *gin.Context, flowID string) bool 
 		"CSRFToken":  csrfToken,
 		"Accounts":   accounts,
 		"BrandLogo":  wa.config.BrandLogoURL,
-		"BrandName":  wa.config.BrandOrganizationName,
+		"BrandName":  wa.brandName(c),
 		"BrandColor": wa.config.BrandPrimaryColor,
 	})
 	return true
