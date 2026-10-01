@@ -33,6 +33,33 @@ type LoginFlowState struct {
 	UserAuthenticatedAt time.Time         `bson:"user_authenticated_at,omitempty"` // Time of user authentication for this flow
 	ExpiresAt           time.Time         `bson:"expires_at"`           // When this flow state should be considered invalid
 	OriginalOIDCParams  map[string]string `bson:"original_oidc_params"` // Store other original parameters if needed
+
+	// Pending names the step that must still complete before this flow may be
+	// turned into an authorization code: FlowPendingMFA while the second factor
+	// is outstanding, or FlowPendingActionPrefix+<action> while a required action
+	// (e.g. UPDATE_PASSWORD) is outstanding. Empty means fully authenticated.
+	// UserID alone does NOT imply a finished login.
+	Pending string `bson:"pending,omitempty"`
+}
+
+const (
+	// FlowPendingMFA marks a flow whose password step passed but whose MFA step has not.
+	FlowPendingMFA = "mfa"
+	// FlowPendingActionPrefix prefixes the alias of an outstanding required action.
+	FlowPendingActionPrefix = "action:"
+)
+
+// Authenticated reports whether the flow has an authenticated user and no outstanding step.
+func (f *LoginFlowState) Authenticated() bool {
+	return f != nil && f.UserID != "" && f.Pending == ""
+}
+
+// PendingAction returns the outstanding required action alias, or "".
+func (f *LoginFlowState) PendingAction() string {
+	if f != nil && len(f.Pending) > len(FlowPendingActionPrefix) && f.Pending[:len(FlowPendingActionPrefix)] == FlowPendingActionPrefix {
+		return f.Pending[len(FlowPendingActionPrefix):]
+	}
+	return ""
 }
 
 // UserSession represents an active user session within the OIDC provider itself.

@@ -159,6 +159,10 @@ type Mutation {
 
   # ----- User Credentials -----
   setUserPassword(userId: ID!, password: String!, temporary: Boolean!): Boolean!
+  # Keycloak-style required actions: UPDATE_PASSWORD, CONFIGURE_TOTP, VERIFY_EMAIL,
+  # UPDATE_PROFILE, TERMS_AND_CONDITIONS. Enforced at the user's next login.
+  addRequiredAction(userId: ID!, action: String!): Boolean!
+  removeRequiredAction(userId: ID!, action: String!): Boolean!
   deleteUserCredentials(userId: ID!, credentialId: String!): Boolean!
   resetUserTwoFactor(userId: ID!): Boolean!
 
@@ -530,6 +534,9 @@ type User {
 
   # Sessions
   sessions: [Session!]!
+
+  # Actions the user must complete at next login
+  requiredActions: [String!]!
 
   # Two-factor
   totp: Boolean!

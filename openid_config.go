@@ -344,6 +344,8 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 	router.POST("/consent", webauthAPI.ConsentSubmitHandler)
 	router.GET("/oauth2/device/verify", webauthAPI.DeviceVerificationPageHandler)
 	router.POST("/oauth2/device/verify", webauthAPI.DeviceVerificationSubmitHandler)
+	router.GET("/required-action", webauthAPI.RequiredActionPageHandler)
+	router.POST("/required-action", webauthAPI.RequiredActionSubmitHandler)
 	router.POST("/mfa", webauthAPI.MFASubmitHandler)
 	router.POST("/mfa/resend", webauthAPI.MFAResendSubmitHandler)
 	// ---------- Connect-RPC handlers ----------

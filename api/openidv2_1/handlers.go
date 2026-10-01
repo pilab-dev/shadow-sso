@@ -432,8 +432,17 @@ func (oa *OAuth2API) AuthorizeHandler(c *gin.Context) {
 func (oa *OAuth2API) handleFlowAuthorize(c *gin.Context, authReqData *authorizeRequestData, flowState *domain.LoginFlowState) {
 	// If the user was authenticated by the login form, user ID is stored on the flow state.
 	// The webauth login handler populates this regardless of MFA status.
-	if flowState.UserID != "" {
+	// A user ID alone is not enough: MFA and required actions must have completed.
+	if flowState.Authenticated() {
 		oa.completeAuthorizeAfterAuth(c, authReqData, flowState)
+		return
+	}
+	if action := flowState.PendingAction(); action != "" {
+		c.Redirect(http.StatusFound, "/required-action?flow_id="+url.QueryEscape(flowState.FlowID))
+		return
+	}
+	if flowState.Pending == domain.FlowPendingMFA {
+		c.Redirect(http.StatusFound, "/login?flow_id="+url.QueryEscape(flowState.FlowID))
 		return
 	}
 

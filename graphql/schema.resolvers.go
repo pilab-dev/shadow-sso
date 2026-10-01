@@ -1157,6 +1157,47 @@ func (r *mutationResolver) SetUserPassword(ctx context.Context, userID string, p
 		return false, err
 	}
 	user.PasswordHash = hashedPassword
+	if temporary {
+		// A temporary password must be replaced by the user at next login.
+		user.AddRequiredAction(domain.RequiredActionUpdatePassword)
+	} else {
+		user.RemoveRequiredAction(domain.RequiredActionUpdatePassword)
+	}
+	if err := r.UserRepo.UpdateUser(ctx, user); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// AddRequiredAction is the resolver for the addRequiredAction field.
+func (r *mutationResolver) AddRequiredAction(ctx context.Context, userID string, action string) (bool, error) {
+	if err := requireAdmin(ctx); err != nil {
+		return false, err
+	}
+	if !domain.IsKnownRequiredAction(action) {
+		return false, fmt.Errorf("unknown required action %q", action)
+	}
+	user, err := r.UserRepo.GetUserByID(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	user.AddRequiredAction(action)
+	if err := r.UserRepo.UpdateUser(ctx, user); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// RemoveRequiredAction is the resolver for the removeRequiredAction field.
+func (r *mutationResolver) RemoveRequiredAction(ctx context.Context, userID string, action string) (bool, error) {
+	if err := requireAdmin(ctx); err != nil {
+		return false, err
+	}
+	user, err := r.UserRepo.GetUserByID(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	user.RemoveRequiredAction(action)
 	if err := r.UserRepo.UpdateUser(ctx, user); err != nil {
 		return false, err
 	}
@@ -2084,6 +2125,14 @@ func (r *userResolver) Sessions(ctx context.Context, obj *domain.User) ([]domain
 	return result, nil
 }
 
+// RequiredActions is the resolver for the requiredActions field.
+func (r *userResolver) RequiredActions(ctx context.Context, obj *domain.User) ([]string, error) {
+	if obj.RequiredActions == nil {
+		return []string{}, nil
+	}
+	return obj.RequiredActions, nil
+}
+
 // Totp is the resolver for the totp field.
 func (r *userResolver) Totp(ctx context.Context, obj *domain.User) (bool, error) {
 	return obj.IsTwoFactorEnabled, nil
@@ -2236,14 +2285,6 @@ func (r *Resolver) AuditLogFilter() AuditLogFilterResolver {
 }
 
 type userFilterResolver struct{ *Resolver }
-
-// SortBy is the resolver for the sortBy field.
-func (r *userFilterResolver) SortBy(ctx context.Context, obj *domain.UserFilter, data *string) error {
-	if data != nil {
-		obj.SortBy = *data
-	}
-	return nil
-}
 
 // SortDir is the resolver for the sortDir field.
 func (r *userFilterResolver) SortDir(ctx context.Context, obj *domain.UserFilter, data *SortDir) error {
