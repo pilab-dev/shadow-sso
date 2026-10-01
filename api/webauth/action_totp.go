@@ -4,9 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"html/template"
-	"net/http"
 	"net/url"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/pilab-dev/shadow-sso/domain"
@@ -20,90 +18,86 @@ import (
 type configureTOTPAction struct{}
 
 func (configureTOTPAction) Render(c *gin.Context, wa *WebAuth, flowID string, user *domain.User, errMsg string) {
-	ctx := c.Request.Context()
+	qr, secret, ok := wa.prepareTOTP(c, user)
+	if !ok {
+		return
+	}
+	wa.renderPage(c, "totp_setup.html", "Set up authenticator", gin.H{
+		"FlowID": flowID,
+		"Error":  errMsg,
+		"QRCode": qr,
+		"Secret": secret,
+		"Action": "/required-action",
+	})
+}
+
+func (configureTOTPAction) Submit(c *gin.Context, wa *WebAuth, user *domain.User) (actionResult, error) {
+	codes, errMsg, err := wa.enableTOTP(c, user)
+	if err != nil || errMsg != "" {
+		return actionResult{Err: errMsg}, err
+	}
+	user.RemoveRequiredAction(domain.RequiredActionConfigureTOTP)
+	if err := wa.userRepo.UpdateUser(c.Request.Context(), user); err != nil {
+		return actionResult{}, err
+	}
+	// Recovery codes are shown exactly once; "Continue" posts continue=1 to resume the login.
+	wa.renderPage(c, "recovery_codes.html", "Save your recovery codes", gin.H{
+		"FlowID": c.PostForm("flow_id"),
+		"Codes":  codes,
+		"Action": "/required-action",
+	})
+	return actionResult{Rendered: true}, nil
+}
+
+// prepareTOTP makes sure user has a pending (not yet enabled) TOTP secret and returns the QR
+// code data URI and the manual-entry key. On failure it writes an error page and returns ok=false.
+func (wa *WebAuth) prepareTOTP(c *gin.Context, user *domain.User) (qr template.URL, secret string, ok bool) {
 	if user.TwoFactorSecret == "" || user.TwoFactorMethod != "TOTP" || user.IsTwoFactorEnabled {
 		key, _, err := totp.GenerateTOTPSecret(wa.config.BrandOrganizationName, user.Email)
 		if err != nil {
 			log.Error().Err(err).Msg("totp setup: generate secret failed")
 			wa.renderInternalError(c, "Could not start authenticator setup. Please try again.")
-			return
+			return "", "", false
 		}
 		user.TwoFactorSecret = key.Secret()
 		user.TwoFactorMethod = "TOTP"
-		if err := wa.userRepo.UpdateUser(ctx, user); err != nil {
+		if err := wa.userRepo.UpdateUser(c.Request.Context(), user); err != nil {
 			log.Error().Err(err).Msg("totp setup: persist secret failed")
 			wa.renderInternalError(c, "Could not start authenticator setup. Please try again.")
-			return
+			return "", "", false
 		}
 	}
-
-	uri := totpProvisioningURI(wa.config.BrandOrganizationName, user.Email, user.TwoFactorSecret)
-	png, err := totp.GenerateTOTPQRCodeBytes(uri)
+	png, err := totp.GenerateTOTPQRCodeBytes(totpProvisioningURI(wa.config.BrandOrganizationName, user.Email, user.TwoFactorSecret))
 	if err != nil {
 		log.Error().Err(err).Msg("totp setup: QR generation failed")
 		wa.renderInternalError(c, "Could not render the QR code. Please try again.")
-		return
+		return "", "", false
 	}
-
-	csrfToken, err := generateCSRFToken()
-	if err != nil {
-		wa.renderInternalError(c, "Internal error. Please try again.")
-		return
-	}
-	setCSRFCookie(c.Writer, csrfToken, 10*time.Minute, IsSecureRequest(c.Request))
-	status := http.StatusOK
-	if errMsg != "" {
-		status = http.StatusUnprocessableEntity
-	}
-	c.HTML(status, "totp_setup.html", gin.H{
-		"PageTitle": "Set up authenticator",
-		"FlowID":    flowID,
-		"CSRFToken": csrfToken,
-		"Error":     errMsg,
-		"BrandName": wa.config.BrandOrganizationName,
-		// The data URI is built from server-generated PNG bytes, so it is safe to mark as a URL.
-		"QRCode": template.URL("data:image/png;base64," + base64.StdEncoding.EncodeToString(png)),
-		"Secret": user.TwoFactorSecret,
-	})
+	// The data URI is built from server-generated PNG bytes, so it is safe to mark as a URL.
+	return template.URL("data:image/png;base64," + base64.StdEncoding.EncodeToString(png)), user.TwoFactorSecret, true
 }
 
-func (configureTOTPAction) Submit(c *gin.Context, wa *WebAuth, user *domain.User) (actionResult, error) {
+// enableTOTP verifies the submitted code against the pending secret and, when valid, switches TOTP
+// on in memory (the caller persists) and returns the plaintext recovery codes. errMsg is a
+// user-facing validation message; err is an internal failure.
+func (wa *WebAuth) enableTOTP(c *gin.Context, user *domain.User) (codes []string, errMsg string, err error) {
 	if user.TwoFactorSecret == "" || user.TwoFactorMethod != "TOTP" || user.IsTwoFactorEnabled {
-		return actionResult{Err: "Authenticator setup was reset. Scan the new QR code and try again."}, nil
+		return nil, "Authenticator setup was reset. Scan the new QR code and try again.", nil
 	}
 	valid, err := totp.ValidateTOTPCode(user.TwoFactorSecret, c.PostForm("otp"))
 	if err != nil {
-		return actionResult{}, err
+		return nil, "", err
 	}
 	if !valid {
-		return actionResult{Err: "Invalid verification code. Please try again."}, nil
+		return nil, "Invalid verification code. Please try again.", nil
 	}
-
 	plain, hashed, err := totp.GenerateRecoveryCodes(totp.DefaultNumRecoveryCodes, totp.DefaultRecoveryCodeLength)
 	if err != nil {
-		return actionResult{}, err
+		return nil, "", err
 	}
 	user.IsTwoFactorEnabled = true
 	user.TwoFactorRecoveryCodes = hashed
-	user.RemoveRequiredAction(domain.RequiredActionConfigureTOTP)
-	if err := wa.userRepo.UpdateUser(c.Request.Context(), user); err != nil {
-		return actionResult{}, err
-	}
-
-	// Recovery codes are shown exactly once; "Continue" posts continue=1 to resume the login.
-	csrfToken, err := generateCSRFToken()
-	if err != nil {
-		return actionResult{}, err
-	}
-	setCSRFCookie(c.Writer, csrfToken, 10*time.Minute, IsSecureRequest(c.Request))
-	c.HTML(http.StatusOK, "recovery_codes.html", gin.H{
-		"PageTitle": "Save your recovery codes",
-		"FlowID":    c.PostForm("flow_id"),
-		"CSRFToken": csrfToken,
-		"BrandName": wa.config.BrandOrganizationName,
-		"Codes":     plain,
-	})
-	return actionResult{Rendered: true}, nil
+	return plain, "", nil
 }
 
 // totpProvisioningURI builds the otpauth:// URI authenticator apps import.

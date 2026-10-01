@@ -1,0 +1,40 @@
+{{template "base_start" .}}
+{{template "account_nav" .}}
+<h2 class="page-title">My account</h2>
+<p class="page-subtitle">{{.Email}}</p>
+
+{{if .Flash}}
+<div class="alert alert-success" role="status">
+    <span class="alert-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="9 12 11 14 15 10"/></svg>
+    </span>
+    <span>{{.Flash}}</span>
+</div>
+{{end}}
+{{if .Error}}
+<div class="alert alert-error" role="alert">
+    <span class="alert-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    </span>
+    <span>{{.Error}}</span>
+</div>
+{{end}}
+
+<form method="POST" action="/account/profile">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <div class="form-group">
+        <label for="first_name" class="form-label">First name</label>
+        <input type="text" id="first_name" name="first_name" class="form-input" autocomplete="given-name" maxlength="100" value="{{.FirstName}}">
+    </div>
+    <div class="form-group">
+        <label for="last_name" class="form-label">Last name</label>
+        <input type="text" id="last_name" name="last_name" class="form-input" autocomplete="family-name" maxlength="100" value="{{.LastName}}">
+    </div>
+    <p style="font-size:0.8125rem;color:var(--text-subtle);">Email {{.Email}}{{if .User.IsEmailVerified}} (verified){{else}} (not verified){{end}}</p>
+    <button type="submit" class="btn btn-primary">Save changes</button>
+</form>
+<form method="POST" action="/account/logout" style="margin-top:16px;">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <button type="submit" class="btn btn-secondary">Sign out</button>
+</form>
+{{template "base_end" .}}

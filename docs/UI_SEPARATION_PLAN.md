@@ -98,7 +98,15 @@ Order by value:
 
 Every handler: CSRF, rate limit, `return_to` validation, generic errors, audit event (`AuditService`).
 
-### Phase 3 — Account UI (`/account`)
+### Phase 3 — Account UI (`/account`) — DONE on `feat/account-ui` (except "Applications")
+
+Delivered: `/account` (profile), `/account/security` (password change, TOTP enrol/disable, new recovery codes),
+`/account/sessions` (list + revoke, ownership-checked), `/account/linked` (list + unlink, never removes the last
+sign-in method), sign-out. Auth = signed `sso_session` cookie; sensitive changes need the current password
+(or a TOTP code) via a rate-limited step-up check; a password change revokes the user's other OAuth sessions.
+Not done: "Applications" (granted consents) needs a consent store that does not exist yet (consent is
+currently asked per authorization, never persisted); linking *new* social accounts from the console.
+
 Sections mirroring Keycloak's account console, all server-rendered:
 
 | Page | Backing service |

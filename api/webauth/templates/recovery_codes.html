@@ -12,10 +12,14 @@
     {{range .Codes}}<code>{{.}}</code>{{end}}
 </div>
 
-<form method="POST" action="/required-action">
+{{if .ContinueHref}}
+<a class="btn btn-primary" href="{{.ContinueHref}}" style="display:block;text-align:center;text-decoration:none;">I have saved my codes — continue</a>
+{{else}}
+<form method="POST" action="{{.Action}}">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
     <input type="hidden" name="flow_id" value="{{.FlowID}}">
     <input type="hidden" name="continue" value="1">
     <button type="submit" class="btn btn-primary">I have saved my codes — continue</button>
 </form>
+{{end}}
 {{template "base_end" .}}

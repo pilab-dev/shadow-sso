@@ -1,0 +1,8 @@
+{{define "account_nav"}}
+<nav aria-label="Account" style="display:flex;gap:14px;flex-wrap:wrap;justify-content:center;margin-bottom:18px;font-size:0.875rem;">
+    <a class="link" href="/account"{{if eq .Active "overview"}} aria-current="page" style="font-weight:600;"{{end}}>Profile</a>
+    <a class="link" href="/account/security"{{if eq .Active "security"}} aria-current="page" style="font-weight:600;"{{end}}>Security</a>
+    <a class="link" href="/account/sessions"{{if eq .Active "sessions"}} aria-current="page" style="font-weight:600;"{{end}}>Devices</a>
+    <a class="link" href="/account/linked"{{if eq .Active "linked"}} aria-current="page" style="font-weight:600;"{{end}}>Linked accounts</a>
+</nav>
+{{end}}
