@@ -85,6 +85,15 @@ func (wa *WebAuth) ConsentPageHandler(c *gin.Context) {
 		return
 	}
 
+	if !flowState.Authenticated() {
+		log.Warn().Str("flow_id", flowID).Msg("consent: flow is not fully authenticated")
+		c.HTML(http.StatusBadRequest, "error.html", gin.H{
+			"PageTitle": "Error",
+			"Message":   "Please sign in before continuing.",
+		})
+		return
+	}
+
 	client, err := wa.clientService.GetClient(ctx, flowState.ClientID)
 	if err != nil {
 		log.Error().Err(err).Str("client_id", flowState.ClientID).Msg("consent: failed to load client")
@@ -147,6 +156,15 @@ func (wa *WebAuth) ConsentSubmitHandler(c *gin.Context) {
 		c.HTML(http.StatusBadRequest, "error.html", gin.H{
 			"PageTitle": "Error",
 			"Message":   "Consent request has expired. Please try again.",
+		})
+		return
+	}
+
+	if !flowState.Authenticated() {
+		log.Warn().Str("flow_id", flowID).Msg("consent: flow is not fully authenticated")
+		c.HTML(http.StatusBadRequest, "error.html", gin.H{
+			"PageTitle": "Error",
+			"Message":   "Please sign in before continuing.",
 		})
 		return
 	}

@@ -121,8 +121,68 @@ type User struct {
 	PasswordResetToken          string     `bson:"password_reset_token,omitempty" json:"-"`
 	PasswordResetTokenExpiresAt *time.Time `bson:"password_reset_token_expires_at,omitempty" json:"-"`
 
+	// RequiredActions are steps the user must complete at next login, before any
+	// authorization code is issued (Keycloak "required actions").
+	RequiredActions []string `bson:"required_actions,omitempty" json:"required_actions,omitempty"`
+
 	// Login OTP fields
 	LoginOtp           string     `bson:"login_otp,omitempty" json:"-"`
 	LoginOtpExpiresAt  *time.Time `bson:"login_otp_expires_at,omitempty" json:"-"`
 	LoginOtpMethodType string     `bson:"login_otp_method_type,omitempty" json:"-"`
+}
+
+// Required action aliases.
+const (
+	RequiredActionUpdatePassword = "UPDATE_PASSWORD"
+	RequiredActionConfigureTOTP  = "CONFIGURE_TOTP"
+	RequiredActionVerifyEmail    = "VERIFY_EMAIL"
+	RequiredActionUpdateProfile  = "UPDATE_PROFILE"
+	RequiredActionTerms          = "TERMS_AND_CONDITIONS"
+)
+
+// KnownRequiredActions lists every alias in evaluation order.
+var KnownRequiredActions = []string{
+	RequiredActionUpdatePassword,
+	RequiredActionConfigureTOTP,
+	RequiredActionVerifyEmail,
+	RequiredActionUpdateProfile,
+	RequiredActionTerms,
+}
+
+// IsKnownRequiredAction reports whether alias is a recognised required action.
+func IsKnownRequiredAction(alias string) bool {
+	for _, a := range KnownRequiredActions {
+		if a == alias {
+			return true
+		}
+	}
+	return false
+}
+
+// HasRequiredAction reports whether the user has the given action pending.
+func (u *User) HasRequiredAction(alias string) bool {
+	for _, a := range u.RequiredActions {
+		if a == alias {
+			return true
+		}
+	}
+	return false
+}
+
+// AddRequiredAction adds alias if not already present.
+func (u *User) AddRequiredAction(alias string) {
+	if !u.HasRequiredAction(alias) {
+		u.RequiredActions = append(u.RequiredActions, alias)
+	}
+}
+
+// RemoveRequiredAction removes alias if present.
+func (u *User) RemoveRequiredAction(alias string) {
+	out := u.RequiredActions[:0:0]
+	for _, a := range u.RequiredActions {
+		if a != alias {
+			out = append(out, a)
+		}
+	}
+	u.RequiredActions = out
 }

@@ -59,7 +59,7 @@ func toProtoOIDCFlw(state *domain.LoginFlowState) *ssov1.OIDCFlw { // Changed to
 		UserId:              state.UserID,
 		UserAuthenticatedAt: userAuthAt,
 		ExpiresAt:           timestamppb.New(state.ExpiresAt),
-		OriginalOidcParams:  state.OriginalOIDCParams,
+		OriginalOidcParams:  withPendingParam(state.OriginalOIDCParams, state.Pending),
 		// acr_level, amr_methods, session_id are not in domain.LoginFlowState
 		// They will be default/empty when converting from it.
 	}
@@ -85,8 +85,40 @@ func fromProtoOIDCFlw(protoFlw *ssov1.OIDCFlw) *domain.LoginFlowState { // Chang
 		UserID:              protoFlw.UserId,
 		UserAuthenticatedAt: userAuthAt,
 		ExpiresAt:           protoFlw.ExpiresAt.AsTime(),
-		OriginalOIDCParams:  protoFlw.OriginalOidcParams,
+		OriginalOIDCParams:  withoutPendingParam(protoFlw.OriginalOidcParams),
+		Pending:             protoFlw.OriginalOidcParams[pendingParamKey],
 	}
+}
+
+// pendingParamKey smuggles LoginFlowState.Pending through the OIDCFlw proto,
+// which has no dedicated field. The key is stripped on read so it never leaks
+// into OriginalOIDCParams, and any client-supplied value for it is discarded on write.
+const pendingParamKey = "__ssso_pending"
+
+func withPendingParam(params map[string]string, pending string) map[string]string {
+	out := make(map[string]string, len(params)+1)
+	for k, v := range params {
+		if k != pendingParamKey {
+			out[k] = v
+		}
+	}
+	if pending != "" {
+		out[pendingParamKey] = pending
+	}
+	return out
+}
+
+func withoutPendingParam(params map[string]string) map[string]string {
+	if _, ok := params[pendingParamKey]; !ok {
+		return params
+	}
+	out := make(map[string]string, len(params))
+	for k, v := range params {
+		if k != pendingParamKey {
+			out[k] = v
+		}
+	}
+	return out
 }
 
 // StoreFlow adds a new login flow state to DTS.

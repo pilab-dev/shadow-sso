@@ -135,16 +135,10 @@ func TestFilterSortDirResolvers(t *testing.T) {
 
 	t.Run("UserFilter persists sort fields", func(t *testing.T) {
 		f := &domain.UserFilter{}
-		sortBy := "createdAt"
 		asc := graphql.SortDirAsc
-		if err := r.UserFilter().SortBy(context.Background(), f, &sortBy); err != nil {
-			t.Fatalf("SortBy: %v", err)
-		}
+		// sortBy is bound straight onto domain.UserFilter.SortBy by gqlgen (no resolver).
 		if err := r.UserFilter().SortDir(context.Background(), f, &asc); err != nil {
 			t.Fatalf("SortDir: %v", err)
-		}
-		if f.SortBy != "createdAt" {
-			t.Errorf("SortBy = %q, want createdAt", f.SortBy)
 		}
 		if f.SortDir != "ASC" {
 			t.Errorf("SortDir = %q, want ASC", f.SortDir)

@@ -186,6 +186,7 @@ type ComplexityRoot struct {
 		AddClientRoleToUser            func(childComplexity int, userID string, clientID string, roleID string) int
 		AddRealmRoleToGroup            func(childComplexity int, groupID string, roleID string) int
 		AddRealmRoleToUser             func(childComplexity int, userID string, roleID string) int
+		AddRequiredAction              func(childComplexity int, userID string, action string) int
 		AddUserToGroup                 func(childComplexity int, userID string, groupID string) int
 		CreateAuthenticationFlow       func(childComplexity int, input CreateAuthenticationFlowInput) int
 		CreateClient                   func(childComplexity int, input CreateClientInput) int
@@ -218,6 +219,7 @@ type ComplexityRoot struct {
 		RemoveClientRoleFromUser       func(childComplexity int, userID string, clientID string, roleID string) int
 		RemoveRealmRoleFromGroup       func(childComplexity int, groupID string, roleID string) int
 		RemoveRealmRoleFromUser        func(childComplexity int, userID string, roleID string) int
+		RemoveRequiredAction           func(childComplexity int, userID string, action string) int
 		RemoveUserFromGroup            func(childComplexity int, userID string, groupID string) int
 		ResetPassword                  func(childComplexity int, userID string, newPassword string) int
 		ResetUserTwoFactor             func(childComplexity int, userID string) int
@@ -410,6 +412,7 @@ type ComplexityRoot struct {
 		ID                  func(childComplexity int) int
 		LastAccess          func(childComplexity int) int
 		LastName            func(childComplexity int) int
+		RequiredActions     func(childComplexity int) int
 		Sessions            func(childComplexity int) int
 		Status              func(childComplexity int) int
 		Totp                func(childComplexity int) int
@@ -559,6 +562,8 @@ type MutationResolver interface {
 	DeleteAuthenticationFlow(ctx context.Context, id string) (bool, error)
 	UpdateAuthenticationExecutions(ctx context.Context, flowID string, executions []AuthenticationExecutionInput) (bool, error)
 	SetUserPassword(ctx context.Context, userID string, password string, temporary bool) (bool, error)
+	AddRequiredAction(ctx context.Context, userID string, action string) (bool, error)
+	RemoveRequiredAction(ctx context.Context, userID string, action string) (bool, error)
 	DeleteUserCredentials(ctx context.Context, userID string, credentialID string) (bool, error)
 	ResetUserTwoFactor(ctx context.Context, userID string) (bool, error)
 	CreateClientScope(ctx context.Context, input CreateClientScopeInput) (*domain.ClientScope, error)
@@ -621,7 +626,7 @@ type SessionResolver interface {
 	LastAccessedTime(ctx context.Context, obj *domain.Session) (*time.Time, error)
 	Expires(ctx context.Context, obj *domain.Session) (*time.Time, error)
 	State(ctx context.Context, obj *domain.Session) (*string, error)
-	ClientID(ctx context.Context, obj *domain.Session) (*string, error)
+
 	ClientName(ctx context.Context, obj *domain.Session) (*string, error)
 }
 type TokenIntrospectionResolver interface {
@@ -642,6 +647,7 @@ type UserResolver interface {
 	Credentials(ctx context.Context, obj *domain.User) ([]UserCredential, error)
 	ClientRoles(ctx context.Context, obj *domain.User, clientID string) ([]domain.Role, error)
 	Sessions(ctx context.Context, obj *domain.User) ([]domain.Session, error)
+
 	Totp(ctx context.Context, obj *domain.User) (bool, error)
 	Attributes(ctx context.Context, obj *domain.User) (map[string]any, error)
 	GroupIds(ctx context.Context, obj *domain.User) ([]string, error)
@@ -654,7 +660,6 @@ type ClientFilterResolver interface {
 	SortDir(ctx context.Context, obj *domain.ClientFilter, data *SortDir) error
 }
 type UserFilterResolver interface {
-	SortBy(ctx context.Context, obj *domain.UserFilter, data *string) error
 	SortDir(ctx context.Context, obj *domain.UserFilter, data *SortDir) error
 }
 
@@ -1286,6 +1291,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.AddRealmRoleToUser(childComplexity, args["userId"].(string), args["roleId"].(string)), true
+	case "Mutation.addRequiredAction":
+		if e.ComplexityRoot.Mutation.AddRequiredAction == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_addRequiredAction_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.AddRequiredAction(childComplexity, args["userId"].(string), args["action"].(string)), true
 	case "Mutation.addUserToGroup":
 		if e.ComplexityRoot.Mutation.AddUserToGroup == nil {
 			break
@@ -1638,6 +1654,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.RemoveRealmRoleFromUser(childComplexity, args["userId"].(string), args["roleId"].(string)), true
+	case "Mutation.removeRequiredAction":
+		if e.ComplexityRoot.Mutation.RemoveRequiredAction == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_removeRequiredAction_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.RemoveRequiredAction(childComplexity, args["userId"].(string), args["action"].(string)), true
 	case "Mutation.removeUserFromGroup":
 		if e.ComplexityRoot.Mutation.RemoveUserFromGroup == nil {
 			break
@@ -2796,6 +2823,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.User.LastName(childComplexity), true
+	case "User.requiredActions":
+		if e.ComplexityRoot.User.RequiredActions == nil {
+			break
+		}
+
+		return e.ComplexityRoot.User.RequiredActions(childComplexity), true
 	case "User.sessions":
 		if e.ComplexityRoot.User.Sessions == nil {
 			break
@@ -3191,6 +3224,22 @@ func (ec *executionContext) field_Mutation_addRealmRoleToUser_args(ctx context.C
 		return nil, err
 	}
 	args["roleId"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_addRequiredAction_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "userId", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["userId"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "action", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["action"] = arg1
 	return args, nil
 }
 
@@ -3598,6 +3647,22 @@ func (ec *executionContext) field_Mutation_removeRealmRoleFromUser_args(ctx cont
 		return nil, err
 	}
 	args["roleId"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_removeRequiredAction_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "userId", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["userId"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "action", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["action"] = arg1
 	return args, nil
 }
 
@@ -6809,6 +6874,8 @@ func (ec *executionContext) fieldContext_Group_members(_ context.Context, field 
 				return ec.fieldContext_User_clientRoles(ctx, field)
 			case "sessions":
 				return ec.fieldContext_User_sessions(ctx, field)
+			case "requiredActions":
+				return ec.fieldContext_User_requiredActions(ctx, field)
 			case "totp":
 				return ec.fieldContext_User_totp(ctx, field)
 			case "attributes":
@@ -7305,6 +7372,8 @@ func (ec *executionContext) fieldContext_Mutation_createUser(ctx context.Context
 				return ec.fieldContext_User_clientRoles(ctx, field)
 			case "sessions":
 				return ec.fieldContext_User_sessions(ctx, field)
+			case "requiredActions":
+				return ec.fieldContext_User_requiredActions(ctx, field)
 			case "totp":
 				return ec.fieldContext_User_totp(ctx, field)
 			case "attributes":
@@ -7384,6 +7453,8 @@ func (ec *executionContext) fieldContext_Mutation_updateUser(ctx context.Context
 				return ec.fieldContext_User_clientRoles(ctx, field)
 			case "sessions":
 				return ec.fieldContext_User_sessions(ctx, field)
+			case "requiredActions":
+				return ec.fieldContext_User_requiredActions(ctx, field)
 			case "totp":
 				return ec.fieldContext_User_totp(ctx, field)
 			case "attributes":
@@ -9778,6 +9849,88 @@ func (ec *executionContext) fieldContext_Mutation_setUserPassword(ctx context.Co
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_addRequiredAction(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_addRequiredAction,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().AddRequiredAction(ctx, fc.Args["userId"].(string), fc.Args["action"].(string))
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_addRequiredAction(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_addRequiredAction_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_removeRequiredAction(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_removeRequiredAction,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().RemoveRequiredAction(ctx, fc.Args["userId"].(string), fc.Args["action"].(string))
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_removeRequiredAction(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_removeRequiredAction_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Mutation_deleteUserCredentials(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -10758,6 +10911,8 @@ func (ec *executionContext) fieldContext_Query_user(ctx context.Context, field g
 				return ec.fieldContext_User_clientRoles(ctx, field)
 			case "sessions":
 				return ec.fieldContext_User_sessions(ctx, field)
+			case "requiredActions":
+				return ec.fieldContext_User_requiredActions(ctx, field)
 			case "totp":
 				return ec.fieldContext_User_totp(ctx, field)
 			case "attributes":
@@ -14110,10 +14265,10 @@ func (ec *executionContext) _Session_clientId(ctx context.Context, field graphql
 		field,
 		ec.fieldContext_Session_clientId,
 		func(ctx context.Context) (any, error) {
-			return ec.Resolvers.Session().ClientID(ctx, obj)
+			return obj.ClientID, nil
 		},
 		nil,
-		ec.marshalOString2ᚖstring,
+		ec.marshalOString2string,
 		true,
 		false,
 	)
@@ -14123,8 +14278,8 @@ func (ec *executionContext) fieldContext_Session_clientId(_ context.Context, fie
 	fc = &graphql.FieldContext{
 		Object:     "Session",
 		Field:      field,
-		IsMethod:   true,
-		IsResolver: true,
+		IsMethod:   false,
+		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type String does not have child fields")
 		},
@@ -15318,6 +15473,35 @@ func (ec *executionContext) fieldContext_User_sessions(_ context.Context, field 
 	return fc, nil
 }
 
+func (ec *executionContext) _User_requiredActions(ctx context.Context, field graphql.CollectedField, obj *domain.User) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_User_requiredActions,
+		func(ctx context.Context) (any, error) {
+			return obj.RequiredActions, nil
+		},
+		nil,
+		ec.marshalNString2ᚕstringᚄ,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_User_requiredActions(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "User",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _User_totp(ctx context.Context, field graphql.CollectedField, obj *domain.User) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -16142,6 +16326,8 @@ func (ec *executionContext) fieldContext_UserEdge_node(_ context.Context, field 
 				return ec.fieldContext_User_clientRoles(ctx, field)
 			case "sessions":
 				return ec.fieldContext_User_sessions(ctx, field)
+			case "requiredActions":
+				return ec.fieldContext_User_requiredActions(ctx, field)
 			case "totp":
 				return ec.fieldContext_User_totp(ctx, field)
 			case "attributes":
@@ -19751,13 +19937,11 @@ func (ec *executionContext) unmarshalInputUserFilter(ctx context.Context, obj an
 			it.Search = data
 		case "sortBy":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sortBy"))
-			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			data, err := ec.unmarshalOString2string(ctx, v)
 			if err != nil {
 				return it, err
 			}
-			if err = ec.Resolvers.UserFilter().SortBy(ctx, &it, data); err != nil {
-				return it, err
-			}
+			it.SortBy = data
 		case "sortDir":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("sortDir"))
 			data, err := ec.unmarshalOSortDir2ᚖgithubᚗcomᚋpilabᚑdevᚋshadowᚑssoᚋgraphqlᚐSortDir(ctx, v)
@@ -22176,6 +22360,20 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "addRequiredAction":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_addRequiredAction(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "removeRequiredAction":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_removeRequiredAction(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "deleteUserCredentials":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_deleteUserCredentials(ctx, field)
@@ -23828,38 +24026,7 @@ func (ec *executionContext) _Session(ctx context.Context, sel ast.SelectionSet, 
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
 		case "clientId":
-			field := field
-
-			innerFunc := func(ctx context.Context, _ *graphql.FieldSet) (res graphql.Marshaler) {
-				defer func() {
-					if r := recover(); r != nil {
-						ec.Error(ctx, ec.Recover(ctx, r))
-					}
-				}()
-				res = ec._Session_clientId(ctx, field, obj)
-				return res
-			}
-
-			if field.Deferrable != nil {
-				dfs, ok := deferred[field.Deferrable.Label]
-				di := 0
-				if ok {
-					dfs.AddField(field)
-					di = len(dfs.Values) - 1
-				} else {
-					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
-					deferred[field.Deferrable.Label] = dfs
-				}
-				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
-					return innerFunc(ctx, dfs)
-				})
-
-				// don't run the out.Concurrently() call below
-				out.Values[i] = graphql.Null
-				continue
-			}
-
-			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			out.Values[i] = ec._Session_clientId(ctx, field, obj)
 		case "clientName":
 			field := field
 
@@ -24553,6 +24720,11 @@ func (ec *executionContext) _User(ctx context.Context, sel ast.SelectionSet, obj
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+		case "requiredActions":
+			out.Values[i] = ec._User_requiredActions(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				atomic.AddUint32(&out.Invalids, 1)
+			}
 		case "totp":
 			field := field
 

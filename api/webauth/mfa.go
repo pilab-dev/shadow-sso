@@ -1,14 +1,11 @@
 package webauth
 
 import (
-	"fmt"
 	"net/http"
-	"net/url"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/pilab-dev/shadow-sso/internal/auth/totp"
-	"github.com/pilab-dev/shadow-sso/internal/ssosession"
 	"github.com/rs/zerolog/log"
 )
 
@@ -166,48 +163,10 @@ func (wa *WebAuth) MFASubmitHandler(c *gin.Context) {
 		return
 	}
 
-	displayName := user.Email
-	if user.FirstName != "" || user.LastName != "" {
-		displayName = fmt.Sprintf("%s %s", user.FirstName, user.LastName)
-	}
-	isSecure := IsSecureRequest(c.Request)
-	session := mergeSessionAccount(c.Request, wa.ssoCookieSecret, ssosession.Account{
-		UserID:   user.ID,
-		Email:    user.Email,
-		Name:     displayName,
-		LastUsed: time.Now(),
-	})
-	if err := SetSSOSessionCookie(c.Writer, session, isSecure, wa.ssoCookieSecret); err != nil {
-		log.Error().Err(err).Msg("mfa: failed to set SSO session cookie")
-		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
-			"PageTitle": "Error",
-			"Message":   "Failed to create session. Please try again.",
-		})
-		return
-	}
-
-	flowState.UserID = user.ID
-	if flowState.UserAuthenticatedAt.IsZero() {
-		flowState.UserAuthenticatedAt = time.Now()
-	}
-	if err := wa.flowStore.UpdateFlow(ctx, flowID, flowState); err != nil {
-		log.Error().Err(err).Str("flow_id", flowID).Msg("mfa: failed to update flow state")
-	}
-
-	if flowState.ClientID == "" {
-		// Flow-less login (no OIDC client): complete by redirecting to the
-		// signed return_to destination captured when the synthetic flow began.
-		// The cookie is cleared on use; fall back to "/" when absent or invalid.
-		rt := readReturnToCookie(c.Request, wa.ssoCookieSecret)
-		clearReturnToCookie(c.Writer, isSecure)
-		if rt != "" && validReturnTo(rt) {
-			c.Redirect(http.StatusFound, rt)
-			return
-		}
-		c.Redirect(http.StatusFound, "/")
-		return
-	}
-	c.Redirect(http.StatusFound, "/oauth2/authorize?flow_id="+url.QueryEscape(flowID))
+	// Second factor verified: clear the pending marker and run the shared completion
+	// point (required actions, SSO cookie, consent, authorization).
+	flowState.Pending = ""
+	wa.finishLogin(c, ctx, flowID, flowState, user)
 }
 
 // MFAResendSubmitHandler processes POST /mfa/resend. It re-sends the email

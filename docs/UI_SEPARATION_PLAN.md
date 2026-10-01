@@ -60,7 +60,17 @@ Browser ── admin console ──OIDC code+PKCE (client admin-ui)──▶ SSO
 
 **Done when:** `next build` has only `/admin/*`, `/login`, `/callback`, `/logout`, `/api/health`.
 
-### Phase 1 — Required actions engine (backend, foundation)
+### Phase 1 — Required actions engine (backend, foundation) — DONE on `feat/required-actions`
+
+Delivered: `User.RequiredActions`, `authflow.NextRequiredAction`, a single login completion point
+(`WebAuth.finishLogin`), `/required-action` with an `UPDATE_PASSWORD` handler, GraphQL
+`addRequiredAction` / `removeRequiredAction` / `User.requiredActions`, and `setUserPassword(temporary)` now
+flags `UPDATE_PASSWORD`. `sendRequiredActionsEmail` moves to Phase 2 (it shares the reset-token work).
+It also fixed a security hole: a password-only login that still needed MFA left `flow.UserID` set, and
+`/oauth2/authorize?flow_id=` issued a code anyway. Flows now carry `Pending` (`mfa` / `action:<alias>`) and
+nothing is issued, and no SSO cookie is set, until it is clear. Not covered yet: the social-login callback
+(`openidv2_1/handlers.go` federation path) and the JSON login endpoint do not run required actions.
+
 - `domain.User.RequiredActions []string` + repo support; constants: `UPDATE_PASSWORD`, `CONFIGURE_TOTP`, `VERIFY_EMAIL`, `UPDATE_PROFILE`, `TERMS_AND_CONDITIONS`.
 - `RequiredActionHandler` interface in `internal/authflow` (`Applies(user)`, `Render`, `Submit`) with a registry; the runner consults it after the last auth step.
 - Map existing `setUserPassword(temporary=true)` → adds `UPDATE_PASSWORD`.

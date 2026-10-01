@@ -2,7 +2,6 @@ package webauth
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/url"
 	"sort"
@@ -310,6 +309,9 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 	if requiresMFA {
 		flowState.UserID = user.ID
 		flowState.UserAuthenticatedAt = time.Now()
+		// The password step passed but the second factor has not: the flow must not
+		// yield an authorization code until /mfa clears this marker.
+		flowState.Pending = domain.FlowPendingMFA
 		if err := wa.flowStore.UpdateFlow(ctx, flowID, flowState); err != nil {
 			log.Error().Err(err).Str("flow_id", flowID).Msg("login: failed to update flow for MFA")
 			c.HTML(http.StatusInternalServerError, "error.html", gin.H{
@@ -342,40 +344,9 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 		return
 	}
 
-	// Record the authenticated user on the flow state so the OIDC AuthorizeHandler
-	// can complete the authorization without relying on SSO session cookies.
-	flowState.UserID = user.ID
-	flowState.UserAuthenticatedAt = time.Now()
-	if err := wa.flowStore.UpdateFlow(ctx, flowID, flowState); err != nil {
-		log.Error().Err(err).Str("flow_id", flowID).Msg("login: failed to update flow state after auth")
-		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
-			"PageTitle": "Error",
-			"Message":   "Internal error. Please try again.",
-		})
-		return
-	}
-
-	displayName := user.Email
-	if user.FirstName != "" || user.LastName != "" {
-		displayName = fmt.Sprintf("%s %s", user.FirstName, user.LastName)
-	}
-	isSecure := IsSecureRequest(c.Request)
-	session := mergeSessionAccount(c.Request, wa.ssoCookieSecret, ssosession.Account{
-		UserID:   user.ID,
-		Email:    user.Email,
-		Name:     displayName,
-		LastUsed: time.Now(),
-	})
-	if err := SetSSOSessionCookie(c.Writer, session, isSecure, wa.ssoCookieSecret); err != nil {
-		log.Error().Err(err).Msg("login: failed to set SSO session cookie")
-		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
-			"PageTitle": "Error",
-			"Message":   "Failed to create session. Please try again.",
-		})
-		return
-	}
-
-	wa.redirectAfterAuthentication(c, ctx, flowID, flowState, isSecure)
+	// finishLogin records the user on the flow, runs pending required actions, issues the
+	// SSO cookie and continues to consent/authorization.
+	wa.finishLogin(c, ctx, flowID, flowState, user)
 }
 
 // redirectAfterAuthentication completes a login (password, MFA, or cached
@@ -383,7 +354,7 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 // destination for flow-less logins, or back into the OIDC authorize step.
 func (wa *WebAuth) redirectAfterAuthentication(c *gin.Context, ctx context.Context, flowID string, flowState *domain.LoginFlowState, isSecure bool) {
 	requiresConsent := false
-	if flowState.ClientID != "" {
+	if flowState.ClientID != "" && wa.oauthService != nil {
 		client, cErr := wa.oauthService.ValidateClient(ctx, flowState.ClientID, "")
 		if cErr == nil && client != nil && client.RequireConsent {
 			requiresConsent = true
@@ -484,38 +455,8 @@ func (wa *WebAuth) SelectAccountSubmitHandler(c *gin.Context) {
 		return
 	}
 
-	flowState.UserID = user.ID
 	flowState.UserAuthenticatedAt = time.Now()
-	if err := wa.flowStore.UpdateFlow(ctx, flowID, flowState); err != nil {
-		log.Error().Err(err).Str("flow_id", flowID).Msg("select-account: failed to update flow state")
-		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
-			"PageTitle": "Error",
-			"Message":   "Internal error. Please try again.",
-		})
-		return
-	}
-
-	displayName := user.Email
-	if user.FirstName != "" || user.LastName != "" {
-		displayName = fmt.Sprintf("%s %s", user.FirstName, user.LastName)
-	}
-	isSecure := IsSecureRequest(c.Request)
-	newSession := mergeSessionAccount(c.Request, wa.ssoCookieSecret, ssosession.Account{
-		UserID:   user.ID,
-		Email:    user.Email,
-		Name:     displayName,
-		LastUsed: time.Now(),
-	})
-	if err := SetSSOSessionCookie(c.Writer, newSession, isSecure, wa.ssoCookieSecret); err != nil {
-		log.Error().Err(err).Msg("select-account: failed to set SSO session cookie")
-		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
-			"PageTitle": "Error",
-			"Message":   "Failed to create session. Please try again.",
-		})
-		return
-	}
-
-	wa.redirectAfterAuthentication(c, ctx, flowID, flowState, isSecure)
+	wa.finishLogin(c, ctx, flowID, flowState, user)
 }
 
 // validateCSRFTokenForm validates CSRF using a hidden form field compared against

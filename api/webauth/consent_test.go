@@ -72,6 +72,7 @@ func TestConsentPage_Success(t *testing.T) {
 		ClientID:  "test-client",
 		Scope:     "openid profile email",
 		ExpiresAt: time.Now().Add(10 * time.Minute),
+		UserID:    "user-123",
 	}
 	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "valid-flow").Return(flowState, nil)
 	mockClientService.EXPECT().GetClient(gomock.Any(), "test-client").Return(&domain.Client{
@@ -124,6 +125,7 @@ func TestConsentPage_ExpiredFlow(t *testing.T) {
 		FlowID:    "expired-flow",
 		ClientID:  "test-client",
 		ExpiresAt: time.Now().Add(-10 * time.Minute),
+		UserID:    "user-123",
 	}
 	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "expired-flow").Return(flowState, nil)
 	mockFlowStore.EXPECT().DeleteFlow(gomock.Any(), "expired-flow").Return(nil)
@@ -145,6 +147,7 @@ func TestConsentPage_ClientServiceError(t *testing.T) {
 		FlowID:    "valid-flow",
 		ClientID:  "test-client",
 		ExpiresAt: time.Now().Add(10 * time.Minute),
+		UserID:    "user-123",
 	}
 	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "valid-flow").Return(flowState, nil)
 	mockClientService.EXPECT().GetClient(gomock.Any(), "test-client").Return(nil, errors.New("client not found"))
@@ -215,6 +218,7 @@ func TestConsentSubmit_Deny(t *testing.T) {
 		RedirectURI: "http://localhost/callback",
 		State:       "my-state",
 		ExpiresAt:   time.Now().Add(10 * time.Minute),
+		UserID:    "user-123",
 	}
 	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "valid-flow").Return(flowState, nil)
 	mockFlowStore.EXPECT().DeleteFlow(gomock.Any(), "valid-flow").Return(nil)
@@ -299,6 +303,7 @@ func TestConsentSubmit_ExpiredFlow(t *testing.T) {
 		FlowID:    "expired-flow",
 		ClientID:  "test-client",
 		ExpiresAt: time.Now().Add(-10 * time.Minute),
+		UserID:    "user-123",
 	}
 	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "expired-flow").Return(flowState, nil)
 	mockFlowStore.EXPECT().DeleteFlow(gomock.Any(), "expired-flow").Return(nil)
@@ -326,6 +331,7 @@ func TestConsentSubmit_DenyNoRedirectURI(t *testing.T) {
 		FlowID:    "valid-flow",
 		ClientID:  "test-client",
 		ExpiresAt: time.Now().Add(10 * time.Minute),
+		UserID:    "user-123",
 	}
 	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "valid-flow").Return(flowState, nil)
 	mockFlowStore.EXPECT().DeleteFlow(gomock.Any(), "valid-flow").Return(nil)
