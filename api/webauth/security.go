@@ -153,6 +153,31 @@ func GetSSOSession(r *http.Request, secret string) (*ssosession.Session, error) 
 	return ssosession.VerifyAndDecode(cookie.Value, secret)
 }
 
+// mergeSessionAccount returns an ssosession.Session for the given account,
+// preserving any other accounts already present in the request's sso_session
+// cookie (like a browser's Google account chooser, multiple accounts can be
+// signed in at once). The account is upserted by UserID with LastUsed
+// refreshed and moved to the front of the list.
+func mergeSessionAccount(r *http.Request, secret string, account ssosession.Account) *ssosession.Session {
+	session := &ssosession.Session{
+		SessionID: ssosession.NewID(),
+		Accounts:  []ssosession.Account{account},
+	}
+
+	existing, err := GetSSOSession(r, secret)
+	if err != nil || existing == nil {
+		return session
+	}
+
+	for _, a := range existing.Accounts {
+		if a.UserID == account.UserID {
+			continue
+		}
+		session.Accounts = append(session.Accounts, a)
+	}
+	return session
+}
+
 // ClearSSOSession immediately expires the sso_session cookie.
 func ClearSSOSession(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{

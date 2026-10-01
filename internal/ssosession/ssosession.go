@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -31,10 +32,15 @@ type Account struct {
 }
 
 const (
-	CookieName   = "sso_session"
-	MaxAge       = 30 * 24 * time.Hour
-	CookieDomain = ".pilab.hu"
+	CookieName = "sso_session"
+	MaxAge     = 30 * 24 * time.Hour
 )
+
+// CookieDomain scopes the sso_session cookie. Empty (the default) makes it a
+// host-only cookie, which works on any deployment host including localhost.
+// Set SSSO_SESSION_COOKIE_DOMAIN (e.g. ".example.com") to share the cookie
+// across subdomains in a specific deployment.
+var CookieDomain = os.Getenv("SSSO_SESSION_COOKIE_DOMAIN")
 
 func SetCookie(w http.ResponseWriter, session *Session, isSecure bool, secret string) error {
 	jsonBytes, err := json.Marshal(session)

@@ -301,6 +301,22 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		authFlowRepo = mongoRp.AuthenticationFlowRepository(context.Background())
 	}
 
+	var webauthEmailService domain.EmailService
+	if opts.AppConfig != nil {
+		webauthEmailService = notifications.NewResendEmailService(
+			opts.AppConfig.ResendAPIKey,
+			opts.AppConfig.FromEmail,
+			opts.AppConfig.NextPublicBaseURL,
+		)
+	} else {
+		webauthEmailService = notifications.NewResendEmailService("", "", "")
+	}
+	webauthMFAService := domain.NewMFAService(
+		repoProvider.UserRepository(context.Background()),
+		webauthEmailService,
+		nil,
+	)
+
 	webauthAPI := webauth.New(&webauth.Options{
 		UserRepo:          repoProvider.UserRepository(context.Background()),
 		PasswordHasher:    passwordHasher,
@@ -316,17 +332,20 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		AuthFlowRepo:      authFlowRepo,
 		RealmSettingsRepo: repoProvider.RealmSettingsRepository(context.Background()),
 		DeviceAuthRepo:    repoProvider.DeviceAuthorizationRepository(context.Background()),
+		MFAService:        webauthMFAService,
 	})
 
 	router.GET("/", webauthAPI.LandingPageHandler)
 	router.GET("/login", webauthAPI.LoginPageHandler)
 	router.POST("/login", webauthAPI.LoginSubmitHandler)
 	router.GET("/login/:provider", webauthAPI.SocialLoginHandler)
+	router.POST("/login/select-account", webauthAPI.SelectAccountSubmitHandler)
 	router.GET("/consent", webauthAPI.ConsentPageHandler)
 	router.POST("/consent", webauthAPI.ConsentSubmitHandler)
 	router.GET("/oauth2/device/verify", webauthAPI.DeviceVerificationPageHandler)
 	router.POST("/oauth2/device/verify", webauthAPI.DeviceVerificationSubmitHandler)
 	router.POST("/mfa", webauthAPI.MFASubmitHandler)
+	router.POST("/mfa/resend", webauthAPI.MFAResendSubmitHandler)
 	// ---------- Connect-RPC handlers ----------
 	connectCtx, connectSpan := telemetry.StartSpan(ctx, "shadow-sso", "NewSSOServer.connectrpc")
 	defer connectSpan.End()
