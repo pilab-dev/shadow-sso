@@ -11,6 +11,7 @@ import (
 	ssso "github.com/pilab-dev/shadow-sso"
 	"github.com/pilab-dev/shadow-sso/api"
 	"github.com/pilab-dev/shadow-sso/cache"
+	"github.com/pilab-dev/shadow-sso/domain"
 	mock_domain "github.com/pilab-dev/shadow-sso/domain/mocks"
 	"github.com/pilab-dev/shadow-sso/services"
 	mock_services "github.com/pilab-dev/shadow-sso/services/mocks"
@@ -27,7 +28,10 @@ func setupMockRepoProvider(ctrl *gomock.Controller) *mock_services.MockRepositor
 	mockRepoProvider.EXPECT().TokenRepository(gomock.Any()).Return(mock_domain.NewMockTokenRepository(ctrl)).AnyTimes()
 	mockRepoProvider.EXPECT().AuthorizationCodeRepository(gomock.Any()).Return(mock_domain.NewMockAuthorizationCodeRepository(ctrl)).AnyTimes()
 	mockRepoProvider.EXPECT().DeviceAuthorizationRepository(gomock.Any()).Return(mock_domain.NewMockDeviceAuthorizationRepository(ctrl)).AnyTimes()
-	mockRepoProvider.EXPECT().ClientRepository(gomock.Any()).Return(mock_domain.NewMockClientRepository(ctrl)).AnyTimes()
+	// NewSSOServer idempotently bootstraps the built-in "sssoctl" client; report it as already present.
+	mockClientRepo := mock_domain.NewMockClientRepository(ctrl)
+	mockClientRepo.EXPECT().GetClient(gomock.Any(), "sssoctl").Return(&domain.Client{ID: "sssoctl"}, nil).AnyTimes()
+	mockRepoProvider.EXPECT().ClientRepository(gomock.Any()).Return(mockClientRepo).AnyTimes()
 	mockRepoProvider.EXPECT().PublicKeyRepository(gomock.Any()).Return(mock_domain.NewMockPublicKeyRepository(ctrl)).AnyTimes()
 	mockRepoProvider.EXPECT().ServiceAccountRepository(gomock.Any()).Return(mock_domain.NewMockServiceAccountRepository(ctrl)).AnyTimes()
 	mockRepoProvider.EXPECT().IdPRepository(gomock.Any()).Return(mock_domain.NewMockIdPRepository(ctrl)).AnyTimes()
