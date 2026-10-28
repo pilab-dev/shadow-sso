@@ -1,4 +1,4 @@
-// Copyright 2022-2024 The Connect Authors
+// Copyright 2022-2025 The Connect Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -32,7 +32,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sort"
+	"slices"
 
 	"connectrpc.com/connect"
 	reflectionv1 "connectrpc.com/grpcreflect/internal/gen/go/connectext/grpc/reflection/v1"
@@ -271,9 +271,7 @@ func (r *Reflector) getAllExtensionNumbersOfType(fqn string) ([]int32, error) {
 			return nil, err
 		}
 	}
-	sort.Slice(nums, func(i, j int) bool {
-		return nums[i] < nums[j]
-	})
+	slices.Sort(nums)
 	return nums, nil
 }
 
@@ -349,6 +347,15 @@ func fileDescriptorWithDependencies(rootFile protoreflect.FileDescriptor, sent *
 		return nil, protoregistry.NotFound
 	}
 	results := make([][]byte, 0, 1)
+	// Only enqueue each file once. The `sent` set keeps a file from being
+	// serialized twice, but without this the imports of an already-seen file are
+	// still re-enqueued, so the walk covers every path through the graph rather
+	// than every file in it. For a large graph with a high branching factor
+	// (files that import many other files), this could be a substantial
+	// difference. And the re-enqueue could happen for every request on the stream,
+	// even once most of the graph has been sent and there's little left to
+	// serialize.
+	var visited fileDescriptorNameSet
 	queue := []protoreflect.FileDescriptor{rootFile}
 	for len(queue) > 0 {
 		curr := queue[0]
@@ -356,6 +363,10 @@ func fileDescriptorWithDependencies(rootFile protoreflect.FileDescriptor, sent *
 		if curr.IsPlaceholder() {
 			continue // don't bother serializing placeholders
 		}
+		if visited.Contains(curr) {
+			continue
+		}
+		visited.Insert(curr)
 		if len(results) == 0 || !sent.Contains(curr) { // always send root fd
 			// Mark as sent immediately. If we hit an error marshaling below, there's
 			// no point trying again later.
@@ -367,7 +378,7 @@ func fileDescriptorWithDependencies(rootFile protoreflect.FileDescriptor, sent *
 			results = append(results, encoded)
 		}
 		imports := curr.Imports()
-		for i := 0; i < imports.Len(); i++ {
+		for i := range imports.Len() {
 			queue = append(queue, imports.Get(i).FileDescriptor)
 		}
 	}

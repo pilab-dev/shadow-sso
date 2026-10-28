@@ -37,8 +37,8 @@ connectrpc.com/connect/internal/gen/connectext/grpc/status/v1
 ## explicit; go 1.23.0
 connectrpc.com/grpchealth
 connectrpc.com/grpchealth/internal/gen/go/connectext/grpc/health/v1
-# connectrpc.com/grpcreflect v1.3.0
-## explicit; go 1.21
+# connectrpc.com/grpcreflect v1.3.1
+## explicit; go 1.26.0
 connectrpc.com/grpcreflect
 connectrpc.com/grpcreflect/internal/gen/go/connectext/grpc/reflection/v1
 # connectrpc.com/otelconnect v0.8.0
