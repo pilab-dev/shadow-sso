@@ -28,7 +28,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/twilio/twilio-go v1.30.5
 	github.com/vektah/gqlparser/v2 v2.5.35
-	go.etcd.io/bbolt v1.4.2
+	go.etcd.io/bbolt v1.5.0
 	go.mongodb.org/mongo-driver/v2 v2.6.0
 	go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin v0.69.0
 	go.opentelemetry.io/contrib/instrumentation/go.mongodb.org/mongo-driver/v2/mongo/otelmongo v0.0.0-20250626051350-6460d89aca7d
