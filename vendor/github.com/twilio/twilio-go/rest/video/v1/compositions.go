@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
 	"time"
 
 	"github.com/twilio/twilio-go/client"
@@ -84,7 +85,6 @@ func (params *CreateCompositionParams) SetTrim(Trim bool) *CreateCompositionPara
 	return params
 }
 
-//
 func (c *ApiService) CreateComposition(params *CreateCompositionParams) (*VideoV1Composition, error) {
 	path := "/v1/Compositions"
 

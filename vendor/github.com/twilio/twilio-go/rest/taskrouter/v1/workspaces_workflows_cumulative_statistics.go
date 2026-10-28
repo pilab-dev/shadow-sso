@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
 	"time"
 
 	"github.com/twilio/twilio-go/client/metadata"
@@ -59,7 +60,6 @@ func (params *FetchWorkflowCumulativeStatisticsParams) SetSplitByWaitTime(SplitB
 	return params
 }
 
-//
 func (c *ApiService) FetchWorkflowCumulativeStatistics(WorkspaceSid string, WorkflowSid string, params *FetchWorkflowCumulativeStatisticsParams) (*TaskrouterV1WorkflowCumulativeStatistics, error) {
 	path := "/v1/Workspaces/{WorkspaceSid}/Workflows/{WorkflowSid}/CumulativeStatistics"
 	path = strings.Replace(path, "{"+"WorkspaceSid"+"}", WorkspaceSid, -1)

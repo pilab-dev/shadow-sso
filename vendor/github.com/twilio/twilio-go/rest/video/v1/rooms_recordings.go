@@ -19,13 +19,13 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
 	"time"
 
 	"github.com/twilio/twilio-go/client"
 	"github.com/twilio/twilio-go/client/metadata"
 )
 
-//
 func (c *ApiService) DeleteRoomRecording(RoomSid string, Sid string) error {
 	path := "/v1/Rooms/{RoomSid}/Recordings/{Sid}"
 	path = strings.Replace(path, "{"+"RoomSid"+"}", RoomSid, -1)
@@ -73,7 +73,6 @@ func (c *ApiService) DeleteRoomRecordingWithMetadata(RoomSid string, Sid string)
 	return metadataWrapper, nil
 }
 
-//
 func (c *ApiService) FetchRoomRecording(RoomSid string, Sid string) (*VideoV1RoomRecording, error) {
 	path := "/v1/Rooms/{RoomSid}/Recordings/{Sid}"
 	path = strings.Replace(path, "{"+"RoomSid"+"}", RoomSid, -1)

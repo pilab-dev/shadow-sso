@@ -16,7 +16,7 @@ package openapi
 
 // MessagingV2Profile The profile information for the sender.
 type MessagingV2Profile struct {
-	// The name of the sender. Required for WhatsApp senders and must follow [Meta's display name guidelines](https://www.facebook.com/business/help/757569725593362).
+	// The name of the sender. Required for WhatsApp senders and must follow [Meta's display name guidelines](https://www.facebook.com/business/help/757569725593362). On update, a WhatsApp sender's name is not changed synchronously: it is submitted to Meta for review, and `profile.name` continues to report the current active name until Meta approves the new one and the sender is automatically re-registered. Track progress with `pending_display_name_status` on Fetch Sender, and see `display_name_status` on the update response for the immediate outcome. Re-submitting the same name is how you retry applying a name Meta has already approved, for example after correcting the sender's two-step verification PIN. Meta permits a limited number of display name changes per 30-day period.
 	Name *string `json:"name,omitempty"`
 	// The profile about text for the sender.
 	About *string `json:"about,omitempty"`
@@ -34,6 +34,8 @@ type MessagingV2Profile struct {
 	TermsOfServiceUrl *string `json:"terms_of_service_url,omitempty"`
 	// The color theme of the sender. Must be in hex format and have at least a 4:5:1 contrast ratio against white.
 	AccentColor *string `json:"accent_color,omitempty"`
+	// The messaging use case type for the RCS sender. Allowed values are `PROMOTIONAL`, `TRANSACTIONAL`, `OTP`, `MULTI_USE`. Defaults to `MULTI_USE` if not provided. Cannot be modified after launch.
+	UseCase *string `json:"use_case,omitempty"`
 	// The vertical of the sender. Allowed values are: - `Alcohol` - `Automotive` - `Beauty, Spa and Salon` - `Clothing and Apparel` - `Education` - `Entertainment` - `Event Planning and Service` - `Finance and Banking` - `Food and Grocery` - `Hotel and Lodging` - `Matrimony Service` - `Medical and Health` - `Non-profit` - `Online Gambling` - `OTC Drugs` - `Other` - `Physical Gambling` - `Professional Services` - `Public Service` - `Restaurant` - `Shopping and Retail` - `Travel and Transportation`
 	Vertical *string `json:"vertical,omitempty"`
 	// The websites of the sender.

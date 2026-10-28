@@ -14,14 +14,14 @@
 
 package openapi
 
-import (
-	"time"
-)
-
 // MessagingV2Response struct for MessagingV2Response
 type MessagingV2Response struct {
-	ExpiresAt    time.Time              `json:"expiresAt,omitempty"`
-	FetchUrl     string                 `json:"fetchUrl,omitempty"`
-	UploadUrl    string                 `json:"uploadUrl,omitempty"`
-	UploadFields map[string]interface{} `json:"uploadFields,omitempty"`
+	// True if this account has no parent account.
+	IsParentAccount bool `json:"is_parent_account,omitempty"`
+	// The account SID whose terms-of-service acceptance and account type this reflects: this account's own SID if is_parent_account is true, otherwise the parent's SID.
+	ParentAccount string `json:"parent_account,omitempty"`
+	// Whether parent_account has accepted the WhatsApp terms of service.
+	HasAcceptedTos bool `json:"has_accepted_tos,omitempty"`
+	// parent_account's declared account type, or NOT_SET_YET if never set.
+	AccountType string `json:"account_type,omitempty"`
 }
