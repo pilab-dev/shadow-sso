@@ -107,6 +107,7 @@ func (s *defaultFederationService) completeFederationLogin(ctx context.Context, 
 	session := &domain.Session{
 		ID:           sessionID,
 		UserID:       user.ID,
+		ClientID:     "sso-default-client",
 		TokenID:      sessionID,
 		RefreshToken: tokenPair.RefreshToken,
 		ExpiresAt:    time.Now().Add(30 * 24 * time.Hour),

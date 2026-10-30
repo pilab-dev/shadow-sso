@@ -157,6 +157,70 @@ func TestAuditRepository_ListFilters(t *testing.T) {
 	})
 }
 
+func TestAuditRepository_ListSort(t *testing.T) {
+	if os.Getenv("MONGO_TEST_URI") == "" {
+		t.Skip("Skipping MongoDB integration test: MONGO_TEST_URI not set")
+	}
+
+	repo, cleanup, err := setupAuditTest(t)
+	require.NoError(t, err, "Failed to setup AuditRepository test")
+	defer cleanup()
+
+	ctx := context.Background()
+	base := time.Now().UTC().Add(-time.Hour)
+	events := []*domain.AuditLog{
+		{Service: "user", Action: "create", User: "alice", Timestamp: base.Add(time.Minute)},
+		{Service: "user", Action: "update", User: "bob", Timestamp: base.Add(2 * time.Minute)},
+		{Service: "client", Action: "delete", User: "carol", Timestamp: base.Add(3 * time.Minute)},
+	}
+	for _, e := range events {
+		require.NoError(t, repo.Insert(ctx, e))
+	}
+
+	ids := func(got []*domain.AuditLog) []string {
+		var out []string
+		for _, e := range got {
+			out = append(out, e.ID)
+		}
+		return out
+	}
+
+	t.Run("action asc", func(t *testing.T) {
+		got, err := repo.List(ctx, domain.AuditLogFilter{SortBy: "action", SortDir: "asc"}, 10, 0)
+		require.NoError(t, err)
+		assert.Equal(t, []string{events[0].ID, events[2].ID, events[1].ID}, ids(got),
+			"actions sorted alphabetically: create, delete, update")
+	})
+
+	t.Run("action desc", func(t *testing.T) {
+		got, err := repo.List(ctx, domain.AuditLogFilter{SortBy: "action", SortDir: "desc"}, 10, 0)
+		require.NoError(t, err)
+		assert.Equal(t, []string{events[1].ID, events[2].ID, events[0].ID}, ids(got),
+			"actions sorted reverse alphabetically: update, delete, create")
+	})
+
+	t.Run("actor asc", func(t *testing.T) {
+		got, err := repo.List(ctx, domain.AuditLogFilter{SortBy: "actor", SortDir: "asc"}, 10, 0)
+		require.NoError(t, err)
+		assert.Equal(t, []string{events[0].ID, events[1].ID, events[2].ID}, ids(got),
+			"actors sorted alphabetically: alice, bob, carol")
+	})
+
+	t.Run("created_at desc", func(t *testing.T) {
+		got, err := repo.List(ctx, domain.AuditLogFilter{SortBy: "created_at", SortDir: "desc"}, 10, 0)
+		require.NoError(t, err)
+		assert.Equal(t, []string{events[2].ID, events[1].ID, events[0].ID}, ids(got),
+			"newest event first")
+	})
+
+	t.Run("unknown field falls back to default", func(t *testing.T) {
+		got, err := repo.List(ctx, domain.AuditLogFilter{SortBy: "bogus", SortDir: "asc"}, 10, 0)
+		require.NoError(t, err)
+		assert.Equal(t, []string{events[2].ID, events[1].ID, events[0].ID}, ids(got),
+			"unknown sort key keeps newest-first ordering")
+	})
+}
+
 func TestAuditRepository_CountRespectsFilter(t *testing.T) {
 	if os.Getenv("MONGO_TEST_URI") == "" {
 		t.Skip("Skipping MongoDB integration test: MONGO_TEST_URI not set")

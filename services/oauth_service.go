@@ -247,9 +247,11 @@ func (s *defaultOAuthService) Login(ctx context.Context, username, password, dev
 	}
 
 	// Create a user session
+	clientIdentifier := "oauth-service-login-client"
 	session := &domain.Session{
 		ID:         uuid.NewString(),
 		UserID:     user.ID,
+		ClientID:   clientIdentifier,
 		UserAgent:  deviceInfo,
 		ExpiresAt:  time.Now().Add(24 * 30 * time.Hour), // Example long-lived session
 		CreatedAt:  time.Now(),
@@ -264,7 +266,6 @@ func (s *defaultOAuthService) Login(ctx context.Context, username, password, dev
 	}
 
 	// Generate tokens for the client
-	clientIdentifier := "oauth-service-login-client"
 	loginScope := "openid profile email"
 	tokenTTL, err := s.realmAccessTokenLifespan(ctx)
 	if err != nil {
@@ -444,6 +445,7 @@ func (s *defaultOAuthService) DirectGrant(ctx context.Context,
 	session := &domain.Session{
 		ID:         uuid.NewString(),
 		UserID:     user.ID,
+		ClientID:   clientID,
 		UserAgent:  "Direct Grant",
 		ExpiresAt:  time.Now().Add(time.Hour),
 		CreatedAt:  time.Now(),

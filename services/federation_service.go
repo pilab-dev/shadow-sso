@@ -334,6 +334,7 @@ func (s *FederationServer) completeLoginAndRespond(ctx context.Context, user *do
 	session := &domain.Session{
 		ID:           sessionID,
 		UserID:       user.ID,
+		ClientID:     clientID,
 		TokenID:      sessionID,
 		RefreshToken: tokenPair.RefreshToken,
 		ExpiresAt:    time.Now().Add(30 * 24 * time.Hour), // Long session for refresh token

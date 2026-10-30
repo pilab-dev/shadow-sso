@@ -67,6 +67,27 @@ type ServiceAccountRepository interface {
 	DeleteServiceAccount(ctx context.Context, id string) error
 }
 
+// SortSpec defines the sort field and direction for paginated queries.
+// Dir is "asc" or "desc"; an empty Dir defaults to "asc".
+type SortSpec struct {
+	Field string
+	Dir   string
+}
+
+// UserFilter defines optional filter criteria for paginated user listing.
+// All fields are pointers; a nil pointer means the filter is not applied.
+type UserFilter struct {
+	Search        *string // Free-text search across name/email/username
+	Email         *string
+	Username      *string
+	FirstName     *string
+	LastName      *string
+	Enabled       *bool
+	EmailVerified *bool
+	SortBy        string
+	SortDir       string
+}
+
 // UserRepository defines methods for user data persistence.
 type UserRepository interface {
 	CreateUser(ctx context.Context, user *User) error
@@ -77,6 +98,9 @@ type UserRepository interface {
 	UpdateUser(ctx context.Context, user *User) error
 	DeleteUser(ctx context.Context, id string) error
 	ListUsers(ctx context.Context, pageToken string, pageSize int) ([]*User, string, error)
+	// ListUsersPage returns a filtered, sorted page of users starting at skip
+	// with at most limit rows, plus the total number of users matching the filter.
+	ListUsersPage(ctx context.Context, filter UserFilter, sort SortSpec, skip, limit int) ([]*User, int64, error)
 	CountUsers(ctx context.Context) (int64, error)
 	CountUsersByRole(ctx context.Context, role string) (int64, error)
 
@@ -135,6 +159,7 @@ type UserRepository interface {
 // SessionRepository defines methods for user session persistence.
 type SessionFilter struct {
 	UserID    string
+	ClientID  string
 	IPAddress string
 	UserAgent string
 	FromDate  time.Time

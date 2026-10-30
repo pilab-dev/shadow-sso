@@ -146,8 +146,18 @@ func (r *SessionRepositoryMongo) DeleteSession(ctx context.Context, id string) e
 }
 
 // ListSessionsByUserID retrieves sessions for a user, optionally filtered.
+// When both userID and filter.UserID are empty, sessions are not filtered by
+// user at all (e.g. list every user's sessions for a client via filter.ClientID).
 func (r *SessionRepositoryMongo) ListSessionsByUserID(ctx context.Context, userID string, filter domain.SessionFilter) ([]*domain.Session, error) {
-	mongoFilter := bson.M{"user_id": userID}
+	mongoFilter := bson.M{}
+	if filter.UserID != "" {
+		mongoFilter["user_id"] = filter.UserID
+	} else if userID != "" {
+		mongoFilter["user_id"] = userID
+	}
+	if filter.ClientID != "" {
+		mongoFilter["client_id"] = filter.ClientID
+	}
 	if filter.IPAddress != "" {
 		mongoFilter["ip_address"] = filter.IPAddress
 	}

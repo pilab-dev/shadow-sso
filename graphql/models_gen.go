@@ -3,6 +3,10 @@
 package graphql
 
 import (
+	"bytes"
+	"fmt"
+	"io"
+	"strconv"
 	"time"
 
 	"github.com/pilab-dev/shadow-sso/domain"
@@ -295,6 +299,11 @@ type UpdateRealmInput struct {
 	QuickLoginCheckSMTPHost      *string                    `json:"quickLoginCheckSMTPHost,omitempty"`
 	MaxTemporaryLockouts         *int                       `json:"maxTemporaryLockouts,omitempty"`
 	Enabled                      *bool                      `json:"enabled,omitempty"`
+	AccessTokenLifespan          *int                       `json:"accessTokenLifespan,omitempty"`
+	AccessCodeLifespan           *int                       `json:"accessCodeLifespan,omitempty"`
+	RefreshTokenLifespan         *int                       `json:"refreshTokenLifespan,omitempty"`
+	SsoSessionIdleTimeout        *int                       `json:"ssoSessionIdleTimeout,omitempty"`
+	SsoSessionMaxLifespan        *int                       `json:"ssoSessionMaxLifespan,omitempty"`
 	SslRequired                  *string                    `json:"sslRequired,omitempty"`
 	PasswordCredentialConfig     *PasswordPolicyConfigInput `json:"passwordCredentialConfig,omitempty"`
 }
@@ -363,12 +372,57 @@ type UserEdge struct {
 	Cursor string       `json:"cursor"`
 }
 
-type UserFilter struct {
-	Email         *string `json:"email,omitempty"`
-	Username      *string `json:"username,omitempty"`
-	FirstName     *string `json:"firstName,omitempty"`
-	LastName      *string `json:"lastName,omitempty"`
-	Enabled       *bool   `json:"enabled,omitempty"`
-	EmailVerified *bool   `json:"emailVerified,omitempty"`
-	Search        *string `json:"search,omitempty"`
+type SortDir string
+
+const (
+	SortDirAsc  SortDir = "ASC"
+	SortDirDesc SortDir = "DESC"
+)
+
+var AllSortDir = []SortDir{
+	SortDirAsc,
+	SortDirDesc,
+}
+
+func (e SortDir) IsValid() bool {
+	switch e {
+	case SortDirAsc, SortDirDesc:
+		return true
+	}
+	return false
+}
+
+func (e SortDir) String() string {
+	return string(e)
+}
+
+func (e *SortDir) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = SortDir(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid SortDir", str)
+	}
+	return nil
+}
+
+func (e SortDir) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *SortDir) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e SortDir) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
 }

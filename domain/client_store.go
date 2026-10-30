@@ -22,9 +22,15 @@ const (
 
 // ClientFilter defines filtering options for listing clients
 type ClientFilter struct {
-	Type     ClientType
-	IsActive bool
-	Search   string
+	Type         ClientType
+	IsActive     bool
+	Search       string
+	ClientID     string
+	ClientName   string
+	Enabled      *bool
+	PublicClient *bool
+	SortBy       string
+	SortDir      string
 }
 
 // ClientRepository defines the interface for client storage and retrieval
@@ -43,6 +49,11 @@ type ClientRepository interface {
 
 	// ListClients returns all clients, with optional filtering
 	ListClients(ctx context.Context, filter ClientFilter) ([]*Client, error)
+
+	// ListClientsPage returns a filtered, sorted page of clients starting at
+	// skip with at most limit rows, plus the total number of clients matching
+	// the filter.
+	ListClientsPage(ctx context.Context, filter ClientFilter, skip, limit int) ([]*Client, int64, error)
 
 	// ValidateClient validates client credentials
 	ValidateClient(ctx context.Context, clientID, clientSecret string) (*Client, error)

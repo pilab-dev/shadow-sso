@@ -1280,7 +1280,7 @@ func (r *protocolMapperResolver) Client(ctx context.Context, obj *domain.Protoco
 }
 
 // Users is the resolver for the users field.
-func (r *queryResolver) Users(ctx context.Context, filter *UserFilter, first *int, after *int) (*UserConnection, error) {
+func (r *queryResolver) Users(ctx context.Context, filter *domain.UserFilter, first *int, after *int) (*UserConnection, error) {
 	if r.UserRepo == nil {
 		return &UserConnection{
 			Edges:      []UserEdge{},
@@ -1289,7 +1289,41 @@ func (r *queryResolver) Users(ctx context.Context, filter *UserFilter, first *in
 		}, nil
 	}
 
-	users, _, err := r.UserRepo.ListUsers(ctx, "", 100)
+	// after→skip; first→limit (default 20, cap 100, mirroring ListUsersPage).
+	skip := 0
+	if after != nil {
+		skip = *after
+	}
+	if skip < 0 {
+		skip = 0
+	}
+
+	limit := 20
+	if first != nil {
+		limit = *first
+	}
+	if limit < 1 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	var f domain.UserFilter
+	if filter != nil {
+		f = *filter
+	}
+
+	// SortDir enum is uppercase but userListSort matches lowercase "desc".
+	sort := domain.SortSpec{Field: f.SortBy}
+	switch f.SortDir {
+	case "ASC":
+		sort.Dir = "asc"
+	case "DESC":
+		sort.Dir = "desc"
+	}
+
+	users, total, err := r.UserRepo.ListUsersPage(ctx, f, sort, skip, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -1303,15 +1337,21 @@ func (r *queryResolver) Users(ctx context.Context, filter *UserFilter, first *in
 		}
 	}
 
-	totalCount, _ := r.UserRepo.CountUsers(ctx)
+	pageInfo := &PageInfo{
+		HasNextPage:     int64(skip+limit) < total,
+		HasPreviousPage: skip > 0,
+	}
+	if len(edges) > 0 {
+		start := edges[0].Cursor
+		end := edges[len(edges)-1].Cursor
+		pageInfo.StartCursor = &start
+		pageInfo.EndCursor = &end
+	}
 
 	return &UserConnection{
 		Edges:      edges,
-		TotalCount: int(totalCount),
-		PageInfo: &PageInfo{
-			HasNextPage:     false,
-			HasPreviousPage: false,
-		},
+		TotalCount: int(total),
+		PageInfo:   pageInfo,
 	}, nil
 }
 
@@ -1322,17 +1362,49 @@ func (r *queryResolver) User(ctx context.Context, id string) (*domain.User, erro
 
 // Clients is the resolver for the clients field.
 func (r *queryResolver) Clients(ctx context.Context, filter *domain.ClientFilter, first *int, after *int) (*ClientConnection, error) {
-	var clients []*domain.Client
-	var err error
-	if filter != nil {
-		clients, err = r.ClientRepo.ListClients(ctx, *filter)
-	} else {
-		clients, err = r.ClientRepo.ListClients(ctx, domain.ClientFilter{})
+	if r.ClientRepo == nil {
+		return &ClientConnection{
+			Edges:      []ClientEdge{},
+			TotalCount: 0,
+			PageInfo:   &PageInfo{},
+		}, nil
 	}
+
+	// after→skip; first→limit (default 20, cap 100, mirroring ListClientsPage).
+	skip := 0
+	if after != nil {
+		skip = *after
+	}
+	if skip < 0 {
+		skip = 0
+	}
+
+	limit := 20
+	if first != nil {
+		limit = *first
+	}
+	if limit < 1 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	var f domain.ClientFilter
+	if filter != nil {
+		f = *filter
+	}
+
+	// SortBy/SortDir live INSIDE ClientFilter (unlike Users' separate
+	// SortSpec) and mongo's buildClientSort matches SortDir case-insensitively
+	// (strings.ToLower == "desc"), so the uppercase "ASC"/"DESC" enum values
+	// pass through unchanged — no Users-style ASC→asc/DESC→desc switch.
+	clients, total, err := r.ClientRepo.ListClientsPage(ctx, f, skip, limit)
 	if err != nil {
 		return nil, err
 	}
 
+	// Convert to edges
 	edges := make([]ClientEdge, len(clients))
 	for i, c := range clients {
 		edges[i] = ClientEdge{
@@ -1341,13 +1413,21 @@ func (r *queryResolver) Clients(ctx context.Context, filter *domain.ClientFilter
 		}
 	}
 
+	pageInfo := &PageInfo{
+		HasNextPage:     int64(skip+limit) < total,
+		HasPreviousPage: skip > 0,
+	}
+	if len(edges) > 0 {
+		start := edges[0].Cursor
+		end := edges[len(edges)-1].Cursor
+		pageInfo.StartCursor = &start
+		pageInfo.EndCursor = &end
+	}
+
 	return &ClientConnection{
 		Edges:      edges,
-		TotalCount: len(clients),
-		PageInfo: &PageInfo{
-			HasNextPage:     false,
-			HasPreviousPage: false,
-		},
+		TotalCount: int(total),
+		PageInfo:   pageInfo,
 	}, nil
 }
 
@@ -1424,10 +1504,13 @@ func (r *queryResolver) Group(ctx context.Context, id string) (*domain.Group, er
 }
 
 // Sessions is the resolver for the sessions field.
-func (r *queryResolver) Sessions(ctx context.Context, userID *string, first *int, after *int) (*SessionConnection, error) {
+func (r *queryResolver) Sessions(ctx context.Context, userID *string, clientID *string, first *int, after *int) (*SessionConnection, error) {
 	var filter domain.SessionFilter
 	if userID != nil {
 		filter.UserID = *userID
+	}
+	if clientID != nil {
+		filter.ClientID = *clientID
 	}
 	sessions, err := r.SessionRepo.ListSessionsByUserID(ctx, filter.UserID, filter)
 	if err != nil {
@@ -1875,8 +1958,10 @@ func (r *sessionResolver) State(ctx context.Context, obj *domain.Session) (*stri
 
 // ClientID is the resolver for the clientId field.
 func (r *sessionResolver) ClientID(ctx context.Context, obj *domain.Session) (*string, error) {
-	// Session doesn't track client ID in domain model
-	return nil, nil
+	if obj.ClientID == "" {
+		return nil, nil
+	}
+	return &obj.ClientID, nil
 }
 
 // ClientName is the resolver for the clientName field.
@@ -2119,12 +2204,55 @@ func ptrInt(i int) *int {
 	return &i
 }
 
+// The SDL filter inputs type sortDir as the SortDir enum while the domain
+// structs carry plain strings, so gqlgen routes sortDir through these
+// resolvers as an unmarshal bridge; the remaining input fields bind inline.
 type clientFilterResolver struct{ *Resolver }
 
-func (r *clientFilterResolver) ClientID(ctx context.Context, obj *domain.ClientFilter, data *string) error { return nil }
-func (r *clientFilterResolver) ClientName(ctx context.Context, obj *domain.ClientFilter, data *string) error { return nil }
-func (r *clientFilterResolver) Enabled(ctx context.Context, obj *domain.ClientFilter, data *bool) error { return nil }
+// SortDir is the resolver for the sortDir field.
+func (r *clientFilterResolver) SortDir(ctx context.Context, obj *domain.ClientFilter, data *SortDir) error {
+	if data != nil {
+		obj.SortDir = string(*data)
+	}
+	return nil
+}
 
 func (r *Resolver) ClientFilter() ClientFilterResolver {
 	return &clientFilterResolver{r}
+}
+
+type auditLogFilterResolver struct{ *Resolver }
+
+// SortDir is the resolver for the sortDir field.
+func (r *auditLogFilterResolver) SortDir(ctx context.Context, obj *domain.AuditLogFilter, data *SortDir) error {
+	if data != nil {
+		obj.SortDir = string(*data)
+	}
+	return nil
+}
+
+func (r *Resolver) AuditLogFilter() AuditLogFilterResolver {
+	return &auditLogFilterResolver{r}
+}
+
+type userFilterResolver struct{ *Resolver }
+
+// SortBy is the resolver for the sortBy field.
+func (r *userFilterResolver) SortBy(ctx context.Context, obj *domain.UserFilter, data *string) error {
+	if data != nil {
+		obj.SortBy = *data
+	}
+	return nil
+}
+
+// SortDir is the resolver for the sortDir field.
+func (r *userFilterResolver) SortDir(ctx context.Context, obj *domain.UserFilter, data *SortDir) error {
+	if data != nil {
+		obj.SortDir = string(*data)
+	}
+	return nil
+}
+
+func (r *Resolver) UserFilter() UserFilterResolver {
+	return &userFilterResolver{r}
 }
