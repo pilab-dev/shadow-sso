@@ -1,4 +1,4 @@
-// Copyright 2022-2024 The Connect Authors
+// Copyright 2022-2025 The Connect Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -104,9 +105,10 @@ func WithReflectionHost(host string) ClientStreamOption {
 // downloaded (since different servers could potentially have different versions of reflection
 // information).
 type ClientStream struct {
+	clientStreamOptions
+
 	ctx    context.Context //nolint:containedctx
 	client *Client
-	clientStreamOptions
 
 	mu     sync.Mutex
 	stream *reflectStream
@@ -301,9 +303,7 @@ func (cs *ClientStream) getStreamLocked() *reflectStream {
 		cs.isV1 = true
 	}
 	stream := connectClient.CallBidiStream(cs.ctx)
-	for k, v := range cs.headers {
-		stream.RequestHeader()[k] = v
-	}
+	maps.Copy(stream.RequestHeader(), cs.headers)
 	// we can eagerly send request headers; we can ignore return
 	// value because caller will see any errors when calling any
 	// other method on returned stream
@@ -366,7 +366,11 @@ func (cs *ClientStream) send(req *reflectionv1.ServerReflectionRequest) (*reflec
 			return nil, &streamError{err: err}
 		}
 		if errResp := resp.GetErrorResponse(); errResp != nil {
-			return nil, connect.NewWireError(connect.Code(errResp.ErrorCode), errors.New(errResp.ErrorMessage))
+			code := connect.CodeInternal
+			if errResp.ErrorCode > 0 {
+				code = connect.Code(errResp.ErrorCode)
+			}
+			return nil, connect.NewWireError(code, errors.New(errResp.ErrorMessage))
 		}
 		return resp, nil
 	}
@@ -439,7 +443,10 @@ func respType(msg *reflectionv1.ServerReflectionResponse) string {
 	case *reflectionv1.ServerReflectionResponse_ListServicesResponse:
 		return "list_services_response"
 	case *reflectionv1.ServerReflectionResponse_ErrorResponse:
-		return fmt.Sprintf("error_response: %v", connect.Code(resp.ErrorResponse.ErrorCode))
+		if errorCode := resp.ErrorResponse.ErrorCode; errorCode > 0 {
+			return fmt.Sprintf("error_response: %v", connect.Code(errorCode))
+		}
+		return fmt.Sprintf("error_response: %d", resp.ErrorResponse.ErrorCode)
 	case nil:
 		return "empty?"
 	default:
