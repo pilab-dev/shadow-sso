@@ -1,7 +1,9 @@
 package graphql
 
 import (
+	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 
 	"github.com/vektah/gqlparser/v2/ast"
@@ -14,8 +16,21 @@ import (
 type ExecutionContextState[R any, D any, C any] struct {
 	*OperationContext
 	*ExecutableSchemaState[R, D, C]
-	ParsedSchema    *ast.Schema
-	Deferred        int32
+	ParsedSchema *ast.Schema
+
+	// Deferred counts the @defer labels this request has produced. The
+	// response writer reads it to decide whether a payload reports hasNext,
+	// so a deferred query must have incremented it before its first response
+	// is written.
+	//
+	// One counter serves the whole request, and every object resolved in that
+	// request would otherwise touch it. Generated code therefore adds to it
+	// only when an object carries deferred fields: adding zero from each of
+	// them would put every query that uses no @defer on one contended cache
+	// line. That is what the guard in the generated code is for — not
+	// ProcessDeferredGroup, which already ignores an empty group.
+	Deferred int32
+
 	PendingDeferred int32
 	DeferredResults chan DeferredResult
 }
@@ -41,22 +56,56 @@ func (ec *ExecutionContextState[R, D, C]) Schema() *ast.Schema {
 	return ec.ParsedSchema
 }
 
+// ProcessDeferredGroup resolves the deferred fields owned by dg and sends one
+// DeferredResult per view to ec.DeferredResults.
+//
+// Errors accumulate append-only on the group's shared response context. Each
+// view's DeferredResult.Errors holds the suffix of errors that arrived after
+// the previous view in this group completed, so every error appears in
+// exactly one view's payload. This matters when two @defer fragments share a
+// field that errors: without partitioning, the error would be duplicated
+// across labels.
 func (ec *ExecutionContextState[R, D, C]) ProcessDeferredGroup(dg DeferredGroup) {
-	atomic.AddInt32(&ec.PendingDeferred, 1)
+	if len(dg.Defers) == 0 {
+		return
+	}
+
+	atomic.AddInt32(&ec.PendingDeferred, int32(len(dg.Defers)))
+	ctx := WithFreshResponseContext(dg.Context)
+
+	var (
+		errorsMu      sync.Mutex
+		errorsEmitted int
+	)
+
+	for label, view := range dg.Defers {
+		view.SetOnComplete(func(ctx context.Context) {
+			errorsMu.Lock()
+			allErrors := GetErrors(ctx)
+			errs := allErrors[errorsEmitted:]
+			errorsEmitted = len(allErrors)
+			errorsMu.Unlock()
+
+			ds := DeferredResult{
+				Path:   dg.Path,
+				Label:  label,
+				Result: view,
+				Errors: errs,
+			}
+			// An invalid non-null field nulls its label's payload, the
+			// incremental form of bubbling null to the parent.
+			if view.payloadInvalid() {
+				ds.Result = Null
+			}
+			select {
+			case ec.DeferredResults <- ds:
+			case <-ctx.Done():
+			}
+		})
+	}
+
 	go func() {
-		ctx := WithFreshResponseContext(dg.Context)
 		dg.FieldSet.Dispatch(ctx)
-		ds := DeferredResult{
-			Path:   dg.Path,
-			Label:  dg.Label,
-			Result: dg.FieldSet,
-			Errors: GetErrors(ctx),
-		}
-		// null fields should bubble up
-		if dg.FieldSet.Invalids > 0 {
-			ds.Result = Null
-		}
-		ec.DeferredResults <- ds
 	}()
 }
 
