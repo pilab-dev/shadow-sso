@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
 	"time"
 
 	"github.com/twilio/twilio-go/client/metadata"
@@ -53,7 +54,6 @@ func (params *FetchWorkerInstanceStatisticsParams) SetTaskChannel(TaskChannel st
 	return params
 }
 
-//
 func (c *ApiService) FetchWorkerInstanceStatistics(WorkspaceSid string, WorkerSid string, params *FetchWorkerInstanceStatisticsParams) (*TaskrouterV1WorkerInstanceStatistics, error) {
 	path := "/v1/Workspaces/{WorkspaceSid}/Workers/{WorkerSid}/Statistics"
 	path = strings.Replace(path, "{"+"WorkspaceSid"+"}", WorkspaceSid, -1)
@@ -184,7 +184,6 @@ func (params *FetchWorkerStatisticsParams) SetTaskChannel(TaskChannel string) *F
 	return params
 }
 
-//
 func (c *ApiService) FetchWorkerStatistics(WorkspaceSid string, params *FetchWorkerStatisticsParams) (*TaskrouterV1WorkerStatistics, error) {
 	path := "/v1/Workspaces/{WorkspaceSid}/Workers/Statistics"
 	path = strings.Replace(path, "{"+"WorkspaceSid"+"}", WorkspaceSid, -1)

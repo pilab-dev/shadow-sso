@@ -19,13 +19,13 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
 	"time"
 
 	"github.com/twilio/twilio-go/client"
 	"github.com/twilio/twilio-go/client/metadata"
 )
 
-//
 func (c *ApiService) FetchAlert(Sid string) (*MonitorV1AlertInstance, error) {
 	path := "/v1/Alerts/{Sid}"
 	path = strings.Replace(path, "{"+"Sid"+"}", Sid, -1)

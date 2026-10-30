@@ -18,7 +18,6 @@ import (
 	"github.com/twilio/twilio-go/client"
 	AccountsV1 "github.com/twilio/twilio-go/rest/accounts/v1"
 	Api "github.com/twilio/twilio-go/rest/api/v2010"
-	AssistantsV1 "github.com/twilio/twilio-go/rest/assistants/v1"
 	BulkexportsV1 "github.com/twilio/twilio-go/rest/bulkexports/v1"
 	ChatV1 "github.com/twilio/twilio-go/rest/chat/v1"
 	ChatV2 "github.com/twilio/twilio-go/rest/chat/v2"
@@ -26,21 +25,25 @@ import (
 	ContentV1 "github.com/twilio/twilio-go/rest/content/v1"
 	ContentV2 "github.com/twilio/twilio-go/rest/content/v2"
 	ConversationsV1 "github.com/twilio/twilio-go/rest/conversations/v1"
+	ConversationsV2 "github.com/twilio/twilio-go/rest/conversations/v2"
 	EventsV1 "github.com/twilio/twilio-go/rest/events/v1"
 	FlexV1 "github.com/twilio/twilio-go/rest/flex/v1"
 	FlexV2 "github.com/twilio/twilio-go/rest/flex/v2"
 	FrontlineV1 "github.com/twilio/twilio-go/rest/frontline/v1"
-	IamScim "github.com/twilio/twilio-go/rest/iam/scim"
 	IamV1 "github.com/twilio/twilio-go/rest/iam/v1"
 	InsightsV1 "github.com/twilio/twilio-go/rest/insights/v1"
 	InsightsV2 "github.com/twilio/twilio-go/rest/insights/v2"
+	InsightsV3 "github.com/twilio/twilio-go/rest/insights/v3"
 	IntelligenceV2 "github.com/twilio/twilio-go/rest/intelligence/v2"
+	IntelligenceV3 "github.com/twilio/twilio-go/rest/intelligence/v3"
 	IpMessagingV1 "github.com/twilio/twilio-go/rest/ip_messaging/v1"
 	IpMessagingV2 "github.com/twilio/twilio-go/rest/ip_messaging/v2"
 	KnowledgeV1 "github.com/twilio/twilio-go/rest/knowledge/v1"
+	KnowledgeV2 "github.com/twilio/twilio-go/rest/knowledge/v2"
 	LookupsV1 "github.com/twilio/twilio-go/rest/lookups/v1"
 	LookupsV2 "github.com/twilio/twilio-go/rest/lookups/v2"
 	MarketplaceV1 "github.com/twilio/twilio-go/rest/marketplace/v1"
+	MemoryV1 "github.com/twilio/twilio-go/rest/memory/v1"
 	MessagingV1 "github.com/twilio/twilio-go/rest/messaging/v1"
 	MessagingV2 "github.com/twilio/twilio-go/rest/messaging/v2"
 	MessagingV3 "github.com/twilio/twilio-go/rest/messaging/v3"
@@ -57,6 +60,7 @@ import (
 	PricingV2 "github.com/twilio/twilio-go/rest/pricing/v2"
 	ProxyV1 "github.com/twilio/twilio-go/rest/proxy/v1"
 	RoutesV2 "github.com/twilio/twilio-go/rest/routes/v2"
+	RoutesV3 "github.com/twilio/twilio-go/rest/routes/v3"
 	ServerlessV1 "github.com/twilio/twilio-go/rest/serverless/v1"
 	StudioV1 "github.com/twilio/twilio-go/rest/studio/v1"
 	StudioV2 "github.com/twilio/twilio-go/rest/studio/v2"
@@ -66,9 +70,10 @@ import (
 	TrunkingV1 "github.com/twilio/twilio-go/rest/trunking/v1"
 	TrusthubV1 "github.com/twilio/twilio-go/rest/trusthub/v1"
 	VerifyV2 "github.com/twilio/twilio-go/rest/verify/v2"
-	VerifyV3 "github.com/twilio/twilio-go/rest/verify/v3"
 	VideoV1 "github.com/twilio/twilio-go/rest/video/v1"
 	VoiceV1 "github.com/twilio/twilio-go/rest/voice/v1"
+	VoiceV2 "github.com/twilio/twilio-go/rest/voice/v2"
+	VoiceV3 "github.com/twilio/twilio-go/rest/voice/v3"
 	WirelessV1 "github.com/twilio/twilio-go/rest/wireless/v1"
 )
 
@@ -77,7 +82,6 @@ type RestClient struct {
 	*client.RequestHandler
 	AccountsV1             *AccountsV1.ApiService
 	Api                    *Api.ApiService
-	AssistantsV1           *AssistantsV1.ApiService
 	BulkexportsV1          *BulkexportsV1.ApiService
 	ChatV1                 *ChatV1.ApiService
 	ChatV2                 *ChatV2.ApiService
@@ -85,23 +89,27 @@ type RestClient struct {
 	ContentV1              *ContentV1.ApiService
 	ContentV2              *ContentV2.ApiService
 	ConversationsV1        *ConversationsV1.ApiService
+	ConversationsV2        *ConversationsV2.ApiService
 	EventsV1               *EventsV1.ApiService
 	FlexV1                 *FlexV1.ApiService
 	FlexV2                 *FlexV2.ApiService
 	FrontlineV1            *FrontlineV1.ApiService
 	PreviewIamV1           *PreviewIamV1.ApiService
 	PreviewIamOrganization *PreviewIamOrganization.ApiService
-	IamScim                *IamScim.ApiService
 	IamV1                  *IamV1.ApiService
 	InsightsV1             *InsightsV1.ApiService
 	InsightsV2             *InsightsV2.ApiService
+	InsightsV3             *InsightsV3.ApiService
 	IntelligenceV2         *IntelligenceV2.ApiService
+	IntelligenceV3         *IntelligenceV3.ApiService
 	IpMessagingV1          *IpMessagingV1.ApiService
 	IpMessagingV2          *IpMessagingV2.ApiService
 	KnowledgeV1            *KnowledgeV1.ApiService
+	KnowledgeV2            *KnowledgeV2.ApiService
 	LookupsV1              *LookupsV1.ApiService
 	LookupsV2              *LookupsV2.ApiService
 	MarketplaceV1          *MarketplaceV1.ApiService
+	MemoryV1               *MemoryV1.ApiService
 	MessagingV1            *MessagingV1.ApiService
 	MessagingV2            *MessagingV2.ApiService
 	MessagingV3            *MessagingV3.ApiService
@@ -116,6 +124,7 @@ type RestClient struct {
 	PricingV2              *PricingV2.ApiService
 	ProxyV1                *ProxyV1.ApiService
 	RoutesV2               *RoutesV2.ApiService
+	RoutesV3               *RoutesV3.ApiService
 	ServerlessV1           *ServerlessV1.ApiService
 	StudioV1               *StudioV1.ApiService
 	StudioV2               *StudioV2.ApiService
@@ -125,9 +134,10 @@ type RestClient struct {
 	TrunkingV1             *TrunkingV1.ApiService
 	TrusthubV1             *TrusthubV1.ApiService
 	VerifyV2               *VerifyV2.ApiService
-	VerifyV3               *VerifyV3.ApiService
 	VideoV1                *VideoV1.ApiService
 	VoiceV1                *VoiceV1.ApiService
+	VoiceV2                *VoiceV2.ApiService
+	VoiceV3                *VoiceV3.ApiService
 	WirelessV1             *WirelessV1.ApiService
 }
 
@@ -214,7 +224,6 @@ func NewRestClientWithParams(params ClientParams) *RestClient {
 
 	c.AccountsV1 = AccountsV1.NewApiService(c.RequestHandler)
 	c.Api = Api.NewApiService(c.RequestHandler)
-	c.AssistantsV1 = AssistantsV1.NewApiService(c.RequestHandler)
 	c.BulkexportsV1 = BulkexportsV1.NewApiService(c.RequestHandler)
 	c.ChatV1 = ChatV1.NewApiService(c.RequestHandler)
 	c.ChatV2 = ChatV2.NewApiService(c.RequestHandler)
@@ -222,23 +231,27 @@ func NewRestClientWithParams(params ClientParams) *RestClient {
 	c.ContentV1 = ContentV1.NewApiService(c.RequestHandler)
 	c.ContentV2 = ContentV2.NewApiService(c.RequestHandler)
 	c.ConversationsV1 = ConversationsV1.NewApiService(c.RequestHandler)
+	c.ConversationsV2 = ConversationsV2.NewApiService(c.RequestHandler)
 	c.EventsV1 = EventsV1.NewApiService(c.RequestHandler)
 	c.FlexV1 = FlexV1.NewApiService(c.RequestHandler)
 	c.FlexV2 = FlexV2.NewApiService(c.RequestHandler)
 	c.FrontlineV1 = FrontlineV1.NewApiService(c.RequestHandler)
 	c.PreviewIamV1 = PreviewIamV1.NewApiService(c.RequestHandler)
 	c.PreviewIamOrganization = PreviewIamOrganization.NewApiService(c.RequestHandler)
-	c.IamScim = IamScim.NewApiService(c.RequestHandler)
 	c.IamV1 = IamV1.NewApiService(c.RequestHandler)
 	c.InsightsV1 = InsightsV1.NewApiService(c.RequestHandler)
 	c.InsightsV2 = InsightsV2.NewApiService(c.RequestHandler)
+	c.InsightsV3 = InsightsV3.NewApiService(c.RequestHandler)
 	c.IntelligenceV2 = IntelligenceV2.NewApiService(c.RequestHandler)
+	c.IntelligenceV3 = IntelligenceV3.NewApiService(c.RequestHandler)
 	c.IpMessagingV1 = IpMessagingV1.NewApiService(c.RequestHandler)
 	c.IpMessagingV2 = IpMessagingV2.NewApiService(c.RequestHandler)
 	c.KnowledgeV1 = KnowledgeV1.NewApiService(c.RequestHandler)
+	c.KnowledgeV2 = KnowledgeV2.NewApiService(c.RequestHandler)
 	c.LookupsV1 = LookupsV1.NewApiService(c.RequestHandler)
 	c.LookupsV2 = LookupsV2.NewApiService(c.RequestHandler)
 	c.MarketplaceV1 = MarketplaceV1.NewApiService(c.RequestHandler)
+	c.MemoryV1 = MemoryV1.NewApiService(c.RequestHandler)
 	c.MessagingV1 = MessagingV1.NewApiService(c.RequestHandler)
 	c.MessagingV2 = MessagingV2.NewApiService(c.RequestHandler)
 	c.MessagingV3 = MessagingV3.NewApiService(c.RequestHandler)
@@ -253,6 +266,7 @@ func NewRestClientWithParams(params ClientParams) *RestClient {
 	c.PricingV2 = PricingV2.NewApiService(c.RequestHandler)
 	c.ProxyV1 = ProxyV1.NewApiService(c.RequestHandler)
 	c.RoutesV2 = RoutesV2.NewApiService(c.RequestHandler)
+	c.RoutesV3 = RoutesV3.NewApiService(c.RequestHandler)
 	c.ServerlessV1 = ServerlessV1.NewApiService(c.RequestHandler)
 	c.StudioV1 = StudioV1.NewApiService(c.RequestHandler)
 	c.StudioV2 = StudioV2.NewApiService(c.RequestHandler)
@@ -262,9 +276,10 @@ func NewRestClientWithParams(params ClientParams) *RestClient {
 	c.TrunkingV1 = TrunkingV1.NewApiService(c.RequestHandler)
 	c.TrusthubV1 = TrusthubV1.NewApiService(c.RequestHandler)
 	c.VerifyV2 = VerifyV2.NewApiService(c.RequestHandler)
-	c.VerifyV3 = VerifyV3.NewApiService(c.RequestHandler)
 	c.VideoV1 = VideoV1.NewApiService(c.RequestHandler)
 	c.VoiceV1 = VoiceV1.NewApiService(c.RequestHandler)
+	c.VoiceV2 = VoiceV2.NewApiService(c.RequestHandler)
+	c.VoiceV3 = VoiceV3.NewApiService(c.RequestHandler)
 	c.WirelessV1 = WirelessV1.NewApiService(c.RequestHandler)
 
 	return c

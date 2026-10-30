@@ -46,11 +46,17 @@ Class | Method | HTTP request | Description
 ## Documentation For Models
 
  - [IamV1AccountSearchRoleResponse](docs/IamV1AccountSearchRoleResponse.md)
+ - [IamV1PostLoginActionResponse](docs/IamV1PostLoginActionResponse.md)
  - [IamV1GeneratePresignedImageUploadUrlResponse](docs/IamV1GeneratePresignedImageUploadUrlResponse.md)
  - [IamV1MfaTotpToken](docs/IamV1MfaTotpToken.md)
  - [IamV1OrganizationVendoroauthappPolicy](docs/IamV1OrganizationVendoroauthappPolicy.md)
  - [OauthV1Token](docs/OauthV1Token.md)
+ - [IamV1ImportableUser](docs/IamV1ImportableUser.md)
  - [IamV1ImportableUsersCount](docs/IamV1ImportableUsersCount.md)
+ - [IamV1RequestToJoinOrgRequest](docs/IamV1RequestToJoinOrgRequest.md)
+ - [IamV1OrganizationToJoin](docs/IamV1OrganizationToJoin.md)
+ - [IamV1SubaccountBatchAccepted](docs/IamV1SubaccountBatchAccepted.md)
+ - [IamV1SubaccountBatch](docs/IamV1SubaccountBatch.md)
  - [IamV1VendorOauthAppCreateUpdateResponse](docs/IamV1VendorOauthAppCreateUpdateResponse.md)
  - [IamV1ChallengeMethod](docs/IamV1ChallengeMethod.md)
  - [IamV1CreateDomainResponse](docs/IamV1CreateDomainResponse.md)
@@ -60,24 +66,34 @@ Class | Method | HTTP request | Description
  - [IamV1OperationError](docs/IamV1OperationError.md)
  - [IamV1AccountStatsResponse](docs/IamV1AccountStatsResponse.md)
  - [IamV1Organization](docs/IamV1Organization.md)
+ - [IamV1CreateSubaccountBatchRequest](docs/IamV1CreateSubaccountBatchRequest.md)
  - [IamV1MfaRegenerateRecoveryTokenResponse](docs/IamV1MfaRegenerateRecoveryTokenResponse.md)
+ - [IamV1RequestToJoinOrgResponse](docs/IamV1RequestToJoinOrgResponse.md)
  - [IamV1OrganizationUpdateRequest](docs/IamV1OrganizationUpdateRequest.md)
  - [IamV1Limit](docs/IamV1Limit.md)
+ - [IamV1SubaccountBatchStatus](docs/IamV1SubaccountBatchStatus.md)
  - [IamV1EmailChangeVerifyRequest](docs/IamV1EmailChangeVerifyRequest.md)
+ - [IamV1ImportUsersRunUser](docs/IamV1ImportUsersRunUser.md)
  - [IamV1InvitedAccount](docs/IamV1InvitedAccount.md)
  - [IamV1OrganizationVendorOauthAppUpdateRequestPolicy](docs/IamV1OrganizationVendorOauthAppUpdateRequestPolicy.md)
+ - [IamV1PostLoginActionTokenClaims](docs/IamV1PostLoginActionTokenClaims.md)
  - [IamV1OneConsoleProvisioningStatus](docs/IamV1OneConsoleProvisioningStatus.md)
+ - [IamV1PostLoginActionRequestContext](docs/IamV1PostLoginActionRequestContext.md)
+ - [IamV1SubaccountBatchWorkflowType](docs/IamV1SubaccountBatchWorkflowType.md)
  - [IamV1ChangeAccountOwnerRequest](docs/IamV1ChangeAccountOwnerRequest.md)
  - [IamV1SocialConnection](docs/IamV1SocialConnection.md)
- - [IamV1UserRole](docs/IamV1UserRole.md)
  - [IamV1ManagedUserWithRoleAssignmentsRoleAssignments](docs/IamV1ManagedUserWithRoleAssignmentsRoleAssignments.md)
  - [IamV1ManagedUser](docs/IamV1ManagedUser.md)
+ - [IamV1RequestToJoinOrg](docs/IamV1RequestToJoinOrg.md)
  - [IamV1User](docs/IamV1User.md)
  - [IamV1AccountSearchRequest](docs/IamV1AccountSearchRequest.md)
  - [IamV1NewKey](docs/IamV1NewKey.md)
+ - [IamV1ImportUsersRequest](docs/IamV1ImportUsersRequest.md)
+ - [IamV1BatchDownloadUrl](docs/IamV1BatchDownloadUrl.md)
  - [ListRolePermissionResponse](docs/ListRolePermissionResponse.md)
  - [IamV1CreateAccountRequest](docs/IamV1CreateAccountRequest.md)
  - [IamV1CreateSubaccountRequest](docs/IamV1CreateSubaccountRequest.md)
+ - [IamV1PostLoginActionRequest](docs/IamV1PostLoginActionRequest.md)
  - [IamV1EmailChangeResendRequest](docs/IamV1EmailChangeResendRequest.md)
  - [ListGetKeysResponseMeta](docs/ListGetKeysResponseMeta.md)
  - [IamV1MfaTotpQrCodeUrlResponse](docs/IamV1MfaTotpQrCodeUrlResponse.md)
@@ -89,23 +105,29 @@ Class | Method | HTTP request | Description
  - [IamV1UserPatchRequest](docs/IamV1UserPatchRequest.md)
  - [IamV1MfaInfo](docs/IamV1MfaInfo.md)
  - [IamV1ManagedAccountOrganizationResponse](docs/IamV1ManagedAccountOrganizationResponse.md)
+ - [IamV1RequestToJoinOrgRoles](docs/IamV1RequestToJoinOrgRoles.md)
  - [IamV1ImportUsersRun](docs/IamV1ImportUsersRun.md)
+ - [IamV1RequestToJoinOrgSelf](docs/IamV1RequestToJoinOrgSelf.md)
+ - [IamV1PostLoginActionAuthenticationContext](docs/IamV1PostLoginActionAuthenticationContext.md)
  - [IamV1Vendoroauthapp](docs/IamV1Vendoroauthapp.md)
- - [IamV1UserInvitation](docs/IamV1UserInvitation.md)
+ - [IamV1AcceptRequestToJoinOrgResponse](docs/IamV1AcceptRequestToJoinOrgResponse.md)
  - [IamV1AccountSearchListMeta](docs/IamV1AccountSearchListMeta.md)
  - [IamV1EmailChangeInitiateResponse](docs/IamV1EmailChangeInitiateResponse.md)
  - [IamV1OperationMeta](docs/IamV1OperationMeta.md)
  - [IamV1AccountSearchAccount](docs/IamV1AccountSearchAccount.md)
  - [IamV1OrganizationFeatures](docs/IamV1OrganizationFeatures.md)
  - [IamV1RolePermission](docs/IamV1RolePermission.md)
+ - [IamV1PostLoginActionOAuthContext](docs/IamV1PostLoginActionOAuthContext.md)
  - [IamV1InvitedUser](docs/IamV1InvitedUser.md)
  - [IamV1VendorOauthAppUpdateRequest](docs/IamV1VendorOauthAppUpdateRequest.md)
  - [IamV1UserPatchResponse](docs/IamV1UserPatchResponse.md)
  - [IamV1ChangeAccountOwnerResponse](docs/IamV1ChangeAccountOwnerResponse.md)
  - [IamV1ManagedUserWithRoleAssignments](docs/IamV1ManagedUserWithRoleAssignments.md)
+ - [IamV1DisconnectSocialIdentityRequest](docs/IamV1DisconnectSocialIdentityRequest.md)
  - [IamV1GetKeys](docs/IamV1GetKeys.md)
  - [IamV1VendorOauthAppCreateRequest](docs/IamV1VendorOauthAppCreateRequest.md)
  - [ListGetKeysResponse](docs/ListGetKeysResponse.md)
+ - [IamV1PostLoginActionMethod](docs/IamV1PostLoginActionMethod.md)
 
 
 ## Documentation For Authorization
@@ -128,6 +150,21 @@ r, err := client.Service.Operation(auth, args)
 
 
 ## access_token_bearer
+
+- **Type**: HTTP basic authentication
+
+Example
+
+```golang
+auth := context.WithValue(context.Background(), sw.ContextBasicAuth, sw.BasicAuth{
+    UserName: "username",
+    Password: "password",
+})
+r, err := client.Service.Operation(auth, args)
+```
+
+
+## m2mOauth
 
 - **Type**: HTTP basic authentication
 
