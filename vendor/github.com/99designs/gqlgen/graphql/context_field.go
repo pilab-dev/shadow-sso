@@ -2,6 +2,7 @@ package graphql
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/vektah/gqlparser/v2/ast"
@@ -31,6 +32,11 @@ type FieldContext struct {
 	IsMethod bool
 	// IsResolver indicates if the field has a user-specified resolver
 	IsResolver bool
+	// NonNull is set to true at runtime by a FieldInterceptor (via MarkNonNull)
+	// to indicate this field should be treated as semantically non-null.
+	// When true and the field resolves to nil, null propagation occurs
+	// as if the field were declared non-null (!) in the schema.
+	NonNull bool
 	// Child allows getting a child FieldContext by its field collection description.
 	// Note that, the returned child FieldContext represents the context as it was
 	// before the execution of the field resolver. For example:
@@ -97,6 +103,56 @@ func GetFieldContext(ctx context.Context) *FieldContext {
 func WithFieldContext(ctx context.Context, rc *FieldContext) context.Context {
 	rc.Parent = GetFieldContext(ctx)
 	return context.WithValue(ctx, resolverCtx, rc)
+}
+
+// NewScalarFieldContext creates a FieldContext for scalar or enum fields, which
+// have no child fields. The returned Child callback always fails, naming
+// typeName. It builds that error per call rather than up front because
+// validation rejects sub-selections on a scalar, so no well-formed query
+// reaches it.
+func NewScalarFieldContext(
+	objectName string,
+	field CollectedField,
+	isMethod, isResolver bool,
+	typeName string,
+) (*FieldContext, error) {
+	return &FieldContext{
+		Object:     objectName,
+		Field:      field,
+		IsMethod:   isMethod,
+		IsResolver: isResolver,
+		Child: func(ctx context.Context, field CollectedField) (*FieldContext, error) {
+			return nil, errors.New("field of type " + typeName + " does not have child fields")
+		},
+	}, nil
+}
+
+// MarkNonNull marks the current field as semantically non-null at runtime.
+// When a field is marked non-null and resolves to nil, null propagation
+// occurs as if the field were declared non-null (!) in the schema.
+//
+// This is intended for use by FieldInterceptors that need runtime
+// required-field semantics (e.g., a @priority(value: REQUIRED) directive).
+// It must be called before the resolver returns, typically inside an
+// AroundFields middleware or FieldInterceptor.
+//
+// Trade-offs: altering null-propagation semantics at runtime makes the
+// response shape depend on server logic rather than the schema. A field
+// declared as nullable (String) can behave like a non-null field (String!)
+// for a given request. This behavior cannot be discovered via introspection
+// and cannot be validated statically by client tooling (GraphQL IDEs, type
+// generators), so the schema is no longer the single source of truth for the
+// client-server contract. Prefer triggering it from an executable directive
+// that the client explicitly includes in the query (like @skip/@include), so
+// the stricter behavior is an explicit opt-in rather than hidden server logic.
+// Use only when you control both client and server, and when the benefit
+// (e.g., stricter data integrity for critical fields) outweighs the loss of
+// schema-time guarantees. See the "Dynamically requiring fields" recipe in the
+// documentation for the recommended pattern.
+func MarkNonNull(ctx context.Context) {
+	if fc := GetFieldContext(ctx); fc != nil {
+		fc.NonNull = true
+	}
 }
 
 func equalPath(a, b ast.Path) bool {
