@@ -4,6 +4,8 @@ import (
 	"embed"
 	"html/template"
 	"io/fs"
+	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/pilab-dev/shadow-sso/domain"
@@ -13,6 +15,9 @@ import (
 
 //go:embed templates/*.html
 var templatesFS embed.FS
+
+//go:embed static
+var staticFS embed.FS
 
 // WebAuth holds all dependencies for the server-side web authentication UI.
 // Methods for handling login, consent, and social flows will be added in subsequent todos.
@@ -96,4 +101,25 @@ func LoadTemplates(router *gin.Engine) error {
 	}
 	router.SetHTMLTemplate(tmpl)
 	return nil
+}
+
+// StaticHandler serves the embedded static assets (self-hosted fonts and
+// supporting CSS). Mount it at /static/ so no external font or style CDN is
+// required at runtime.
+func StaticHandler() (gin.HandlerFunc, error) {
+	subFS, err := fs.Sub(staticFS, "static")
+	if err != nil {
+		return nil, err
+	}
+	fileServer := http.StripPrefix("/static/", http.FileServer(http.FS(subFS)))
+	return func(c *gin.Context) {
+		if strings.HasSuffix(c.Request.URL.Path, ".woff2") {
+			c.Header("Content-Type", "font/woff2")
+		}
+		if strings.HasSuffix(c.Request.URL.Path, ".css") {
+			c.Header("Content-Type", "text/css; charset=utf-8")
+		}
+		c.Header("Cache-Control", "public, max-age=86400")
+		fileServer.ServeHTTP(c.Writer, c.Request)
+	}, nil
 }

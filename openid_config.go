@@ -278,6 +278,12 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		return nil, fmt.Errorf("failed to load webauth templates: %w", err)
 	}
 	oauth2API.RegisterRoutes(router)
+	staticHandler, err := webauth.StaticHandler()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load webauth static assets: %w", err)
+	}
+	router.GET("/static/*filepath", staticHandler)
+	router.HEAD("/static/*filepath", staticHandler)
 
 	// --- WebAuth login UI routes ---
 	webauthConfig := &webauth.Config{
