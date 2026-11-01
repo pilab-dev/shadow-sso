@@ -36,3 +36,25 @@ func TestUserHasMFA(t *testing.T) {
 		})
 	}
 }
+
+func TestHasPrompt(t *testing.T) {
+	tests := []struct {
+		prompt string
+		value  string
+		want   bool
+	}{
+		{prompt: "", value: "login", want: false},
+		{prompt: "login", value: "login", want: true},
+		{prompt: "consent login", value: "login", want: true},
+		{prompt: "none", value: "none", want: true},
+		{prompt: "none", value: "login", want: false},
+		{prompt: "select_account", value: "select_account", want: true},
+		{prompt: "loginx", value: "login", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.prompt+"_"+tt.value, func(t *testing.T) {
+			assert.Equal(t, tt.want, hasPrompt(tt.prompt, tt.value))
+		})
+	}
+}

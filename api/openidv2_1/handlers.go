@@ -384,6 +384,7 @@ func (oa *OAuth2API) AuthorizeHandler(c *gin.Context) {
 			scopeQuery:          flowState.Scope,
 			state:               flowState.State,
 			nonce:               flowState.Nonce,
+			prompt:              flowState.Prompt,
 			codeChallenge:       flowState.CodeChallenge,
 			codeChallengeMethod: flowState.CodeChallengeMethod,
 		}
@@ -518,9 +519,9 @@ type authorizeRequestData struct {
 	scopeQuery          string
 	state               string
 	nonce               string
+	prompt              string
 	codeChallenge       string
 	codeChallengeMethod string
-	// prompt (if used)
 	// originalParams map[string]string // If needed by sub-functions
 }
 
@@ -533,6 +534,7 @@ func (oa *OAuth2API) parseAndValidateAuthorizeParams(c *gin.Context) (*authorize
 		scopeQuery:          c.Query("scope"),
 		state:               c.Query("state"),
 		nonce:               c.Query("nonce"),
+		prompt:              c.Query("prompt"),
 		codeChallenge:       c.Query("code_challenge"),
 		codeChallengeMethod: c.Query("code_challenge_method"),
 	}
@@ -592,15 +594,26 @@ func (oa *OAuth2API) validatePKCE(ctx context.Context, clientID, codeChallenge, 
 // generates an auth code and redirects the client. Returns true if handled, and an error if processing failed.
 func (oa *OAuth2API) tryHandleWithExistingSession(c *gin.Context, data *authorizeRequestData) (handled bool, err error) {
 	ctx := c.Request.Context()
+
+	// prompt=login forces re-authentication even when an OP session exists.
+	// prompt=select_account is treated the same way because there is no account
+	// picker yet.
+	if hasPrompt(data.prompt, "login") || hasPrompt(data.prompt, "select_account") {
+		return false, nil
+	}
+
 	sessionCookie, cookieErr := c.Cookie(SessionCookieName)
 	if cookieErr != nil || sessionCookie == "" {
+		if hasPrompt(data.prompt, "none") {
+			oa.redirectWithOAuthError(c, data.redirectURI, data.state, "login_required", "User is not authenticated.")
+			return true, nil
+		}
 		return false, nil // No cookie, not handled by this path
 	}
 
 	userSession, sessionErr := oa.userSessionStore.GetUserSession(ctx, sessionCookie)
 	if sessionErr == nil {
 		// User is logged in.
-		// TODO: Handle 'prompt=login' - if present, must re-authenticate even if session exists. (This would return false from here)
 
 		// Check if client requires consent
 		client, clientErr := oa.clientService.GetClient(ctx, data.clientID)
@@ -611,6 +624,11 @@ func (oa *OAuth2API) tryHandleWithExistingSession(c *gin.Context, data *authoriz
 		}
 
 		if client.RequireConsent {
+			if hasPrompt(data.prompt, "none") {
+				oa.redirectWithOAuthError(c, data.redirectURI, data.state, "consent_required", "User consent is required.")
+				return true, nil
+			}
+
 			// Create flow state for consent
 			flowID := uuid.NewString()
 			flowState := domain.LoginFlowState{
@@ -620,6 +638,7 @@ func (oa *OAuth2API) tryHandleWithExistingSession(c *gin.Context, data *authoriz
 				Scope:               data.scopeQuery,
 				State:               data.state,
 				Nonce:               data.nonce,
+				Prompt:              data.prompt,
 				CodeChallenge:       data.codeChallenge,
 				CodeChallengeMethod: data.codeChallengeMethod,
 				UserID:              userSession.UserID,
@@ -689,6 +708,10 @@ func (oa *OAuth2API) tryHandleWithExistingSession(c *gin.Context, data *authoriz
 	}
 	// Clear bad/expired cookie and proceed to external login.
 	oa.clearUserSessionCookie(c)
+	if hasPrompt(data.prompt, "none") {
+		oa.redirectWithOAuthError(c, data.redirectURI, data.state, "login_required", "User is not authenticated.")
+		return true, nil
+	}
 	return false, nil // Not handled, proceed to external login
 }
 
@@ -704,6 +727,7 @@ func (oa *OAuth2API) initiateExternalLoginFlow(c *gin.Context, data *authorizeRe
 		Scope:               data.scopeQuery,
 		State:               data.state,
 		Nonce:               data.nonce,
+		Prompt:              data.prompt,
 		CodeChallenge:       data.codeChallenge,
 		CodeChallengeMethod: data.codeChallengeMethod,
 		ExpiresAt:           time.Now().Add(10 * time.Minute),
@@ -775,6 +799,40 @@ func (oa *OAuth2API) redirectToClient(c *gin.Context, baseRedirectURI, code, sta
 	// OIDC spec recommends params in query for "code" response_type
 	parsedRedirectURI.RawQuery = params.Encode()
 	c.Redirect(http.StatusFound, parsedRedirectURI.String())
+}
+
+// redirectWithOAuthError sends an OAuth 2.0 error response to the client's
+// redirect_uri. It is used for prompt=none failures that must not show a UI.
+func (oa *OAuth2API) redirectWithOAuthError(c *gin.Context, baseRedirectURI, state, code, description string) {
+	parsedRedirectURI, err := url.Parse(baseRedirectURI)
+	if err != nil {
+		log.Error().Err(err).Str("redirect_uri", baseRedirectURI).Msg("Failed to parse base redirect URI")
+		oa.sendHTMLError(c, http.StatusInternalServerError, domain.NewServerError("internal error constructing redirect"))
+		return
+	}
+
+	params := url.Values{}
+	params.Set("error", code)
+	if description != "" {
+		params.Set("error_description", description)
+	}
+	if state != "" {
+		params.Set("state", state)
+	}
+
+	parsedRedirectURI.RawQuery = params.Encode()
+	c.Redirect(http.StatusFound, parsedRedirectURI.String())
+}
+
+// hasPrompt reports whether the space-delimited prompt parameter contains the
+// requested value.
+func hasPrompt(prompt, value string) bool {
+	for _, item := range strings.Fields(prompt) {
+		if item == value {
+			return true
+		}
+	}
+	return false
 }
 
 // clearUserSessionCookie invalidates the OP user session cookie.

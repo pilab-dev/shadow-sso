@@ -462,6 +462,80 @@ func TestFormLogin_SecondAuthorizeSkipsLogin(t *testing.T) {
 	require.NotEmpty(t, secondRedirect.Query().Get("code"), "second flow must issue a code without login")
 }
 
+func authorizeQuery(clientID, redirectURI, state, prompt string) string {
+	q := url.Values{
+		"response_type": {"code"},
+		"client_id":     {clientID},
+		"redirect_uri":  {redirectURI},
+		"scope":         {"openid profile email"},
+		"state":         {state},
+	}
+	if prompt != "" {
+		q.Set("prompt", prompt)
+	}
+	return q.Encode()
+}
+
+// TestAuthorize_PromptNoneWithoutSession: prompt=none must return
+// error=login_required to the client instead of showing the login page.
+func TestAuthorize_PromptNoneWithoutSession(t *testing.T) {
+	env := setupLoginTest(t)
+	client := jarClient(t)
+
+	resp, err := client.Get(env.baseURL + "/oauth2/authorize?" +
+		authorizeQuery(appClientID, appRedirectURI, "state-none", "none"))
+	require.NoError(t, err)
+	resp.Body.Close()
+
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	require.NotContains(t, resp.Header.Get("Location"), "/login")
+
+	loc, err := url.Parse(resp.Header.Get("Location"))
+	require.NoError(t, err)
+	assert.Equal(t, "login_required", loc.Query().Get("error"))
+	assert.Equal(t, "state-none", loc.Query().Get("state"))
+}
+
+// TestAuthorize_PromptLoginForcesLogin: prompt=login must show the login form
+// even when a valid OP session already exists.
+func TestAuthorize_PromptLoginForcesLogin(t *testing.T) {
+	env := setupLoginTest(t)
+	client := jarClient(t)
+
+	// Establish an OP session through the JSON login endpoint.
+	_, _ = authorizeAndLogin(t, env, client, appClientID, appRedirectURI, "state-first", nil)
+
+	resp, err := client.Get(env.baseURL + "/oauth2/authorize?" +
+		authorizeQuery(appClientID, appRedirectURI, "state-force-login", "login"))
+	require.NoError(t, err)
+	resp.Body.Close()
+
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	assert.Contains(t, resp.Header.Get("Location"), "/login")
+}
+
+// TestAuthorize_PromptNoneWithSession: prompt=none must issue a code without
+// user interaction when a valid OP session exists.
+func TestAuthorize_PromptNoneWithSession(t *testing.T) {
+	env := setupLoginTest(t)
+	client := jarClient(t)
+
+	_, _ = authorizeAndLogin(t, env, client, appClientID, appRedirectURI, "state-first", nil)
+
+	resp, err := client.Get(env.baseURL + "/oauth2/authorize?" +
+		authorizeQuery(appClientID, appRedirectURI, "state-none-session", "none"))
+	require.NoError(t, err)
+	resp.Body.Close()
+
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	require.NotContains(t, resp.Header.Get("Location"), "/login")
+
+	loc, err := url.Parse(resp.Header.Get("Location"))
+	require.NoError(t, err)
+	assert.NotEmpty(t, loc.Query().Get("code"))
+	assert.Equal(t, "state-none-session", loc.Query().Get("state"))
+}
+
 // ─── 1. OIDC Discovery ────────────────────────────────────────────────────────
 
 func TestOIDCDiscovery(t *testing.T) {
