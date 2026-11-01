@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -534,6 +535,77 @@ func TestAuthorize_PromptNoneWithSession(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, loc.Query().Get("code"))
 	assert.Equal(t, "state-none-session", loc.Query().Get("state"))
+}
+
+// TestSilentAuthorize_WithSession: an iframe loaded after a successful login
+// receives a postMessage payload containing an authorization code, and that
+// code can be exchanged at the token endpoint.
+func TestSilentAuthorize_WithSession(t *testing.T) {
+	env := setupLoginTest(t)
+	client := jarClient(t)
+
+	// Establish the OP session through the normal login endpoint.
+	_, _ = authorizeAndLogin(t, env, client, appClientID, appRedirectURI, "state-first", nil)
+
+	q := url.Values{
+		"response_type": {"code"},
+		"client_id":     {appClientID},
+		"redirect_uri":  {appRedirectURI},
+		"scope":         {"openid profile email"},
+		"state":         {"silent-state"},
+	}
+	resp, err := client.Get(env.baseURL + "/oauth2/silent-authorize?" + q.Encode())
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Contains(t, resp.Header.Get("Content-Security-Policy"), "frame-ancestors http://localhost")
+	assert.Empty(t, resp.Header.Get("X-Frame-Options"))
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	page := string(body)
+	assert.Contains(t, page, `"type":"sso-silent-result"`)
+	assert.Contains(t, page, `"state":"silent-state"`)
+
+	codeMatch := regexp.MustCompile(`"code":"([^"]+)"`).FindStringSubmatch(page)
+	require.Len(t, codeMatch, 2, "silent login response must contain an authorization code: %s", page)
+
+	status, tokenBody := postForm(t, client, env.baseURL+"/oauth2/token", url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {codeMatch[1]},
+		"client_id":     {appClientID},
+		"client_secret": {appClientSecret},
+		"redirect_uri":  {appRedirectURI},
+	})
+	require.Equal(t, http.StatusOK, status)
+	assert.NotEmpty(t, tokenBody["access_token"])
+}
+
+// TestSilentAuthorize_WithoutSession: an iframe without an OP session receives
+// error=login_required instead of an authorization code.
+func TestSilentAuthorize_WithoutSession(t *testing.T) {
+	env := setupLoginTest(t)
+	client := jarClient(t)
+
+	q := url.Values{
+		"response_type": {"code"},
+		"client_id":     {appClientID},
+		"redirect_uri":  {appRedirectURI},
+		"scope":         {"openid profile email"},
+		"state":         {"silent-none"},
+	}
+	resp, err := client.Get(env.baseURL + "/oauth2/silent-authorize?" + q.Encode())
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	page := string(body)
+	assert.Contains(t, page, `"error":"login_required"`)
+	assert.Contains(t, page, `"state":"silent-none"`)
+	assert.NotContains(t, page, `"code"`)
 }
 
 // ─── 1. OIDC Discovery ────────────────────────────────────────────────────────

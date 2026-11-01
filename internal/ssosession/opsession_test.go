@@ -60,7 +60,7 @@ func TestEstablishOPSession_StoresSessionAndSetsCookie(t *testing.T) {
 	assert.Equal(t, "/", cookie.Path)
 	assert.True(t, cookie.HttpOnly)
 	assert.True(t, cookie.Secure)
-	assert.Equal(t, http.SameSiteLaxMode, cookie.SameSite)
+	assert.Equal(t, http.SameSiteNoneMode, cookie.SameSite)
 	assert.Greater(t, cookie.MaxAge, 0)
 }
 

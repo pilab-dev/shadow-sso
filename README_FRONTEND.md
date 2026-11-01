@@ -124,6 +124,81 @@ In this flow, when a Relying Party (RP) initiates an OIDC login, if the user is 
     4.  The backend verifies that the token in the header/body matches the token in the cookie it originally set.
 *   **Note:** The exact CSRF implementation details (cookie names, header names) will be finalized by the backend team. Please coordinate for the precise mechanism. For now, the backend placeholder for CSRF checking is present.
 
+## Silent Login with an Iframe
+
+The SSO server exposes `GET /oauth2/silent-authorize` for iframe-based silent
+login. It validates the client, redirect URI and PKCE exactly like
+`/oauth2/authorize`, then posts either an authorization code or an OAuth error
+to the parent window.
+
+### Request
+
+```html
+<iframe
+  id="sso-silent"
+  src="https://sso.pilab.hu/oauth2/silent-authorize?response_type=code&client_id=my-app&redirect_uri=https%3A%2F%2Fapp.pilab.hu%2Fauth%2Fcallback&scope=openid%20profile%20email&state=RANDOM_STATE&nonce=RANDOM_NONCE&code_challenge=...&code_challenge_method=S256"
+  hidden
+></iframe>
+```
+
+The `redirect_uri` must be an absolute `http(s)` URL on the application's
+origin. The parent origin is derived from it, and the silent response is only
+frameable by that origin.
+
+### Response
+
+The iframe posts this object to `window.parent`:
+
+```json
+{ "type": "sso-silent-result", "state": "RANDOM_STATE", "code": "..." }
+```
+
+or, when no session or consent is available:
+
+```json
+{ "type": "sso-silent-result", "state": "RANDOM_STATE", "error": "login_required" }
+{ "type": "sso-silent-result", "state": "RANDOM_STATE", "error": "consent_required" }
+```
+
+### Parent listener
+
+```js
+window.addEventListener("message", (event) => {
+  if (event.origin !== "https://sso.pilab.hu") return;
+  const data = event.data;
+  if (data?.type !== "sso-silent-result" || data.state !== expectedState) return;
+
+  if (data.error) {
+    // login_required: show the normal login button
+    // consent_required: start the normal top-level /oauth2/authorize flow
+    return;
+  }
+
+  // Exchange data.code at /oauth2/token using the same redirect_uri
+  // (and the PKCE code_verifier if one was sent).
+});
+```
+
+The parent page must allow the iframe:
+
+```html
+<meta http-equiv="Content-Security-Policy" content="frame-src https://sso.pilab.hu">
+```
+
+### Notes
+
+- The silent endpoint issues a normal authorization code. Exchange it at
+  `/oauth2/token`; the code is bound to the registered `redirect_uri`.
+- Always verify both `event.origin` and `event.data.state`.
+- `login_required` means there is no active SSO session. `consent_required`
+  means the user is logged in but must approve the client interactively.
+- Cross-site iframe silent login depends on browser third-party cookie policy.
+  Same-site applications (for example all under `*.pilab.hu`) work with the
+  normal OP session cookie. Browsers that block third-party cookies may still
+  return `login_required`.
+- The silent endpoint is only frameable by the origin of the registered
+  `redirect_uri`; the login, consent and MFA pages keep `frame-ancestors 'none'`.
+
 ## Important Considerations
 
 *   **HTTPS:** All communication between your frontend and the Shadow SSO backend APIs **must** be over HTTPS.

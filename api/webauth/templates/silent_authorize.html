@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="robots" content="noindex">
+    <title>SSO</title>
+</head>
+<body>
+<script nonce="{{.Nonce}}">
+(function () {
+    var message = {{.Message}};
+    var targetOrigin = {{.TargetOrigin}};
+    if (window.parent && window.parent !== window) {
+        window.parent.postMessage(message, targetOrigin);
+    }
+})();
+</script>
+</body>
+</html>

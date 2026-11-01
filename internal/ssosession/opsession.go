@@ -52,7 +52,9 @@ func EstablishOPSession(
 	return session, nil
 }
 
-// SetOPSessionCookie sets the opaque server-side OP session cookie.
+// SetOPSessionCookie sets the opaque server-side OP session cookie. In secure
+// deployments it uses SameSite=None so the cookie is also sent when the
+// authorize endpoint is loaded in a cross-site iframe for silent login.
 func SetOPSessionCookie(w http.ResponseWriter, sessionID string, isSecure bool) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     OPSessionCookieName,
@@ -62,7 +64,7 @@ func SetOPSessionCookie(w http.ResponseWriter, sessionID string, isSecure bool) 
 		Expires:  time.Now().Add(OPSessionTTL),
 		HttpOnly: true,
 		Secure:   isSecure,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: opSessionSameSite(isSecure),
 	})
 }
 
@@ -76,6 +78,13 @@ func ClearOPSessionCookie(w http.ResponseWriter, isSecure bool) {
 		Expires:  time.Unix(0, 0),
 		HttpOnly: true,
 		Secure:   isSecure,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: opSessionSameSite(isSecure),
 	})
+}
+
+func opSessionSameSite(isSecure bool) http.SameSite {
+	if isSecure {
+		return http.SameSiteNoneMode
+	}
+	return http.SameSiteLaxMode
 }
