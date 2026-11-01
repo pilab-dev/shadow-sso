@@ -188,6 +188,40 @@ func TestMFASubmit_RealOIDCFlowRedirectsToAuthorize(t *testing.T) {
 	assert.True(t, opCookie.HttpOnly)
 }
 
+// TestMFASubmit_RateLimited: repeated invalid TOTP codes lock the MFA step,
+// and a subsequent valid code is rejected with a rate-limit message. This
+// closes the gap where a correct password allowed unlimited TOTP guesses.
+func TestMFASubmit_RateLimited(t *testing.T) {
+	// Given
+	router, ctrl, mockFlowStore, mockUserRepo := setupMFATest(t)
+	defer ctrl.Finish()
+
+	const flowID = "mfa-rate-limit"
+	mockFlowStore.EXPECT().GetFlow(gomock.Any(), flowID).Return(mfaFlowState(flowID), nil).AnyTimes()
+
+	secret := mfaTestSecret(t)
+	user := &domain.User{ID: "user-123", Email: "test@example.com", TwoFactorSecret: secret}
+	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user-123").Return(user, nil).AnyTimes()
+
+	// Exhaust the limiter.
+	for range webauth.DefaultConfig().RateLimitMaxAttempts {
+		req := mfaRequest(t, flowID, "test-csrf", "not-a-code")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code)
+		assert.Contains(t, w.Body.String(), "Invalid verification code")
+	}
+
+	// Even a valid code must now be refused.
+	req := mfaRequest(t, flowID, "test-csrf", mfaTestCode(t, secret))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "Too many attempts")
+}
+
 // TestMFASubmit_InvalidTOTPCode: a wrong code re-renders mfa.html (200) with an
 // error message and does NOT redirect.
 func TestMFASubmit_InvalidTOTPCode(t *testing.T) {

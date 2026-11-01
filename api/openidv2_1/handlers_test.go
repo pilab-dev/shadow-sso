@@ -1339,6 +1339,31 @@ func TestFederatedCallbackHandler_MissingStateCookie(t *testing.T) {
 	assert.Equal(t, "missing_state_cookie", resp["error"])
 }
 
+// TestFederatedCallbackHandler_EncodedStateWithoutCookieRejected guards against
+// the old fallback that trusted the state parameter from the query string when
+// the state cookie was missing. An encoded state (flow_id.nonce) must not be
+// accepted without its matching cookie.
+func TestFederatedCallbackHandler_EncodedStateWithoutCookieRejected(t *testing.T) {
+	router, ctrl, _ := setupCallbackTest(t)
+	defer ctrl.Finish()
+
+	encodedState := base64.RawURLEncoding.EncodeToString([]byte("flow-1.attacker-nonce"))
+	req := httptest.NewRequest(
+		"GET",
+		"/callback/google?code=auth-code-123&state="+url.QueryEscape(encodedState),
+		nil,
+	)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var resp map[string]string
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "missing_state_cookie", resp["error"])
+}
+
 func TestFederatedCallbackHandler_StateMismatch(t *testing.T) {
 	router, ctrl, _ := setupCallbackTest(t)
 	defer ctrl.Finish()

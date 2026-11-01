@@ -69,6 +69,15 @@ func (wa *WebAuth) MFASubmitHandler(c *gin.Context) {
 		return
 	}
 
+	// Brute-force protection for the second factor. The password step resets
+	// its own limiter on success, so MFA attempts need a separate counter.
+	rateLimitKey := "mfa:" + c.ClientIP() + ":" + userID
+	if !wa.rateLimiter.Allow(rateLimitKey) {
+		log.Warn().Str("flow_id", flowID).Str("user_id", userID).Str("ip", c.ClientIP()).Msg("mfa: rate limited")
+		wa.renderMFAPage(c, flowID, "Too many attempts. Please try again later.")
+		return
+	}
+
 	user, err := wa.userRepo.GetUserByID(ctx, userID)
 	if err != nil {
 		log.Warn().Err(err).Str("flow_id", flowID).Str("user_id", userID).Msg("mfa: user not found")
@@ -90,27 +99,12 @@ func (wa *WebAuth) MFASubmitHandler(c *gin.Context) {
 		return
 	}
 	if !valid {
+		wa.rateLimiter.RecordFailure(rateLimitKey)
 		log.Warn().Str("flow_id", flowID).Msg("mfa: invalid verification code")
-		csrfToken, tErr := generateCSRFToken()
-		if tErr != nil {
-			log.Error().Err(tErr).Msg("mfa: failed to generate CSRF token")
-			c.HTML(http.StatusInternalServerError, "error.html", gin.H{
-				"PageTitle": "Error",
-				"Message":   "Internal error. Please try again.",
-			})
-			return
-		}
-		isSecure := IsSecureRequest(c.Request)
-		setCSRFCookie(c.Writer, csrfToken, 10*time.Minute, isSecure)
-		c.HTML(http.StatusOK, "mfa.html", gin.H{
-			"PageTitle": "Two-Factor Authentication",
-			"FlowID":    flowID,
-			"CSRFToken": csrfToken,
-			"Error":     "Invalid verification code. Please try again.",
-			"BrandName": wa.config.BrandOrganizationName,
-		})
+		wa.renderMFAPage(c, flowID, "Invalid verification code. Please try again.")
 		return
 	}
+	wa.rateLimiter.Reset(rateLimitKey)
 
 	// Establish the server-side OP session first so subsequent OIDC
 	// authorizations reuse this login instead of showing the password form.
@@ -168,4 +162,27 @@ func (wa *WebAuth) MFASubmitHandler(c *gin.Context) {
 		return
 	}
 	c.Redirect(http.StatusFound, "/oauth2/authorize?flow_id="+url.QueryEscape(flowID))
+}
+
+// renderMFAPage re-renders the MFA form with a fresh CSRF token and an
+// optional error message. It is used for invalid codes and rate limiting.
+func (wa *WebAuth) renderMFAPage(c *gin.Context, flowID, errMsg string) {
+	csrfToken, err := generateCSRFToken()
+	if err != nil {
+		log.Error().Err(err).Msg("mfa: failed to generate CSRF token")
+		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
+			"PageTitle": "Error",
+			"Message":   "Internal error. Please try again.",
+		})
+		return
+	}
+
+	setCSRFCookie(c.Writer, csrfToken, 10*time.Minute, IsSecureRequest(c.Request))
+	c.HTML(http.StatusOK, "mfa.html", gin.H{
+		"PageTitle": "Two-Factor Authentication",
+		"FlowID":    flowID,
+		"CSRFToken": csrfToken,
+		"Error":     errMsg,
+		"BrandName": wa.config.BrandOrganizationName,
+	})
 }

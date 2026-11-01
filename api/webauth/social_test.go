@@ -10,6 +10,7 @@ import (
 	"github.com/pilab-dev/shadow-sso/api/webauth"
 	"github.com/pilab-dev/shadow-sso/domain"
 	mock_domain "github.com/pilab-dev/shadow-sso/domain/mocks"
+	"github.com/pilab-dev/shadow-sso/internal/ssosession"
 	services_mocks "github.com/pilab-dev/shadow-sso/services/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -78,7 +79,7 @@ func TestSocialLoginHandler_ValidProvider_NoFlowID(t *testing.T) {
 	cookies := w.Result().Cookies()
 	var found bool
 	for _, c := range cookies {
-		if c.Name == "sso_oauth_state" {
+		if c.Name == ssosession.FederationStateCookieName {
 			found = true
 			assert.NotEmpty(t, c.Value)
 			assert.True(t, c.HttpOnly)
@@ -86,7 +87,7 @@ func TestSocialLoginHandler_ValidProvider_NoFlowID(t *testing.T) {
 			break
 		}
 	}
-	assert.True(t, found, "expected sso_oauth_state cookie to be set")
+	assert.True(t, found, "expected federation state cookie to be set")
 }
 
 func TestSocialLoginHandler_ValidProvider_WithFlowID(t *testing.T) {
@@ -194,4 +195,3 @@ func TestSocialLoginHandler_FederationServiceError(t *testing.T) {
 	require.Equal(t, http.StatusInternalServerError, w.Code)
 	assert.Contains(t, w.Body.String(), "Failed to initiate login")
 }
-

@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/pilab-dev/shadow-sso/internal/ssosession"
 )
 
 // SocialLoginHandler handles GET /login/:provider — looks up the identity
@@ -66,7 +67,7 @@ func (wa *WebAuth) SocialLoginHandler(c *gin.Context) {
 	// 5. Store the raw nonce in a short-lived cookie so the callback handler
 	//    can validate the state parameter returned by the provider.
 	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     "sso_oauth_state",
+		Name:     ssosession.FederationStateCookieName,
 		Value:    state,
 		Path:     "/",
 		MaxAge:   600, // 10 minutes
@@ -91,5 +92,3 @@ func (wa *WebAuth) SocialLoginHandler(c *gin.Context) {
 	// 7. Redirect the user to the external identity provider.
 	c.Redirect(http.StatusFound, authURL)
 }
-
-

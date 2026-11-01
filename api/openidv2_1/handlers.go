@@ -869,16 +869,14 @@ func (oa *OAuth2API) FederatedCallbackHandler(c *gin.Context) {
 		return
 	}
 
+	// The state cookie is the only source of truth for CSRF validation. Never
+	// fall back to the state value from the query string: an attacker controls
+	// that value and could otherwise bypass state validation entirely.
 	stateCookie, err := c.Cookie(federationStateCookieName)
 	if err != nil || stateCookie == "" {
-		stateCookie = extractRawState(queryState)
-		if stateCookie != "" {
-			log.Info().Msg("FederatedCallbackHandler: State cookie missing, using extracted state nonce from query state parameter")
-		} else {
-			log.Warn().Err(err).Msg("FederatedCallbackHandler: State cookie not found during callback")
-			c.JSON(http.StatusBadRequest, gin.H{"error": "missing_state_cookie", "message": "Authentication session expired or invalid."})
-			return
-		}
+		log.Warn().Err(err).Str("provider", providerName).Msg("FederatedCallbackHandler: State cookie not found during callback")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_state_cookie", "message": "Authentication session expired or invalid."})
+		return
 	}
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     federationStateCookieName,
@@ -894,7 +892,7 @@ func (oa *OAuth2API) FederatedCallbackHandler(c *gin.Context) {
 	if rawState == "" {
 		rawState = queryState
 	}
-	if rawState != stateCookie {
+	if subtle.ConstantTimeCompare([]byte(rawState), []byte(stateCookie)) != 1 {
 		log.Warn().Str("provider", providerName).Str("queryState", queryState).Str("rawState", rawState).Str("cookieState", stateCookie).Msg("State mismatch in callback")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "state_mismatch", "message": "Invalid session state. Please try logging in again."})
 		return
