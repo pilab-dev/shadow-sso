@@ -23,11 +23,12 @@ type Session struct {
 }
 
 type Account struct {
-	UserID   string    `json:"user_id"`
-	Email    string    `json:"email"`
-	Name     string    `json:"name"`
-	Picture  string    `json:"picture,omitempty"`
-	LastUsed time.Time `json:"last_used"`
+	UserID      string    `json:"user_id"`
+	Email       string    `json:"email"`
+	Name        string    `json:"name"`
+	Picture     string    `json:"picture,omitempty"`
+	OPSessionID string    `json:"op_session_id,omitempty"`
+	LastUsed    time.Time `json:"last_used"`
 }
 
 const (

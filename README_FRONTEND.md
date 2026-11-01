@@ -116,21 +116,62 @@ In this flow, when a Relying Party (RP) initiates an OIDC login, if the user is 
 
 ## Account chooser
 
-The login page keeps a short, signed history of previously used accounts in the
-`sso_session` cookie (up to 5 accounts). When at least one account is known, the
-SSO login page shows a Google-style **Choose an account** screen instead of the
-empty credential form:
+The SSO keeps a Google-style **Choose an account** screen on the login page.
 
-- Selecting the account that owns the current server-side OP session completes
-  the flow without asking for a password again.
-- Selecting any other account opens the password form pre-filled with that
-  email (the password is always required to switch accounts).
+### Where the accounts are stored
+
+`sso_session` is an HttpOnly, HMAC-SHA256-signed cookie. It is **not** a server
+session; it contains display metadata and references:
+
+```json
+{
+  "session_id": "ui-session-id",
+  "accounts": [
+    {
+      "user_id": "...",
+      "email": "user@example.com",
+      "name": "Test User",
+      "op_session_id": "server-side OP session id",
+      "last_used": "2026-11-01T22:00:00Z"
+    }
+  ]
+}
+```
+
+- Up to **5 accounts** are kept, most-recently-used first.
+- `sso_session` contains **no passwords and no tokens**.
+- `op_session_id` points to a server-side `domain.UserSession` in the
+  `user_sessions_oidc` collection. Each account can have its own 24-hour OP
+  session.
+
+### How accounts are loaded
+
+1. `GetSSOSession()` reads the `sso_session` cookie and verifies its HMAC.
+2. The account list is rendered by `LoginPageHandler`.
+3. Each account's `op_session_id` is checked against `UserSessionStore`:
+   - **Current session** — this account owns the active `sso_op_session`.
+   - **Signed in** — the account has another valid OP session and can be
+     switched to without a password.
+   - **Signed out** — the OP session expired or is missing; the password is
+     required.
+4. The last-used time is shown relative to now, for example:
+   `Last used 2 hours ago`.
+
+### Selecting an account
+
+- **Current session** → continues without a password.
+- **Signed in** → switches the active `sso_op_session` cookie to that account's
+  OP session and continues without a password.
+- **Signed out** → opens the password form pre-filled with that email.
 - `prompt=login` always requires the password, even for the current account.
-- `prompt=select_account` shows the account chooser.
+- `prompt=select_account` shows the chooser.
 - **Use another account** opens the normal login form and social providers.
 
-The account list is only a convenience history — it never grants access without
-a valid OP session or password.
+A successful login creates a new OP session, stores its ID in the account entry,
+moves the account to the front and refreshes `last_used`.
+
+Logout deletes **all** OP sessions listed in `sso_session`, not only the active
+one, then clears both cookies.
 
 ## CSRF Protection (TODO)
 

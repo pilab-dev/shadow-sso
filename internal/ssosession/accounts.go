@@ -32,6 +32,9 @@ func MergeAccount(existing *Session, account Account) *Session {
 			if account.Picture == "" {
 				account.Picture = candidate.Picture
 			}
+			if account.OPSessionID == "" {
+				account.OPSessionID = candidate.OPSessionID
+			}
 			break
 		}
 	}

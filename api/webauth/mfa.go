@@ -108,7 +108,8 @@ func (wa *WebAuth) MFASubmitHandler(c *gin.Context) {
 
 	// Establish the server-side OP session first so subsequent OIDC
 	// authorizations reuse this login instead of showing the password form.
-	if err := wa.establishOPSession(c, user.ID); err != nil {
+	opSession, err := wa.establishOPSession(c, user.ID)
+	if err != nil {
 		log.Error().Err(err).Str("user_id", user.ID).Msg("mfa: failed to establish OP session")
 		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
 			"PageTitle": "Error",
@@ -123,10 +124,11 @@ func (wa *WebAuth) MFASubmitHandler(c *gin.Context) {
 	}
 	isSecure := IsSecureRequest(c.Request)
 	session := wa.mergeLoginSession(c.Request, ssosession.Account{
-		UserID:   user.ID,
-		Email:    user.Email,
-		Name:     displayName,
-		LastUsed: time.Now(),
+		UserID:      user.ID,
+		Email:       user.Email,
+		Name:        displayName,
+		OPSessionID: opSession.SessionID,
+		LastUsed:    time.Now(),
 	})
 	if err := SetSSOSessionCookie(c.Writer, session, isSecure, wa.ssoCookieSecret); err != nil {
 		log.Error().Err(err).Msg("mfa: failed to set SSO session cookie")

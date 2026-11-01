@@ -220,39 +220,63 @@ func (wa *WebAuth) SelectAccountHandler(c *gin.Context) {
 	}
 
 	requirePassword := promptRequiresLogin(flowState.Prompt)
-	opSession, hasOPSession := wa.currentOPUserSession(c.Request)
-	if !requirePassword && hasOPSession && opSession.UserID == selected.UserID {
-		authenticatedAt := opSession.AuthenticatedAt
-		if authenticatedAt.IsZero() {
-			authenticatedAt = time.Now()
+	if !requirePassword {
+		var activeSession *domain.UserSession
+
+		// Prefer the account's own server-side OP session. This is what makes
+		// switching between already signed-in accounts passwordless.
+		if selected.OPSessionID != "" && wa.userSessionStore != nil {
+			if session, sessionErr := wa.userSessionStore.GetUserSession(ctx, selected.OPSessionID); sessionErr == nil &&
+				session != nil && session.UserID == selected.UserID {
+				activeSession = session
+			}
 		}
-		flowState.UserID = selected.UserID
-		flowState.UserAuthenticatedAt = authenticatedAt
-		flowState.FlowID = flowID
-		if err := wa.flowStore.UpdateFlow(ctx, flowID, flowState); err != nil {
-			log.Error().Err(err).Str("flow_id", flowID).Msg("account select: failed to update flow")
-			c.HTML(http.StatusInternalServerError, "error.html", gin.H{
-				"PageTitle": "Error",
-				"Message":   "Internal error. Please try again.",
+
+		// Backward compatibility for accounts stored before per-account OP
+		// session IDs were added.
+		if activeSession == nil {
+			if session, ok := wa.currentOPUserSession(c.Request); ok && session.UserID == selected.UserID {
+				activeSession = session
+				selected.OPSessionID = session.SessionID
+			}
+		}
+
+		if activeSession != nil {
+			authenticatedAt := activeSession.AuthenticatedAt
+			if authenticatedAt.IsZero() {
+				authenticatedAt = time.Now()
+			}
+			isSecure := IsSecureRequest(c.Request)
+			ssosession.SetOPSessionCookie(c.Writer, activeSession.SessionID, isSecure)
+
+			flowState.UserID = selected.UserID
+			flowState.UserAuthenticatedAt = authenticatedAt
+			flowState.FlowID = flowID
+			if err := wa.flowStore.UpdateFlow(ctx, flowID, flowState); err != nil {
+				log.Error().Err(err).Str("flow_id", flowID).Msg("account select: failed to update flow")
+				c.HTML(http.StatusInternalServerError, "error.html", gin.H{
+					"PageTitle": "Error",
+					"Message":   "Internal error. Please try again.",
+				})
+				return
+			}
+
+			session := wa.mergeLoginSession(c.Request, ssosession.Account{
+				UserID:      selected.UserID,
+				Email:       selected.Email,
+				Name:        selected.Name,
+				Picture:     selected.Picture,
+				OPSessionID: activeSession.SessionID,
+				LastUsed:    time.Now(),
 			})
+			if err := SetSSOSessionCookie(c.Writer, session, isSecure, wa.ssoCookieSecret); err != nil {
+				log.Warn().Err(err).Msg("account select: failed to refresh SSO session cookie")
+			}
+
+			log.Info().Str("flow_id", flowID).Str("user_id", selected.UserID).Msg("account select: continuing signed-in account")
+			wa.completeLogin(c, flowState, isSecure)
 			return
 		}
-
-		isSecure := IsSecureRequest(c.Request)
-		session := wa.mergeLoginSession(c.Request, ssosession.Account{
-			UserID:   selected.UserID,
-			Email:    selected.Email,
-			Name:     selected.Name,
-			Picture:  selected.Picture,
-			LastUsed: time.Now(),
-		})
-		if err := SetSSOSessionCookie(c.Writer, session, isSecure, wa.ssoCookieSecret); err != nil {
-			log.Warn().Err(err).Msg("account select: failed to refresh SSO session cookie")
-		}
-
-		log.Info().Str("flow_id", flowID).Str("user_id", selected.UserID).Msg("account select: continuing current session")
-		wa.completeLogin(c, flowState, isSecure)
-		return
 	}
 
 	target := "/login?form=1"
@@ -430,7 +454,8 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 
 	// Establish the server-side OP session first so other OIDC clients
 	// recognize this login without redirecting the user back to the form.
-	if err := wa.establishOPSession(c, user.ID); err != nil {
+	opSession, err := wa.establishOPSession(c, user.ID)
+	if err != nil {
 		log.Error().Err(err).Str("user_id", user.ID).Msg("login: failed to establish OP session")
 		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
 			"PageTitle": "Error",
@@ -445,10 +470,11 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 	}
 	isSecure := IsSecureRequest(c.Request)
 	session := wa.mergeLoginSession(c.Request, ssosession.Account{
-		UserID:   user.ID,
-		Email:    user.Email,
-		Name:     displayName,
-		LastUsed: time.Now(),
+		UserID:      user.ID,
+		Email:       user.Email,
+		Name:        displayName,
+		OPSessionID: opSession.SessionID,
+		LastUsed:    time.Now(),
 	})
 	if err := SetSSOSessionCookie(c.Writer, session, isSecure, wa.ssoCookieSecret); err != nil {
 		log.Error().Err(err).Msg("login: failed to set SSO session cookie")

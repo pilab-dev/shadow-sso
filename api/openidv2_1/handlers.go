@@ -991,14 +991,15 @@ func (oa *OAuth2API) FederatedCallbackHandler(c *gin.Context) {
 		log.Info().Str("provider", providerName).Str("userID", result.UserInfo.ID).Msg("Federated login/link successful")
 
 		isSecure := c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https")
-		if _, err := ssosession.EstablishOPSession(
+		opSession, err := ssosession.EstablishOPSession(
 			c.Request.Context(),
 			oa.userSessionStore,
 			c.Writer,
 			c.Request,
 			result.UserInfo.ID,
 			isSecure,
-		); err != nil {
+		)
+		if err != nil {
 			log.Error().Err(err).Str("userID", result.UserInfo.ID).Msg("Failed to establish OP session after federated login")
 			c.Header("Content-Type", "text/html; charset=utf-8")
 			_ = federatedErrorTemplate.Execute(c.Writer, gin.H{
@@ -1020,6 +1021,9 @@ func (oa *OAuth2API) FederatedCallbackHandler(c *gin.Context) {
 				Email:    result.UserInfo.Email,
 				Name:     userName,
 				LastUsed: time.Now(),
+			}
+			if opSession != nil {
+				account.OPSessionID = opSession.SessionID
 			}
 			var existingSession *ssosession.Session
 			if cookie, cookieErr := c.Cookie(ssosession.CookieName); cookieErr == nil && cookie != "" {
@@ -2090,14 +2094,15 @@ func (oa *OAuth2API) AuthenticateUserHandler(c *gin.Context) {
 
 	// Authentication successful, create OIDC Provider session for the user.
 	isSecure := c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https")
-	if _, err := ssosession.EstablishOPSession(
+	opSession, err := ssosession.EstablishOPSession(
 		ctx,
 		oa.userSessionStore,
 		c.Writer,
 		c.Request,
 		user.ID,
 		isSecure,
-	); err != nil {
+	)
+	if err != nil {
 		log.Error().Err(err).Str("userID", user.ID).Msg("Failed to store user session for OP")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error", "error_description": "Could not create user session."})
 		return
@@ -2109,22 +2114,20 @@ func (oa *OAuth2API) AuthenticateUserHandler(c *gin.Context) {
 	if displayName == "" {
 		displayName = user.Email
 	}
-	uiSession := ssosession.MergeAccount(nil, ssosession.Account{
+	account := ssosession.Account{
 		UserID:   user.ID,
 		Email:    user.Email,
 		Name:     displayName,
 		LastUsed: time.Now(),
-	})
-	if cookie, cookieErr := c.Cookie(ssosession.CookieName); cookieErr == nil && cookie != "" {
-		if existing, verifyErr := ssosession.VerifyAndDecode(cookie, oa.cookieSigningSecret); verifyErr == nil {
-			uiSession = ssosession.MergeAccount(existing, ssosession.Account{
-				UserID:   user.ID,
-				Email:    user.Email,
-				Name:     displayName,
-				LastUsed: time.Now(),
-			})
-		}
 	}
+	if opSession != nil {
+		account.OPSessionID = opSession.SessionID
+	}
+	var existingUI *ssosession.Session
+	if cookie, cookieErr := c.Cookie(ssosession.CookieName); cookieErr == nil && cookie != "" {
+		existingUI, _ = ssosession.VerifyAndDecode(cookie, oa.cookieSigningSecret)
+	}
+	uiSession := ssosession.MergeAccount(existingUI, account)
 	if err := ssosession.SetCookie(c.Writer, uiSession, isSecure, oa.cookieSigningSecret); err != nil {
 		log.Error().Err(err).Str("userID", user.ID).Msg("Failed to set SSOSession cookie")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error", "error_description": "Could not create user session."})

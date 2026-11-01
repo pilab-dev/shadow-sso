@@ -36,9 +36,10 @@ func TestMergeAccount_PreservesMissingMetadata(t *testing.T) {
 	existing := &Session{
 		SessionID: "session-1",
 		Accounts: []Account{{
-			UserID: "user-1",
-			Email:  "user@example.com",
-			Name:   "Test User",
+			UserID:      "user-1",
+			Email:       "user@example.com",
+			Name:        "Test User",
+			OPSessionID: "op-session-1",
 		}},
 	}
 
@@ -47,6 +48,7 @@ func TestMergeAccount_PreservesMissingMetadata(t *testing.T) {
 	require.Len(t, merged.Accounts, 1)
 	assert.Equal(t, "user@example.com", merged.Accounts[0].Email)
 	assert.Equal(t, "Test User", merged.Accounts[0].Name)
+	assert.Equal(t, "op-session-1", merged.Accounts[0].OPSessionID)
 }
 
 func TestMergeAccount_KeepsOnlyMostRecentAccounts(t *testing.T) {

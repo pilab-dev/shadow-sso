@@ -112,13 +112,30 @@ func TestLoginPage_ShowsAccountChooser(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "/login", nil)
 	req.AddCookie(&http.Cookie{Name: "sso_oidc_flow_id", Value: "flow-1"})
-	req.AddCookie(accountSessionCookie(t, ssosession.Account{
-		UserID:   "user-1",
-		Email:    "user@example.com",
-		Name:     "Test User",
-		LastUsed: time.Now(),
-	}))
+	req.AddCookie(accountSessionCookie(t,
+		ssosession.Account{
+			UserID:      "user-1",
+			Email:       "user@example.com",
+			Name:        "Test User",
+			OPSessionID: "op-user-1",
+			LastUsed:    time.Now(),
+		},
+		ssosession.Account{
+			UserID:      "user-2",
+			Email:       "other@example.com",
+			Name:        "Other User",
+			OPSessionID: "op-user-2",
+			LastUsed:    time.Now().Add(-time.Hour),
+		},
+		ssosession.Account{
+			UserID:   "user-3",
+			Email:    "old@example.com",
+			Name:     "Old User",
+			LastUsed: time.Now().Add(-48 * time.Hour),
+		},
+	))
 	req.AddCookie(opSessionCookie(t, env.sessionStore, "user-1"))
+	_ = opSessionCookie(t, env.sessionStore, "user-2")
 	w := httptest.NewRecorder()
 	env.router.ServeHTTP(w, req)
 
@@ -128,6 +145,9 @@ func TestLoginPage_ShowsAccountChooser(t *testing.T) {
 	assert.Contains(t, body, "Test User")
 	assert.Contains(t, body, "user@example.com")
 	assert.Contains(t, body, "Current session")
+	assert.Contains(t, body, "Signed in")
+	assert.Contains(t, body, "Signed out")
+	assert.Contains(t, body, "Last used")
 	assert.Contains(t, body, "Use another account")
 	assert.NotContains(t, body, "Sign in to your account")
 }
@@ -179,10 +199,11 @@ func TestSelectAccount_CurrentOPSessionCompletesFlow(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: webauth.CSRFCookieName, Value: "test-csrf"})
 	req.AddCookie(&http.Cookie{Name: "sso_oidc_flow_id", Value: "flow-1"})
 	req.AddCookie(accountSessionCookie(t, ssosession.Account{
-		UserID:   "user-1",
-		Email:    "user@example.com",
-		Name:     "Test User",
-		LastUsed: time.Now(),
+		UserID:      "user-1",
+		Email:       "user@example.com",
+		Name:        "Test User",
+		OPSessionID: "op-user-1",
+		LastUsed:    time.Now(),
 	}))
 	req.AddCookie(opSessionCookie(t, env.sessionStore, "user-1"))
 	w := httptest.NewRecorder()
@@ -190,6 +211,60 @@ func TestSelectAccount_CurrentOPSessionCompletesFlow(t *testing.T) {
 
 	require.Equal(t, http.StatusFound, w.Code)
 	assert.Equal(t, "/oauth2/authorize?flow_id=flow-1", w.Header().Get("Location"))
+}
+
+func TestSelectAccount_SwitchesToAnotherSignedInAccount(t *testing.T) {
+	env := setupAccountTest(t)
+	defer env.ctrl.Finish()
+
+	env.flowStore.EXPECT().GetFlow(gomock.Any(), "flow-1").Return(accountPickerFlow(), nil)
+	env.flowStore.EXPECT().UpdateFlow(gomock.Any(), "flow-1", gomock.Any()).DoAndReturn(
+		func(_ context.Context, _ string, state *domain.LoginFlowState) error {
+			require.Equal(t, "user-2", state.UserID)
+			return nil
+		},
+	)
+	env.oauthService.EXPECT().ValidateClient(gomock.Any(), "client-1", "").Return(&domain.Client{
+		ID: "client-1",
+	}, nil)
+
+	form := url.Values{"csrf_token": {"test-csrf"}, "user_id": {"user-2"}}
+	req := httptest.NewRequest("POST", "/login/select", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: webauth.CSRFCookieName, Value: "test-csrf"})
+	req.AddCookie(&http.Cookie{Name: "sso_oidc_flow_id", Value: "flow-1"})
+	req.AddCookie(accountSessionCookie(t,
+		ssosession.Account{
+			UserID:      "user-1",
+			Email:       "user@example.com",
+			Name:        "Test User",
+			OPSessionID: "op-user-1",
+			LastUsed:    time.Now(),
+		},
+		ssosession.Account{
+			UserID:      "user-2",
+			Email:       "other@example.com",
+			Name:        "Other User",
+			OPSessionID: "op-user-2",
+			LastUsed:    time.Now().Add(-time.Hour),
+		},
+	))
+	req.AddCookie(opSessionCookie(t, env.sessionStore, "user-1"))
+	_ = opSessionCookie(t, env.sessionStore, "user-2")
+	w := httptest.NewRecorder()
+	env.router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusFound, w.Code)
+	assert.Equal(t, "/oauth2/authorize?flow_id=flow-1", w.Header().Get("Location"))
+
+	var activeCookie *http.Cookie
+	for _, cookie := range w.Result().Cookies() {
+		if cookie.Name == ssosession.OPSessionCookieName {
+			activeCookie = cookie
+		}
+	}
+	require.NotNil(t, activeCookie)
+	assert.Equal(t, "op-user-2", activeCookie.Value)
 }
 
 func TestSelectAccount_RequiresPasswordForOtherAccount(t *testing.T) {
@@ -230,10 +305,11 @@ func TestSelectAccount_PromptLoginAlwaysRequiresPassword(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: webauth.CSRFCookieName, Value: "test-csrf"})
 	req.AddCookie(&http.Cookie{Name: "sso_oidc_flow_id", Value: "flow-1"})
 	req.AddCookie(accountSessionCookie(t, ssosession.Account{
-		UserID:   "user-1",
-		Email:    "user@example.com",
-		Name:     "Test User",
-		LastUsed: time.Now(),
+		UserID:      "user-1",
+		Email:       "user@example.com",
+		Name:        "Test User",
+		OPSessionID: "op-user-1",
+		LastUsed:    time.Now(),
 	}))
 	req.AddCookie(opSessionCookie(t, env.sessionStore, "user-1"))
 	w := httptest.NewRecorder()
@@ -295,5 +371,6 @@ func TestLoginSubmit_MergesAccountHistory(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, session.Accounts, 2)
 	assert.Equal(t, "user-new", session.Accounts[0].UserID)
+	assert.NotEmpty(t, session.Accounts[0].OPSessionID)
 	assert.Equal(t, "user-old", session.Accounts[1].UserID)
 }

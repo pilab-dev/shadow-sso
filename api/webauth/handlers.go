@@ -217,6 +217,9 @@ func (wa *WebAuth) ConsentSubmitHandler(c *gin.Context) {
 			account.Name = user.Email
 		}
 	}
+	if opSession, ok := wa.currentOPUserSession(c.Request); ok && opSession.UserID == flowState.UserID {
+		account.OPSessionID = opSession.SessionID
+	}
 	ssoSession := wa.mergeLoginSession(c.Request, account)
 	if setErr := SetSSOSessionCookie(c.Writer, ssoSession, isSecure, wa.ssoCookieSecret); setErr != nil {
 		log.Error().Err(setErr).Msg("consent: failed to update SSO session cookie")

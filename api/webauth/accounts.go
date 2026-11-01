@@ -1,6 +1,7 @@
 package webauth
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -10,11 +11,44 @@ import (
 )
 
 type accountChoice struct {
-	UserID   string
-	Email    string
-	Name     string
-	Initials string
-	Current  bool
+	UserID       string
+	Email        string
+	Name         string
+	Initials     string
+	Current      bool
+	SignedIn     bool
+	StatusText   string
+	StatusTone   string
+	LastUsedText string
+}
+
+func relativeTime(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	delta := time.Since(t)
+	switch {
+	case delta < time.Minute:
+		return "just now"
+	case delta < time.Hour:
+		minutes := int(delta.Minutes())
+		if minutes == 1 {
+			return "1 minute ago"
+		}
+		return fmt.Sprintf("%d minutes ago", minutes)
+	case delta < 24*time.Hour:
+		hours := int(delta.Hours())
+		if hours == 1 {
+			return "1 hour ago"
+		}
+		return fmt.Sprintf("%d hours ago", hours)
+	default:
+		days := int(delta.Hours() / 24)
+		if days == 1 {
+			return "1 day ago"
+		}
+		return fmt.Sprintf("%d days ago", days)
+	}
 }
 
 func accountInitials(name, email string) string {
@@ -78,12 +112,44 @@ func (wa *WebAuth) accountChoices(r *http.Request) ([]accountChoice, string) {
 
 	choices := make([]accountChoice, 0, len(accounts))
 	for _, account := range accounts {
+		current := account.UserID == currentUserID
+		signedIn := current
+		if !signedIn && account.OPSessionID != "" && wa.userSessionStore != nil {
+			if session, err := wa.userSessionStore.GetUserSession(r.Context(), account.OPSessionID); err == nil &&
+				session != nil && session.UserID == account.UserID {
+				signedIn = true
+			}
+		}
+
+		statusText := "Signed out"
+		statusTone := "signed-out"
+		if current {
+			statusText = "Current session"
+			statusTone = "current"
+		} else if signedIn {
+			statusText = "Signed in"
+			statusTone = "signed-in"
+		}
+
+		lastUsedText := ""
+		if !current {
+			if relative := relativeTime(account.LastUsed); relative != "" {
+				lastUsedText = "Last used " + relative
+			} else {
+				lastUsedText = "Last used"
+			}
+		}
+
 		choices = append(choices, accountChoice{
-			UserID:   account.UserID,
-			Email:    account.Email,
-			Name:     account.Name,
-			Initials: accountInitials(account.Name, account.Email),
-			Current:  account.UserID == currentUserID,
+			UserID:       account.UserID,
+			Email:        account.Email,
+			Name:         account.Name,
+			Initials:     accountInitials(account.Name, account.Email),
+			Current:      current,
+			SignedIn:     signedIn,
+			StatusText:   statusText,
+			StatusTone:   statusTone,
+			LastUsedText: lastUsedText,
 		})
 	}
 	return choices, currentUserID

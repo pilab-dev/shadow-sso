@@ -27,6 +27,8 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
+const logoutCookieSecret = "test-logout-cookie-secret-32-bytes!!"
+
 // newOIDCAPI constructs an OAuth2API with real in-memory stores and a mocked
 // client repository, ready for route-level tests.
 func newOIDCAPI(t *testing.T, ctrl *gomock.Controller, cfg *sssoapi.OpenIDProviderConfig) (*sssogin.OAuth2API, *mock_domain.MockClientRepository) {
@@ -247,6 +249,7 @@ func newFullOIDCAPI(t *testing.T, ctrl *gomock.Controller, cfg *sssoapi.OpenIDPr
 		TokenSigner:               signer,
 		SessionRepo:               mockSessionRepo,
 		BootstrapToken:            "initial-access-token-123",
+		CookieSigningSecret:       logoutCookieSecret,
 		BackchannelLogoutNotifier: notifier,
 	})
 	require.NotNil(t, api)
@@ -322,6 +325,23 @@ func TestRPInitiatedLogout_AllowedRedirect(t *testing.T) {
 		UserID:    userID,
 		ExpiresAt: time.Now().Add(time.Hour),
 	}))
+	otherOPSession := "op-cookie-2"
+	require.NoError(t, userSessionStore.StoreUserSession(context.Background(), &domain.UserSession{
+		SessionID: otherOPSession,
+		UserID:    "user-2",
+		ExpiresAt: time.Now().Add(time.Hour),
+	}))
+
+	ssoRecorder := httptest.NewRecorder()
+	require.NoError(t, ssosession.SetCookie(ssoRecorder, &ssosession.Session{
+		SessionID: "ui-session-1",
+		Accounts: []ssosession.Account{
+			{UserID: userID, OPSessionID: ssoCookieVal},
+			{UserID: "user-2", OPSessionID: otherOPSession},
+		},
+	}, false, logoutCookieSecret))
+	ssoCookies := ssoRecorder.Result().Cookies()
+	require.Len(t, ssoCookies, 1)
 
 	idTokenHint := signTestIDTokenHint(t, map[string]interface{}{
 		"iss": "http://localhost:8080",
@@ -339,6 +359,7 @@ func TestRPInitiatedLogout_AllowedRedirect(t *testing.T) {
 	q.Set("state", stateValue)
 	req.URL.RawQuery = q.Encode()
 	req.AddCookie(&http.Cookie{Name: sssogin.SessionCookieName, Value: ssoCookieVal})
+	req.AddCookie(ssoCookies[0])
 
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -360,6 +381,8 @@ func TestRPInitiatedLogout_AllowedRedirect(t *testing.T) {
 	// used after logout.
 	_, getErr := userSessionStore.GetUserSession(context.Background(), ssoCookieVal)
 	require.ErrorIs(t, getErr, domain.ErrSessionNotFound, "OP user session must be deleted on logout")
+	_, otherErr := userSessionStore.GetUserSession(context.Background(), otherOPSession)
+	require.ErrorIs(t, otherErr, domain.ErrSessionNotFound, "all account OP sessions must be deleted on logout")
 
 	// The login-UI session cookie must be cleared as well.
 	var uiCookie *http.Cookie

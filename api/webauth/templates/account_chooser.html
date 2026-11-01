@@ -54,10 +54,16 @@
         overflow: hidden;
         text-overflow: ellipsis;
     }
-    .current-badge {
+    .account-status {
         font-size: 0.6875rem;
-        color: var(--success);
         margin-top: 1px;
+    }
+    .account-status.current { color: var(--success); }
+    .account-status.signed-in { color: #818cf8; }
+    .account-status.signed-out { color: var(--text-subtle); }
+    .account-last-used {
+        font-size: 0.6875rem;
+        color: var(--text-subtle);
     }
     .account-chevron {
         width: 18px;
@@ -100,7 +106,8 @@
             <span class="account-info">
                 <span class="account-name">{{if .Name}}{{.Name}}{{else if .Email}}{{.Email}}{{else}}Account{{end}}</span>
                 {{if .Email}}<span class="account-email">{{.Email}}</span>{{end}}
-                {{if .Current}}<span class="current-badge">Current session</span>{{end}}
+                <span class="account-status {{.StatusTone}}">{{.StatusText}}</span>
+                {{if .LastUsedText}}<span class="account-last-used">{{.LastUsedText}}</span>{{end}}
             </span>
             <svg class="account-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
         </button>
