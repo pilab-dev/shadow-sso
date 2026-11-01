@@ -8,6 +8,7 @@ export type SilentLoginErrorCode =
   | "invalid_scope"
   | "server_error"
   | "timeout"
+  | "frame_blocked"
   | "frame_error"
   | "aborted"
   | "not_browser"
@@ -32,6 +33,8 @@ export interface SilentLoginOptions {
   codeChallengeMethod?: "S256" | "plain";
   /** Parent window origin. Defaults to window.location.origin. */
   parentOrigin?: string;
+  /** Check the SSO frame policy headers before creating the iframe. Defaults to true. */
+  preflight?: boolean;
   /** Timeout in milliseconds, defaults to 10000 */
   timeoutMs?: number;
   /** Optional extra query parameters. Critical parameters cannot be overridden. */
@@ -52,6 +55,8 @@ export interface SilentAuthorizeUrl {
   state: string;
   /** SSO origin used to validate postMessage events */
   origin: string;
+  /** Parent window origin passed to the SSO */
+  parentOrigin: string;
 }
 
 export interface PkcePair {

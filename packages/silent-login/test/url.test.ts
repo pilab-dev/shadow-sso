@@ -20,6 +20,7 @@ describe("buildSilentAuthorizeUrl", () => {
     });
 
     expect(result.origin).toBe("https://sso.example.com");
+    expect(result.parentOrigin).toBe("https://app.example.com");
     expect(result.state).toBe("state-1");
 
     const url = new URL(result.url);

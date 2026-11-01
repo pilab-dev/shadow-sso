@@ -65,13 +65,14 @@ export function buildSilentAuthorizeUrl(options: SilentLoginOptions): SilentAuth
 
   const state = options.state ?? randomHex(16);
   const endpoint = new URL("/oauth2/silent-authorize", issuerUrl.origin);
+  const normalizedParentOrigin = normalizeParentOrigin(parentOrigin);
   const params = new URLSearchParams({
     response_type: "code",
     client_id: options.clientId,
     redirect_uri: redirectUrl.toString(),
     scope: options.scope ?? "openid profile email",
     state,
-    parent_origin: normalizeParentOrigin(parentOrigin),
+    parent_origin: normalizedParentOrigin,
   });
 
   if (options.nonce) {
@@ -88,5 +89,10 @@ export function buildSilentAuthorizeUrl(options: SilentLoginOptions): SilentAuth
   }
 
   endpoint.search = params.toString();
-  return { url: endpoint.toString(), state, origin: issuerUrl.origin };
+  return {
+    url: endpoint.toString(),
+    state,
+    origin: issuerUrl.origin,
+    parentOrigin: normalizedParentOrigin,
+  };
 }

@@ -9,6 +9,9 @@ const DEFAULT_DESCRIPTIONS: Record<string, string> = {
   invalid_client: "The OAuth client is invalid or inactive.",
   invalid_scope: "The requested scope is not allowed for this client.",
   server_error: "The SSO server could not complete silent login.",
+  frame_blocked: "The SSO silent-login response cannot be framed by this origin.",
+  timeout: "Silent login timed out.",
+  frame_error: "The silent login iframe failed to load.",
 };
 
 export class SilentLoginError extends Error {

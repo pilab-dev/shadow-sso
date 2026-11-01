@@ -4,10 +4,11 @@ import { silentLogin } from "../src/index.js";
 const baseOptions = {
   issuer: "https://sso.example.com",
   clientId: "client-1",
-  redirectUri: "https://app.example.com/callback",
-  parentOrigin: "https://app.example.com",
+  redirectUri: `${window.location.origin}/callback`,
+  parentOrigin: window.location.origin,
   state: "state-1",
   timeoutMs: 500,
+  preflight: false,
 };
 
 function dispatchResult(data: unknown, origin = "https://sso.example.com"): void {

@@ -71,7 +71,8 @@ try {
 | `nonce` | no | OIDC nonce |
 | `codeChallenge` | no | PKCE challenge; use `generatePkcePair()` |
 | `codeChallengeMethod` | no | `S256` (default) or `plain` |
-| `parentOrigin` | no | Defaults to `window.location.origin`; must be origin-only |
+| `parentOrigin` | no | Defaults to `window.location.origin`; in the browser it must match the page origin |
+| `preflight` | no | Check the SSO frame policy headers before creating the iframe; defaults to `true` |
 | `timeoutMs` | no | Defaults to `10000` |
 | `extraParams` | no | Additional query parameters; critical parameters cannot be overridden |
 | `iframeTitle` | no | Accessible iframe title |
@@ -85,10 +86,42 @@ try {
 - `access_denied`, `invalid_request`, `invalid_client`, `invalid_scope`
 - `server_error`
 - `timeout` — the iframe did not answer; commonly CSP/XFO blocking, third-party cookie blocking, or network failure
+- `frame_blocked` — the preflight found `X-Frame-Options` or `frame-ancestors` that blocks the parent origin
 - `frame_error` — the iframe failed to load
 - `aborted` — the supplied `AbortSignal` was aborted
 - `not_browser` — Web Crypto or a browser environment is unavailable
 - `invalid_config` — invalid issuer, redirect URI, parent origin or timeout
+
+## Frame-policy preflight
+
+Before inserting the iframe, the library sends a `HEAD` request to the
+silent-authorize URL and reads these response headers:
+
+- `Content-Security-Policy` (`frame-ancestors`)
+- `X-Frame-Options`
+
+If the headers block the parent origin, the library logs a `console.error` and
+throws:
+
+```ts
+SilentLoginError { code: "frame_blocked" }
+```
+
+This catches proxy/CDN misconfigurations before the iframe is created. The SSO
+must expose those headers through CORS:
+
+```
+Access-Control-Expose-Headers: Content-Security-Policy, X-Frame-Options
+```
+
+The Shadow SSO silent endpoint does this automatically for the matching
+`parent_origin`.
+
+If the preflight request fails (network, CORS, or an older SSO that returns
+404/405), the library logs a `console.warn` and continues with the iframe. The
+normal `timeout` path still applies if the browser then blocks the iframe.
+
+Set `preflight: false` to skip this check.
 
 ## How the origin check works
 

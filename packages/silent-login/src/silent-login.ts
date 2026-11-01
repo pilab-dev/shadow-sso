@@ -3,6 +3,7 @@ import {
   serverErrorDescription,
   toSilentLoginErrorCode,
 } from "./errors.js";
+import { runPreflight } from "./preflight.js";
 import { buildSilentAuthorizeUrl } from "./url.js";
 import type {
   SilentLoginErrorCode,
@@ -36,10 +37,20 @@ export async function silentLogin(options: SilentLoginOptions): Promise<SilentLo
     throw new SilentLoginError("aborted", "Silent login was aborted.");
   }
 
-  const { url, state, origin } = buildSilentAuthorizeUrl(options);
+  const { url, state, origin, parentOrigin } = buildSilentAuthorizeUrl(options);
+  if (window.location.origin && parentOrigin !== window.location.origin) {
+    throw new SilentLoginError(
+      "invalid_config",
+      "parentOrigin must match window.location.origin in the browser.",
+    );
+  }
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new SilentLoginError("invalid_config", "timeoutMs must be a positive number.");
+  }
+
+  if (options.preflight !== false) {
+    await runPreflight(url, origin, parentOrigin, options.signal);
   }
 
   return await new Promise<SilentLoginSuccess>((resolve, reject) => {
