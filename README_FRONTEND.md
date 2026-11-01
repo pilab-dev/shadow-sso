@@ -202,7 +202,7 @@ The parent page must allow the iframe:
 - The silent endpoint is only frameable by the origin of the registered
   `redirect_uri`; the login, consent and MFA pages keep `frame-ancestors 'none'`.
 - A browser SDK is available at
-  https://github.com/pilab-cloud/shadow-sso-silent-login. It performs a `HEAD`
+  https://github.com/pilab-cloud/shadow-sso. It performs a `HEAD`
   preflight against the silent endpoint, checks `Content-Security-Policy` and
   `X-Frame-Options`, and throws `frame_blocked` before creating the iframe when
   the response headers forbid framing.
