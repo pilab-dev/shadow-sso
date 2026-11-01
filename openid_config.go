@@ -327,6 +327,7 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 	router.GET("/oauth2/device/verify", webauthAPI.DeviceVerificationPageHandler)
 	router.POST("/oauth2/device/verify", webauthAPI.DeviceVerificationSubmitHandler)
 	router.POST("/mfa", webauthAPI.MFASubmitHandler)
+	router.GET("/api/session", webauthAPI.SessionHandler)
 	// ---------- Connect-RPC handlers ----------
 	connectCtx, connectSpan := telemetry.StartSpan(ctx, "shadow-sso", "NewSSOServer.connectrpc")
 	defer connectSpan.End()
