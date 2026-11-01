@@ -92,7 +92,7 @@ func setupTokenHandlerTest(t *testing.T) (
 
 	pkceService := services.NewPKCEService(mockPkceRepo)
 
-flowStore := oidcflow.NewInMemoryFlowStore()
+	flowStore := oidcflow.NewInMemoryFlowStore()
 	userSessionStore := oidcflow.NewInMemoryUserSessionStore()
 
 	tokenService := services.NewTokenService(
@@ -970,11 +970,11 @@ func TestUserInfoHandler_Success_GET(t *testing.T) {
 	}, nil)
 	mockTokenSvc.EXPECT().ApplyTokenMappers(gomock.Any(), gomock.Any(), "", "user1", "userinfo").Return(nil)
 	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user1").Return(&domain.User{
-		ID:             "user1",
-		Email:          email,
-		FirstName:      firstName,
-		LastName:       lastName,
-		Status:         domain.UserStatusActive,
+		ID:              "user1",
+		Email:           email,
+		FirstName:       firstName,
+		LastName:        lastName,
+		Status:          domain.UserStatusActive,
 		IsEmailVerified: true,
 	}, nil)
 
@@ -1018,11 +1018,11 @@ func TestUserInfoHandler_Success_POST(t *testing.T) {
 	}, nil)
 	mockTokenSvc.EXPECT().ApplyTokenMappers(gomock.Any(), gomock.Any(), "", "user1", "userinfo").Return(nil)
 	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user1").Return(&domain.User{
-		ID:             "user1",
-		Email:          email,
-		FirstName:      firstName,
-		LastName:       lastName,
-		Status:         domain.UserStatusActive,
+		ID:              "user1",
+		Email:           email,
+		FirstName:       firstName,
+		LastName:        lastName,
+		Status:          domain.UserStatusActive,
 		IsEmailVerified: true,
 	}, nil)
 
@@ -1270,6 +1270,7 @@ func setupCallbackTest(t *testing.T) (*gin.Engine, *gomock.Controller, *services
 		Config: &sssoapi.OpenIDProviderConfig{
 			NextJSLoginURL: "http://localhost:3000/login",
 		},
+		UserSessionStore: oidcflow.NewInMemoryUserSessionStore(),
 	})
 
 	router := gin.New()
@@ -1310,6 +1311,16 @@ func TestFederatedCallbackHandler_Success(t *testing.T) {
 	assert.Equal(t, "login_successful", resp["status"])
 	assert.Equal(t, "access-token-123", resp["access_token"])
 	assert.Equal(t, "refresh-token-123", resp["refresh_token"])
+
+	var opCookie *http.Cookie
+	for _, cookie := range w.Result().Cookies() {
+		if cookie.Name == sssogin.SessionCookieName {
+			opCookie = cookie
+		}
+	}
+	require.NotNil(t, opCookie, "sso_op_session cookie must be set after federated login")
+	assert.NotEmpty(t, opCookie.Value)
+	assert.True(t, opCookie.HttpOnly)
 }
 
 func TestFederatedCallbackHandler_MissingStateCookie(t *testing.T) {

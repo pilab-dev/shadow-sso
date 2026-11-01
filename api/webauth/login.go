@@ -298,6 +298,17 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 		return
 	}
 
+	// Establish the server-side OP session first so other OIDC clients
+	// recognize this login without redirecting the user back to the form.
+	if err := wa.establishOPSession(c, user.ID); err != nil {
+		log.Error().Err(err).Str("user_id", user.ID).Msg("login: failed to establish OP session")
+		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
+			"PageTitle": "Error",
+			"Message":   "Failed to create session. Please try again.",
+		})
+		return
+	}
+
 	displayName := user.Email
 	if user.FirstName != "" || user.LastName != "" {
 		displayName = fmt.Sprintf("%s %s", user.FirstName, user.LastName)

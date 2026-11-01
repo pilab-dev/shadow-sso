@@ -14,6 +14,8 @@ import (
 	"github.com/pilab-dev/shadow-sso/domain"
 	mock_domain "github.com/pilab-dev/shadow-sso/domain/mocks"
 	totp2fa "github.com/pilab-dev/shadow-sso/internal/auth/totp"
+	"github.com/pilab-dev/shadow-sso/internal/oidcflow"
+	"github.com/pilab-dev/shadow-sso/internal/ssosession"
 	otptotp "github.com/pquerna/otp/totp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -37,11 +39,12 @@ func setupMFATest(t *testing.T) (
 	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
 
 	wa := webauth.New(&webauth.Options{
-		UserRepo:        mockUserRepo,
-		PasswordHasher:  mock_domain.NewMockPasswordHasher(ctrl),
-		FlowStore:       mockFlowStore,
-		Config:          webauth.DefaultConfig(),
-		SSOCookieSecret: testReturnToCookieSecret,
+		UserRepo:         mockUserRepo,
+		PasswordHasher:   mock_domain.NewMockPasswordHasher(ctrl),
+		FlowStore:        mockFlowStore,
+		UserSessionStore: oidcflow.NewInMemoryUserSessionStore(),
+		Config:           webauth.DefaultConfig(),
+		SSOCookieSecret:  testReturnToCookieSecret,
 	})
 
 	router := gin.New()
@@ -178,6 +181,11 @@ func TestMFASubmit_RealOIDCFlowRedirectsToAuthorize(t *testing.T) {
 	// Then
 	require.Equal(t, http.StatusFound, w.Code)
 	assert.Equal(t, "/oauth2/authorize?flow_id=oidc-flow", w.Header().Get("Location"))
+
+	opCookie := findCookie(w.Result().Cookies(), ssosession.OPSessionCookieName)
+	require.NotNil(t, opCookie, "sso_op_session cookie must be set after MFA")
+	assert.NotEmpty(t, opCookie.Value)
+	assert.True(t, opCookie.HttpOnly)
 }
 
 // TestMFASubmit_InvalidTOTPCode: a wrong code re-renders mfa.html (200) with an

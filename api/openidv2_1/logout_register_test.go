@@ -19,6 +19,7 @@ import (
 	mock_domain "github.com/pilab-dev/shadow-sso/domain/mocks"
 	"github.com/pilab-dev/shadow-sso/internal/metrics"
 	"github.com/pilab-dev/shadow-sso/internal/oidcflow"
+	"github.com/pilab-dev/shadow-sso/internal/ssosession"
 	"github.com/pilab-dev/shadow-sso/services"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -230,22 +231,22 @@ func newFullOIDCAPI(t *testing.T, ctrl *gomock.Controller, cfg *sssoapi.OpenIDPr
 	notifier := newFakeLogoutNotifier()
 
 	api := sssogin.NewOAuth2API(&sssogin.OAuth2APIOptions{
-		OAuthService:      nil,
-		JSKSService:       nil,
-		ClientService:     clientService,
-		PkceService:       nil,
-		Config:            cfg,
-		FlowStore:         oidcflow.NewInMemoryFlowStore(),
-		UserSessionStore:  userSessionStore,
-		UserRepo:          nil,
-		PasswordHasher:    nil,
-		FederationService: nil,
-		TokenService:      nil,
-		RealmKeysRepo:     nil,
-		ClientRepo:        mockClientRepo,
-		TokenSigner:       signer,
-		SessionRepo:       mockSessionRepo,
-		BootstrapToken:    "initial-access-token-123",
+		OAuthService:              nil,
+		JSKSService:               nil,
+		ClientService:             clientService,
+		PkceService:               nil,
+		Config:                    cfg,
+		FlowStore:                 oidcflow.NewInMemoryFlowStore(),
+		UserSessionStore:          userSessionStore,
+		UserRepo:                  nil,
+		PasswordHasher:            nil,
+		FederationService:         nil,
+		TokenService:              nil,
+		RealmKeysRepo:             nil,
+		ClientRepo:                mockClientRepo,
+		TokenSigner:               signer,
+		SessionRepo:               mockSessionRepo,
+		BootstrapToken:            "initial-access-token-123",
 		BackchannelLogoutNotifier: notifier,
 	})
 	require.NotNil(t, api)
@@ -288,18 +289,18 @@ func TestRPInitiatedLogout_AllowedRedirect(t *testing.T) {
 	router := newOIDCRouter(t, api)
 
 	const (
-		clientID      = "rp-client"
-		redirectURI   = "https://rp.example.com/callback"
-		sessionID     = "session-abc"
-		tokenID       = "jti-xyz"
-		userID        = "user-1"
-		ssoCookieVal  = "op-cookie-1"
-		stateValue    = "state-abc123"
+		clientID     = "rp-client"
+		redirectURI  = "https://rp.example.com/callback"
+		sessionID    = "session-abc"
+		tokenID      = "jti-xyz"
+		userID       = "user-1"
+		ssoCookieVal = "op-cookie-1"
+		stateValue   = "state-abc123"
 	)
 
 	mockClientRepo.EXPECT().GetClient(gomock.Any(), clientID).Return(&domain.Client{
-		ID:             clientID,
-		PostLogoutURIs: []string{redirectURI},
+		ID:                   clientID,
+		PostLogoutURIs:       []string{redirectURI},
 		BackchannelLogoutURI: "",
 	}, nil).AnyTimes()
 
@@ -354,6 +355,22 @@ func TestRPInitiatedLogout_AllowedRedirect(t *testing.T) {
 	}
 	require.NotNil(t, clearedCookie, "sso_op_session cookie must be cleared")
 	require.Empty(t, clearedCookie.Value)
+
+	// The server-side session must be deleted so a replayed cookie cannot be
+	// used after logout.
+	_, getErr := userSessionStore.GetUserSession(context.Background(), ssoCookieVal)
+	require.ErrorIs(t, getErr, domain.ErrSessionNotFound, "OP user session must be deleted on logout")
+
+	// The login-UI session cookie must be cleared as well.
+	var uiCookie *http.Cookie
+	for _, c := range w.Result().Cookies() {
+		if c.Name == ssosession.CookieName {
+			uiCookie = c
+		}
+	}
+	require.NotNil(t, uiCookie, "sso_session cookie must be cleared on logout")
+	require.Empty(t, uiCookie.Value)
+	require.LessOrEqual(t, uiCookie.MaxAge, 0)
 }
 
 // TestRPInitiatedLogout_SidPreference asserts sid is preferred over jti when

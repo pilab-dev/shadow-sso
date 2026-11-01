@@ -30,7 +30,7 @@ import (
 
 const (
 	// SessionCookieName is the name of the cookie used to store the OIDC provider's user session.
-	SessionCookieName = "sso_op_session"
+	SessionCookieName = ssosession.OPSessionCookieName
 	// CSRFCookieName is the name of the cookie used for CSRF protection.
 	CSRFCookieName = "sso_csrf_token"
 	// CSRFHeaderName is the name of the HTTP header used to carry the CSRF token.
@@ -775,15 +775,8 @@ func (oa *OAuth2API) redirectToClient(c *gin.Context, baseRedirectURI, code, sta
 
 // clearUserSessionCookie invalidates the OP user session cookie.
 func (oa *OAuth2API) clearUserSessionCookie(c *gin.Context) {
-	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     SessionCookieName,
-		Value:    "",
-		Expires:  time.Unix(0, 0), // Expire immediately
-		HttpOnly: true,
-		Path:     "/",
-		Secure:   c.Request.TLS != nil,
-		SameSite: http.SameSiteLaxMode,
-	})
+	isSecure := c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https")
+	ssosession.ClearOPSessionCookie(c.Writer, isSecure)
 }
 
 // generateCSRFToken creates a cryptographically random hex-encoded CSRF token.
@@ -922,7 +915,35 @@ func (oa *OAuth2API) FederatedCallbackHandler(c *gin.Context) {
 
 	switch result.Status {
 	case services.FederationStatusLoginSuccessful, services.FederationStatusAccountLinked:
+		if result.UserInfo == nil {
+			log.Error().Str("provider", providerName).Msg("Federated login returned no user info")
+			c.Header("Content-Type", "text/html; charset=utf-8")
+			_ = federatedErrorTemplate.Execute(c.Writer, gin.H{
+				"Message": "Authentication failed",
+				"Detail":  "The identity provider did not return a user profile. Please try logging in again.",
+			})
+			return
+		}
+
 		log.Info().Str("provider", providerName).Str("userID", result.UserInfo.ID).Msg("Federated login/link successful")
+
+		isSecure := c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https")
+		if _, err := ssosession.EstablishOPSession(
+			c.Request.Context(),
+			oa.userSessionStore,
+			c.Writer,
+			c.Request,
+			result.UserInfo.ID,
+			isSecure,
+		); err != nil {
+			log.Error().Err(err).Str("userID", result.UserInfo.ID).Msg("Failed to establish OP session after federated login")
+			c.Header("Content-Type", "text/html; charset=utf-8")
+			_ = federatedErrorTemplate.Execute(c.Writer, gin.H{
+				"Message": "Authentication failed",
+				"Detail":  "Failed to create session. Please try logging in again.",
+			})
+			return
+		}
 
 		flowID := extractFlowIDFromState(queryState)
 		if flowID != "" {
@@ -942,7 +963,6 @@ func (oa *OAuth2API) FederatedCallbackHandler(c *gin.Context) {
 				}},
 			}
 
-			isSecure := c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https")
 			if err := ssosession.SetCookie(c.Writer, session, isSecure, oa.cookieSigningSecret); err != nil {
 				log.Error().Err(err).Msg("Failed to set SSOSession cookie after federated login")
 				c.Header("Content-Type", "text/html; charset=utf-8")
@@ -1976,32 +1996,40 @@ func (oa *OAuth2API) AuthenticateUserHandler(c *gin.Context) {
 	// Client information was already retrieved and validated earlier in the function
 
 	// Authentication successful, create OIDC Provider session for the user.
-	sessionID := uuid.NewString()
-	opSessionExpiry := time.Now().Add(24 * time.Hour) // Example: 24-hour session for the OP
-	userSession := &domain.UserSession{
-		SessionID:       sessionID,
-		UserID:          user.ID,
-		AuthenticatedAt: time.Now(),
-		ExpiresAt:       opSessionExpiry,
-		// UserAgent:    c.Request.UserAgent(), // Optionally store
-		// IPAddress:    c.ClientIP(),          // Optionally store
-	}
-	if err := oa.userSessionStore.StoreUserSession(ctx, userSession); err != nil {
+	isSecure := c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https")
+	if _, err := ssosession.EstablishOPSession(
+		ctx,
+		oa.userSessionStore,
+		c.Writer,
+		c.Request,
+		user.ID,
+		isSecure,
+	); err != nil {
 		log.Error().Err(err).Str("userID", user.ID).Msg("Failed to store user session for OP")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error", "error_description": "Could not create user session."})
 		return
 	}
 
-	// Set the OP session cookie
-	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     SessionCookieName,
-		Value:    sessionID,
-		Expires:  opSessionExpiry,
-		HttpOnly: true,
-		Path:     "/",                  // Adjust path if necessary
-		Secure:   c.Request.TLS != nil, // Set Secure flag if served over HTTPS
-		SameSite: http.SameSiteLaxMode,
-	})
+	// Also set the login-UI session cookie so flows that read sso_session (for
+	// example device authorization) recognize this login.
+	displayName := strings.TrimSpace(user.FirstName + " " + user.LastName)
+	if displayName == "" {
+		displayName = user.Email
+	}
+	uiSession := &ssosession.Session{
+		SessionID: ssosession.NewID(),
+		Accounts: []ssosession.Account{{
+			UserID:   user.ID,
+			Email:    user.Email,
+			Name:     displayName,
+			LastUsed: time.Now(),
+		}},
+	}
+	if err := ssosession.SetCookie(c.Writer, uiSession, isSecure, oa.cookieSigningSecret); err != nil {
+		log.Error().Err(err).Str("userID", user.ID).Msg("Failed to set SSOSession cookie")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error", "error_description": "Could not create user session."})
+		return
+	}
 
 	// Update flow state with authenticated user
 	flowState.UserID = user.ID
