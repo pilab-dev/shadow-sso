@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -56,10 +57,20 @@ func (oa *OAuth2API) SilentAuthorizeHandler(c *gin.Context) {
 		return
 	}
 
-	parentOrigin, ok := redirectOrigin(data.redirectURI)
+	redirectParentOrigin, ok := redirectOrigin(data.redirectURI)
 	if !ok {
 		oa.sendJSONError(c, http.StatusBadRequest, domain.NewInvalidRequest("redirect_uri must be an absolute http(s) URL"))
 		return
+	}
+
+	parentOrigin := redirectParentOrigin
+	if requestedParentOrigin := c.Query("parent_origin"); requestedParentOrigin != "" {
+		normalized, valid := parentOriginFromParam(requestedParentOrigin)
+		if !valid {
+			oa.sendJSONError(c, http.StatusBadRequest, domain.NewInvalidRequest("parent_origin must be an absolute http(s) origin"))
+			return
+		}
+		parentOrigin = normalized
 	}
 
 	if err := oa.validateClientDetails(ctx, data.clientID, data.redirectURI, data.scopeQuery); err != nil {
@@ -78,6 +89,19 @@ func (oa *OAuth2API) SilentAuthorizeHandler(c *gin.Context) {
 		}
 		log.Error().Err(err).Msg("SilentAuthorizeHandler: PKCE validation failed")
 		oa.sendJSONError(c, http.StatusInternalServerError, domain.NewServerError("internal PKCE validation error"))
+		return
+	}
+
+	// The iframe may load (so it can report a useful error), but a parent
+	// origin that differs from the registered redirect URI origin must never
+	// receive an authorization code.
+	if parentOrigin != redirectParentOrigin {
+		oa.renderSilentResult(c, parentOrigin, silentAuthorizeResult{
+			Type:             silentAuthorizeMessageType,
+			State:            data.state,
+			Error:            "origin_not_allowed",
+			ErrorDescription: "The parent origin is not allowed to use silent login for this client.",
+		})
 		return
 	}
 
@@ -209,7 +233,29 @@ func redirectOrigin(raw string) (string, bool) {
 	if !validOriginHost(parsed.Host) {
 		return "", false
 	}
-	return parsed.Scheme + "://" + parsed.Host, true
+	return strings.ToLower(parsed.Scheme) + "://" + strings.ToLower(parsed.Host), true
+}
+
+// parentOriginFromParam accepts an origin-only URL (no path, query, fragment
+// or userinfo) supplied by the iframe host.
+func parentOriginFromParam(raw string) (string, bool) {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Host == "" || parsed.User != nil {
+		return "", false
+	}
+	if parsed.Path != "" && parsed.Path != "/" {
+		return "", false
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", false
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", false
+	}
+	if !validOriginHost(parsed.Host) {
+		return "", false
+	}
+	return strings.ToLower(parsed.Scheme) + "://" + strings.ToLower(parsed.Host), true
 }
 
 // validOriginHost rejects characters that could break out of the CSP

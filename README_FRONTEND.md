@@ -136,14 +136,16 @@ to the parent window.
 ```html
 <iframe
   id="sso-silent"
-  src="https://sso.pilab.hu/oauth2/silent-authorize?response_type=code&client_id=my-app&redirect_uri=https%3A%2F%2Fapp.pilab.hu%2Fauth%2Fcallback&scope=openid%20profile%20email&state=RANDOM_STATE&nonce=RANDOM_NONCE&code_challenge=...&code_challenge_method=S256"
+  src="https://sso.pilab.hu/oauth2/silent-authorize?response_type=code&client_id=my-app&redirect_uri=https%3A%2F%2Fapp.pilab.hu%2Fauth%2Fcallback&scope=openid%20profile%20email&state=RANDOM_STATE&nonce=RANDOM_NONCE&parent_origin=https%3A%2F%2Fapp.pilab.hu&code_challenge=...&code_challenge_method=S256"
   hidden
 ></iframe>
 ```
 
 The `redirect_uri` must be an absolute `http(s)` URL on the application's
-origin. The parent origin is derived from it, and the silent response is only
-frameable by that origin.
+origin. `parent_origin` is optional and defaults to the redirect URI origin.
+When supplied it must be an origin-only URL (no path, query or fragment). If it
+does not match the redirect URI origin, the SSO page still loads so it can post
+`origin_not_allowed` to the parent, but it never issues an authorization code.
 
 ### Response
 
@@ -158,6 +160,7 @@ or, when no session or consent is available:
 ```json
 { "type": "sso-silent-result", "state": "RANDOM_STATE", "error": "login_required" }
 { "type": "sso-silent-result", "state": "RANDOM_STATE", "error": "consent_required" }
+{ "type": "sso-silent-result", "state": "RANDOM_STATE", "error": "origin_not_allowed" }
 ```
 
 ### Parent listener

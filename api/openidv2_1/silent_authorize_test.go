@@ -163,3 +163,64 @@ func TestSilentAuthorize_RejectsNonHTTPRedirect(t *testing.T) {
 
 	require.Equal(t, http.StatusBadRequest, w.Code)
 }
+
+func TestSilentAuthorize_ParentOriginNotAllowed(t *testing.T) {
+	env := setupSilentAuthorizeTest(t)
+	env.expectValidClient(false)
+
+	q := url.Values{
+		"client_id":     {"client-1"},
+		"redirect_uri":  {"https://app.example.com/callback"},
+		"response_type": {"code"},
+		"scope":         {"openid profile email"},
+		"state":         {"state-origin"},
+		"parent_origin": {"https://evil.example.com"},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/oauth2/silent-authorize?"+q.Encode(), nil)
+	w := httptest.NewRecorder()
+	env.router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.Contains(t, body, `"error":"origin_not_allowed"`)
+	assert.Contains(t, body, `"state":"state-origin"`)
+	assert.NotContains(t, body, `"code"`)
+	assert.Contains(t, w.Header().Get("Content-Security-Policy"), "frame-ancestors https://evil.example.com")
+}
+
+func TestSilentAuthorize_AllowedParentOrigin(t *testing.T) {
+	env := setupSilentAuthorizeTest(t)
+	env.expectValidClient(false)
+
+	q := url.Values{
+		"client_id":     {"client-1"},
+		"redirect_uri":  {"https://app.example.com/callback"},
+		"response_type": {"code"},
+		"scope":         {"openid profile email"},
+		"state":         {"state-ok"},
+		"parent_origin": {"https://app.example.com"},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/oauth2/silent-authorize?"+q.Encode(), nil)
+	w := httptest.NewRecorder()
+	env.router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"error":"login_required"`)
+	assert.Contains(t, w.Header().Get("Content-Security-Policy"), "frame-ancestors https://app.example.com")
+}
+
+func TestSilentAuthorize_RejectsParentOriginWithPath(t *testing.T) {
+	env := setupSilentAuthorizeTest(t)
+
+	q := url.Values{
+		"client_id":     {"client-1"},
+		"redirect_uri":  {"https://app.example.com/callback"},
+		"response_type": {"code"},
+		"parent_origin": {"https://app.example.com/nested"},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/oauth2/silent-authorize?"+q.Encode(), nil)
+	w := httptest.NewRecorder()
+	env.router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusBadRequest, w.Code)
+}
