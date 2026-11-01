@@ -19,6 +19,7 @@ import (
 	sssoapi "github.com/pilab-dev/shadow-sso/api"
 
 	"github.com/google/uuid"
+	"github.com/pilab-dev/shadow-sso/api/webauth"
 	"github.com/pilab-dev/shadow-sso/domain"           // Corrected: Single import of domain
 	"github.com/pilab-dev/shadow-sso/internal/metrics" // For custom metrics
 	"github.com/pilab-dev/shadow-sso/internal/ssosession"
@@ -58,6 +59,7 @@ type OAuth2API struct {
 	sessionRepo         domain.SessionRepository
 	bootstrapToken      string
 	backchannelNotifier BackchannelLogoutNotifier
+	authEndpointLimiter *webauth.RateLimiter
 
 	brandLogo  string
 	brandName  string
@@ -109,6 +111,7 @@ func NewOAuth2API(
 	if opts.Config.NextJSLoginURL == "" {
 		log.Debug().Msg("NextJSLoginURL is not configured; server-rendered /login flow does not require it.")
 	}
+	authRateLimit := webauth.DefaultConfig()
 	return &OAuth2API{
 		service:             opts.OAuthService,
 		jwksService:         opts.JSKSService,
@@ -128,6 +131,7 @@ func NewOAuth2API(
 		sessionRepo:         opts.SessionRepo,
 		bootstrapToken:      opts.BootstrapToken,
 		backchannelNotifier: opts.BackchannelLogoutNotifier,
+		authEndpointLimiter: webauth.NewRateLimiter(authRateLimit.RateLimitMaxAttempts, authRateLimit.RateLimitLockoutDuration),
 		brandLogo:           opts.BrandLogoURL,
 		brandName:           opts.BrandOrganizationName,
 		brandColor:          opts.BrandPrimaryColor,
@@ -1948,6 +1952,13 @@ func (oa *OAuth2API) AuthenticateUserHandler(c *gin.Context) {
 		return
 	}
 
+	rateLimitKey := "oidc-auth:" + c.ClientIP() + ":" + strings.ToLower(req.Email)
+	if !oa.authEndpointLimiter.Allow(rateLimitKey) {
+		log.Ctx(ctx).Warn().Str("email", req.Email).Str("ip", c.ClientIP()).Msg("AuthenticateUserHandler: rate limited")
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "too_many_attempts", "error_description": "Too many login attempts. Please try again later."})
+		return
+	}
+
 	flowState, err := oa.flowStore.GetFlow(ctx, req.FlowID)
 	if err != nil {
 		if goerrors.Is(err, domain.ErrFlowNotFound) || goerrors.Is(err, domain.ErrFlowExpired) { // Use goerrors.Is
@@ -1974,6 +1985,7 @@ func (oa *OAuth2API) AuthenticateUserHandler(c *gin.Context) {
 
 	user, err := oa.userRepo.GetUserByEmail(ctx, req.Email)
 	if err != nil {
+		oa.authEndpointLimiter.RecordFailure(rateLimitKey)
 		log.Warn().Err(err).Msg("User not found during Next.js UI auth attempt") // Removed email from log
 		// Generic error to avoid user enumeration
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_credentials", "error_description": "Invalid email or password."})
@@ -1982,14 +1994,35 @@ func (oa *OAuth2API) AuthenticateUserHandler(c *gin.Context) {
 
 	// Verify password
 	if err := oa.passwordHasher.Verify(user.PasswordHash, req.Password); err != nil {
+		oa.authEndpointLimiter.RecordFailure(rateLimitKey)
+		if _, incErr := oa.userRepo.IncrementFailedLoginAttempts(ctx, user.ID); incErr != nil {
+			log.Warn().Err(incErr).Str("userID", user.ID).Msg("Failed to increment failed login attempts")
+		}
 		log.Warn().Str("userID", user.ID).Msg("Incorrect password during Next.js UI auth")
-		// TODO: Implement failed login attempt tracking for the user
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_credentials", "error_description": "Invalid email or password."})
 		return
 	}
 
-	// TODO: Handle 2FA if enabled for the user. This would involve another step/redirect or different API call.
-	// For this iteration, we assume 2FA is handled separately or not in scope for this specific handler.
+	oa.authEndpointLimiter.Reset(rateLimitKey)
+
+	if user.Status != domain.UserStatusActive {
+		log.Warn().Str("userID", user.ID).Str("status", string(user.Status)).Msg("Next.js UI auth attempted for inactive account")
+		c.JSON(http.StatusForbidden, gin.H{"error": "account_inactive", "error_description": "Account is not active. Please contact support."})
+		return
+	}
+
+	// The legacy JSON endpoint cannot complete an MFA challenge. Refuse to issue
+	// an SSO session for MFA-enabled users; they must use the server-rendered
+	// /login flow instead.
+	if userHasMFA(user) {
+		log.Warn().Str("userID", user.ID).Msg("Next.js UI auth attempted for MFA-enabled account")
+		c.JSON(http.StatusForbidden, gin.H{"error": "mfa_required", "error_description": "Multi-factor authentication is required. Please use the /login flow."})
+		return
+	}
+
+	if err := oa.userRepo.ResetFailedLoginAttempts(ctx, user.ID); err != nil {
+		log.Warn().Err(err).Str("userID", user.ID).Msg("Failed to reset failed login attempts")
+	}
 
 	// Client information was already retrieved and validated earlier in the function
 
@@ -2094,6 +2127,24 @@ func (oa *OAuth2API) AuthenticateUserHandler(c *gin.Context) {
 
 	log.Info().Str("flowId", req.FlowID).Str("userID", user.ID).Str("redirectURL", redirectURL).Msg("User authenticated via UI, redirecting to client with auth code.")
 	c.Redirect(http.StatusFound, redirectURL)
+}
+
+// userHasMFA reports whether the account has any enabled or verified MFA
+// method. The legacy JSON authenticate endpoint cannot complete an MFA
+// challenge, so it must not issue a session for these users.
+func userHasMFA(user *domain.User) bool {
+	if user == nil {
+		return false
+	}
+	if user.IsTwoFactorEnabled || user.EmailMFAEnabled || user.PushMFAEnabled {
+		return true
+	}
+	for _, method := range user.MfaMethods {
+		if method.Verified {
+			return true
+		}
+	}
+	return false
 }
 
 func (oa *OAuth2API) authenticateClient(ctx context.Context, clientID string, existingClient *domain.Client, params map[string][]string) (*domain.Client, error) {
