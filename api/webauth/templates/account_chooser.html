@@ -1,0 +1,117 @@
+{{template "base_start" .}}
+<style>
+    .chooser-header { margin-bottom: 18px; }
+    .account-list { display: flex; flex-direction: column; gap: 2px; margin: 0 -8px; }
+    .account-form { margin: 0; }
+    .account-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        padding: 12px 10px;
+        border: 0;
+        border-radius: 12px;
+        background: transparent;
+        color: var(--text);
+        font-family: var(--font);
+        text-align: left;
+        cursor: pointer;
+        text-decoration: none;
+        transition: background var(--dur-fast) var(--ease);
+    }
+    .account-row:hover { background: var(--bg-card-hover); }
+    .account-avatar {
+        width: 42px;
+        height: 42px;
+        flex: 0 0 42px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        color: #fff;
+        font-size: 14px;
+        font-weight: 600;
+        background: linear-gradient(135deg, var(--primary), #818cf8);
+        user-select: none;
+    }
+    .account-info {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        min-width: 0;
+        flex: 1;
+    }
+    .account-name {
+        font-size: 0.9375rem;
+        font-weight: 500;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .account-email {
+        font-size: 0.8125rem;
+        color: var(--text-muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .current-badge {
+        font-size: 0.6875rem;
+        color: var(--success);
+        margin-top: 1px;
+    }
+    .account-chevron {
+        width: 18px;
+        height: 18px;
+        flex: 0 0 18px;
+        color: var(--text-subtle);
+    }
+    .add-account { margin-top: 2px; }
+    .add-avatar {
+        background: var(--bg-input);
+        border: 1px dashed var(--border);
+        color: var(--text-muted);
+        font-size: 20px;
+        font-weight: 400;
+    }
+    .add-account .account-name { color: var(--text-muted); }
+</style>
+
+<div class="chooser-header">
+    <h2 class="page-title">Choose an account</h2>
+    <p class="page-subtitle">to continue to {{if .BrandName}}{{.BrandName}}{{else}}Shadow SSO{{end}}</p>
+</div>
+
+{{if .Error}}
+<div class="alert alert-error" role="alert">
+    <span class="alert-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    </span>
+    <span>{{.Error}}</span>
+</div>
+{{end}}
+
+<div class="account-list">
+    {{range .Accounts}}
+    <form method="POST" action="/login/select" class="account-form">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+        <input type="hidden" name="user_id" value="{{.UserID}}">
+        <button type="submit" class="account-row">
+            <span class="account-avatar" aria-hidden="true">{{.Initials}}</span>
+            <span class="account-info">
+                <span class="account-name">{{if .Name}}{{.Name}}{{else if .Email}}{{.Email}}{{else}}Account{{end}}</span>
+                {{if .Email}}<span class="account-email">{{.Email}}</span>{{end}}
+                {{if .Current}}<span class="current-badge">Current session</span>{{end}}
+            </span>
+            <svg class="account-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+    </form>
+    {{end}}
+
+    <a class="account-row add-account" href="/login?form=1">
+        <span class="account-avatar add-avatar" aria-hidden="true">+</span>
+        <span class="account-info">
+            <span class="account-name">Use another account</span>
+        </span>
+    </a>
+</div>
+{{template "base_end" .}}

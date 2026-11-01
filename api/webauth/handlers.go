@@ -98,14 +98,14 @@ func (wa *WebAuth) ConsentPageHandler(c *gin.Context) {
 	scopes := strings.Split(flowState.Scope, " ")
 
 	wa.renderTemplate(c, "consent.html", gin.H{
-		"PageTitle":       "Authorization Required",
-		"FlowID":          flowID,
-		"ClientID":        flowState.ClientID,
-		"ClientName":      client.Name,
-		"ClientLogo":      client.LogoURI,
+		"PageTitle":         "Authorization Required",
+		"FlowID":            flowID,
+		"ClientID":          flowState.ClientID,
+		"ClientName":        client.Name,
+		"ClientLogo":        client.LogoURI,
 		"ClientDescription": "",
-		"Scopes":          scopes,
-		"RedirectURI":     flowState.RedirectURI,
+		"Scopes":            scopes,
+		"RedirectURI":       flowState.RedirectURI,
 	})
 }
 
@@ -209,28 +209,15 @@ func (wa *WebAuth) ConsentSubmitHandler(c *gin.Context) {
 	_ = wa.flowStore.DeleteFlow(ctx, flowID)
 
 	isSecure := IsSecureRequest(c.Request)
-	displayName := flowState.UserID
-	ssoSession := &ssosession.Session{
-		SessionID: ssosession.NewID(),
-		Accounts: []ssosession.Account{{
-			UserID:   flowState.UserID,
-			LastUsed: time.Now(),
-		}},
-	}
-	if existingSession, sessErr := GetSSOSession(c.Request, wa.ssoCookieSecret); sessErr == nil && existingSession != nil {
-		ssoSession.Accounts = existingSession.Accounts
-		for i := range ssoSession.Accounts {
-			if ssoSession.Accounts[i].UserID == flowState.UserID {
-				ssoSession.Accounts[i].LastUsed = time.Now()
-				if ssoSession.Accounts[i].Name != "" {
-					displayName = ssoSession.Accounts[i].Name
-				}
-				break
-			}
+	account := ssosession.Account{UserID: flowState.UserID, LastUsed: time.Now()}
+	if user, userErr := wa.userRepo.GetUserByID(ctx, flowState.UserID); userErr == nil && user != nil {
+		account.Email = user.Email
+		account.Name = strings.TrimSpace(user.FirstName + " " + user.LastName)
+		if account.Name == "" {
+			account.Name = user.Email
 		}
 	}
-	_ = displayName
-
+	ssoSession := wa.mergeLoginSession(c.Request, account)
 	if setErr := SetSSOSessionCookie(c.Writer, ssoSession, isSecure, wa.ssoCookieSecret); setErr != nil {
 		log.Error().Err(setErr).Msg("consent: failed to update SSO session cookie")
 	}

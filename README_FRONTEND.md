@@ -114,6 +114,24 @@ In this flow, when a Relying Party (RP) initiates an OIDC login, if the user is 
 *   If the user is subsequently redirected to the `/oauth2/authorize` endpoint (e.g., by the same or a different RP) while this cookie is valid, the OIDC provider will recognize the user as already logged in and may skip the redirect to your Next.js UI, directly issuing an authorization code to the RP (subject to consent rules).
 *   Your frontend application generally does not need to manage or interact with this `sso_op_session` cookie.
 
+## Account chooser
+
+The login page keeps a short, signed history of previously used accounts in the
+`sso_session` cookie (up to 5 accounts). When at least one account is known, the
+SSO login page shows a Google-style **Choose an account** screen instead of the
+empty credential form:
+
+- Selecting the account that owns the current server-side OP session completes
+  the flow without asking for a password again.
+- Selecting any other account opens the password form pre-filled with that
+  email (the password is always required to switch accounts).
+- `prompt=login` always requires the password, even for the current account.
+- `prompt=select_account` shows the account chooser.
+- **Use another account** opens the normal login form and social providers.
+
+The account list is only a convenience history — it never grants access without
+a valid OP session or password.
+
 ## CSRF Protection (TODO)
 
 *   The `POST /api/oidc/authenticate` endpoint should be protected against Cross-Site Request Forgery (CSRF).

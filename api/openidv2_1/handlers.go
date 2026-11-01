@@ -1015,16 +1015,17 @@ func (oa *OAuth2API) FederatedCallbackHandler(c *gin.Context) {
 				userName = result.UserInfo.Email
 			}
 
-			session := &ssosession.Session{
-				SessionID: ssosession.NewID(),
-				CSRFToken: "",
-				Accounts: []ssosession.Account{{
-					UserID:   result.UserInfo.ID,
-					Email:    result.UserInfo.Email,
-					Name:     userName,
-					LastUsed: time.Now(),
-				}},
+			account := ssosession.Account{
+				UserID:   result.UserInfo.ID,
+				Email:    result.UserInfo.Email,
+				Name:     userName,
+				LastUsed: time.Now(),
 			}
+			var existingSession *ssosession.Session
+			if cookie, cookieErr := c.Cookie(ssosession.CookieName); cookieErr == nil && cookie != "" {
+				existingSession, _ = ssosession.VerifyAndDecode(cookie, oa.cookieSigningSecret)
+			}
+			session := ssosession.MergeAccount(existingSession, account)
 
 			if err := ssosession.SetCookie(c.Writer, session, isSecure, oa.cookieSigningSecret); err != nil {
 				log.Error().Err(err).Msg("Failed to set SSOSession cookie after federated login")
@@ -2108,14 +2109,21 @@ func (oa *OAuth2API) AuthenticateUserHandler(c *gin.Context) {
 	if displayName == "" {
 		displayName = user.Email
 	}
-	uiSession := &ssosession.Session{
-		SessionID: ssosession.NewID(),
-		Accounts: []ssosession.Account{{
-			UserID:   user.ID,
-			Email:    user.Email,
-			Name:     displayName,
-			LastUsed: time.Now(),
-		}},
+	uiSession := ssosession.MergeAccount(nil, ssosession.Account{
+		UserID:   user.ID,
+		Email:    user.Email,
+		Name:     displayName,
+		LastUsed: time.Now(),
+	})
+	if cookie, cookieErr := c.Cookie(ssosession.CookieName); cookieErr == nil && cookie != "" {
+		if existing, verifyErr := ssosession.VerifyAndDecode(cookie, oa.cookieSigningSecret); verifyErr == nil {
+			uiSession = ssosession.MergeAccount(existing, ssosession.Account{
+				UserID:   user.ID,
+				Email:    user.Email,
+				Name:     displayName,
+				LastUsed: time.Now(),
+			})
+		}
 	}
 	if err := ssosession.SetCookie(c.Writer, uiSession, isSecure, oa.cookieSigningSecret); err != nil {
 		log.Error().Err(err).Str("userID", user.ID).Msg("Failed to set SSOSession cookie")

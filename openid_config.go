@@ -327,6 +327,7 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 	router.GET("/", webauthAPI.LandingPageHandler)
 	router.GET("/login", webauthAPI.LoginPageHandler)
 	router.POST("/login", webauthAPI.LoginSubmitHandler)
+	router.POST("/login/select", webauthAPI.SelectAccountHandler)
 	router.GET("/login/:provider", webauthAPI.SocialLoginHandler)
 	router.GET("/consent", webauthAPI.ConsentPageHandler)
 	router.POST("/consent", webauthAPI.ConsentSubmitHandler)

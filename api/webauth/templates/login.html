@@ -1,6 +1,6 @@
 {{template "base_start" .}}
 <h2 class="page-title">Sign in to your account</h2>
-<p class="page-subtitle">Enter your credentials to continue</p>
+<p class="page-subtitle">{{if .Email}}Enter your password to continue as {{.Email}}{{else}}Enter your credentials to continue{{end}}</p>
 
 {{if .Error}}
 <div class="alert alert-error" role="alert">
@@ -21,6 +21,7 @@
             id="email"
             name="email"
             class="form-input{{if .Error}} error{{end}}"
+            value="{{.Email}}"
             autocomplete="email"
             placeholder="you@example.com"
             required
@@ -46,6 +47,16 @@
         Sign In
     </button>
 </form>
+
+{{if .HasAccounts}}
+<p style="text-align:center;margin-top:12px;font-size:0.8125rem;">
+    {{if .Email}}
+    <a href="/login?form=1" class="link">Use another account</a>
+    {{else}}
+    <a href="/login" class="link">Back to account chooser</a>
+    {{end}}
+</p>
+{{end}}
 
 <a href="/forgot-password" class="link link-center">Forgot your password?</a>
 
