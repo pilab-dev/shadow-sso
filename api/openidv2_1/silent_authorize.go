@@ -36,6 +36,11 @@ type silentAuthorizeResult struct {
 func (oa *OAuth2API) SilentAuthorizeHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 
+	if c.Request.Method == http.MethodHead || c.Request.Method == http.MethodOptions {
+		oa.handleSilentPreflight(c)
+		return
+	}
+
 	data := &authorizeRequestData{
 		clientID:            c.Query("client_id"),
 		redirectURI:         c.Query("redirect_uri"),
@@ -275,4 +280,73 @@ func validOriginHost(host string) bool {
 		}
 	}
 	return true
+}
+
+// handleSilentPreflight answers HEAD and OPTIONS requests for the silent
+// authorize endpoint. It exposes the frame policy headers to the SDK so the
+// library can detect CSP/X-Frame-Options blocking before inserting an iframe.
+func (oa *OAuth2API) handleSilentPreflight(c *gin.Context) {
+	claimedParent, claimedOK := parentOriginFromParam(c.Query("parent_origin"))
+	requestOrigin := c.GetHeader("Origin")
+	allowOrigin := ""
+	if claimedOK && requestOrigin != "" && strings.EqualFold(requestOrigin, claimedParent) {
+		allowOrigin = requestOrigin
+	}
+	setSilentPreflightCORS(c, allowOrigin)
+
+	if !claimedOK {
+		oa.sendJSONError(c, http.StatusBadRequest, domain.NewInvalidRequest("parent_origin must be an absolute http(s) origin"))
+		return
+	}
+
+	// Set the frame policy before client validation so validation errors are
+	// not misreported by the SDK as frame-blocked responses.
+	applySilentFrameHeaders(c, claimedParent)
+
+	clientID := c.Query("client_id")
+	redirectURI := c.Query("redirect_uri")
+	scope := c.Query("scope")
+	if scope == "" {
+		scope = "openid"
+	}
+	if clientID == "" || redirectURI == "" {
+		oa.sendJSONError(c, http.StatusBadRequest, domain.NewInvalidRequest("client_id and redirect_uri are required"))
+		return
+	}
+	if _, ok := redirectOrigin(redirectURI); !ok {
+		oa.sendJSONError(c, http.StatusBadRequest, domain.NewInvalidRequest("redirect_uri must be an absolute http(s) URL"))
+		return
+	}
+	if err := oa.validateClientDetails(c.Request.Context(), clientID, redirectURI, scope); err != nil {
+		if oauthErr, isOAuthErr := err.(*domain.OAuth2Error); isOAuthErr {
+			oa.sendJSONError(c, http.StatusBadRequest, oauthErr)
+			return
+		}
+		log.Error().Err(err).Msg("SilentAuthorizeHandler: preflight client validation failed")
+		oa.sendJSONError(c, http.StatusInternalServerError, domain.NewServerError("internal validation error"))
+		return
+	}
+
+	if c.Request.Method == http.MethodOptions {
+		c.Status(http.StatusNoContent)
+		return
+	}
+	c.Status(http.StatusOK)
+}
+
+func setSilentPreflightCORS(c *gin.Context, allowOrigin string) {
+	if allowOrigin != "" {
+		c.Header("Access-Control-Allow-Origin", allowOrigin)
+	}
+	c.Header("Vary", "Origin")
+	c.Header("Access-Control-Allow-Methods", "HEAD, OPTIONS")
+	c.Header("Access-Control-Allow-Headers", "Content-Type")
+	c.Header("Access-Control-Expose-Headers", "Content-Security-Policy, X-Frame-Options")
+	c.Header("Access-Control-Max-Age", "600")
+}
+
+func applySilentFrameHeaders(c *gin.Context, parentOrigin string) {
+	c.Header("Content-Security-Policy", "frame-ancestors "+parentOrigin)
+	c.Writer.Header().Del("X-Frame-Options")
+	c.Header("Cache-Control", "no-store")
 }

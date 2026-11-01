@@ -47,6 +47,8 @@ func setupSilentAuthorizeTest(t *testing.T) *silentAuthorizeTestEnv {
 	env.router = gin.New()
 	require.NoError(t, webauth.LoadTemplates(env.router))
 	env.router.GET("/oauth2/silent-authorize", api.SilentAuthorizeHandler)
+	env.router.HEAD("/oauth2/silent-authorize", api.SilentAuthorizeHandler)
+	env.router.OPTIONS("/oauth2/silent-authorize", api.SilentAuthorizeHandler)
 	return env
 }
 
@@ -223,4 +225,86 @@ func TestSilentAuthorize_RejectsParentOriginWithPath(t *testing.T) {
 	env.router.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestSilentAuthorizePreflight_HEAD(t *testing.T) {
+	env := setupSilentAuthorizeTest(t)
+	env.expectValidClient(false)
+
+	q := url.Values{
+		"client_id":     {"client-1"},
+		"redirect_uri":  {"https://app.example.com/callback"},
+		"scope":         {"openid profile email"},
+		"parent_origin": {"https://app.example.com"},
+	}
+	req := httptest.NewRequest(http.MethodHead, "/oauth2/silent-authorize?"+q.Encode(), nil)
+	req.Header.Set("Origin", "https://app.example.com")
+	w := httptest.NewRecorder()
+	env.router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "https://app.example.com", w.Header().Get("Access-Control-Allow-Origin"))
+	assert.Equal(t, "Origin", w.Header().Get("Vary"))
+	assert.Contains(t, w.Header().Get("Access-Control-Expose-Headers"), "Content-Security-Policy")
+	assert.Contains(t, w.Header().Get("Access-Control-Expose-Headers"), "X-Frame-Options")
+	assert.Contains(t, w.Header().Get("Content-Security-Policy"), "frame-ancestors https://app.example.com")
+	assert.Empty(t, w.Header().Get("X-Frame-Options"))
+	assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
+}
+
+func TestSilentAuthorizePreflight_OPTIONS(t *testing.T) {
+	env := setupSilentAuthorizeTest(t)
+	env.expectValidClient(false)
+
+	q := url.Values{
+		"client_id":     {"client-1"},
+		"redirect_uri":  {"https://app.example.com/callback"},
+		"scope":         {"openid profile email"},
+		"parent_origin": {"https://app.example.com"},
+	}
+	req := httptest.NewRequest(http.MethodOptions, "/oauth2/silent-authorize?"+q.Encode(), nil)
+	req.Header.Set("Origin", "https://app.example.com")
+	w := httptest.NewRecorder()
+	env.router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusNoContent, w.Code)
+	assert.Equal(t, "https://app.example.com", w.Header().Get("Access-Control-Allow-Origin"))
+	assert.Contains(t, w.Header().Get("Access-Control-Allow-Methods"), "HEAD")
+}
+
+func TestSilentAuthorizePreflight_OriginMismatchNotExposed(t *testing.T) {
+	env := setupSilentAuthorizeTest(t)
+	env.expectValidClient(false)
+
+	q := url.Values{
+		"client_id":     {"client-1"},
+		"redirect_uri":  {"https://app.example.com/callback"},
+		"scope":         {"openid profile email"},
+		"parent_origin": {"https://app.example.com"},
+	}
+	req := httptest.NewRequest(http.MethodHead, "/oauth2/silent-authorize?"+q.Encode(), nil)
+	req.Header.Set("Origin", "https://evil.example.com")
+	w := httptest.NewRecorder()
+	env.router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Empty(t, w.Header().Get("Access-Control-Allow-Origin"))
+	assert.Contains(t, w.Header().Get("Content-Security-Policy"), "frame-ancestors https://app.example.com")
+}
+
+func TestSilentAuthorizePreflight_InvalidParentOrigin(t *testing.T) {
+	env := setupSilentAuthorizeTest(t)
+
+	q := url.Values{
+		"client_id":     {"client-1"},
+		"redirect_uri":  {"https://app.example.com/callback"},
+		"parent_origin": {"https://app.example.com/nested"},
+	}
+	req := httptest.NewRequest(http.MethodHead, "/oauth2/silent-authorize?"+q.Encode(), nil)
+	req.Header.Set("Origin", "https://app.example.com")
+	w := httptest.NewRecorder()
+	env.router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Empty(t, w.Header().Get("Access-Control-Allow-Origin"))
 }

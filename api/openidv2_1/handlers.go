@@ -146,6 +146,8 @@ func (oa *OAuth2API) RegisterRoutes(e *gin.Engine) {
 	e.POST("/oauth2/token", oa.TokenHandler)
 	e.GET("/oauth2/authorize", oa.AuthorizeHandler)
 	e.GET("/oauth2/silent-authorize", oa.SilentAuthorizeHandler)
+	e.HEAD("/oauth2/silent-authorize", oa.SilentAuthorizeHandler)
+	e.OPTIONS("/oauth2/silent-authorize", oa.SilentAuthorizeHandler)
 	e.POST("/oauth2/device_authorization", oa.DeviceAuthorizationHandler)
 	e.GET("/oauth2/userinfo", oa.UserInfoHandler)
 	e.POST("/oauth2/userinfo", oa.UserInfoHandler)
