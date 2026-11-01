@@ -122,12 +122,15 @@ export async function silentLogin(options: SilentLoginOptions): Promise<SilentLo
     }, timeoutMs);
 
     iframe = document.createElement("iframe");
-    iframe.hidden = true;
     iframe.title = options.iframeTitle ?? "Silent authentication";
     iframe.referrerPolicy = "no-referrer";
     iframe.setAttribute("aria-hidden", "true");
     iframe.setAttribute("data-sso-silent", state);
-    iframe.style.display = "none";
+    iframe.style.position = "absolute";
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+    iframe.style.border = "0";
+    iframe.style.visibility = "hidden";
     iframe.addEventListener("error", () => {
       fail("frame_error", "The silent login iframe failed to load.");
     });
