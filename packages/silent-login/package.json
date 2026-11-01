@@ -1,0 +1,47 @@
+{
+  "name": "@pilab/shadow-sso-silent-login",
+  "version": "0.1.0",
+  "description": "Iframe-based silent login for Shadow SSO",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@10.19.0",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "sso",
+    "oidc",
+    "silent-login",
+    "iframe",
+    "pkce"
+  ],
+  "devDependencies": {
+    "jsdom": "27.3.0",
+    "tsup": "8.5.1",
+    "typescript": "5.9.3",
+    "vitest": "4.1.12"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}
