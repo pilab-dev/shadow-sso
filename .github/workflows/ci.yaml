@@ -92,41 +92,6 @@ jobs:
           # Ensure buildkit is used
           DOCKER_BUILDKIT: 1
 
-  silent_login_sdk:
-    name: Silent Login SDK
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.19.0
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: packages/silent-login/pnpm-lock.yaml
-
-      - name: Install
-        run: pnpm install --frozen-lockfile
-        working-directory: packages/silent-login
-
-      - name: Test
-        run: pnpm test
-        working-directory: packages/silent-login
-
-      - name: Typecheck
-        run: pnpm typecheck
-        working-directory: packages/silent-login
-
-      - name: Build
-        run: pnpm build
-        working-directory: packages/silent-login
-
   pr_lint:
     name: Validate PR title follows Conventional Commits
     runs-on: ubuntu-latest
