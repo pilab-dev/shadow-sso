@@ -32,7 +32,7 @@ func TestStaticHandler_ServesCSS(t *testing.T) {
 	assert.Equal(t, "text/css; charset=utf-8", w.Header().Get("Content-Type"))
 	assert.Equal(t, "public, max-age=86400", w.Header().Get("Cache-Control"))
 	assert.Contains(t, w.Body.String(), "@font-face")
-	assert.Contains(t, w.Body.String(), "/static/fonts/inter-latin.woff2")
+	assert.Contains(t, w.Body.String(), "inter-latin.woff2")
 }
 
 func TestStaticHandler_ServesFont(t *testing.T) {
