@@ -19,11 +19,19 @@ const silentAuthorizeMessageType = "sso-silent-result"
 // silentAuthorizeResult is the postMessage payload delivered to the parent
 // application by the silent authorization iframe.
 type silentAuthorizeResult struct {
-	Type             string `json:"type"`
-	State            string `json:"state,omitempty"`
-	Code             string `json:"code,omitempty"`
-	Error            string `json:"error,omitempty"`
-	ErrorDescription string `json:"error_description,omitempty"`
+	Type             string               `json:"type"`
+	State            string               `json:"state,omitempty"`
+	Code             string               `json:"code,omitempty"`
+	Authenticated    bool                 `json:"authenticated,omitempty"`
+	User             *silentAuthorizeUser `json:"user,omitempty"`
+	Error            string               `json:"error,omitempty"`
+	ErrorDescription string               `json:"error_description,omitempty"`
+}
+
+type silentAuthorizeUser struct {
+	ID    string `json:"id"`
+	Email string `json:"email,omitempty"`
+	Name  string `json:"name,omitempty"`
 }
 
 // SilentAuthorizeHandler implements iframe-based silent login. It performs the
@@ -38,6 +46,12 @@ func (oa *OAuth2API) SilentAuthorizeHandler(c *gin.Context) {
 
 	if c.Request.Method == http.MethodHead || c.Request.Method == http.MethodOptions {
 		oa.handleSilentPreflight(c)
+		return
+	}
+
+	mode := c.Query("mode")
+	if mode != "" && mode != "session" {
+		oa.sendJSONError(c, http.StatusBadRequest, domain.NewInvalidRequest("unsupported mode"))
 		return
 	}
 
@@ -87,14 +101,16 @@ func (oa *OAuth2API) SilentAuthorizeHandler(c *gin.Context) {
 		oa.sendJSONError(c, http.StatusInternalServerError, domain.NewServerError("internal validation error"))
 		return
 	}
-	if err := oa.validatePKCE(ctx, data.clientID, data.codeChallenge, data.codeChallengeMethod); err != nil {
-		if oauthErr, isOAuthErr := err.(*domain.OAuth2Error); isOAuthErr {
-			oa.sendJSONError(c, http.StatusBadRequest, oauthErr)
+	if mode != "session" {
+		if err := oa.validatePKCE(ctx, data.clientID, data.codeChallenge, data.codeChallengeMethod); err != nil {
+			if oauthErr, isOAuthErr := err.(*domain.OAuth2Error); isOAuthErr {
+				oa.sendJSONError(c, http.StatusBadRequest, oauthErr)
+				return
+			}
+			log.Error().Err(err).Msg("SilentAuthorizeHandler: PKCE validation failed")
+			oa.sendJSONError(c, http.StatusInternalServerError, domain.NewServerError("internal PKCE validation error"))
 			return
 		}
-		log.Error().Err(err).Msg("SilentAuthorizeHandler: PKCE validation failed")
-		oa.sendJSONError(c, http.StatusInternalServerError, domain.NewServerError("internal PKCE validation error"))
-		return
 	}
 
 	// The iframe may load (so it can report a useful error), but a parent
@@ -142,6 +158,17 @@ func (oa *OAuth2API) SilentAuthorizeHandler(c *gin.Context) {
 		return
 	}
 
+	userInfo := oa.silentUserInfo(c, userID)
+	if mode == "session" {
+		oa.renderSilentResult(c, parentOrigin, silentAuthorizeResult{
+			Type:          silentAuthorizeMessageType,
+			State:         data.state,
+			Authenticated: true,
+			User:          userInfo,
+		})
+		return
+	}
+
 	authCode, err := oa.service.GenerateAuthCode(
 		ctx,
 		data.clientID,
@@ -166,9 +193,11 @@ func (oa *OAuth2API) SilentAuthorizeHandler(c *gin.Context) {
 	oa.persistCodeChallenge(ctx, authCode, data.codeChallenge)
 
 	oa.renderSilentResult(c, parentOrigin, silentAuthorizeResult{
-		Type:  silentAuthorizeMessageType,
-		State: data.state,
-		Code:  authCode,
+		Type:          silentAuthorizeMessageType,
+		State:         data.state,
+		Code:          authCode,
+		Authenticated: true,
+		User:          userInfo,
 	})
 }
 
@@ -188,6 +217,28 @@ func (oa *OAuth2API) currentOPUser(c *gin.Context) (string, time.Time, bool) {
 		authenticatedAt = time.Now()
 	}
 	return session.UserID, authenticatedAt, true
+}
+
+// silentUserInfo returns the minimal profile used by the one-tap widget. When
+// the user repository is unavailable it still returns the user ID.
+func (oa *OAuth2API) silentUserInfo(c *gin.Context, userID string) *silentAuthorizeUser {
+	info := &silentAuthorizeUser{ID: userID}
+	if oa.userRepo == nil {
+		return info
+	}
+	user, err := oa.userRepo.GetUserByID(c.Request.Context(), userID)
+	if err != nil || user == nil {
+		return info
+	}
+	if user.ID != "" {
+		info.ID = user.ID
+	}
+	info.Email = user.Email
+	info.Name = strings.TrimSpace(user.FirstName + " " + user.LastName)
+	if info.Name == "" {
+		info.Name = user.Email
+	}
+	return info
 }
 
 // renderSilentResult renders the postMessage bridge page. The CSP allows the

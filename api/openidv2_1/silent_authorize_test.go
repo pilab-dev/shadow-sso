@@ -24,6 +24,7 @@ type silentAuthorizeTestEnv struct {
 	clientSvc    *services_mocks.MockClientService
 	oauthSvc     *services_mocks.MockOAuthService
 	sessionStore *mock_domain.MockUserSessionStore
+	userRepo     *mock_domain.MockUserRepository
 }
 
 func setupSilentAuthorizeTest(t *testing.T) *silentAuthorizeTestEnv {
@@ -35,13 +36,21 @@ func setupSilentAuthorizeTest(t *testing.T) *silentAuthorizeTestEnv {
 		clientSvc:    services_mocks.NewMockClientService(ctrl),
 		oauthSvc:     services_mocks.NewMockOAuthService(ctrl),
 		sessionStore: mock_domain.NewMockUserSessionStore(ctrl),
+		userRepo:     mock_domain.NewMockUserRepository(ctrl),
 	}
+	env.userRepo.EXPECT().GetUserByID(gomock.Any(), "user-1").Return(&domain.User{
+		ID:        "user-1",
+		Email:     "user@example.com",
+		FirstName: "Test",
+		LastName:  "User",
+	}, nil).AnyTimes()
 
 	api := sssogin.NewOAuth2API(&sssogin.OAuth2APIOptions{
 		Config:           &sssoapi.OpenIDProviderConfig{Issuer: "https://sso.example.com"},
 		ClientService:    env.clientSvc,
 		OAuthService:     env.oauthSvc,
 		UserSessionStore: env.sessionStore,
+		UserRepo:         env.userRepo,
 	})
 
 	env.router = gin.New()
@@ -72,6 +81,31 @@ func (e *silentAuthorizeTestEnv) expectValidClient(requireConsent bool) {
 	e.clientSvc.EXPECT().ValidateRedirectURI(gomock.Any(), "client-1", "https://app.example.com/callback").Return(nil).AnyTimes()
 	e.clientSvc.EXPECT().ValidateScope(gomock.Any(), "client-1", gomock.Any()).Return(nil).AnyTimes()
 	e.clientSvc.EXPECT().RequiresPKCE(gomock.Any(), "client-1").Return(false, nil).AnyTimes()
+}
+
+func TestSilentAuthorize_SessionMode_PostsUser(t *testing.T) {
+	env := setupSilentAuthorizeTest(t)
+	env.expectValidClient(false)
+
+	env.sessionStore.EXPECT().GetUserSession(gomock.Any(), "session-1").Return(&domain.UserSession{
+		SessionID:       "session-1",
+		UserID:          "user-1",
+		AuthenticatedAt: time.Now(),
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, silentAuthorizeURL("state-session")+"&mode=session", nil)
+	req.AddCookie(&http.Cookie{Name: sssogin.SessionCookieName, Value: "session-1"})
+	w := httptest.NewRecorder()
+	env.router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.Contains(t, body, `"authenticated":true`)
+	assert.Contains(t, body, `"state":"state-session"`)
+	assert.Contains(t, body, `"user":{"id":"user-1"`)
+	assert.Contains(t, body, `"email":"user@example.com"`)
+	assert.Contains(t, body, `"name":"Test User"`)
+	assert.NotContains(t, body, `"code"`)
 }
 
 func TestSilentAuthorize_WithSession_PostsCode(t *testing.T) {

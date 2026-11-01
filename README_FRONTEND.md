@@ -155,6 +155,30 @@ The iframe posts this object to `window.parent`:
 { "type": "sso-silent-result", "state": "RANDOM_STATE", "code": "..." }
 ```
 
+A successful result also includes the authenticated user and `authenticated`:
+
+```json
+{
+  "type": "sso-silent-result",
+  "state": "RANDOM_STATE",
+  "code": "...",
+  "authenticated": true,
+  "user": { "id": "...", "email": "...", "name": "..." }
+}
+```
+
+With `mode=session` the endpoint returns the session/user without issuing an
+authorization code:
+
+```json
+{
+  "type": "sso-silent-result",
+  "state": "RANDOM_STATE",
+  "authenticated": true,
+  "user": { "id": "...", "email": "...", "name": "..." }
+}
+```
+
 or, when no session or consent is available:
 
 ```json
@@ -205,7 +229,9 @@ The parent page must allow the iframe:
   https://github.com/pilab-cloud/shadow-sso. It performs a `HEAD`
   preflight against the silent endpoint, checks `Content-Security-Policy` and
   `X-Frame-Options`, and throws `frame_blocked` before creating the iframe when
-  the response headers forbid framing.
+  the response headers forbid framing. Its `mountOneTap()` widget uses
+  `mode=session` for the initial account check and requests a fresh code only
+  when the user clicks “Continue”.
 
 ## Important Considerations
 
