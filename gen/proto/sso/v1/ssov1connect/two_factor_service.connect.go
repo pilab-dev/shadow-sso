@@ -82,6 +82,21 @@ const (
 	// TwoFactorServiceGenerateRecoveryCodesProcedure is the fully-qualified name of the
 	// TwoFactorService's GenerateRecoveryCodes RPC.
 	TwoFactorServiceGenerateRecoveryCodesProcedure = "/sso.v1.TwoFactorService/GenerateRecoveryCodes"
+	// TwoFactorServiceGetMFAStatusProcedure is the fully-qualified name of the TwoFactorService's
+	// GetMFAStatus RPC.
+	TwoFactorServiceGetMFAStatusProcedure = "/sso.v1.TwoFactorService/GetMFAStatus"
+	// TwoFactorServiceResetUserMFAProcedure is the fully-qualified name of the TwoFactorService's
+	// ResetUserMFA RPC.
+	TwoFactorServiceResetUserMFAProcedure = "/sso.v1.TwoFactorService/ResetUserMFA"
+	// TwoFactorServiceSetUserMFARequiredProcedure is the fully-qualified name of the TwoFactorService's
+	// SetUserMFARequired RPC.
+	TwoFactorServiceSetUserMFARequiredProcedure = "/sso.v1.TwoFactorService/SetUserMFARequired"
+	// TwoFactorServiceGetMFAPolicyProcedure is the fully-qualified name of the TwoFactorService's
+	// GetMFAPolicy RPC.
+	TwoFactorServiceGetMFAPolicyProcedure = "/sso.v1.TwoFactorService/GetMFAPolicy"
+	// TwoFactorServiceSetMFAPolicyProcedure is the fully-qualified name of the TwoFactorService's
+	// SetMFAPolicy RPC.
+	TwoFactorServiceSetMFAPolicyProcedure = "/sso.v1.TwoFactorService/SetMFAPolicy"
 )
 
 // TwoFactorServiceClient is a client for the sso.v1.TwoFactorService service.
@@ -127,6 +142,22 @@ type TwoFactorServiceClient interface {
 	// This invalidates any previously issued recovery codes.
 	// Requires the user to be authenticated (e.g., via password or existing 2FA).
 	GenerateRecoveryCodes(context.Context, *connect.Request[v1.GenerateRecoveryCodesRequest]) (*connect.Response[v1.GenerateRecoveryCodesResponse], error)
+	// Reports every source that can trigger a second factor for a user, plus
+	// warnings about configurations the login page cannot satisfy.
+	// Self or admin (2fa:manage_others).
+	GetMFAStatus(context.Context, *connect.Request[v1.GetMFAStatusRequest]) (*connect.Response[v1.GetMFAStatusResponse], error)
+	// Clears all second-factor state for a user (flags, TOTP secret, recovery
+	// codes, registered methods and, optionally, WebAuthn devices).
+	// Admin only (2fa:manage_others).
+	ResetUserMFA(context.Context, *connect.Request[v1.ResetUserMFARequest]) (*connect.Response[v1.ResetUserMFAResponse], error)
+	// Sets or clears the per-user "MFA required" enforcement flag.
+	// Admin only (2fa:manage_others).
+	SetUserMFARequired(context.Context, *connect.Request[v1.SetUserMFARequiredRequest]) (*connect.Response[emptypb.Empty], error)
+	// Reads the realm-wide MFA policy.
+	GetMFAPolicy(context.Context, *connect.Request[v1.GetMFAPolicyRequest]) (*connect.Response[v1.GetMFAPolicyResponse], error)
+	// Sets the realm-wide MFA policy.
+	// Admin only (2fa:manage_others).
+	SetMFAPolicy(context.Context, *connect.Request[v1.SetMFAPolicyRequest]) (*connect.Response[emptypb.Empty], error)
 }
 
 // NewTwoFactorServiceClient constructs a client for the sso.v1.TwoFactorService service. By
@@ -219,6 +250,31 @@ func NewTwoFactorServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			baseURL+TwoFactorServiceGenerateRecoveryCodesProcedure,
 			opts...,
 		),
+		getMFAStatus: connect.NewClient[v1.GetMFAStatusRequest, v1.GetMFAStatusResponse](
+			httpClient,
+			baseURL+TwoFactorServiceGetMFAStatusProcedure,
+			opts...,
+		),
+		resetUserMFA: connect.NewClient[v1.ResetUserMFARequest, v1.ResetUserMFAResponse](
+			httpClient,
+			baseURL+TwoFactorServiceResetUserMFAProcedure,
+			opts...,
+		),
+		setUserMFARequired: connect.NewClient[v1.SetUserMFARequiredRequest, emptypb.Empty](
+			httpClient,
+			baseURL+TwoFactorServiceSetUserMFARequiredProcedure,
+			opts...,
+		),
+		getMFAPolicy: connect.NewClient[v1.GetMFAPolicyRequest, v1.GetMFAPolicyResponse](
+			httpClient,
+			baseURL+TwoFactorServiceGetMFAPolicyProcedure,
+			opts...,
+		),
+		setMFAPolicy: connect.NewClient[v1.SetMFAPolicyRequest, emptypb.Empty](
+			httpClient,
+			baseURL+TwoFactorServiceSetMFAPolicyProcedure,
+			opts...,
+		),
 	}
 }
 
@@ -240,6 +296,11 @@ type twoFactorServiceClient struct {
 	verifyMFAChallenge      *connect.Client[v1.VerifyMFAChallengeRequest, v1.VerifyMFAChallengeResponse]
 	disable2FA              *connect.Client[v1.Disable2FARequest, emptypb.Empty]
 	generateRecoveryCodes   *connect.Client[v1.GenerateRecoveryCodesRequest, v1.GenerateRecoveryCodesResponse]
+	getMFAStatus            *connect.Client[v1.GetMFAStatusRequest, v1.GetMFAStatusResponse]
+	resetUserMFA            *connect.Client[v1.ResetUserMFARequest, v1.ResetUserMFAResponse]
+	setUserMFARequired      *connect.Client[v1.SetUserMFARequiredRequest, emptypb.Empty]
+	getMFAPolicy            *connect.Client[v1.GetMFAPolicyRequest, v1.GetMFAPolicyResponse]
+	setMFAPolicy            *connect.Client[v1.SetMFAPolicyRequest, emptypb.Empty]
 }
 
 // InitiateTOTPSetup calls sso.v1.TwoFactorService.InitiateTOTPSetup.
@@ -322,6 +383,31 @@ func (c *twoFactorServiceClient) GenerateRecoveryCodes(ctx context.Context, req 
 	return c.generateRecoveryCodes.CallUnary(ctx, req)
 }
 
+// GetMFAStatus calls sso.v1.TwoFactorService.GetMFAStatus.
+func (c *twoFactorServiceClient) GetMFAStatus(ctx context.Context, req *connect.Request[v1.GetMFAStatusRequest]) (*connect.Response[v1.GetMFAStatusResponse], error) {
+	return c.getMFAStatus.CallUnary(ctx, req)
+}
+
+// ResetUserMFA calls sso.v1.TwoFactorService.ResetUserMFA.
+func (c *twoFactorServiceClient) ResetUserMFA(ctx context.Context, req *connect.Request[v1.ResetUserMFARequest]) (*connect.Response[v1.ResetUserMFAResponse], error) {
+	return c.resetUserMFA.CallUnary(ctx, req)
+}
+
+// SetUserMFARequired calls sso.v1.TwoFactorService.SetUserMFARequired.
+func (c *twoFactorServiceClient) SetUserMFARequired(ctx context.Context, req *connect.Request[v1.SetUserMFARequiredRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.setUserMFARequired.CallUnary(ctx, req)
+}
+
+// GetMFAPolicy calls sso.v1.TwoFactorService.GetMFAPolicy.
+func (c *twoFactorServiceClient) GetMFAPolicy(ctx context.Context, req *connect.Request[v1.GetMFAPolicyRequest]) (*connect.Response[v1.GetMFAPolicyResponse], error) {
+	return c.getMFAPolicy.CallUnary(ctx, req)
+}
+
+// SetMFAPolicy calls sso.v1.TwoFactorService.SetMFAPolicy.
+func (c *twoFactorServiceClient) SetMFAPolicy(ctx context.Context, req *connect.Request[v1.SetMFAPolicyRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.setMFAPolicy.CallUnary(ctx, req)
+}
+
 // TwoFactorServiceHandler is an implementation of the sso.v1.TwoFactorService service.
 type TwoFactorServiceHandler interface {
 	// Initiates the setup process for TOTP.
@@ -365,6 +451,22 @@ type TwoFactorServiceHandler interface {
 	// This invalidates any previously issued recovery codes.
 	// Requires the user to be authenticated (e.g., via password or existing 2FA).
 	GenerateRecoveryCodes(context.Context, *connect.Request[v1.GenerateRecoveryCodesRequest]) (*connect.Response[v1.GenerateRecoveryCodesResponse], error)
+	// Reports every source that can trigger a second factor for a user, plus
+	// warnings about configurations the login page cannot satisfy.
+	// Self or admin (2fa:manage_others).
+	GetMFAStatus(context.Context, *connect.Request[v1.GetMFAStatusRequest]) (*connect.Response[v1.GetMFAStatusResponse], error)
+	// Clears all second-factor state for a user (flags, TOTP secret, recovery
+	// codes, registered methods and, optionally, WebAuthn devices).
+	// Admin only (2fa:manage_others).
+	ResetUserMFA(context.Context, *connect.Request[v1.ResetUserMFARequest]) (*connect.Response[v1.ResetUserMFAResponse], error)
+	// Sets or clears the per-user "MFA required" enforcement flag.
+	// Admin only (2fa:manage_others).
+	SetUserMFARequired(context.Context, *connect.Request[v1.SetUserMFARequiredRequest]) (*connect.Response[emptypb.Empty], error)
+	// Reads the realm-wide MFA policy.
+	GetMFAPolicy(context.Context, *connect.Request[v1.GetMFAPolicyRequest]) (*connect.Response[v1.GetMFAPolicyResponse], error)
+	// Sets the realm-wide MFA policy.
+	// Admin only (2fa:manage_others).
+	SetMFAPolicy(context.Context, *connect.Request[v1.SetMFAPolicyRequest]) (*connect.Response[emptypb.Empty], error)
 }
 
 // NewTwoFactorServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -453,6 +555,31 @@ func NewTwoFactorServiceHandler(svc TwoFactorServiceHandler, opts ...connect.Han
 		svc.GenerateRecoveryCodes,
 		opts...,
 	)
+	twoFactorServiceGetMFAStatusHandler := connect.NewUnaryHandler(
+		TwoFactorServiceGetMFAStatusProcedure,
+		svc.GetMFAStatus,
+		opts...,
+	)
+	twoFactorServiceResetUserMFAHandler := connect.NewUnaryHandler(
+		TwoFactorServiceResetUserMFAProcedure,
+		svc.ResetUserMFA,
+		opts...,
+	)
+	twoFactorServiceSetUserMFARequiredHandler := connect.NewUnaryHandler(
+		TwoFactorServiceSetUserMFARequiredProcedure,
+		svc.SetUserMFARequired,
+		opts...,
+	)
+	twoFactorServiceGetMFAPolicyHandler := connect.NewUnaryHandler(
+		TwoFactorServiceGetMFAPolicyProcedure,
+		svc.GetMFAPolicy,
+		opts...,
+	)
+	twoFactorServiceSetMFAPolicyHandler := connect.NewUnaryHandler(
+		TwoFactorServiceSetMFAPolicyProcedure,
+		svc.SetMFAPolicy,
+		opts...,
+	)
 	return "/sso.v1.TwoFactorService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case TwoFactorServiceInitiateTOTPSetupProcedure:
@@ -487,6 +614,16 @@ func NewTwoFactorServiceHandler(svc TwoFactorServiceHandler, opts ...connect.Han
 			twoFactorServiceDisable2FAHandler.ServeHTTP(w, r)
 		case TwoFactorServiceGenerateRecoveryCodesProcedure:
 			twoFactorServiceGenerateRecoveryCodesHandler.ServeHTTP(w, r)
+		case TwoFactorServiceGetMFAStatusProcedure:
+			twoFactorServiceGetMFAStatusHandler.ServeHTTP(w, r)
+		case TwoFactorServiceResetUserMFAProcedure:
+			twoFactorServiceResetUserMFAHandler.ServeHTTP(w, r)
+		case TwoFactorServiceSetUserMFARequiredProcedure:
+			twoFactorServiceSetUserMFARequiredHandler.ServeHTTP(w, r)
+		case TwoFactorServiceGetMFAPolicyProcedure:
+			twoFactorServiceGetMFAPolicyHandler.ServeHTTP(w, r)
+		case TwoFactorServiceSetMFAPolicyProcedure:
+			twoFactorServiceSetMFAPolicyHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -558,4 +695,24 @@ func (UnimplementedTwoFactorServiceHandler) Disable2FA(context.Context, *connect
 
 func (UnimplementedTwoFactorServiceHandler) GenerateRecoveryCodes(context.Context, *connect.Request[v1.GenerateRecoveryCodesRequest]) (*connect.Response[v1.GenerateRecoveryCodesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.TwoFactorService.GenerateRecoveryCodes is not implemented"))
+}
+
+func (UnimplementedTwoFactorServiceHandler) GetMFAStatus(context.Context, *connect.Request[v1.GetMFAStatusRequest]) (*connect.Response[v1.GetMFAStatusResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.TwoFactorService.GetMFAStatus is not implemented"))
+}
+
+func (UnimplementedTwoFactorServiceHandler) ResetUserMFA(context.Context, *connect.Request[v1.ResetUserMFARequest]) (*connect.Response[v1.ResetUserMFAResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.TwoFactorService.ResetUserMFA is not implemented"))
+}
+
+func (UnimplementedTwoFactorServiceHandler) SetUserMFARequired(context.Context, *connect.Request[v1.SetUserMFARequiredRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.TwoFactorService.SetUserMFARequired is not implemented"))
+}
+
+func (UnimplementedTwoFactorServiceHandler) GetMFAPolicy(context.Context, *connect.Request[v1.GetMFAPolicyRequest]) (*connect.Response[v1.GetMFAPolicyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.TwoFactorService.GetMFAPolicy is not implemented"))
+}
+
+func (UnimplementedTwoFactorServiceHandler) SetMFAPolicy(context.Context, *connect.Request[v1.SetMFAPolicyRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.TwoFactorService.SetMFAPolicy is not implemented"))
 }

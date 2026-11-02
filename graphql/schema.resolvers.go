@@ -1165,6 +1165,9 @@ func (r *mutationResolver) SetUserPassword(ctx context.Context, userID string, p
 
 // DeleteUserCredentials is the resolver for the deleteUserCredentials field.
 func (r *mutationResolver) DeleteUserCredentials(ctx context.Context, userID string, credentialID string) (bool, error) {
+	if err := requireAdmin(ctx); err != nil {
+		return false, err
+	}
 	// Delete the specified MFA method
 	err := r.UserRepo.RemoveMfaMethod(ctx, userID, credentialID)
 	return err == nil, err
@@ -1172,13 +1175,23 @@ func (r *mutationResolver) DeleteUserCredentials(ctx context.Context, userID str
 
 // ResetUserTwoFactor is the resolver for the resetUserTwoFactor field.
 func (r *mutationResolver) ResetUserTwoFactor(ctx context.Context, userID string) (bool, error) {
+	if err := requireAdmin(ctx); err != nil {
+		return false, err
+	}
 	user, err := r.UserRepo.GetUserByID(ctx, userID)
 	if err != nil {
 		return false, err
 	}
+	// Clear every stored secret, not just the flags: leaving the TOTP secret
+	// behind would let a later setup silently reuse it.
 	user.IsTwoFactorEnabled = false
+	user.TwoFactorMethod = "NONE"
+	user.TwoFactorSecret = ""
+	user.TwoFactorRecoveryCodes = nil
 	user.EmailMFAEnabled = false
 	user.PushMFAEnabled = false
+	user.PushMFADeviceTokens = nil
+	user.PushMFAChallenges = nil
 	user.MfaMethods = nil
 	return true, r.UserRepo.UpdateUser(ctx, user)
 }

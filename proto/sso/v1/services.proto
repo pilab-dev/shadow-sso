@@ -231,6 +231,14 @@ message User {
   google.protobuf.Timestamp password_reset_token_expires_at = 21;
   string phone_verification_otp = 22;
   google.protobuf.Timestamp phone_verification_otp_expires_at = 23;
+
+  // MFA state (read-only, exposed for management tooling)
+  bool is_two_factor_enabled = 24;
+  string two_factor_method = 25;
+  bool email_mfa_enabled = 26;
+  bool push_mfa_enabled = 27;
+  bool has_recovery_codes = 28;
+  bool mfa_required = 29;
 }
 
 enum MfaMethodType {

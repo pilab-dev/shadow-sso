@@ -66,6 +66,29 @@ service TwoFactorService {
   // This invalidates any previously issued recovery codes.
   // Requires the user to be authenticated (e.g., via password or existing 2FA).
   rpc GenerateRecoveryCodes(GenerateRecoveryCodesRequest) returns (GenerateRecoveryCodesResponse);
+
+  // --- Administrative MFA management ---
+
+  // Reports every source that can trigger a second factor for a user, plus
+  // warnings about configurations the login page cannot satisfy.
+  // Self or admin (2fa:manage_others).
+  rpc GetMFAStatus(GetMFAStatusRequest) returns (GetMFAStatusResponse);
+
+  // Clears all second-factor state for a user (flags, TOTP secret, recovery
+  // codes, registered methods and, optionally, WebAuthn devices).
+  // Admin only (2fa:manage_others).
+  rpc ResetUserMFA(ResetUserMFARequest) returns (ResetUserMFAResponse);
+
+  // Sets or clears the per-user "MFA required" enforcement flag.
+  // Admin only (2fa:manage_others).
+  rpc SetUserMFARequired(SetUserMFARequiredRequest) returns (google.protobuf.Empty);
+
+  // Reads the realm-wide MFA policy.
+  rpc GetMFAPolicy(GetMFAPolicyRequest) returns (GetMFAPolicyResponse);
+
+  // Sets the realm-wide MFA policy.
+  // Admin only (2fa:manage_others).
+  rpc SetMFAPolicy(SetMFAPolicyRequest) returns (google.protobuf.Empty);
 }
 
 // --- InitiateTOTPSetup ---
@@ -104,7 +127,8 @@ message Disable2FARequest {
 message GenerateRecoveryCodesRequest {
   // User must be 2FA enabled. May require re-authentication (password or current 2FA code).
   string password_or_2fa_code = 1; // Optional: for re-authentication before generating new codes.
-  // string user_id = 2; // For admin use cases.
+  // Optional target user for admin use cases. If empty, uses the authenticated user.
+  string user_id = 2;
 }
 
 message GenerateRecoveryCodesResponse {
@@ -227,4 +251,56 @@ message GetPushChallengeStatusRequest {
 
 message GetPushChallengeStatusResponse {
   string status = 1; // "pending", "approved", "denied", or "expired".
+}
+
+// --- Administrative MFA management ---
+
+message GetMFAStatusRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1]; // ID or email
+}
+
+// MFAStatus describes every source that can trigger a second factor.
+message MFAStatus {
+  bool enabled = 1;                 // Any factor is configured
+  bool mfa_required = 2;            // Per-user enforcement flag
+  bool realm_requires_mfa = 3;      // Realm-wide enforcement policy
+  string effective_trigger = 4;     // TOTP, HOTP, EMAIL, PUSH, METHOD, WEBAUTHN, FLOW, NONE
+  bool totp_enabled = 5;            // IsTwoFactorEnabled && method == TOTP && secret set
+  bool totp_secret_set = 6;
+  bool email_mfa_enabled = 7;
+  bool push_mfa_enabled = 8;
+  int32 verified_methods = 9;
+  int32 webauthn_devices = 10;
+  int32 recovery_codes_remaining = 11;
+  bool flow_requires_mfa = 12;      // The browser flow has a REQUIRED non-password execution
+  repeated string notes = 13;       // Human-readable warnings for operators
+}
+
+message GetMFAStatusResponse {
+  MFAStatus status = 1;
+}
+
+message ResetUserMFARequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1]; // ID or email
+  bool remove_passkeys = 2; // Also delete registered WebAuthn devices
+}
+
+message ResetUserMFAResponse {
+  MFAStatus previous = 1;  // State before the reset, for audit/confirmation
+  bool removed_passkeys = 2;
+}
+
+message SetUserMFARequiredRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1]; // ID or email
+  bool required = 2;
+}
+
+message GetMFAPolicyRequest {}
+
+message GetMFAPolicyResponse {
+  bool require_mfa = 1;
+}
+
+message SetMFAPolicyRequest {
+  bool require_mfa = 1;
 }

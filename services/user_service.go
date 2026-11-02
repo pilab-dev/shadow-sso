@@ -10,10 +10,10 @@ import (
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
 	"github.com/pilab-dev/shadow-sso/domain"
-	pkgauth "github.com/pilab-dev/shadow-sso/pkg/auth"
 	"github.com/pilab-dev/shadow-sso/internal/audit"
 	"github.com/pilab-dev/shadow-sso/internal/auth/rbac"
 	"github.com/pilab-dev/shadow-sso/internal/auth/totp"
+	pkgauth "github.com/pilab-dev/shadow-sso/pkg/auth"
 
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
@@ -1229,10 +1229,11 @@ func (s *UserServer) VerifyLoginOtp(ctx context.Context, req *connect.Request[ss
 }
 
 func (s *UserServer) SetupTotp(ctx context.Context, req *connect.Request[ssov1.SetupTotpRequest]) (*connect.Response[ssov1.SetupTotpResponse], error) {
-	actingUserID, err := domain.GetAuthenticatedUserIDFromContext(ctx)
+	actingUserID, err := s.requireSelfOrMFAManager(ctx, req.Msg.GetUserId())
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+		return nil, err
 	}
+	_ = actingUserID
 
 	user, err := s.userRepo.GetUserByID(ctx, req.Msg.GetUserId())
 	if err != nil {
@@ -1273,9 +1274,9 @@ func (s *UserServer) SetupTotp(ctx context.Context, req *connect.Request[ssov1.S
 }
 
 func (s *UserServer) VerifyTotpSetup(ctx context.Context, req *connect.Request[ssov1.VerifyTotpSetupRequest]) (*connect.Response[ssov1.VerifyTotpSetupResponse], error) {
-	actingUserID, err := domain.GetAuthenticatedUserIDFromContext(ctx)
+	actingUserID, err := s.requireSelfOrMFAManager(ctx, req.Msg.GetUserId())
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+		return nil, err
 	}
 
 	user, err := s.userRepo.GetUserByID(ctx, req.Msg.GetUserId())
@@ -1313,9 +1314,8 @@ func (s *UserServer) VerifyTotpSetup(ctx context.Context, req *connect.Request[s
 }
 
 func (s *UserServer) SetupWebAuthnRegistration(ctx context.Context, req *connect.Request[ssov1.SetupWebAuthnRegistrationRequest]) (*connect.Response[ssov1.SetupWebAuthnRegistrationResponse], error) {
-	_, err := domain.GetAuthenticatedUserIDFromContext(ctx)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	if _, err := s.requireSelfOrMFAManager(ctx, req.Msg.GetUserId()); err != nil {
+		return nil, err
 	}
 
 	user, err := s.userRepo.GetUserByID(ctx, req.Msg.GetUserId())
@@ -1342,9 +1342,9 @@ func (s *UserServer) SetupWebAuthnRegistration(ctx context.Context, req *connect
 }
 
 func (s *UserServer) VerifyWebAuthnRegistration(ctx context.Context, req *connect.Request[ssov1.VerifyWebAuthnRegistrationRequest]) (*connect.Response[ssov1.VerifyWebAuthnRegistrationResponse], error) {
-	actingUserID, err := domain.GetAuthenticatedUserIDFromContext(ctx)
+	actingUserID, err := s.requireSelfOrMFAManager(ctx, req.Msg.GetUserId())
 	if err != nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+		return nil, err
 	}
 
 	user, err := s.userRepo.GetUserByID(ctx, req.Msg.GetUserId())
@@ -1496,6 +1496,12 @@ func userToProto(user *domain.User) *ssov1.User {
 		PhoneNumber:           user.PhoneNumber,
 		LoginOtp:              user.LoginOtp,
 		LoginOtpMethodType:    user.LoginOtpMethodType,
+		IsTwoFactorEnabled:    user.IsTwoFactorEnabled,
+		TwoFactorMethod:       user.TwoFactorMethod,
+		EmailMfaEnabled:       user.EmailMFAEnabled,
+		PushMfaEnabled:        user.PushMFAEnabled,
+		HasRecoveryCodes:      len(user.TwoFactorRecoveryCodes) > 0,
+		MfaRequired:           user.MFARequired,
 	}
 
 	if !user.CreatedAt.IsZero() {

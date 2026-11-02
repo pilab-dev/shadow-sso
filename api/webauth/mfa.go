@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/pilab-dev/shadow-sso/domain"
 	"github.com/pilab-dev/shadow-sso/internal/auth/totp"
 	"github.com/pilab-dev/shadow-sso/internal/ssosession"
 	"github.com/rs/zerolog/log"
@@ -106,8 +107,16 @@ func (wa *WebAuth) MFASubmitHandler(c *gin.Context) {
 	}
 	wa.rateLimiter.Reset(rateLimitKey)
 
-	// Establish the server-side OP session first so subsequent OIDC
-	// authorizations reuse this login instead of showing the password form.
+	wa.completeMFA(c, flowState, user)
+}
+
+// completeMFA finishes a login that has passed its second factor: it creates
+// the OP session, stores the signed SSO session cookie and hands off to the
+// OIDC completion path. It is shared by the TOTP prompt and the enrollment
+// flow.
+func (wa *WebAuth) completeMFA(c *gin.Context, flowState *domain.LoginFlowState, user *domain.User) {
+	ctx := c.Request.Context()
+
 	opSession, err := wa.establishOPSession(c, user.ID)
 	if err != nil {
 		log.Error().Err(err).Str("user_id", user.ID).Msg("mfa: failed to establish OP session")
@@ -140,11 +149,12 @@ func (wa *WebAuth) MFASubmitHandler(c *gin.Context) {
 	}
 
 	flowState.UserID = user.ID
+	flowState.MFAEnrollmentVerified = false
 	if flowState.UserAuthenticatedAt.IsZero() {
 		flowState.UserAuthenticatedAt = time.Now()
 	}
-	if err := wa.flowStore.UpdateFlow(ctx, flowID, flowState); err != nil {
-		log.Error().Err(err).Str("flow_id", flowID).Msg("mfa: failed to update flow state")
+	if err := wa.flowStore.UpdateFlow(ctx, flowState.FlowID, flowState); err != nil {
+		log.Error().Err(err).Str("flow_id", flowState.FlowID).Msg("mfa: failed to update flow state")
 	}
 
 	wa.completeLogin(c, flowState, isSecure)

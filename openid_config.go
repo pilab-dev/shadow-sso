@@ -334,6 +334,9 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 	router.GET("/oauth2/device/verify", webauthAPI.DeviceVerificationPageHandler)
 	router.POST("/oauth2/device/verify", webauthAPI.DeviceVerificationSubmitHandler)
 	router.POST("/mfa", webauthAPI.MFASubmitHandler)
+	router.GET("/mfa/enroll", webauthAPI.MFAEnrollPageHandler)
+	router.POST("/mfa/enroll", webauthAPI.MFAEnrollSubmitHandler)
+	router.POST("/mfa/enroll/complete", webauthAPI.MFAEnrollCompleteHandler)
 	router.GET("/api/session", webauthAPI.SessionHandler)
 	// ---------- Connect-RPC handlers ----------
 	connectCtx, connectSpan := telemetry.StartSpan(ctx, "shadow-sso", "NewSSOServer.connectrpc")
@@ -359,6 +362,7 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		serviceProvider.FlowStore(),
 		serviceProvider.OAuthService(),
 		serviceProvider.ClientService(),
+		services.WithAuthRealmSettings(opts.RepositoryProvider.RealmSettingsRepository(ctx)),
 	)
 	authPath, authHandler := ssov1connect.NewAuthServiceHandler(authServer, interceptors)
 	router.Any(authPath+"*action", gin.WrapH(authHandler))
@@ -380,6 +384,8 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		serviceProvider.MFAService(),
 		serviceProvider.PushMFAService(),
 		"ShadowSSO",
+		services.WithTwoFactorRealmSettings(opts.RepositoryProvider.RealmSettingsRepository(ctx)),
+		services.WithTwoFactorAuthFlows(authFlowRepo),
 	)
 	twoFactorPath, twoFactorHandler := ssov1connect.NewTwoFactorServiceHandler(twoFactorServer, interceptors)
 	router.Any(twoFactorPath+"*action", gin.WrapH(twoFactorHandler))

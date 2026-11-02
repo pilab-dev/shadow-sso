@@ -424,6 +424,34 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 	wa.rateLimiter.Reset(rateLimitKey)
 	wa.resetLoginFailures(ctx, user.ID)
 
+	// Enrollment enforcement: when MFA is required (per user, per realm, or by
+	// the browser flow) and the account has no usable factor, send the user to
+	// enrollment instead of completing the sign-in.
+	enforced := requiresMFA || wa.mfaEnforced(ctx, user)
+	if enforced && !hasUsableTOTP(user) {
+		if hasUnverifiableActiveFactor(user) {
+			// Never silently downgrade to a factor the login page cannot verify.
+			log.Warn().Str("flow_id", flowID).Str("user_id", user.ID).Str("method", user.TwoFactorMethod).Msg("login: configured MFA method is not verifiable by the web login page")
+			c.HTML(http.StatusForbidden, "error.html", gin.H{
+				"PageTitle": "Second factor unavailable",
+				"Message":   "This account has a second factor that the sign-in page cannot verify. Contact your administrator to reset it.",
+			})
+			return
+		}
+		flowState.UserID = user.ID
+		flowState.UserAuthenticatedAt = time.Now()
+		if err := wa.flowStore.UpdateFlow(ctx, flowID, flowState); err != nil {
+			log.Error().Err(err).Str("flow_id", flowID).Msg("login: failed to update flow for MFA enrollment")
+			c.HTML(http.StatusInternalServerError, "error.html", gin.H{
+				"PageTitle": "Error",
+				"Message":   "Internal error. Please try again.",
+			})
+			return
+		}
+		c.Redirect(http.StatusFound, "/mfa/enroll?flow_id="+url.QueryEscape(flowID))
+		return
+	}
+
 	if requiresMFA {
 		flowState.UserID = user.ID
 		flowState.UserAuthenticatedAt = time.Now()
@@ -524,6 +552,59 @@ func (wa *WebAuth) completeLogin(c *gin.Context, flowState *domain.LoginFlowStat
 // validateCSRFTokenForm validates CSRF using a hidden form field compared against
 // the double-submit cookie. This differs from the header-based validation used
 // by API endpoints.
+// mfaEnforced reports whether a user must complete a second factor at login,
+// combining the per-user flag with the realm-wide policy.
+func (wa *WebAuth) mfaEnforced(ctx context.Context, user *domain.User) bool {
+	if user == nil {
+		return false
+	}
+	if user.MFARequired {
+		return true
+	}
+	if wa.realmSettingsRepo == nil {
+		return false
+	}
+	settings, err := wa.realmSettingsRepo.GetRealmSettings(ctx)
+	if err != nil || settings == nil {
+		return false
+	}
+	return settings.RequireMFA
+}
+
+// hasUsableTOTP reports whether the server-rendered login page can verify a
+// TOTP code for this user. It is the only second factor the /mfa page supports.
+func hasUsableTOTP(user *domain.User) bool {
+	return user != nil &&
+		user.IsTwoFactorEnabled &&
+		user.TwoFactorMethod == "TOTP" &&
+		user.TwoFactorSecret != ""
+}
+
+// hasUnverifiableActiveFactor reports whether the account has an enabled
+// second factor that the /mfa page cannot verify. Such accounts must not be
+// routed to enrollment, because that would replace their existing factor with
+// a weaker path.
+func hasUnverifiableActiveFactor(user *domain.User) bool {
+	if user == nil {
+		return false
+	}
+	if user.IsTwoFactorEnabled && user.TwoFactorSecret == "" {
+		return true
+	}
+	if user.IsTwoFactorEnabled && user.TwoFactorMethod != "" && user.TwoFactorMethod != "NONE" && user.TwoFactorMethod != "TOTP" {
+		return true
+	}
+	if user.EmailMFAEnabled || user.PushMFAEnabled {
+		return true
+	}
+	for _, m := range user.MfaMethods {
+		if m.Verified && m.Type != domain.MfaMethodTypeTOTP {
+			return true
+		}
+	}
+	return false
+}
+
 func validateCSRFTokenForm(c *gin.Context) bool {
 	cookieVal, err := c.Cookie(CSRFCookieName)
 	if err != nil || cookieVal == "" {

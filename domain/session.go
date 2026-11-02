@@ -20,19 +20,20 @@ type Session struct {
 // LoginFlowState holds the parameters and state for an OIDC authorization flow
 // that requires user authentication via the separate UI.
 type LoginFlowState struct {
-	FlowID              string            `bson:"_id,omitempty"`                   // Unique ID for this flow
-	ClientID            string            `bson:"client_id"`                       //
-	RedirectURI         string            `bson:"redirect_uri"`                    //
-	Scope               string            `bson:"scope"`                           //
-	State               string            `bson:"state"`                           // Client's state parameter
-	Nonce               string            `bson:"nonce,omitempty"`                 // Optional nonce from client
-	Prompt              string            `bson:"prompt,omitempty"`                // Optional prompt parameter (login, none, consent)
-	CodeChallenge       string            `bson:"code_challenge"`                  //
-	CodeChallengeMethod string            `bson:"code_challenge_method"`           //
-	UserID              string            `bson:"user_id"`                         // Populated after successful user authentication
-	UserAuthenticatedAt time.Time         `bson:"user_authenticated_at,omitempty"` // Time of user authentication for this flow
-	ExpiresAt           time.Time         `bson:"expires_at"`                      // When this flow state should be considered invalid
-	OriginalOIDCParams  map[string]string `bson:"original_oidc_params"`            // Store other original parameters if needed
+	FlowID                string            `bson:"_id,omitempty"`                     // Unique ID for this flow
+	ClientID              string            `bson:"client_id"`                         //
+	RedirectURI           string            `bson:"redirect_uri"`                      //
+	Scope                 string            `bson:"scope"`                             //
+	State                 string            `bson:"state"`                             // Client's state parameter
+	Nonce                 string            `bson:"nonce,omitempty"`                   // Optional nonce from client
+	Prompt                string            `bson:"prompt,omitempty"`                  // Optional prompt parameter (login, none, consent)
+	CodeChallenge         string            `bson:"code_challenge"`                    //
+	CodeChallengeMethod   string            `bson:"code_challenge_method"`             //
+	UserID                string            `bson:"user_id"`                           // Populated after successful user authentication
+	UserAuthenticatedAt   time.Time         `bson:"user_authenticated_at,omitempty"`   // Time of user authentication for this flow
+	MFAEnrollmentVerified bool              `bson:"mfa_enrollment_verified"` // Set after a successful TOTP enrollment in this flow; gates the enrollment completion
+	ExpiresAt             time.Time         `bson:"expires_at"`                        // When this flow state should be considered invalid
+	OriginalOIDCParams    map[string]string `bson:"original_oidc_params"`              // Store other original parameters if needed
 }
 
 // UserSession represents an active user session within the OIDC provider itself.
