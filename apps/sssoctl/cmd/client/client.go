@@ -131,6 +131,22 @@ func FederationServiceClient(cfg *config.Context) (ssov1connect.FederationServic
 	return ssov1connect.NewFederationServiceClient(httpClient, cfg.ServerEndpoint, opts...), nil
 }
 
+// AuditServiceClient returns a new AuditService client.
+func AuditServiceClient(cfg *config.Context) (ssov1connect.AuditServiceClient, error) {
+	if cfg == nil || cfg.ServerEndpoint == "" {
+		return nil, fmt.Errorf("invalid context or server endpoint for AuditService client")
+	}
+	if cfg.UserAuthToken == "" {
+		return nil, fmt.Errorf("user authentication token not found in current context. Please login using 'ssoctl auth login'")
+	}
+	httpClient := &http.Client{}
+	opts := []connect.ClientOption{
+		connect.WithProtoJSON(),
+		connect.WithInterceptors(&authInterceptor{token: cfg.UserAuthToken}),
+	}
+	return ssov1connect.NewAuditServiceClient(httpClient, cfg.ServerEndpoint, opts...), nil
+}
+
 // UserAttributeServiceClient returns a new UserAttributeService client.
 func UserAttributeServiceClient(cfg *config.Context) (ssov1connect.UserAttributeServiceClient, error) {
 	if cfg == nil || cfg.ServerEndpoint == "" {

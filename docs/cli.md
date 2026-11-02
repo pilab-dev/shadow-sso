@@ -2,6 +2,10 @@
 
 `ssoctl` is a command-line interface for managing users, service accounts, sessions, and other aspects of the Shadow SSO system.
 
+> For full management coverage, the interactive client wizard, dynamic shell
+> completion and non-interactive provisioning, see
+> [cli-management.md](cli-management.md).
+
 ## Installation
 
 ### From Source

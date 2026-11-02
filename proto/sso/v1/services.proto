@@ -247,6 +247,7 @@ enum MfaMethodType {
   MFA_METHOD_TYPE_SMS = 2;
   MFA_METHOD_TYPE_EMAIL = 3;
   MFA_METHOD_TYPE_WEBAUTHN = 4;
+  MFA_METHOD_TYPE_PUSH = 5;
 }
 
 message MfaMethod {

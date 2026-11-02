@@ -52,6 +52,9 @@ var userRegisterCmd = &cobra.Command{
 		}
 		// Password can be prompted if not provided via flag
 		if password == "" {
+			if !interactive() {
+				return requireInteractive("user registration", "--password")
+			}
 			fmt.Print("Enter password: ")
 			bytePassword, err := term.ReadPassword(int(syscall.Stdin))
 			fmt.Println()
@@ -389,6 +392,9 @@ var user2faDisableCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		passwordOrCode, _ := cmd.Flags().GetString("password-or-code")
 		if passwordOrCode == "" {
+			if !interactive() {
+				return requireInteractive("2FA disable", "--password-or-code")
+			}
 			fmt.Print("Enter current password or a 2FA code (TOTP/Recovery) to confirm disabling 2FA: ")
 			byteInput, err := term.ReadPassword(int(syscall.Stdin))
 			fmt.Println()

@@ -23,15 +23,10 @@ var clientCmd = &cobra.Command{
 	Short:   "Manage OAuth2 clients",
 	Aliases: []string{"clients"},
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		// Ensure config is loaded and current context is available
-		if err := config.InitConfig(); err != nil {
-			return err
-		}
-		_, err := config.GetCurrentContext()
-		if err != nil {
-			return fmt.Errorf("failed to get current context: %w. Use 'ssoctl config set-context' or 'ssoctl auth login'", err)
-		}
-		return nil
+		// Only load configuration here. Context/token requirements are checked
+		// by each subcommand so that missing required flags are reported before
+		// any network or config error.
+		return config.InitConfig()
 	},
 }
 
@@ -56,6 +51,7 @@ var clientRegisterCmd = &cobra.Command{
 		scopes, _ := cmd.Flags().GetStringSlice("scopes")
 		grantTypes, _ := cmd.Flags().GetStringSlice("grant-types")
 		tokenEndpointAuthMethod, _ := cmd.Flags().GetString("token-endpoint-auth-method")
+		description, _ := cmd.Flags().GetString("description")
 		jwksURI, _ := cmd.Flags().GetString("jwks-uri")
 		contacts, _ := cmd.Flags().GetStringSlice("contacts")
 		logoURI, _ := cmd.Flags().GetString("logo-uri")
@@ -70,11 +66,48 @@ var clientRegisterCmd = &cobra.Command{
 		ldapAttrGroups, _ := cmd.Flags().GetString("ldap-attr-groups")
 		ldapCustomClaims, _ := cmd.Flags().GetStringToString("ldap-custom-claims")
 
-		if name == "" {
-			return errors.New("--name is required")
+		wizardFlag, _ := cmd.Flags().GetBool("wizard")
+		if wizardFlag || (interactive() && (name == "" || clientTypeStr == "")) {
+			if c, err := config.GetCurrentContext(); err != nil {
+				return fmt.Errorf("configure a context before using the wizard: %w", err)
+			} else if c.UserAuthToken == "" {
+				return fmt.Errorf("not logged in; run 'ssoctl auth login' first")
+			}
+			result, err := runClientWizard(clientWizardResult{
+				Name:                    name,
+				Description:             description,
+				Type:                    clientTypeStr,
+				RedirectURIs:            redirectURIs,
+				PostLogoutRedirectURIs:  postLogoutRedirectURIs,
+				GrantTypes:              grantTypes,
+				Scopes:                  scopes,
+				TokenEndpointAuthMethod: tokenEndpointAuthMethod,
+				RequireConsent:          requireConsent,
+				Contacts:                contacts,
+			})
+			if err != nil {
+				return err
+			}
+			name = result.Name
+			description = result.Description
+			clientTypeStr = result.Type
+			redirectURIs = result.RedirectURIs
+			postLogoutRedirectURIs = result.PostLogoutRedirectURIs
+			scopes = result.Scopes
+			grantTypes = result.GrantTypes
+			tokenEndpointAuthMethod = result.TokenEndpointAuthMethod
+			contacts = result.Contacts
+			requireConsent = result.RequireConsent
 		}
-		if clientTypeStr == "" {
-			return errors.New("--type (confidential/public) is required")
+		if name == "" || clientTypeStr == "" {
+			var missing []string
+			if name == "" {
+				missing = append(missing, "--name")
+			}
+			if clientTypeStr == "" {
+				missing = append(missing, "--type")
+			}
+			return requireInteractive("client registration", missing...)
 		}
 
 		var clientTypeProto ssov1.ClientTypeProto
@@ -107,6 +140,7 @@ var clientRegisterCmd = &cobra.Command{
 
 		req := &ssov1.RegisterClientRequest{
 			ClientName:              name,
+			Description:             description,
 			ClientType:              clientTypeProto,
 			RedirectUris:            redirectURIs,
 			PostLogoutRedirectUris:  postLogoutRedirectURIs,
@@ -404,7 +438,9 @@ func init() {
 	clientCmd.AddCommand(clientDeleteCmd)
 
 	// Flags for RegisterClient
+	clientRegisterCmd.Flags().Bool("wizard", false, "Always launch the interactive registration wizard")
 	clientRegisterCmd.Flags().StringP("name", "n", "", "Client name (required)")
+	clientRegisterCmd.Flags().String("description", "", "Client description")
 	clientRegisterCmd.Flags().StringP("type", "t", "", "Client type: 'confidential' or 'public' (required)")
 	clientRegisterCmd.Flags().StringSliceP("redirect-uris", "r", []string{}, "Redirect URI(s) for the client (comma-separated or multiple flags)")
 	clientRegisterCmd.Flags().StringSlice("post-logout-redirect-uris", []string{}, "Post logout redirect URI(s) (comma-separated or multiple flags)")

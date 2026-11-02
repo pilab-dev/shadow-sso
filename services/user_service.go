@@ -1424,6 +1424,8 @@ func mfaMethodTypeFromProto(t ssov1.MfaMethodType) domain.MfaMethodType {
 		return domain.MfaMethodTypeEmail
 	case ssov1.MfaMethodType_MFA_METHOD_TYPE_WEBAUTHN:
 		return domain.MfaMethodTypeWebAuthn
+	case ssov1.MfaMethodType_MFA_METHOD_TYPE_PUSH:
+		return domain.MfaMethodTypePush
 	default:
 		return domain.MfaMethodTypeNone
 	}
@@ -1439,6 +1441,8 @@ func mfaMethodTypeToProto(t domain.MfaMethodType) ssov1.MfaMethodType {
 		return ssov1.MfaMethodType_MFA_METHOD_TYPE_EMAIL
 	case domain.MfaMethodTypeWebAuthn:
 		return ssov1.MfaMethodType_MFA_METHOD_TYPE_WEBAUTHN
+	case domain.MfaMethodTypePush:
+		return ssov1.MfaMethodType_MFA_METHOD_TYPE_PUSH
 	default:
 		return ssov1.MfaMethodType_MFA_METHOD_TYPE_UNSPECIFIED
 	}
