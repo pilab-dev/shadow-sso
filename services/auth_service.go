@@ -21,12 +21,14 @@ import (
 	"github.com/pilab-dev/shadow-sso/internal/audit"
 	"github.com/pilab-dev/shadow-sso/internal/auth/rbac"
 	"github.com/pilab-dev/shadow-sso/internal/auth/totp" // For TOTP validation
+	"github.com/pilab-dev/shadow-sso/internal/identity"
 	"github.com/pilab-dev/shadow-sso/internal/metrics"
 	"github.com/pilab-dev/shadow-sso/internal/telemetry"
 	// "github.com/pilab-dev/shadow-sso/middleware" // No longer needed here
 	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	oteltrace "go.opentelemetry.io/otel/trace"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb" // For mapping time to proto
 )
@@ -92,10 +94,10 @@ type AuthServer struct {
 	userRepo                                     domain.UserRepository
 	sessionRepo                                  domain.SessionRepository
 	tokenService                                 domain.TokenServiceInterface
-	passwordHasher                               domain.PasswordHasher
 	flowStore                                    domain.FlowStore
 	oauthService                                 domain.OAuthServiceInterface
 	clientService                                client.ClientServiceInterface
+	identity                                     identity.Verifier
 	twoFactorSessions                            *twoFactorSessionStore
 	realmSettingsRepo                            domain.RealmSettingsRepository
 }
@@ -107,6 +109,17 @@ type authServerOption func(*AuthServer)
 // the realm-wide MFA enforcement policy.
 func WithAuthRealmSettings(repo domain.RealmSettingsRepository) authServerOption {
 	return func(s *AuthServer) { s.realmSettingsRepo = repo }
+}
+
+// WithIdentity injects the identity seam. Without it AuthServer builds the
+// local one from the user repository and password hasher it was given, which
+// is the default for standalone ShadowSSO.
+func WithIdentity(v identity.Verifier) authServerOption {
+	return func(s *AuthServer) {
+		if v != nil {
+			s.identity = v
+		}
+	}
 }
 
 // NewAuthServer creates a new AuthServer.
@@ -124,7 +137,6 @@ func NewAuthServer(
 		userRepo:          userRepo,
 		sessionRepo:       sessionRepo,
 		tokenService:      tokenService,
-		passwordHasher:    passwordHasher,
 		flowStore:         flowStore,
 		oauthService:      oauthService,
 		clientService:     clientService,
@@ -132,6 +144,9 @@ func NewAuthServer(
 	}
 	for _, opt := range opts {
 		opt(s)
+	}
+	if s.identity == nil {
+		s.identity = identity.New(identity.NewLocalSource(userRepo, passwordHasher), nil)
 	}
 	return s
 }
@@ -173,51 +188,16 @@ func (s *AuthServer) Login(ctx context.Context, req *connect.Request[ssov1.Login
 	logger.Debug().Str("email", req.Msg.Email).Msg("Login attempt")
 	var userID string // For audit logging, even if user object is not fetched
 
-	user, err := s.userRepo.GetUserByEmail(ctx, req.Msg.Email)
+	// Resolve, account state and the password check are one seam: the
+	// configured identity source (MongoDB by default, PiRectory when the
+	// deployment points at a directory).
+	user, err := s.identity.Verify(ctx, req.Msg.Email, req.Msg.Password)
+	if user != nil {
+		userID = user.ID // User found, set userID for audit
+		span.SetAttributes(attribute.String("user.id", userID))
+	}
 	if err != nil {
-		logger.Warn().Err(err).Str("email", req.Msg.Email).Msg("Login: User not found")
-		telemetry.RecordSpanError(span, err, "user not found")
-		span.SetStatus(codes.Error, "user not found")
-		audit.Log("AuthService", "Login", req.Msg.Email, "", "User not found or DB error", false, err)
-		if metrics.LoginFailureTotal != nil {
-			metrics.LoginFailureTotal.Inc()
-		}
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid email or password"))
-	}
-	userID = user.ID // User found, set userID for audit
-	span.SetAttributes(attribute.String("user.id", userID))
-
-	if user.Status == domain.UserStatusLocked {
-		logger.Warn().Str("userID", userID).Msg("Login: Account locked")
-		telemetry.RecordSpanError(span, errors.New("account locked"), "account locked")
-		span.SetStatus(codes.Error, "account locked")
-		audit.Log("AuthService", "Login", userID, userID, "Account locked", false, errors.New("account locked"))
-		if metrics.LoginFailureTotal != nil {
-			metrics.LoginFailureTotal.Inc()
-		}
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("account is locked"))
-	}
-	if user.Status == domain.UserStatusPending {
-		logger.Warn().Str("userID", userID).Msg("Login: Account pending activation")
-		telemetry.RecordSpanError(span, errors.New("account pending activation"), "account pending activation")
-		span.SetStatus(codes.Error, "account pending activation")
-		audit.Log("AuthService", "Login", userID, userID, "Account pending activation", false, errors.New("account pending activation"))
-		if metrics.LoginFailureTotal != nil {
-			metrics.LoginFailureTotal.Inc()
-		}
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("account pending activation"))
-	}
-
-	if err := s.passwordHasher.Verify(user.PasswordHash, req.Msg.Password); err != nil {
-		logger.Warn().Str("userID", userID).Msg("Login: Incorrect password")
-		telemetry.RecordSpanError(span, err, "incorrect password")
-		span.SetStatus(codes.Error, "incorrect password")
-		audit.Log("AuthService", "Login", userID, userID, "Incorrect password", false, err)
-		if metrics.LoginFailureTotal != nil {
-			metrics.LoginFailureTotal.Inc()
-		}
-		// TODO: Increment failed login attempts for user in userRepo.UpdateUser
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid email or password"))
+		return nil, loginFailure(ctx, span, userID, req.Msg.Email, err)
 	}
 
 	// --- 2FA Check ---
@@ -258,6 +238,46 @@ func (s *AuthServer) Login(ctx context.Context, req *connect.Request[ssov1.Login
 
 	// If 2FA is not enabled, proceed to generate final tokens and session
 	return s.completeLogin(ctx, user)
+}
+
+// loginFailure turns an identity failure into the answer Login has always
+// given, with the audit record, span status and metric that go with it. The
+// client is never told which of the login and the password was wrong.
+func loginFailure(ctx context.Context, span oteltrace.Span, userID, login string, err error) error {
+	logger := log.Ctx(ctx)
+	record := func(detail string) {
+		logger.Warn().Err(err).Str("email", login).Str("userID", userID).Msg("Login: " + detail)
+		telemetry.RecordSpanError(span, err, detail)
+		span.SetStatus(codes.Error, detail)
+		user, target := login, userID
+		if userID != "" {
+			user = userID
+		}
+		audit.Log("AuthService", "Login", user, target, detail, false, err)
+		if metrics.LoginFailureTotal != nil {
+			metrics.LoginFailureTotal.Inc()
+		}
+	}
+	switch {
+	case errors.Is(err, identity.ErrNotFound):
+		record("User not found or DB error")
+		return connect.NewError(connect.CodeUnauthenticated, errors.New("invalid email or password"))
+	case errors.Is(err, identity.ErrPending):
+		record("Account pending activation")
+		return connect.NewError(connect.CodePermissionDenied, errors.New("account pending activation"))
+	case errors.Is(err, identity.ErrLocked):
+		record("Account locked")
+		return connect.NewError(connect.CodePermissionDenied, errors.New("account is locked"))
+	case errors.Is(err, identity.ErrExpired):
+		record("Password expired")
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New("password has expired"))
+	case errors.Is(err, identity.ErrUnavailable):
+		record("Identity source unavailable")
+		return connect.NewError(connect.CodeUnavailable, errors.New("identity source unavailable"))
+	default:
+		record("Incorrect password")
+		return connect.NewError(connect.CodeUnauthenticated, errors.New("invalid email or password"))
+	}
 }
 
 // realmRequiresMFA reports the realm-wide MFA enforcement policy.

@@ -189,7 +189,7 @@ func TestOAuthService_Login_UserNotFound(t *testing.T) {
 	username := "test@example.com"
 	password := "password123"
 
-	mockUserRepo.EXPECT().GetUserByEmail(ctx, username).Return(nil, errors.New("user not found"))
+	mockUserRepo.EXPECT().GetUserByEmail(ctx, username).Return(nil, domain.ErrUserNotFound)
 
 	_, err := oauthService.Login(ctx, username, password, "")
 
@@ -1671,11 +1671,11 @@ func TestOAuthService_TokenExchange_ScopeIntersection(t *testing.T) {
 	clientID := "client-id"
 
 	tests := []struct {
-		name            string
-		requestedScope  string
-		grantedScope    string
-		expectedScope   string
-		expectError     bool
+		name           string
+		requestedScope string
+		grantedScope   string
+		expectedScope  string
+		expectError    bool
 	}{
 		{
 			name:           "requested is subset of granted",
