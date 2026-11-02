@@ -13,6 +13,7 @@ import (
 	"github.com/pilab-dev/shadow-sso/domain"
 	"github.com/pilab-dev/shadow-sso/internal/geo"
 	"github.com/pilab-dev/shadow-sso/port"
+	"github.com/pilab-dev/shadow-sso/internal/identity"
 	"github.com/pilab-dev/shadow-sso/internal/mfa"
 	"github.com/pilab-dev/shadow-sso/mongodb"
 	"github.com/pilab-dev/shadow-sso/internal/notifications"
@@ -42,6 +43,7 @@ type DefaultServiceProvider struct {
 	userService       UserService
 	twoFactorService  TwoFactorService
 	passwordHasher    domain.PasswordHasher
+	identityService   *identity.Service
 
 	smsService   domain.SMSService
 	emailService domain.EmailService
@@ -122,7 +124,20 @@ func NewDefaultServiceProvider(opts DefaultServiceProviderOptions) (*DefaultServ
 	p.emailService = p.initializeEmailService(configurationService)
 	p.pushService = p.initializePushService(configurationService)
 
+	identityService, err := newIdentityService(opts.AppConfig, opts.RepositoryProvider, p.passwordHasher)
+	if err != nil {
+		return nil, fmt.Errorf("identity source: %w", err)
+	}
+	p.identityService = identityService
+
 	return p, nil
+}
+
+// IdentityService is the seam every login path authenticates through: the
+// configured identity source merged with the SSO-owned state. Local
+// (MongoDB) by default, PiRectory when identity_source says so.
+func (p *DefaultServiceProvider) IdentityService() *identity.Service {
+	return p.identityService
 }
 
 var initCtx = context.Background()
@@ -162,6 +177,7 @@ func (p *DefaultServiceProvider) OAuthService() OAuthService {
 			WithRealmSettings(p.repoProvider.RealmSettingsRepository(initCtx)),
 			WithOAuthGeoResolver(p.geoResolver),
 			WithOAuthSessionNotifier(NewSessionNotifier(p.pushService)),
+			withIdentity(p.identityService),
 		)
 	}
 	return p.oauthService

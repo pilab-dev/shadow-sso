@@ -56,7 +56,7 @@ func TestAuthServer_Login_UserNotFound(t *testing.T) {
 	ctx := context.Background()
 	email := "test@example.com"
 
-	mockUserRepo.EXPECT().GetUserByEmail(gomock.Any(), email).Return(nil, errors.New("user not found"))
+	mockUserRepo.EXPECT().GetUserByEmail(gomock.Any(), email).Return(nil, domain.ErrUserNotFound)
 
 	_, err := authServer.Login(ctx, connect.NewRequest(&ssov1.LoginRequest{
 		Email:    email,

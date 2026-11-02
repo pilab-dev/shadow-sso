@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/pilab-dev/shadow-sso/api"
+	"github.com/pilab-dev/shadow-sso/internal/identity"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/viper"
 )
@@ -100,6 +101,23 @@ type Config struct {
 	// start when critical secrets are missing/invalid. Intended for local
 	// development only — never set this in production.
 	AllowInsecureDefaults bool `mapstructure:"allow_insecure_defaults"`
+
+	// IdentitySource says where user identity comes from: "local" (MongoDB,
+	// the default for standalone use) or "pirectory" (PiRectory, which owns
+	// the password, the attributes and the groups). See
+	// docs/architecture/16-shadow-sso-identity-source.md in the PiRectory
+	// repository.
+	IdentitySource string `mapstructure:"identity_source"`
+
+	// PiRectory directory settings, used when IdentitySource is "pirectory".
+	// The certificate must carry the `shadowsso` service identity, which is
+	// also the name its ActorContext header is signed with.
+	DirectoryAddr         string        `mapstructure:"directory_addr"`
+	DirectoryCAFile       string        `mapstructure:"directory_ca_file"`
+	DirectoryCertFile     string        `mapstructure:"directory_cert_file"`
+	DirectoryKeyFile      string        `mapstructure:"directory_key_file"`
+	DirectoryActorKeyFile string        `mapstructure:"directory_actor_key_file"`
+	DirectoryTimeout      time.Duration `mapstructure:"directory_timeout"`
 }
 
 // StorageType defines the type of storage backend to use.
@@ -248,6 +266,13 @@ func LoadConfig() (config Config, err error) {
 	// SSSO_ALLOWED_ORIGINS is explicitly set. Local dev sets "*" via .env.dev.
 	viper.SetDefault("allowed_origins", []string{})
 	viper.SetDefault("allow_insecure_defaults", false)
+	viper.SetDefault("identity_source", identity.SourceLocal)
+	viper.SetDefault("directory_addr", "")
+	viper.SetDefault("directory_ca_file", "")
+	viper.SetDefault("directory_cert_file", "")
+	viper.SetDefault("directory_key_file", "")
+	viper.SetDefault("directory_actor_key_file", "")
+	viper.SetDefault("directory_timeout", "5s")
 
 	// Explicitly bind env vars so viper.Unmarshal picks them up
 	_ = viper.BindEnv("mgmt_http_addr")
@@ -267,6 +292,13 @@ func LoadConfig() (config Config, err error) {
 	viper.BindEnv("tracing_otlp_endpoint")
 	viper.BindEnv("allowed_origins")
 	viper.BindEnv("allow_insecure_defaults")
+	viper.BindEnv("identity_source")
+	viper.BindEnv("directory_addr")
+	viper.BindEnv("directory_ca_file")
+	viper.BindEnv("directory_cert_file")
+	viper.BindEnv("directory_key_file")
+	viper.BindEnv("directory_actor_key_file")
+	viper.BindEnv("directory_timeout")
 
 	if errRead := viper.ReadInConfig(); errRead != nil {
 		if _, ok := errRead.(viper.ConfigFileNotFoundError); ok {
