@@ -83,10 +83,6 @@ var idpAddCmd = &cobra.Command{
 		}
 
 		var idpTypeProto ssov1.IdPTypeProto
-		// Placeholder for ssov1.IdPTypeProto_IDP_TYPE_LDAP - this needs to be added to protobuf definitions
-		// For now, we'll handle type string and assume the server can interpret it or proto will be updated.
-		// const IdPTypeProto_IDP_TYPE_LDAP ssov1.IdPTypeProto = 2 // Example, actual value from proto
-
 		if strings.EqualFold(typeStr, "OIDC") {
 			idpTypeProto = ssov1.IdPTypeProto_IDP_TYPE_OIDC
 			if oidcIssuerURL == "" || oidcClientID == "" {
@@ -97,8 +93,7 @@ var idpAddCmd = &cobra.Command{
 			// SAML specific checks would go here
 			return errors.New("SAML IdP type is not fully supported yet") // Placeholder
 		} else if strings.EqualFold(typeStr, "LDAP") {
-			// idpTypeProto = IdPTypeProto_IDP_TYPE_LDAP // Use actual proto enum when available
-			idpTypeProto = ssov1.IdPTypeProto(2) // Assuming 2 is LDAP, needs proto update
+			idpTypeProto = ssov1.IdPTypeProto_IDP_TYPE_LDAP
 			if ldapServerURL == "" || ldapUserBaseDN == "" || ldapUserFilter == "" {
 				return errors.New("--ldap-server-url, --ldap-user-base-dn, and --ldap-user-filter are required for LDAP type")
 			}
@@ -139,8 +134,7 @@ var idpAddCmd = &cobra.Command{
 		}
 
 		// Populate LDAP fields if type is LDAP
-		// These req.Ldap... fields depend on protobuf updates.
-		if idpTypeProto == ssov1.IdPTypeProto(2) { // Assuming 2 is LDAP
+		if idpTypeProto == ssov1.IdPTypeProto_IDP_TYPE_LDAP {
 			req.LdapServerUrl = ldapServerURL
 			req.LdapUserBaseDn = ldapUserBaseDN
 			req.LdapUserFilter = ldapUserFilter
@@ -407,7 +401,7 @@ func init() {
 
 	// Flags for idpAddCmd
 	idpAddCmd.Flags().StringP("name", "n", "", "Unique name for the IdP configuration (required)")
-	idpAddCmd.Flags().StringP("type", "t", "", "IdP Type: 'OIDC' or 'SAML' (required)")
+	idpAddCmd.Flags().StringP("type", "t", "", "IdP Type: 'OIDC', 'SAML' or 'LDAP' (required)")
 	idpAddCmd.Flags().Bool("enabled", true, "Set IdP as enabled (default true)")
 	idpAddCmd.Flags().String("oidc-client-id", "", "OIDC Client ID")
 	idpAddCmd.Flags().String("oidc-client-secret", "", "OIDC Client Secret")
