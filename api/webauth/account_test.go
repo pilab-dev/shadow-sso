@@ -68,7 +68,9 @@ func setupAccountTest(t *testing.T) *acctEnv {
 	return e
 }
 
-func (e *acctEnv) user(u *domain.User) { e.users.EXPECT().GetUserByID(gomock.Any(), "u1").Return(u, nil).AnyTimes() }
+func (e *acctEnv) user(u *domain.User) {
+	e.users.EXPECT().GetUserByID(gomock.Any(), "u1").Return(u, nil).AnyTimes()
+}
 
 func (e *acctEnv) get(path string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest("GET", path, nil)

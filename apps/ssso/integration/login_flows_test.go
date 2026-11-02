@@ -13,10 +13,12 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/pilab-dev/shadow-sso/domain"
+	"github.com/pilab-dev/shadow-sso/internal/ssosession"
 	"github.com/pilab-dev/shadow-sso/mongodb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -379,6 +381,231 @@ func authorizeAndLogin(
 	require.NotEmpty(t, code, "authorization code missing from redirect: %s", location)
 
 	return code, location
+}
+
+// TestFormLogin_SecondAuthorizeSkipsLogin proves that the server-rendered
+// /login form establishes the same server-side OP session used by
+// /oauth2/authorize, so a second authorization request reuses the login instead
+// of redirecting back to the login form.
+func TestFormLogin_SecondAuthorizeSkipsLogin(t *testing.T) {
+	env := setupLoginTest(t)
+	client := jarClient(t)
+	serverURL, err := url.Parse(env.baseURL)
+	require.NoError(t, err)
+
+	authorizeURL := func(state string) string {
+		q := url.Values{
+			"response_type": {"code"},
+			"client_id":     {appClientID},
+			"redirect_uri":  {appRedirectURI},
+			"scope":         {"openid profile email"},
+			"state":         {state},
+		}
+		return env.baseURL + "/oauth2/authorize?" + q.Encode()
+	}
+
+	// ── First login: authorize → /login → form submit ───────────────────────
+	resp1, err := client.Get(authorizeURL("state-first"))
+	require.NoError(t, err)
+	resp1.Body.Close()
+	require.Equal(t, http.StatusFound, resp1.StatusCode)
+	require.Contains(t, resp1.Header.Get("Location"), "/login")
+
+	var flowID, csrfToken string
+	for _, c := range client.Jar.Cookies(serverURL) {
+		switch c.Name {
+		case "sso_oidc_flow_id":
+			flowID = c.Value
+		case "sso_csrf_token":
+			csrfToken = c.Value
+		}
+	}
+	require.NotEmpty(t, flowID, "sso_oidc_flow_id cookie not set")
+	require.NotEmpty(t, csrfToken, "sso_csrf_token cookie not set")
+
+	form := url.Values{}
+	form.Set("csrf_token", csrfToken)
+	form.Set("email", loginTestAdminEmail)
+	form.Set("password", loginTestAdminPassword)
+	resp2, err := client.PostForm(env.baseURL+"/login", form)
+	require.NoError(t, err)
+	resp2.Body.Close()
+	require.Equal(t, http.StatusFound, resp2.StatusCode)
+	require.Contains(t, resp2.Header.Get("Location"), "/oauth2/authorize")
+
+	// Complete the first flow: the authorize handler issues the code.
+	resp3, err := client.Get(env.baseURL + resp2.Header.Get("Location"))
+	require.NoError(t, err)
+	resp3.Body.Close()
+	require.Equal(t, http.StatusFound, resp3.StatusCode)
+	firstRedirect, err := url.Parse(resp3.Header.Get("Location"))
+	require.NoError(t, err)
+	require.NotEmpty(t, firstRedirect.Query().Get("code"), "first flow must issue a code")
+
+	var opCookie *http.Cookie
+	for _, c := range client.Jar.Cookies(serverURL) {
+		if c.Name == ssosession.OPSessionCookieName {
+			opCookie = c
+		}
+	}
+	require.NotNil(t, opCookie, "form login must set sso_op_session")
+	require.NotEmpty(t, opCookie.Value)
+
+	// ── Second authorize request: must skip /login and issue a code ─────────
+	resp4, err := client.Get(authorizeURL("state-second"))
+	require.NoError(t, err)
+	resp4.Body.Close()
+	require.Equal(t, http.StatusFound, resp4.StatusCode)
+	require.NotContains(t, resp4.Header.Get("Location"), "/login",
+		"a logged-in user must not be sent back to the login form")
+	secondRedirect, err := url.Parse(resp4.Header.Get("Location"))
+	require.NoError(t, err)
+	require.NotEmpty(t, secondRedirect.Query().Get("code"), "second flow must issue a code without login")
+}
+
+func authorizeQuery(clientID, redirectURI, state, prompt string) string {
+	q := url.Values{
+		"response_type": {"code"},
+		"client_id":     {clientID},
+		"redirect_uri":  {redirectURI},
+		"scope":         {"openid profile email"},
+		"state":         {state},
+	}
+	if prompt != "" {
+		q.Set("prompt", prompt)
+	}
+	return q.Encode()
+}
+
+// TestAuthorize_PromptNoneWithoutSession: prompt=none must return
+// error=login_required to the client instead of showing the login page.
+func TestAuthorize_PromptNoneWithoutSession(t *testing.T) {
+	env := setupLoginTest(t)
+	client := jarClient(t)
+
+	resp, err := client.Get(env.baseURL + "/oauth2/authorize?" +
+		authorizeQuery(appClientID, appRedirectURI, "state-none", "none"))
+	require.NoError(t, err)
+	resp.Body.Close()
+
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	require.NotContains(t, resp.Header.Get("Location"), "/login")
+
+	loc, err := url.Parse(resp.Header.Get("Location"))
+	require.NoError(t, err)
+	assert.Equal(t, "login_required", loc.Query().Get("error"))
+	assert.Equal(t, "state-none", loc.Query().Get("state"))
+}
+
+// TestAuthorize_PromptLoginForcesLogin: prompt=login must show the login form
+// even when a valid OP session already exists.
+func TestAuthorize_PromptLoginForcesLogin(t *testing.T) {
+	env := setupLoginTest(t)
+	client := jarClient(t)
+
+	// Establish an OP session through the JSON login endpoint.
+	_, _ = authorizeAndLogin(t, env, client, appClientID, appRedirectURI, "state-first", nil)
+
+	resp, err := client.Get(env.baseURL + "/oauth2/authorize?" +
+		authorizeQuery(appClientID, appRedirectURI, "state-force-login", "login"))
+	require.NoError(t, err)
+	resp.Body.Close()
+
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	assert.Contains(t, resp.Header.Get("Location"), "/login")
+}
+
+// TestAuthorize_PromptNoneWithSession: prompt=none must issue a code without
+// user interaction when a valid OP session exists.
+func TestAuthorize_PromptNoneWithSession(t *testing.T) {
+	env := setupLoginTest(t)
+	client := jarClient(t)
+
+	_, _ = authorizeAndLogin(t, env, client, appClientID, appRedirectURI, "state-first", nil)
+
+	resp, err := client.Get(env.baseURL + "/oauth2/authorize?" +
+		authorizeQuery(appClientID, appRedirectURI, "state-none-session", "none"))
+	require.NoError(t, err)
+	resp.Body.Close()
+
+	require.Equal(t, http.StatusFound, resp.StatusCode)
+	require.NotContains(t, resp.Header.Get("Location"), "/login")
+
+	loc, err := url.Parse(resp.Header.Get("Location"))
+	require.NoError(t, err)
+	assert.NotEmpty(t, loc.Query().Get("code"))
+	assert.Equal(t, "state-none-session", loc.Query().Get("state"))
+}
+
+// TestSilentAuthorize_WithSession: an iframe loaded after a successful login
+// receives a postMessage payload containing an authorization code, and that
+// code can be exchanged at the token endpoint.
+func TestSilentAuthorize_WithSession(t *testing.T) {
+	env := setupLoginTest(t)
+	client := jarClient(t)
+
+	// Establish the OP session through the normal login endpoint.
+	_, _ = authorizeAndLogin(t, env, client, appClientID, appRedirectURI, "state-first", nil)
+
+	q := url.Values{
+		"response_type": {"code"},
+		"client_id":     {appClientID},
+		"redirect_uri":  {appRedirectURI},
+		"scope":         {"openid profile email"},
+		"state":         {"silent-state"},
+	}
+	resp, err := client.Get(env.baseURL + "/oauth2/silent-authorize?" + q.Encode())
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Contains(t, resp.Header.Get("Content-Security-Policy"), "frame-ancestors http://localhost")
+	assert.Empty(t, resp.Header.Get("X-Frame-Options"))
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	page := string(body)
+	assert.Contains(t, page, `"type":"sso-silent-result"`)
+	assert.Contains(t, page, `"state":"silent-state"`)
+
+	codeMatch := regexp.MustCompile(`"code":"([^"]+)"`).FindStringSubmatch(page)
+	require.Len(t, codeMatch, 2, "silent login response must contain an authorization code: %s", page)
+
+	status, tokenBody := postForm(t, client, env.baseURL+"/oauth2/token", url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {codeMatch[1]},
+		"client_id":     {appClientID},
+		"client_secret": {appClientSecret},
+		"redirect_uri":  {appRedirectURI},
+	})
+	require.Equal(t, http.StatusOK, status)
+	assert.NotEmpty(t, tokenBody["access_token"])
+}
+
+// TestSilentAuthorize_WithoutSession: an iframe without an OP session receives
+// error=login_required instead of an authorization code.
+func TestSilentAuthorize_WithoutSession(t *testing.T) {
+	env := setupLoginTest(t)
+	client := jarClient(t)
+
+	q := url.Values{
+		"response_type": {"code"},
+		"client_id":     {appClientID},
+		"redirect_uri":  {appRedirectURI},
+		"scope":         {"openid profile email"},
+		"state":         {"silent-none"},
+	}
+	resp, err := client.Get(env.baseURL + "/oauth2/silent-authorize?" + q.Encode())
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	page := string(body)
+	assert.Contains(t, page, `"error":"login_required"`)
+	assert.Contains(t, page, `"state":"silent-none"`)
+	assert.NotContains(t, page, `"code"`)
 }
 
 // ─── 1. OIDC Discovery ────────────────────────────────────────────────────────

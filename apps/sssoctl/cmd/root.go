@@ -31,8 +31,8 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&config.CfgFile, "config", "",
 		fmt.Sprintf("config file (default is $HOME/.%s/config.yaml)", config.AppName))
 
-	// Add other global flags if needed, e.g., for endpoint or token override.
-	// These would typically be checked after config load to override config values.
-	// rootCmd.PersistentFlags().String("endpoint", "", "Server endpoint (overrides current context's endpoint)")
-	// rootCmd.PersistentFlags().String("token", "", "Auth token (overrides current context's token)")
+	// --no-interactive disables all prompts and TUI wizards. Commands that need
+	// missing parameters then fail with the list of required flags.
+	rootCmd.PersistentFlags().BoolVar(&noInteractive, "no-interactive", false,
+		"Never prompt or launch a TUI; fail when required parameters are missing")
 }

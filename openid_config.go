@@ -279,6 +279,12 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		return nil, fmt.Errorf("failed to load webauth templates: %w", err)
 	}
 	oauth2API.RegisterRoutes(router)
+	staticHandler, err := webauth.StaticHandler()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load webauth static assets: %w", err)
+	}
+	router.GET("/static/*filepath", staticHandler)
+	router.HEAD("/static/*filepath", staticHandler)
 
 	// --- WebAuth login UI routes ---
 	webauthConfig := &webauth.Config{
@@ -362,13 +368,13 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 	router.GET("/", webauthAPI.LandingPageHandler)
 	router.GET("/login", webauthAPI.LoginPageHandler)
 	router.POST("/login", webauthAPI.LoginSubmitHandler)
+	router.POST("/login/select", webauthAPI.SelectAccountHandler)
 	router.GET("/login/:provider", webauthAPI.SocialLoginHandler)
 	router.POST("/login/select-account", webauthAPI.SelectAccountSubmitHandler)
 	router.GET("/consent", webauthAPI.ConsentPageHandler)
 	router.POST("/consent", webauthAPI.ConsentSubmitHandler)
 	router.GET("/oauth2/device/verify", webauthAPI.DeviceVerificationPageHandler)
 	router.POST("/oauth2/device/verify", webauthAPI.DeviceVerificationSubmitHandler)
-	router.GET("/static/:name", webauthAPI.StaticAssetHandler)
 	router.POST("/login/passkey/begin", webauthAPI.PasskeyLoginBeginHandler)
 	router.POST("/login/passkey/finish", webauthAPI.PasskeyLoginFinishHandler)
 	router.GET("/account/passkeys", webauthAPI.AccountPasskeysPageHandler())
@@ -399,6 +405,10 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 	router.POST("/required-action", webauthAPI.RequiredActionSubmitHandler)
 	router.POST("/mfa", webauthAPI.MFASubmitHandler)
 	router.POST("/mfa/resend", webauthAPI.MFAResendSubmitHandler)
+	router.GET("/mfa/enroll", webauthAPI.MFAEnrollPageHandler)
+	router.POST("/mfa/enroll", webauthAPI.MFAEnrollSubmitHandler)
+	router.POST("/mfa/enroll/complete", webauthAPI.MFAEnrollCompleteHandler)
+	router.GET("/api/session", webauthAPI.SessionHandler)
 	// ---------- Connect-RPC handlers ----------
 	connectCtx, connectSpan := telemetry.StartSpan(ctx, "shadow-sso", "NewSSOServer.connectrpc")
 	defer connectSpan.End()
@@ -423,6 +433,7 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		serviceProvider.FlowStore(),
 		serviceProvider.OAuthService(),
 		serviceProvider.ClientService(),
+		services.WithAuthRealmSettings(opts.RepositoryProvider.RealmSettingsRepository(ctx)),
 	)
 	authPath, authHandler := ssov1connect.NewAuthServiceHandler(authServer, interceptors)
 	router.Any(authPath+"*action", gin.WrapH(authHandler))
@@ -444,6 +455,8 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		serviceProvider.MFAService(),
 		serviceProvider.PushMFAService(),
 		"ShadowSSO",
+		services.WithTwoFactorRealmSettings(opts.RepositoryProvider.RealmSettingsRepository(ctx)),
+		services.WithTwoFactorAuthFlows(authFlowRepo),
 	)
 	twoFactorPath, twoFactorHandler := ssov1connect.NewTwoFactorServiceHandler(twoFactorServer, interceptors)
 	router.Any(twoFactorPath+"*action", gin.WrapH(twoFactorHandler))

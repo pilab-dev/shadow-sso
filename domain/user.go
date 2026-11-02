@@ -69,25 +69,30 @@ type PushMFAChallenge struct {
 
 // User represents a user in the system.
 type User struct {
-	ID                  string     `bson:"_id,omitempty" json:"id,omitempty"`
-	Email               string     `bson:"email,unique" json:"email"`
-	PasswordHash        string     `bson:"password_hash" json:"-"`
-	Status              UserStatus `bson:"status" json:"status"`
-	FirstName           string     `bson:"first_name,omitempty" json:"first_name,omitempty"`
-	LastName            string     `bson:"last_name,omitempty" json:"last_name,omitempty"`
-	Roles               []string   `bson:"roles,omitempty" json:"roles,omitempty"`
+	ID                  string              `bson:"_id,omitempty" json:"id,omitempty"`
+	Email               string              `bson:"email,unique" json:"email"`
+	PasswordHash        string              `bson:"password_hash" json:"-"`
+	Status              UserStatus          `bson:"status" json:"status"`
+	FirstName           string              `bson:"first_name,omitempty" json:"first_name,omitempty"`
+	LastName            string              `bson:"last_name,omitempty" json:"last_name,omitempty"`
+	Roles               []string            `bson:"roles,omitempty" json:"roles,omitempty"`
 	ClientRoles         map[string][]string `bson:"client_roles,omitempty" json:"client_roles,omitempty"`
-	CreatedAt           time.Time  `bson:"created_at" json:"created_at"`
-	UpdatedAt           time.Time  `bson:"updated_at" json:"updated_at"`
-	LastLoginAt         *time.Time `bson:"last_login_at,omitempty" json:"last_login_at,omitempty"`
-	FailedLoginAttempts int        `bson:"failed_login_attempts,omitempty" json:"failed_login_attempts,omitempty"`
-	LastFailedLoginTime *time.Time `bson:"last_failed_login_time,omitempty" json:"-"`
+	CreatedAt           time.Time           `bson:"created_at" json:"created_at"`
+	UpdatedAt           time.Time           `bson:"updated_at" json:"updated_at"`
+	LastLoginAt         *time.Time          `bson:"last_login_at,omitempty" json:"last_login_at,omitempty"`
+	FailedLoginAttempts int                 `bson:"failed_login_attempts,omitempty" json:"failed_login_attempts,omitempty"`
+	LastFailedLoginTime *time.Time          `bson:"last_failed_login_time,omitempty" json:"-"`
 
 	// MFA Methods (multiple methods supported)
 	MfaMethods []MfaMethod `bson:"mfa_methods,omitempty" json:"mfa_methods,omitempty"`
 
 	// WebAuthn Devices
 	WebAuthnDevices []WebAuthnDevice `bson:"webauthn_devices,omitempty" json:"webauthn_devices,omitempty"`
+
+	// MFARequired forces this user to complete a second factor at login. When
+	// the user has no usable factor yet, the login flow sends them to the
+	// enrollment page instead of completing the sign-in.
+	MFARequired bool `bson:"mfa_required,omitempty" json:"mfa_required,omitempty"`
 
 	// Legacy 2FA fields (for backward compatibility)
 	IsTwoFactorEnabled     bool     `bson:"is_two_factor_enabled,omitempty" json:"is_two_factor_enabled,omitempty"`

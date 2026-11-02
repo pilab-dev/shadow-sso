@@ -38,7 +38,7 @@ const (
 // ---------------------------------------------------------------------------
 
 type rateLimitEntry struct {
-	attempts     int
+	attempts    int
 	lockedUntil time.Time
 }
 

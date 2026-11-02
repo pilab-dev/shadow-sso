@@ -34,7 +34,7 @@ var loginCmd = &cobra.Command{
 		}
 
 		// If currentCtx.UserAuthToken is already set, perhaps ask to re-login or logout first.
-		if currentCtx.UserAuthToken != "" {
+		if currentCtx.UserAuthToken != "" && interactive() {
 			fmt.Printf("Already logged in to context '%s'.\n", config.GlobalConfig.CurrentContext)
 			fmt.Print("Do you want to re-login? (yes/no): ")
 			reader := bufio.NewReader(os.Stdin)
@@ -58,18 +58,35 @@ var loginCmd = &cobra.Command{
 			return runDeviceLogin(currentCtx)
 		}
 
-		fmt.Print("Enter email: ")
-		reader := bufio.NewReader(os.Stdin)
-		email, _ := reader.ReadString('\n')
-		email = strings.TrimSpace(email)
-
-		fmt.Print("Enter password: ")
-		bytePassword, err := term.ReadPassword(int(syscall.Stdin))
-		fmt.Println() // Newline after password input
-		if err != nil {
-			return fmt.Errorf("failed to read password: %w", err)
+		email, _ := cmd.Flags().GetString("email")
+		password, _ := cmd.Flags().GetString("password")
+		if email == "" || password == "" {
+			if !interactive() {
+				var missing []string
+				if email == "" {
+					missing = append(missing, "--email")
+				}
+				if password == "" {
+					missing = append(missing, "--password")
+				}
+				return requireInteractive("auth login", missing...)
+			}
+			if email == "" {
+				fmt.Print("Enter email: ")
+				reader := bufio.NewReader(os.Stdin)
+				value, _ := reader.ReadString('\n')
+				email = strings.TrimSpace(value)
+			}
+			if password == "" {
+				fmt.Print("Enter password: ")
+				bytePassword, err := term.ReadPassword(int(syscall.Stdin))
+				fmt.Println() // Newline after password input
+				if err != nil {
+					return fmt.Errorf("failed to read password: %w", err)
+				}
+				password = string(bytePassword)
+			}
 		}
-		password := string(bytePassword)
 
 		// Create AuthService client without a token for login
 		// A temporary config context is made for this call, only containing the server endpoint.
@@ -151,4 +168,6 @@ func init() {
 	loginCmd.Flags().Bool("device", false, "Use the OAuth 2.0 device authorization flow (RFC 8628) instead of gRPC login")
 	loginCmd.Flags().String("client-id", "sssoctl", "OAuth client ID to use for device flow login")
 	loginCmd.Flags().String("scope", "openid profile email", "Space-separated OAuth scopes to request for device flow login")
+	loginCmd.Flags().String("email", "", "Email for non-interactive login")
+	loginCmd.Flags().String("password", "", "Password for non-interactive login (prefer the prompt outside CI)")
 }

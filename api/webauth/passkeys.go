@@ -3,7 +3,6 @@ package webauth
 import (
 	"context"
 	"crypto/subtle"
-	"embed"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -19,9 +18,6 @@ import (
 	"github.com/pilab-dev/shadow-sso/domain"
 	"github.com/rs/zerolog/log"
 )
-
-//go:embed static/*.js
-var staticFS embed.FS
 
 // NewWebAuthn builds the relying party from the public issuer URL (RP ID = host, origin = scheme://host[:port]).
 func NewWebAuthn(issuerURL, displayName string) (*webauthn.WebAuthn, error) {
@@ -61,7 +57,9 @@ func (w *webAuthnUser) WebAuthnName() string                       { return w.us
 func (w *webAuthnUser) WebAuthnDisplayName() string                { return displayName(w.user) }
 func (w *webAuthnUser) WebAuthnCredentials() []webauthn.Credential { return w.creds }
 
-func credentialID(cred *webauthn.Credential) string { return base64.RawURLEncoding.EncodeToString(cred.ID) }
+func credentialID(cred *webauthn.Credential) string {
+	return base64.RawURLEncoding.EncodeToString(cred.ID)
+}
 
 // passkeyDevice converts a freshly registered credential to its stored form.
 func passkeyDevice(name string, cred *webauthn.Credential) (domain.WebAuthnDevice, error) {
@@ -141,7 +139,7 @@ func (wa *WebAuth) AccountPasskeysPageHandler() gin.HandlerFunc {
 		}
 		wa.renderAccount(c, "account_passkeys.html", "Passkeys", "passkeys", user, gin.H{
 			"Passkeys": views, "Available": wa.passkeysEnabled(),
-			"CanConfirm": user.PasswordHash != "" || (user.IsTwoFactorEnabled && user.TwoFactorMethod == "TOTP"),
+			"CanConfirm":  user.PasswordHash != "" || (user.IsTwoFactorEnabled && user.TwoFactorMethod == "TOTP"),
 			"HasPassword": user.PasswordHash != "",
 		})
 	})

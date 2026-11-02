@@ -725,6 +725,7 @@ func TestVerify2FA_ConsecutiveLoginsProduceDifferentTokens(t *testing.T) {
 		Status:             domain.UserStatusActive,
 		IsTwoFactorEnabled: true,
 		TwoFactorMethod:    "TOTP",
+		TwoFactorSecret:    "secret-1",
 	}
 
 	token1 := loginFor2FA(t, nil, "test@example.com", "pass", user)

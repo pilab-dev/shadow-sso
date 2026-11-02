@@ -97,6 +97,16 @@ type AuthServer struct {
 	oauthService                                 domain.OAuthServiceInterface
 	clientService                                client.ClientServiceInterface
 	twoFactorSessions                            *twoFactorSessionStore
+	realmSettingsRepo                            domain.RealmSettingsRepository
+}
+
+// authServerOption configures optional AuthServer dependencies.
+type authServerOption func(*AuthServer)
+
+// WithAuthRealmSettings injects realm settings so the RPC login path honors
+// the realm-wide MFA enforcement policy.
+func WithAuthRealmSettings(repo domain.RealmSettingsRepository) authServerOption {
+	return func(s *AuthServer) { s.realmSettingsRepo = repo }
 }
 
 // NewAuthServer creates a new AuthServer.
@@ -108,22 +118,27 @@ func NewAuthServer(
 	flowStore domain.FlowStore,
 	oauthService domain.OAuthServiceInterface,
 	clientService client.ClientServiceInterface,
+	opts ...authServerOption,
 ) *AuthServer {
-	return &AuthServer{
-		userRepo:        userRepo,
-		sessionRepo:     sessionRepo,
-		tokenService:    tokenService,
-		passwordHasher:  passwordHasher,
-		flowStore:       flowStore,
-		oauthService:    oauthService,
-		clientService:   clientService,
+	s := &AuthServer{
+		userRepo:          userRepo,
+		sessionRepo:       sessionRepo,
+		tokenService:      tokenService,
+		passwordHasher:    passwordHasher,
+		flowStore:         flowStore,
+		oauthService:      oauthService,
+		clientService:     clientService,
 		twoFactorSessions: newTwoFactorSessionStore(),
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 const (
 	twoFactorSessionTTL = 5 * time.Minute
-	authTracerName       = "auth-service"
+	authTracerName      = "auth-service"
 )
 
 func (s *AuthServer) generateSecure2FAToken() (string, error) {
@@ -206,7 +221,8 @@ func (s *AuthServer) Login(ctx context.Context, req *connect.Request[ssov1.Login
 	}
 
 	// --- 2FA Check ---
-	if user.IsTwoFactorEnabled && user.TwoFactorMethod == "TOTP" {
+	totpUsable := user.IsTwoFactorEnabled && user.TwoFactorMethod == "TOTP" && user.TwoFactorSecret != ""
+	if totpUsable {
 		logger.Info().Str("userID", user.ID).Msg("Login: 2FA (TOTP) is enabled, step-up required.")
 		span.SetAttributes(attribute.Bool("user.2fa_enabled", true))
 		tfaSessionToken, err := s.generateSecure2FAToken()
@@ -223,10 +239,37 @@ func (s *AuthServer) Login(ctx context.Context, req *connect.Request[ssov1.Login
 			// UserInfo is not sent yet, only after full 2FA.
 		}), nil
 	}
+
+	// MFA enforcement: a required account without a usable factor must not
+	// complete the RPC login. The server-rendered web login offers enrollment;
+	// this path cannot, so it fails with an actionable error.
+	if user.MFARequired || s.realmRequiresMFA(ctx) {
+		err := errors.New("MFA is required for this account but no usable TOTP factor is enrolled")
+		logger.Warn().Err(err).Str("userID", user.ID).Msg("Login: MFA required without a usable factor")
+		telemetry.RecordSpanError(span, err, "MFA required without a usable factor")
+		span.SetStatus(codes.Error, "MFA required without a usable factor")
+		audit.Log("AuthService", "Login", userID, userID, "MFA required without a usable factor", false, err)
+		if metrics.LoginFailureTotal != nil {
+			metrics.LoginFailureTotal.Inc()
+		}
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	}
 	// --- End 2FA Check ---
 
 	// If 2FA is not enabled, proceed to generate final tokens and session
 	return s.completeLogin(ctx, user)
+}
+
+// realmRequiresMFA reports the realm-wide MFA enforcement policy.
+func (s *AuthServer) realmRequiresMFA(ctx context.Context) bool {
+	if s.realmSettingsRepo == nil {
+		return false
+	}
+	settings, err := s.realmSettingsRepo.GetRealmSettings(ctx)
+	if err != nil || settings == nil {
+		return false
+	}
+	return settings.RequireMFA
 }
 
 // completeLogin is a helper to finalize login after all checks (password, and 2FA if applicable) pass.

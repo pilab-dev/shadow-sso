@@ -20,15 +20,16 @@ var ErrInvalidSession = errors.New("invalid sso_session cookie")
 type Session struct {
 	SessionID string    `json:"session_id"`
 	Accounts  []Account `json:"accounts"`
-	CSRFToken string   `json:"csrf_token"`
+	CSRFToken string    `json:"csrf_token"`
 }
 
 type Account struct {
-	UserID   string    `json:"user_id"`
-	Email    string    `json:"email"`
-	Name     string    `json:"name"`
-	Picture  string    `json:"picture,omitempty"`
-	LastUsed time.Time `json:"last_used"`
+	UserID      string    `json:"user_id"`
+	Email       string    `json:"email"`
+	Name        string    `json:"name"`
+	Picture     string    `json:"picture,omitempty"`
+	OPSessionID string    `json:"op_session_id,omitempty"`
+	LastUsed    time.Time `json:"last_used"`
 }
 
 const (
@@ -73,6 +74,20 @@ func SetCookie(w http.ResponseWriter, session *Session, isSecure bool, secret st
 	})
 
 	return nil
+}
+
+// ClearCookie immediately expires the sso_session cookie.
+func ClearCookie(w http.ResponseWriter, isSecure bool) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     CookieName,
+		Value:    "",
+		Domain:   CookieDomain,
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   isSecure,
+		SameSite: http.SameSiteLaxMode,
+	})
 }
 
 func VerifyAndDecode(cookieValue, secret string) (*Session, error) {

@@ -232,7 +232,11 @@ func TestPasskeys_RegisterThenLoginEndToEnd(t *testing.T) {
 	// --- registration: finish ---
 	var stored *domain.WebAuthnDevice
 	e.users.EXPECT().AddWebAuthnDevice(gomock.Any(), "u1", gomock.Any()).DoAndReturn(
-		func(_ any, _ string, d *domain.WebAuthnDevice) error { stored = d; user.WebAuthnDevices = append(user.WebAuthnDevices, *d); return nil })
+		func(_ any, _ string, d *domain.WebAuthnDevice) error {
+			stored = d
+			user.WebAuthnDevices = append(user.WebAuthnDevices, *d)
+			return nil
+		})
 	w = e.jsonPost("/account/passkeys/register/finish", auth.register(t, challenge), "application/json", e.sso, ceremony)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	require.NotNil(t, stored)

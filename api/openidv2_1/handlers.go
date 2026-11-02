@@ -19,6 +19,7 @@ import (
 	sssoapi "github.com/pilab-dev/shadow-sso/api"
 
 	"github.com/google/uuid"
+	"github.com/pilab-dev/shadow-sso/api/webauth"
 	"github.com/pilab-dev/shadow-sso/domain"           // Corrected: Single import of domain
 	"github.com/pilab-dev/shadow-sso/internal/metrics" // For custom metrics
 	"github.com/pilab-dev/shadow-sso/internal/ssosession"
@@ -30,7 +31,7 @@ import (
 
 const (
 	// SessionCookieName is the name of the cookie used to store the OIDC provider's user session.
-	SessionCookieName = "sso_op_session"
+	SessionCookieName = ssosession.OPSessionCookieName
 	// CSRFCookieName is the name of the cookie used for CSRF protection.
 	CSRFCookieName = "sso_csrf_token"
 	// CSRFHeaderName is the name of the HTTP header used to carry the CSRF token.
@@ -58,6 +59,7 @@ type OAuth2API struct {
 	sessionRepo         domain.SessionRepository
 	bootstrapToken      string
 	backchannelNotifier BackchannelLogoutNotifier
+	authEndpointLimiter *webauth.RateLimiter
 
 	brandLogo  string
 	brandName  string
@@ -109,6 +111,7 @@ func NewOAuth2API(
 	if opts.Config.NextJSLoginURL == "" {
 		log.Debug().Msg("NextJSLoginURL is not configured; server-rendered /login flow does not require it.")
 	}
+	authRateLimit := webauth.DefaultConfig()
 	return &OAuth2API{
 		service:             opts.OAuthService,
 		jwksService:         opts.JSKSService,
@@ -128,6 +131,7 @@ func NewOAuth2API(
 		sessionRepo:         opts.SessionRepo,
 		bootstrapToken:      opts.BootstrapToken,
 		backchannelNotifier: opts.BackchannelLogoutNotifier,
+		authEndpointLimiter: webauth.NewRateLimiter(authRateLimit.RateLimitMaxAttempts, authRateLimit.RateLimitLockoutDuration),
 		brandLogo:           opts.BrandLogoURL,
 		brandName:           opts.BrandOrganizationName,
 		brandColor:          opts.BrandPrimaryColor,
@@ -141,6 +145,9 @@ func (oa *OAuth2API) RegisterRoutes(e *gin.Engine) {
 
 	e.POST("/oauth2/token", oa.TokenHandler)
 	e.GET("/oauth2/authorize", oa.AuthorizeHandler)
+	e.GET("/oauth2/silent-authorize", oa.SilentAuthorizeHandler)
+	e.HEAD("/oauth2/silent-authorize", oa.SilentAuthorizeHandler)
+	e.OPTIONS("/oauth2/silent-authorize", oa.SilentAuthorizeHandler)
 	e.POST("/oauth2/device_authorization", oa.DeviceAuthorizationHandler)
 	e.GET("/oauth2/userinfo", oa.UserInfoHandler)
 	e.POST("/oauth2/userinfo", oa.UserInfoHandler)
@@ -380,6 +387,7 @@ func (oa *OAuth2API) AuthorizeHandler(c *gin.Context) {
 			scopeQuery:          flowState.Scope,
 			state:               flowState.State,
 			nonce:               flowState.Nonce,
+			prompt:              flowState.Prompt,
 			codeChallenge:       flowState.CodeChallenge,
 			codeChallengeMethod: flowState.CodeChallengeMethod,
 		}
@@ -523,9 +531,9 @@ type authorizeRequestData struct {
 	scopeQuery          string
 	state               string
 	nonce               string
+	prompt              string
 	codeChallenge       string
 	codeChallengeMethod string
-	// prompt (if used)
 	// originalParams map[string]string // If needed by sub-functions
 }
 
@@ -538,6 +546,7 @@ func (oa *OAuth2API) parseAndValidateAuthorizeParams(c *gin.Context) (*authorize
 		scopeQuery:          c.Query("scope"),
 		state:               c.Query("state"),
 		nonce:               c.Query("nonce"),
+		prompt:              c.Query("prompt"),
 		codeChallenge:       c.Query("code_challenge"),
 		codeChallengeMethod: c.Query("code_challenge_method"),
 	}
@@ -597,15 +606,26 @@ func (oa *OAuth2API) validatePKCE(ctx context.Context, clientID, codeChallenge, 
 // generates an auth code and redirects the client. Returns true if handled, and an error if processing failed.
 func (oa *OAuth2API) tryHandleWithExistingSession(c *gin.Context, data *authorizeRequestData) (handled bool, err error) {
 	ctx := c.Request.Context()
+
+	// prompt=login forces re-authentication even when an OP session exists.
+	// prompt=select_account is treated the same way because there is no account
+	// picker yet.
+	if hasPrompt(data.prompt, "login") || hasPrompt(data.prompt, "select_account") {
+		return false, nil
+	}
+
 	sessionCookie, cookieErr := c.Cookie(SessionCookieName)
 	if cookieErr != nil || sessionCookie == "" {
+		if hasPrompt(data.prompt, "none") {
+			oa.redirectWithOAuthError(c, data.redirectURI, data.state, "login_required", "User is not authenticated.")
+			return true, nil
+		}
 		return false, nil // No cookie, not handled by this path
 	}
 
 	userSession, sessionErr := oa.userSessionStore.GetUserSession(ctx, sessionCookie)
 	if sessionErr == nil {
 		// User is logged in.
-		// TODO: Handle 'prompt=login' - if present, must re-authenticate even if session exists. (This would return false from here)
 
 		// Check if client requires consent
 		client, clientErr := oa.clientService.GetClient(ctx, data.clientID)
@@ -616,6 +636,11 @@ func (oa *OAuth2API) tryHandleWithExistingSession(c *gin.Context, data *authoriz
 		}
 
 		if client.RequireConsent {
+			if hasPrompt(data.prompt, "none") {
+				oa.redirectWithOAuthError(c, data.redirectURI, data.state, "consent_required", "User consent is required.")
+				return true, nil
+			}
+
 			// Create flow state for consent
 			flowID := uuid.NewString()
 			flowState := domain.LoginFlowState{
@@ -625,6 +650,7 @@ func (oa *OAuth2API) tryHandleWithExistingSession(c *gin.Context, data *authoriz
 				Scope:               data.scopeQuery,
 				State:               data.state,
 				Nonce:               data.nonce,
+				Prompt:              data.prompt,
 				CodeChallenge:       data.codeChallenge,
 				CodeChallengeMethod: data.codeChallengeMethod,
 				UserID:              userSession.UserID,
@@ -694,6 +720,10 @@ func (oa *OAuth2API) tryHandleWithExistingSession(c *gin.Context, data *authoriz
 	}
 	// Clear bad/expired cookie and proceed to external login.
 	oa.clearUserSessionCookie(c)
+	if hasPrompt(data.prompt, "none") {
+		oa.redirectWithOAuthError(c, data.redirectURI, data.state, "login_required", "User is not authenticated.")
+		return true, nil
+	}
 	return false, nil // Not handled, proceed to external login
 }
 
@@ -709,6 +739,7 @@ func (oa *OAuth2API) initiateExternalLoginFlow(c *gin.Context, data *authorizeRe
 		Scope:               data.scopeQuery,
 		State:               data.state,
 		Nonce:               data.nonce,
+		Prompt:              data.prompt,
 		CodeChallenge:       data.codeChallenge,
 		CodeChallengeMethod: data.codeChallengeMethod,
 		ExpiresAt:           time.Now().Add(10 * time.Minute),
@@ -782,17 +813,44 @@ func (oa *OAuth2API) redirectToClient(c *gin.Context, baseRedirectURI, code, sta
 	c.Redirect(http.StatusFound, parsedRedirectURI.String())
 }
 
+// redirectWithOAuthError sends an OAuth 2.0 error response to the client's
+// redirect_uri. It is used for prompt=none failures that must not show a UI.
+func (oa *OAuth2API) redirectWithOAuthError(c *gin.Context, baseRedirectURI, state, code, description string) {
+	parsedRedirectURI, err := url.Parse(baseRedirectURI)
+	if err != nil {
+		log.Error().Err(err).Str("redirect_uri", baseRedirectURI).Msg("Failed to parse base redirect URI")
+		oa.sendHTMLError(c, http.StatusInternalServerError, domain.NewServerError("internal error constructing redirect"))
+		return
+	}
+
+	params := url.Values{}
+	params.Set("error", code)
+	if description != "" {
+		params.Set("error_description", description)
+	}
+	if state != "" {
+		params.Set("state", state)
+	}
+
+	parsedRedirectURI.RawQuery = params.Encode()
+	c.Redirect(http.StatusFound, parsedRedirectURI.String())
+}
+
+// hasPrompt reports whether the space-delimited prompt parameter contains the
+// requested value.
+func hasPrompt(prompt, value string) bool {
+	for _, item := range strings.Fields(prompt) {
+		if item == value {
+			return true
+		}
+	}
+	return false
+}
+
 // clearUserSessionCookie invalidates the OP user session cookie.
 func (oa *OAuth2API) clearUserSessionCookie(c *gin.Context) {
-	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     SessionCookieName,
-		Value:    "",
-		Expires:  time.Unix(0, 0), // Expire immediately
-		HttpOnly: true,
-		Path:     "/",
-		Secure:   c.Request.TLS != nil,
-		SameSite: http.SameSiteLaxMode,
-	})
+	isSecure := c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https")
+	ssosession.ClearOPSessionCookie(c.Writer, isSecure)
 }
 
 // generateCSRFToken creates a cryptographically random hex-encoded CSRF token.
@@ -885,16 +943,14 @@ func (oa *OAuth2API) FederatedCallbackHandler(c *gin.Context) {
 		return
 	}
 
+	// The state cookie is the only source of truth for CSRF validation. Never
+	// fall back to the state value from the query string: an attacker controls
+	// that value and could otherwise bypass state validation entirely.
 	stateCookie, err := c.Cookie(federationStateCookieName)
 	if err != nil || stateCookie == "" {
-		stateCookie = extractRawState(queryState)
-		if stateCookie != "" {
-			log.Info().Msg("FederatedCallbackHandler: State cookie missing, using extracted state nonce from query state parameter")
-		} else {
-			log.Warn().Err(err).Msg("FederatedCallbackHandler: State cookie not found during callback")
-			c.JSON(http.StatusBadRequest, gin.H{"error": "missing_state_cookie", "message": "Authentication session expired or invalid."})
-			return
-		}
+		log.Warn().Err(err).Str("provider", providerName).Msg("FederatedCallbackHandler: State cookie not found during callback")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_state_cookie", "message": "Authentication session expired or invalid."})
+		return
 	}
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     federationStateCookieName,
@@ -910,7 +966,7 @@ func (oa *OAuth2API) FederatedCallbackHandler(c *gin.Context) {
 	if rawState == "" {
 		rawState = queryState
 	}
-	if rawState != stateCookie {
+	if subtle.ConstantTimeCompare([]byte(rawState), []byte(stateCookie)) != 1 {
 		log.Warn().Str("provider", providerName).Str("queryState", queryState).Str("rawState", rawState).Str("cookieState", stateCookie).Msg("State mismatch in callback")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "state_mismatch", "message": "Invalid session state. Please try logging in again."})
 		return
@@ -931,7 +987,36 @@ func (oa *OAuth2API) FederatedCallbackHandler(c *gin.Context) {
 
 	switch result.Status {
 	case services.FederationStatusLoginSuccessful, services.FederationStatusAccountLinked:
+		if result.UserInfo == nil {
+			log.Error().Str("provider", providerName).Msg("Federated login returned no user info")
+			c.Header("Content-Type", "text/html; charset=utf-8")
+			_ = federatedErrorTemplate.Execute(c.Writer, gin.H{
+				"Message": "Authentication failed",
+				"Detail":  "The identity provider did not return a user profile. Please try logging in again.",
+			})
+			return
+		}
+
 		log.Info().Str("provider", providerName).Str("userID", result.UserInfo.ID).Msg("Federated login/link successful")
+
+		isSecure := c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https")
+		opSession, err := ssosession.EstablishOPSession(
+			c.Request.Context(),
+			oa.userSessionStore,
+			c.Writer,
+			c.Request,
+			result.UserInfo.ID,
+			isSecure,
+		)
+		if err != nil {
+			log.Error().Err(err).Str("userID", result.UserInfo.ID).Msg("Failed to establish OP session after federated login")
+			c.Header("Content-Type", "text/html; charset=utf-8")
+			_ = federatedErrorTemplate.Execute(c.Writer, gin.H{
+				"Message": "Authentication failed",
+				"Detail":  "Failed to create session. Please try logging in again.",
+			})
+			return
+		}
 
 		flowID := extractFlowIDFromState(queryState)
 		if flowID != "" {
@@ -940,18 +1025,21 @@ func (oa *OAuth2API) FederatedCallbackHandler(c *gin.Context) {
 				userName = result.UserInfo.Email
 			}
 
-			session := &ssosession.Session{
-				SessionID: ssosession.NewID(),
-				CSRFToken: "",
-				Accounts: []ssosession.Account{{
-					UserID:   result.UserInfo.ID,
-					Email:    result.UserInfo.Email,
-					Name:     userName,
-					LastUsed: time.Now(),
-				}},
+			account := ssosession.Account{
+				UserID:   result.UserInfo.ID,
+				Email:    result.UserInfo.Email,
+				Name:     userName,
+				LastUsed: time.Now(),
 			}
+			if opSession != nil {
+				account.OPSessionID = opSession.SessionID
+			}
+			var existingSession *ssosession.Session
+			if cookie, cookieErr := c.Cookie(ssosession.CookieName); cookieErr == nil && cookie != "" {
+				existingSession, _ = ssosession.VerifyAndDecode(cookie, oa.cookieSigningSecret)
+			}
+			session := ssosession.MergeAccount(existingSession, account)
 
-			isSecure := c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https")
 			if err := ssosession.SetCookie(c.Writer, session, isSecure, oa.cookieSigningSecret); err != nil {
 				log.Error().Err(err).Msg("Failed to set SSOSession cookie after federated login")
 				c.Header("Content-Type", "text/html; charset=utf-8")
@@ -1939,6 +2027,13 @@ func (oa *OAuth2API) AuthenticateUserHandler(c *gin.Context) {
 		return
 	}
 
+	rateLimitKey := "oidc-auth:" + c.ClientIP() + ":" + strings.ToLower(req.Email)
+	if !oa.authEndpointLimiter.Allow(rateLimitKey) {
+		log.Ctx(ctx).Warn().Str("email", req.Email).Str("ip", c.ClientIP()).Msg("AuthenticateUserHandler: rate limited")
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "too_many_attempts", "error_description": "Too many login attempts. Please try again later."})
+		return
+	}
+
 	flowState, err := oa.flowStore.GetFlow(ctx, req.FlowID)
 	if err != nil {
 		if goerrors.Is(err, domain.ErrFlowNotFound) || goerrors.Is(err, domain.ErrFlowExpired) { // Use goerrors.Is
@@ -1965,6 +2060,7 @@ func (oa *OAuth2API) AuthenticateUserHandler(c *gin.Context) {
 
 	user, err := oa.userRepo.GetUserByEmail(ctx, req.Email)
 	if err != nil {
+		oa.authEndpointLimiter.RecordFailure(rateLimitKey)
 		log.Warn().Err(err).Msg("User not found during Next.js UI auth attempt") // Removed email from log
 		// Generic error to avoid user enumeration
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_credentials", "error_description": "Invalid email or password."})
@@ -1973,44 +2069,79 @@ func (oa *OAuth2API) AuthenticateUserHandler(c *gin.Context) {
 
 	// Verify password
 	if err := oa.passwordHasher.Verify(user.PasswordHash, req.Password); err != nil {
+		oa.authEndpointLimiter.RecordFailure(rateLimitKey)
+		if _, incErr := oa.userRepo.IncrementFailedLoginAttempts(ctx, user.ID); incErr != nil {
+			log.Warn().Err(incErr).Str("userID", user.ID).Msg("Failed to increment failed login attempts")
+		}
 		log.Warn().Str("userID", user.ID).Msg("Incorrect password during Next.js UI auth")
-		// TODO: Implement failed login attempt tracking for the user
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_credentials", "error_description": "Invalid email or password."})
 		return
 	}
 
-	// TODO: Handle 2FA if enabled for the user. This would involve another step/redirect or different API call.
-	// For this iteration, we assume 2FA is handled separately or not in scope for this specific handler.
+	oa.authEndpointLimiter.Reset(rateLimitKey)
+
+	if user.Status != domain.UserStatusActive {
+		log.Warn().Str("userID", user.ID).Str("status", string(user.Status)).Msg("Next.js UI auth attempted for inactive account")
+		c.JSON(http.StatusForbidden, gin.H{"error": "account_inactive", "error_description": "Account is not active. Please contact support."})
+		return
+	}
+
+	// The legacy JSON endpoint cannot complete an MFA challenge. Refuse to issue
+	// an SSO session for MFA-enabled users; they must use the server-rendered
+	// /login flow instead.
+	if userHasMFA(user) {
+		log.Warn().Str("userID", user.ID).Msg("Next.js UI auth attempted for MFA-enabled account")
+		c.JSON(http.StatusForbidden, gin.H{"error": "mfa_required", "error_description": "Multi-factor authentication is required. Please use the /login flow."})
+		return
+	}
+
+	if err := oa.userRepo.ResetFailedLoginAttempts(ctx, user.ID); err != nil {
+		log.Warn().Err(err).Str("userID", user.ID).Msg("Failed to reset failed login attempts")
+	}
 
 	// Client information was already retrieved and validated earlier in the function
 
 	// Authentication successful, create OIDC Provider session for the user.
-	sessionID := uuid.NewString()
-	opSessionExpiry := time.Now().Add(24 * time.Hour) // Example: 24-hour session for the OP
-	userSession := &domain.UserSession{
-		SessionID:       sessionID,
-		UserID:          user.ID,
-		AuthenticatedAt: time.Now(),
-		ExpiresAt:       opSessionExpiry,
-		// UserAgent:    c.Request.UserAgent(), // Optionally store
-		// IPAddress:    c.ClientIP(),          // Optionally store
-	}
-	if err := oa.userSessionStore.StoreUserSession(ctx, userSession); err != nil {
+	isSecure := c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https")
+	opSession, err := ssosession.EstablishOPSession(
+		ctx,
+		oa.userSessionStore,
+		c.Writer,
+		c.Request,
+		user.ID,
+		isSecure,
+	)
+	if err != nil {
 		log.Error().Err(err).Str("userID", user.ID).Msg("Failed to store user session for OP")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error", "error_description": "Could not create user session."})
 		return
 	}
 
-	// Set the OP session cookie
-	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     SessionCookieName,
-		Value:    sessionID,
-		Expires:  opSessionExpiry,
-		HttpOnly: true,
-		Path:     "/",                  // Adjust path if necessary
-		Secure:   c.Request.TLS != nil, // Set Secure flag if served over HTTPS
-		SameSite: http.SameSiteLaxMode,
-	})
+	// Also set the login-UI session cookie so flows that read sso_session (for
+	// example device authorization) recognize this login.
+	displayName := strings.TrimSpace(user.FirstName + " " + user.LastName)
+	if displayName == "" {
+		displayName = user.Email
+	}
+	account := ssosession.Account{
+		UserID:   user.ID,
+		Email:    user.Email,
+		Name:     displayName,
+		LastUsed: time.Now(),
+	}
+	if opSession != nil {
+		account.OPSessionID = opSession.SessionID
+	}
+	var existingUI *ssosession.Session
+	if cookie, cookieErr := c.Cookie(ssosession.CookieName); cookieErr == nil && cookie != "" {
+		existingUI, _ = ssosession.VerifyAndDecode(cookie, oa.cookieSigningSecret)
+	}
+	uiSession := ssosession.MergeAccount(existingUI, account)
+	if err := ssosession.SetCookie(c.Writer, uiSession, isSecure, oa.cookieSigningSecret); err != nil {
+		log.Error().Err(err).Str("userID", user.ID).Msg("Failed to set SSOSession cookie")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error", "error_description": "Could not create user session."})
+		return
+	}
 
 	// Update flow state with authenticated user
 	flowState.UserID = user.ID
@@ -2077,6 +2208,24 @@ func (oa *OAuth2API) AuthenticateUserHandler(c *gin.Context) {
 
 	log.Info().Str("flowId", req.FlowID).Str("userID", user.ID).Str("redirectURL", redirectURL).Msg("User authenticated via UI, redirecting to client with auth code.")
 	c.Redirect(http.StatusFound, redirectURL)
+}
+
+// userHasMFA reports whether the account has any enabled or verified MFA
+// method. The legacy JSON authenticate endpoint cannot complete an MFA
+// challenge, so it must not issue a session for these users.
+func userHasMFA(user *domain.User) bool {
+	if user == nil {
+		return false
+	}
+	if user.IsTwoFactorEnabled || user.EmailMFAEnabled || user.PushMFAEnabled {
+		return true
+	}
+	for _, method := range user.MfaMethods {
+		if method.Verified {
+			return true
+		}
+	}
+	return false
 }
 
 func (oa *OAuth2API) authenticateClient(ctx context.Context, clientID string, existingClient *domain.Client, params map[string][]string) (*domain.Client, error) {

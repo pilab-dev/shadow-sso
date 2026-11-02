@@ -169,6 +169,10 @@ type RealmSettings struct {
 	BruteForceProtected   bool      `bson:"brute_force_protected" json:"bruteForceProtected"`
 	SSLRequired           string    `bson:"ssl_required" json:"sslRequired"`
 
+	// RequireMFA forces every user in the realm to complete a second factor.
+	// Users without a usable factor are sent to the enrollment page at login.
+	RequireMFA bool `bson:"require_mfa,omitempty" json:"requireMFA,omitempty"`
+
 	// Password policy
 	PasswordMinLength    int  `bson:"password_min_length,omitempty" json:"passwordMinLength,omitempty"`
 	PasswordMaxLength    int  `bson:"password_max_length,omitempty" json:"passwordMaxLength,omitempty"`

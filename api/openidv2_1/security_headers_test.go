@@ -23,6 +23,8 @@ func TestSecurityHeaders_CSPAllowsQRDataURIsButNoInlineScripts(t *testing.T) {
 	img = img[:strings.Index(img, ";")]
 	assert.Contains(t, img, "data:", "TOTP QR codes are embedded as data: URIs")
 	assert.Contains(t, csp, "script-src 'self';")
-	assert.NotContains(t, csp, "unsafe-inline'; img", "scripts must not allow inline")
-	assert.NotContains(t, csp[strings.Index(csp, "script-src"):strings.Index(csp, "style-src")], "unsafe-inline")
+	scriptSrc := csp[strings.Index(csp, "script-src"):]
+	scriptSrc = scriptSrc[:strings.Index(scriptSrc, ";")]
+	assert.NotContains(t, scriptSrc, "unsafe-inline", "scripts must not allow inline")
+	assert.NotContains(t, scriptSrc, "unsafe-eval", "scripts must not allow eval")
 }

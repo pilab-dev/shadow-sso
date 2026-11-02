@@ -3,6 +3,7 @@ package openidv2_1
 import (
 	"context"
 	"crypto/subtle"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/pilab-dev/shadow-sso/domain"
 	"github.com/pilab-dev/shadow-sso/internal/oidclogout"
+	"github.com/pilab-dev/shadow-sso/internal/ssosession"
 	"github.com/rs/zerolog/log"
 )
 
@@ -84,7 +86,35 @@ func (oa *OAuth2API) LogoutHandler(c *gin.Context) {
 		}
 	}
 
+	isSecure := c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https")
+
+	// Delete every server-side OP session recorded in the login-UI account
+	// history, not only the currently active one.
+	if oa.userSessionStore != nil && oa.cookieSigningSecret != "" {
+		if ssoCookie, cookieErr := c.Cookie(ssosession.CookieName); cookieErr == nil && ssoCookie != "" {
+			if session, verifyErr := ssosession.VerifyAndDecode(ssoCookie, oa.cookieSigningSecret); verifyErr == nil && session != nil {
+				for _, account := range session.Accounts {
+					if account.OPSessionID == "" {
+						continue
+					}
+					if delErr := oa.userSessionStore.DeleteUserSession(ctx, account.OPSessionID); delErr != nil && !errors.Is(delErr, domain.ErrSessionNotFound) {
+						log.Warn().Err(delErr).Str("sessionID", account.OPSessionID).Msg("LogoutHandler: failed to delete account OP session")
+					}
+				}
+			}
+		}
+	}
+
+	// Delete the server-side OP session referenced by the active cookie so it
+	// cannot be replayed after logout, then expire both the OP and login-UI
+	// cookies.
+	if opSessionID, cookieErr := c.Cookie(SessionCookieName); cookieErr == nil && opSessionID != "" && oa.userSessionStore != nil {
+		if delErr := oa.userSessionStore.DeleteUserSession(ctx, opSessionID); delErr != nil && !errors.Is(delErr, domain.ErrSessionNotFound) {
+			log.Warn().Err(delErr).Str("sessionID", opSessionID).Msg("LogoutHandler: failed to delete OP user session")
+		}
+	}
 	oa.clearUserSessionCookie(c)
+	ssosession.ClearCookie(c.Writer, isSecure)
 
 	if client.BackchannelLogoutURI != "" && oa.backchannelNotifier != nil {
 		sub, _ := claims["sub"].(string)

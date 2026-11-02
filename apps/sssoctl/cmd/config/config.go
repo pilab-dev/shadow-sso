@@ -35,7 +35,13 @@ var CfgFile string // Path to the config file used
 
 // InitConfig initializes Viper to read configuration.
 // It's called by the root command's PersistentPreRunE.
-func InitConfig() error {
+func InitConfig() error { return initConfig(false) }
+
+// InitConfigQuiet is like InitConfig but suppresses the informational config
+// file message. Shell completion uses it so it never pollutes the prompt.
+func InitConfigQuiet() error { return initConfig(true) }
+
+func initConfig(quiet bool) error {
 	if CfgFile != "" {
 		// Use config file from the flag.
 		viper.SetConfigFile(CfgFile)
@@ -65,7 +71,9 @@ func InitConfig() error {
 
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil {
-		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
+		if !quiet {
+			fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
+		}
 		CfgFile = viper.ConfigFileUsed() // Update CfgFile to the one actually used
 	} else {
 		// If config file not found, it's okay, we'll use defaults or create it on 'set-context' or 'login'.

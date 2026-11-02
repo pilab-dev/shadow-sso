@@ -111,6 +111,7 @@ func (wa *WebAuth) MFASubmitHandler(c *gin.Context) {
 		return
 	}
 
+	flowState.FlowID = flowID
 	userID := flowState.UserID
 	if userID == "" {
 		log.Warn().Str("flow_id", flowID).Msg("mfa: no authenticated user in flow")
@@ -118,6 +119,15 @@ func (wa *WebAuth) MFASubmitHandler(c *gin.Context) {
 			"PageTitle": "Error",
 			"Message":   "Invalid or expired login request. Please try again.",
 		})
+		return
+	}
+
+	// Brute-force protection for the second factor. The password step resets
+	// its own limiter on success, so MFA attempts need a separate counter.
+	rateLimitKey := "mfa:" + c.ClientIP() + ":" + userID
+	if !wa.rateLimiter.Allow(rateLimitKey) {
+		log.Warn().Str("flow_id", flowID).Str("user_id", userID).Str("ip", c.ClientIP()).Msg("mfa: rate limited")
+		wa.renderMFAPage(c, flowID, "", "", "Too many attempts. Please try again later.")
 		return
 	}
 
@@ -158,6 +168,7 @@ func (wa *WebAuth) MFASubmitHandler(c *gin.Context) {
 		return
 	}
 	if !valid {
+		wa.rateLimiter.RecordFailure(rateLimitKey)
 		log.Warn().Str("flow_id", flowID).Msg("mfa: invalid verification code")
 		wa.renderMFAPage(c, flowID, user.TwoFactorMethod, user.Email, "Invalid verification code. Please try again.")
 		return

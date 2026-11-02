@@ -128,16 +128,37 @@ func (wa *WebAuth) completeLogin(c *gin.Context, ctx context.Context, flowID str
 		return "", "Internal error. Please try again."
 	}
 
+	// Establish the server-side OP session first so other OIDC clients
+	// recognize this login without redirecting the user back to the form.
+	// Account selection already established one for the account it picked.
+	var opSession *domain.UserSession
+	if carried, ok := c.Get(opSessionEstablishedKey); ok {
+		opSession, _ = carried.(*domain.UserSession)
+	}
+	if opSession == nil || opSession.UserID != user.ID {
+		established, err := wa.establishOPSession(c, user.ID)
+		if err != nil {
+			log.Error().Err(err).Str("user_id", user.ID).Msg("login: failed to establish OP session")
+			return "", "Failed to create session. Please try again."
+		}
+		opSession = established
+	}
+	opSessionID := ""
+	if opSession != nil {
+		opSessionID = opSession.SessionID
+	}
+
 	displayName := user.Email
 	if user.FirstName != "" || user.LastName != "" {
 		displayName = user.FirstName + " " + user.LastName
 	}
 	isSecure := IsSecureRequest(c.Request)
 	session := mergeSessionAccount(c.Request, wa.ssoCookieSecret, ssosession.Account{
-		UserID:   user.ID,
-		Email:    user.Email,
-		Name:     displayName,
-		LastUsed: time.Now(),
+		UserID:      user.ID,
+		Email:       user.Email,
+		Name:        displayName,
+		OPSessionID: opSessionID,
+		LastUsed:    time.Now(),
 	})
 	if err := SetSSOSessionCookie(c.Writer, session, isSecure, wa.ssoCookieSecret); err != nil {
 		log.Error().Err(err).Msg("login: failed to set SSO session cookie")

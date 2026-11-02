@@ -27,6 +27,23 @@ type TwoFactorServer struct {
 	mfaService                                        MFAService
 	pushMFAService                                    PushMFAService
 	ssoAppName                                        string
+	realmSettingsRepo                                 domain.RealmSettingsRepository
+	authFlowRepo                                      domain.AuthenticationFlowRepository
+}
+
+// twoFactorServerOption configures optional dependencies of TwoFactorServer.
+type twoFactorServerOption func(*TwoFactorServer)
+
+// WithTwoFactorRealmSettings injects the realm settings repository so the MFA
+// policy (realm-wide enforcement) can be read and written.
+func WithTwoFactorRealmSettings(repo domain.RealmSettingsRepository) twoFactorServerOption {
+	return func(s *TwoFactorServer) { s.realmSettingsRepo = repo }
+}
+
+// WithTwoFactorAuthFlows injects the authentication-flow repository so the MFA
+// status can report flows that force a second factor.
+func WithTwoFactorAuthFlows(repo domain.AuthenticationFlowRepository) twoFactorServerOption {
+	return func(s *TwoFactorServer) { s.authFlowRepo = repo }
 }
 
 func NewTwoFactorServer(
@@ -35,34 +52,32 @@ func NewTwoFactorServer(
 	mfaService MFAService,
 	pushMFAService PushMFAService,
 	ssoAppName string,
+	opts ...twoFactorServerOption,
 ) *TwoFactorServer {
-	return &TwoFactorServer{
+	s := &TwoFactorServer{
 		userRepo:       userRepo,
 		passwordHasher: hasher,
 		mfaService:     mfaService,
 		pushMFAService: pushMFAService,
 		ssoAppName:     ssoAppName,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 const twoFactorTracerName = "two-factor-service"
 
 // InitiateTOTPSetup generates a new TOTP secret and QR code URI for the authenticated user.
 func (s *TwoFactorServer) InitiateTOTPSetup(ctx context.Context, req *connect.Request[ssov1.InitiateTOTPSetupRequest]) (*connect.Response[ssov1.InitiateTOTPSetupResponse], error) {
-	authedToken, ok := domain.GetAuthenticatedTokenFromContext(ctx)
-	if !ok || authedToken == nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated"))
+	user, authedToken, err := s.resolveTOTPTarget(ctx, req.Msg.GetUserId())
+	if err != nil {
+		return nil, err
 	}
 	ctx, span := telemetry.StartSpan(ctx, twoFactorTracerName, "InitiateTOTPSetup", attribute.String("user.id", authedToken.UserID))
 	defer span.End()
 
-	user, err := s.userRepo.GetUserByID(ctx, authedToken.UserID)
-	if err != nil {
-		log.Ctx(ctx).Error().Err(err).Str("userID", authedToken.UserID).Msg("InitiateTOTPSetup: User not found")
-		telemetry.RecordSpanError(span, err, "user not found")
-		span.SetStatus(codes.Error, "user not found")
-		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("user not found: %w", err))
-	}
 	if user.IsTwoFactorEnabled {
 		telemetry.RecordSpanError(span, errors.New("2FA already enabled"), "2FA already enabled")
 		span.SetStatus(codes.Error, "2FA already enabled")
@@ -97,19 +112,13 @@ func (s *TwoFactorServer) InitiateTOTPSetup(ctx context.Context, req *connect.Re
 
 // VerifyAndEnableTOTP verifies a TOTP code and enables 2FA for the user.
 func (s *TwoFactorServer) VerifyAndEnableTOTP(ctx context.Context, req *connect.Request[ssov1.VerifyAndEnableTOTPRequest]) (*connect.Response[ssov1.VerifyAndEnableTOTPResponse], error) {
-	authedToken, ok := domain.GetAuthenticatedTokenFromContext(ctx)
-	if !ok || authedToken == nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated"))
+	user, authedToken, err := s.resolveTOTPTarget(ctx, req.Msg.GetUserId())
+	if err != nil {
+		return nil, err
 	}
 	ctx, span := telemetry.StartSpan(ctx, twoFactorTracerName, "VerifyAndEnableTOTP", attribute.String("user.id", authedToken.UserID))
 	defer span.End()
 
-	user, err := s.userRepo.GetUserByID(ctx, authedToken.UserID)
-	if err != nil {
-		telemetry.RecordSpanError(span, err, "user not found")
-		span.SetStatus(codes.Error, "user not found")
-		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("user not found: %w", err))
-	}
 	if user.IsTwoFactorEnabled {
 		telemetry.RecordSpanError(span, errors.New("2FA already enabled"), "2FA already enabled")
 		span.SetStatus(codes.Error, "2FA already enabled")
@@ -237,19 +246,12 @@ func (s *TwoFactorServer) Disable2FA(ctx context.Context, req *connect.Request[s
 
 // GenerateRecoveryCodes generates new recovery codes for a 2FA-enabled user.
 func (s *TwoFactorServer) GenerateRecoveryCodes(ctx context.Context, req *connect.Request[ssov1.GenerateRecoveryCodesRequest]) (*connect.Response[ssov1.GenerateRecoveryCodesResponse], error) {
-	authedToken, ok := domain.GetAuthenticatedTokenFromContext(ctx)
-	if !ok || authedToken == nil {
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("user not authenticated"))
+	user, authedToken, err := s.resolveTOTPTarget(ctx, req.Msg.GetUserId())
+	if err != nil {
+		return nil, err
 	}
 	ctx, span := telemetry.StartSpan(ctx, twoFactorTracerName, "GenerateRecoveryCodes", attribute.String("user.id", authedToken.UserID))
 	defer span.End()
-
-	user, err := s.userRepo.GetUserByID(ctx, authedToken.UserID)
-	if err != nil {
-		telemetry.RecordSpanError(span, err, "user not found")
-		span.SetStatus(codes.Error, "user not found")
-		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("user not found: %w", err))
-	}
 
 	if !user.IsTwoFactorEnabled {
 		telemetry.RecordSpanError(span, errors.New("2FA not enabled"), "2FA not enabled")

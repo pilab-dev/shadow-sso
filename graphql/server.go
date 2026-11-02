@@ -103,10 +103,12 @@ func NewHandler(resolver *Resolver, endpoint string, cfg GraphQLConfig) http.Han
 	srv.AddTransport(transport.GET{})
 	srv.AddTransport(transport.POST{})
 	srv.AddTransport(transport.Websocket{
-		Upgrader: websocket.Upgrader{
-			CheckOrigin:  checkOrigin(cfg),
-			ReadBufferSize:  1024,
-			WriteBufferSize: 1024,
+		Implementation: gorillaWebsocketImplementation{
+			upgrader: websocket.Upgrader{
+				CheckOrigin:     checkOrigin(cfg),
+				ReadBufferSize:  1024,
+				WriteBufferSize: 1024,
+			},
 		},
 	})
 	srv.AddTransport(transport.MultipartForm{})

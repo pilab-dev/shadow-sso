@@ -32,6 +32,12 @@ func setupConsentTest(t *testing.T) (
 
 	mockFlowStore := mock_domain.NewMockFlowStore(ctrl)
 	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), gomock.Any()).Return(&domain.User{
+		ID:        "user-1",
+		Email:     "user@example.com",
+		FirstName: "Test",
+		LastName:  "User",
+	}, nil).AnyTimes()
 	mockIdPRepo := mock_domain.NewMockIdPRepository(ctrl)
 	mockPasswordHasher := mock_domain.NewMockPasswordHasher(ctrl)
 	mockFederationService := services_mocks.NewMockFederationService(ctrl)
@@ -168,13 +174,13 @@ func TestConsentSubmit_Approve(t *testing.T) {
 	defer ctrl.Finish()
 
 	flowState := &domain.LoginFlowState{
-		FlowID:    "valid-flow",
-		ClientID:  "test-client",
-		UserID:    "user-123",
-		Scope:     "openid profile",
+		FlowID:      "valid-flow",
+		ClientID:    "test-client",
+		UserID:      "user-123",
+		Scope:       "openid profile",
 		RedirectURI: "http://localhost/callback",
-		State:     "my-state",
-		ExpiresAt: time.Now().Add(10 * time.Minute),
+		State:       "my-state",
+		ExpiresAt:   time.Now().Add(10 * time.Minute),
 	}
 	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "valid-flow").Return(flowState, nil)
 	mockOAuthService.EXPECT().GenerateAuthCode(
@@ -218,7 +224,7 @@ func TestConsentSubmit_Deny(t *testing.T) {
 		RedirectURI: "http://localhost/callback",
 		State:       "my-state",
 		ExpiresAt:   time.Now().Add(10 * time.Minute),
-		UserID:    "user-123",
+		UserID:      "user-123",
 	}
 	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "valid-flow").Return(flowState, nil)
 	mockFlowStore.EXPECT().DeleteFlow(gomock.Any(), "valid-flow").Return(nil)

@@ -2,6 +2,10 @@
 
 `ssoctl` is a command-line interface for managing users, service accounts, sessions, and other aspects of the Shadow SSO system.
 
+> For full management coverage, the interactive client wizard, dynamic shell
+> completion and non-interactive provisioning, see
+> [cli-management.md](cli-management.md).
+
 ## Installation
 
 ### From Source
@@ -228,6 +232,15 @@ Comprehensive user lifecycle management including registration, profiles, securi
 ### Multi-Factor Authentication (`ssoctl mfa`)
 
 Advanced MFA management supporting multiple authentication methods for enhanced security.
+
+> **Note:** the implemented command surface is:
+> - admin: `ssoctl mfa status|reset|require|totp enroll|recovery generate|list|passkey|policy`
+> - self-service: `ssoctl user 2fa setup|verify|disable|recovery-codes`
+>
+> See [mfa-management.md](mfa-management.md) for the admin workflow, enforcement
+> rules, and the current TOTP-only limitation. The HOTP/email/push command
+> examples below are not wired into the CLI yet; those RPCs exist on
+> `TwoFactorService` but have no subcommands.
 
 #### TOTP (Authenticator Apps)
 

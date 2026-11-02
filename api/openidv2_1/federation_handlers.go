@@ -1,6 +1,7 @@
 package openidv2_1
 
 import (
+	"crypto/subtle"
 	"fmt"
 	"net/http"
 	"strings"
@@ -10,11 +11,12 @@ import (
 	"github.com/gin-gonic/gin"
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
+	"github.com/pilab-dev/shadow-sso/internal/ssosession"
 	"github.com/rs/zerolog/log"
 )
 
 const (
-	federationStateCookieName = "sso_federation_state"
+	federationStateCookieName = ssosession.FederationStateCookieName
 	// TODO: Make cookie secure, HttpOnly, SameSite, and Path configurable
 	cookieMaxAge = 300 // 5 minutes for state cookie
 )
@@ -127,17 +129,14 @@ func (fapi *FederationAPI) CallbackHandler(c *gin.Context) {
 		}
 	}
 
-	// Retrieve state from cookie with query state fallback
+	// The state cookie is the only source of truth for CSRF validation. Never
+	// fall back to the state value from the query string: an attacker controls
+	// that value and could otherwise bypass state validation entirely.
 	stateCookie, err := c.Cookie(federationStateCookieName)
 	if err != nil || stateCookie == "" {
-		stateCookie = extractRawState(queryState)
-		if stateCookie != "" {
-			log.Info().Msg("CallbackHandler: State cookie missing, using extracted state nonce from query state parameter")
-		} else {
-			log.Warn().Err(err).Msg("State cookie not found during callback")
-			c.JSON(http.StatusBadRequest, gin.H{"error": "missing_state_cookie", "message": "Authentication session expired or invalid."})
-			return
-		}
+		log.Warn().Err(err).Msg("CallbackHandler: State cookie not found during callback")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_state_cookie", "message": "Authentication session expired or invalid."})
+		return
 	}
 	// Clear the state cookie once read
 	http.SetCookie(c.Writer, &http.Cookie{
@@ -177,7 +176,7 @@ func (fapi *FederationAPI) CallbackHandler(c *gin.Context) {
 	}
 
 	// Verify state (CSRF protection)
-	if queryState != stateCookie {
+	if subtle.ConstantTimeCompare([]byte(queryState), []byte(stateCookie)) != 1 {
 		log.Warn().
 			Str("provider", providerName).
 			Str("queryState", queryState).

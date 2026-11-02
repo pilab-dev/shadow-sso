@@ -154,7 +154,7 @@ func TestAccountLockedOut_WhenRealmBruteForceDisabled(t *testing.T) {
 		config:            DefaultConfig(),
 	}
 	user := &domain.User{
-		ID:                 "user-1",
+		ID:                  "user-1",
 		FailedLoginAttempts: 99,
 		LastFailedLoginTime: ptrTime(time.Now().Add(-time.Minute)),
 	}

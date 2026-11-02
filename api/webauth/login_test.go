@@ -13,6 +13,8 @@ import (
 	"github.com/pilab-dev/shadow-sso/api/webauth"
 	"github.com/pilab-dev/shadow-sso/domain"
 	mock_domain "github.com/pilab-dev/shadow-sso/domain/mocks"
+	"github.com/pilab-dev/shadow-sso/internal/oidcflow"
+	"github.com/pilab-dev/shadow-sso/internal/ssosession"
 	services_mocks "github.com/pilab-dev/shadow-sso/services/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -46,7 +48,7 @@ func setupLoginTest(t *testing.T) (
 		UserRepo:          mockUserRepo,
 		PasswordHasher:    mockPasswordHasher,
 		FlowStore:         mockFlowStore,
-		UserSessionStore:  mock_domain.NewMockUserSessionStore(ctrl),
+		UserSessionStore:  oidcflow.NewInMemoryUserSessionStore(),
 		IdPRepository:     mockIdPRepo,
 		FederationService: mockFederationService,
 		OAuthService:      mockOAuthService,
@@ -333,6 +335,17 @@ func TestLoginSubmit_Success(t *testing.T) {
 	// Then
 	require.Equal(t, http.StatusFound, w.Code)
 	assert.Contains(t, w.Header().Get("Location"), "/oauth2/authorize")
+
+	// The login must also establish the server-side OP session so the next
+	// client can reuse it instead of showing the login form again.
+	opCookie := findCookie(w.Result().Cookies(), ssosession.OPSessionCookieName)
+	require.NotNil(t, opCookie, "sso_op_session cookie must be set after login")
+	assert.NotEmpty(t, opCookie.Value)
+	assert.True(t, opCookie.HttpOnly)
+
+	uiCookie := findCookie(w.Result().Cookies(), ssosession.CookieName)
+	require.NotNil(t, uiCookie, "sso_session cookie must be set after login")
+	assert.NotEmpty(t, uiCookie.Value)
 }
 
 func TestLoginSubmit_ExpiredFlow(t *testing.T) {

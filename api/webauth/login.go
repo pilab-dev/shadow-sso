@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/url"
-	"sort"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -14,7 +13,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func (wa *WebAuth) renderLoginPage(c *gin.Context, flowID string, providers []*domain.IdentityProvider, errMsg string) {
+func (wa *WebAuth) renderLoginPage(c *gin.Context, flowID string, providers []*domain.IdentityProvider, errMsg, email string) {
 	csrfToken, err := generateCSRFToken()
 	if err != nil {
 		log.Error().Err(err).Msg("login: failed to generate CSRF token")
@@ -29,10 +28,44 @@ func (wa *WebAuth) renderLoginPage(c *gin.Context, flowID string, providers []*d
 	setCSRFCookie(c.Writer, csrfToken, 10*time.Minute, isSecure)
 
 	c.HTML(http.StatusOK, "login.html", gin.H{
-		"PageTitle":  "Sign In",
+		"PageTitle":   "Sign In",
+		"FlowID":      flowID,
+		"CSRFToken":   csrfToken,
+		"Providers":   providers,
+		"BrandLogo":   wa.config.BrandLogoURL,
+		"BrandName":   wa.config.BrandOrganizationName,
+		"BrandColor":  wa.config.BrandPrimaryColor,
+		"Error":       errMsg,
+		"Email":       email,
+		"HasAccounts": len(wa.loginAccounts(c.Request)) > 0,
+	})
+}
+
+// renderAccountChooser shows the Google-style account switcher when the signed
+// sso_session cookie contains one or more previously used accounts.
+func (wa *WebAuth) renderAccountChooser(c *gin.Context, flowID, errMsg string) {
+	accounts, _ := wa.accountChoices(c.Request)
+	if len(accounts) == 0 {
+		wa.renderLoginPage(c, flowID, nil, errMsg, c.Query("email"))
+		return
+	}
+
+	csrfToken, err := generateCSRFToken()
+	if err != nil {
+		log.Error().Err(err).Msg("login: failed to generate CSRF token")
+		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
+			"PageTitle": "Error",
+			"Message":   "Internal error. Please try again.",
+		})
+		return
+	}
+	setCSRFCookie(c.Writer, csrfToken, 10*time.Minute, IsSecureRequest(c.Request))
+
+	c.HTML(http.StatusOK, "account_chooser.html", gin.H{
+		"PageTitle":  "Choose an account",
 		"FlowID":     flowID,
 		"CSRFToken":  csrfToken,
-		"Providers":  providers,
+		"Accounts":   accounts,
 		"BrandLogo":  wa.config.BrandLogoURL,
 		"BrandName":  wa.brandName(c),
 		"BrandColor": wa.config.BrandPrimaryColor,
@@ -48,49 +81,16 @@ func (wa *WebAuth) realmAllowsRegistration(c *gin.Context) bool {
 	return s != nil && s.RegistrationAllowed
 }
 
-// tryRenderAccountSelector renders account_selector.html (a Google-style
-// "choose an account" chooser) when the browser already carries an
-// sso_session cookie with one or more cached accounts, and the caller has not
-// asked to bypass it with ?new_account=1 (the "Use another account" link).
-// Returns true if it rendered a response, in which case the caller must not
-// render anything else.
-func (wa *WebAuth) tryRenderAccountSelector(c *gin.Context, flowID string) bool {
-	if c.Query("new_account") != "" {
-		return false
+func (wa *WebAuth) renderLoginStart(c *gin.Context, flowID string, providers []*domain.IdentityProvider, errMsg string) {
+	if c.Query("form") == "1" || c.Query("new_account") != "" || errMsg != "" {
+		wa.renderLoginPage(c, flowID, providers, errMsg, c.Query("email"))
+		return
 	}
-	session, err := GetSSOSession(c.Request, wa.ssoCookieSecret)
-	if err != nil || session == nil || len(session.Accounts) == 0 {
-		return false
+	if accounts, _ := wa.accountChoices(c.Request); len(accounts) > 0 {
+		wa.renderAccountChooser(c, flowID, errMsg)
+		return
 	}
-
-	accounts := make([]ssosession.Account, len(session.Accounts))
-	copy(accounts, session.Accounts)
-	sort.SliceStable(accounts, func(i, j int) bool {
-		return accounts[i].LastUsed.After(accounts[j].LastUsed)
-	})
-
-	csrfToken, err := generateCSRFToken()
-	if err != nil {
-		log.Error().Err(err).Msg("login: failed to generate CSRF token for account selector")
-		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
-			"PageTitle": "Error",
-			"Message":   "Internal error. Please try again.",
-		})
-		return true
-	}
-	isSecure := IsSecureRequest(c.Request)
-	setCSRFCookie(c.Writer, csrfToken, 10*time.Minute, isSecure)
-
-	c.HTML(http.StatusOK, "account_selector.html", gin.H{
-		"PageTitle":  "Choose an account",
-		"FlowID":     flowID,
-		"CSRFToken":  csrfToken,
-		"Accounts":   accounts,
-		"BrandLogo":  wa.config.BrandLogoURL,
-		"BrandName":  wa.brandName(c),
-		"BrandColor": wa.config.BrandPrimaryColor,
-	})
-	return true
+	wa.renderLoginPage(c, flowID, providers, errMsg, c.Query("email"))
 }
 
 // LoginPageHandler serves the GET /login page.
@@ -122,16 +122,12 @@ func (wa *WebAuth) LoginPageHandler(c *gin.Context) {
 			setFlowCookie(c.Writer, flowID, isSecure)
 			setReturnToCookie(c.Writer, rt, isSecure, wa.ssoCookieSecret)
 
-			if wa.tryRenderAccountSelector(c, flowID) {
-				return
-			}
-
 			providers, err := wa.idpRepo.ListIdPs(ctx, true)
 			if err != nil {
 				log.Error().Err(err).Msg("login: failed to load identity providers")
 				providers = nil
 			}
-			wa.renderLoginPage(c, flowID, providers, "")
+			wa.renderLoginStart(c, flowID, providers, "")
 			return
 		}
 		c.HTML(http.StatusBadRequest, "error.html", gin.H{
@@ -162,10 +158,6 @@ func (wa *WebAuth) LoginPageHandler(c *gin.Context) {
 		return
 	}
 
-	if wa.tryRenderAccountSelector(c, flowID) {
-		return
-	}
-
 	// Load social providers only after the flow has been validated.
 	providers, err := wa.idpRepo.ListIdPs(ctx, true)
 	if err != nil {
@@ -174,7 +166,134 @@ func (wa *WebAuth) LoginPageHandler(c *gin.Context) {
 	}
 
 	errorMsg := c.Query("error")
-	wa.renderLoginPage(c, flowID, providers, errorMsg)
+	wa.renderLoginStart(c, flowID, providers, errorMsg)
+}
+
+// SelectAccountHandler handles the account chooser submission. Selecting the
+// account that already owns a valid OP session completes the flow without a
+// password; selecting any other account asks for the password (prefilled).
+func (wa *WebAuth) SelectAccountHandler(c *gin.Context) {
+	if !validateCSRFTokenForm(c) {
+		c.HTML(http.StatusBadRequest, "error.html", gin.H{
+			"PageTitle": "Error",
+			"Message":   "Invalid form submission. Please try again.",
+		})
+		return
+	}
+
+	flowID := GetFlowIDFromCookie(c.Request)
+	if flowID == "" {
+		c.HTML(http.StatusBadRequest, "error.html", gin.H{
+			"PageTitle": "Error",
+			"Message":   "Missing login request identifier.",
+		})
+		return
+	}
+
+	ctx := c.Request.Context()
+	flowState, err := wa.flowStore.GetFlow(ctx, flowID)
+	if err != nil {
+		log.Warn().Err(err).Str("flow_id", flowID).Msg("account select: flow not found")
+		c.HTML(http.StatusBadRequest, "error.html", gin.H{
+			"PageTitle": "Error",
+			"Message":   "Invalid or expired login request.",
+		})
+		return
+	}
+	if time.Now().After(flowState.ExpiresAt) {
+		log.Warn().Str("flow_id", flowID).Msg("account select: flow expired")
+		_ = wa.flowStore.DeleteFlow(ctx, flowID)
+		c.HTML(http.StatusBadRequest, "error.html", gin.H{
+			"PageTitle": "Error",
+			"Message":   "Login request has expired. Please try again.",
+		})
+		return
+	}
+
+	userID := c.PostForm("user_id")
+	var selected *ssosession.Account
+	accounts := wa.loginAccounts(c.Request)
+	for i := range accounts {
+		if accounts[i].UserID == userID {
+			selected = &accounts[i]
+			break
+		}
+	}
+	if selected == nil {
+		c.Redirect(http.StatusFound, "/login?form=1&error="+url.QueryEscape("Account not found. Please sign in again."))
+		return
+	}
+
+	requirePassword := promptRequiresLogin(flowState.Prompt)
+	if !requirePassword {
+		var activeSession *domain.UserSession
+
+		// Prefer the account's own server-side OP session. This is what makes
+		// switching between already signed-in accounts passwordless.
+		if selected.OPSessionID != "" && wa.userSessionStore != nil {
+			if session, sessionErr := wa.userSessionStore.GetUserSession(ctx, selected.OPSessionID); sessionErr == nil &&
+				session != nil && session.UserID == selected.UserID {
+				activeSession = session
+			}
+		}
+
+		// Backward compatibility for accounts stored before per-account OP
+		// session IDs were added.
+		if activeSession == nil {
+			if session, ok := wa.currentOPUserSession(c.Request); ok && session.UserID == selected.UserID {
+				activeSession = session
+				selected.OPSessionID = session.SessionID
+			}
+		}
+
+		if activeSession != nil {
+			authenticatedAt := activeSession.AuthenticatedAt
+			if authenticatedAt.IsZero() {
+				authenticatedAt = time.Now()
+			}
+			isSecure := IsSecureRequest(c.Request)
+			ssosession.SetOPSessionCookie(c.Writer, activeSession.SessionID, isSecure)
+			// The completion step owns the OP session for every other login
+			// path; here the selected account already has one, so hand it over
+			// instead of minting a second session for the same switch.
+			c.Set(opSessionEstablishedKey, activeSession)
+
+			flowState.UserID = selected.UserID
+			flowState.UserAuthenticatedAt = authenticatedAt
+			flowState.FlowID = flowID
+			// finishLogin persists the flow (and runs the required-action
+			// gate), so there is nothing to write here.
+
+			session := wa.mergeLoginSession(c.Request, ssosession.Account{
+				UserID:      selected.UserID,
+				Email:       selected.Email,
+				Name:        selected.Name,
+				Picture:     selected.Picture,
+				OPSessionID: activeSession.SessionID,
+				LastUsed:    time.Now(),
+			})
+			if err := SetSSOSessionCookie(c.Writer, session, isSecure, wa.ssoCookieSecret); err != nil {
+				log.Warn().Err(err).Msg("account select: failed to refresh SSO session cookie")
+			}
+
+			user, uErr := wa.userRepo.GetUserByID(ctx, selected.UserID)
+			if uErr != nil || user.Status != domain.UserStatusActive {
+				log.Warn().Err(uErr).Str("flow_id", flowID).Str("user_id", selected.UserID).Msg("account select: user not found or inactive")
+				c.Redirect(http.StatusFound, "/login?new_account=1")
+				return
+			}
+
+			log.Info().Str("flow_id", flowID).Str("user_id", selected.UserID).Msg("account select: continuing signed-in account")
+			wa.finishLogin(c, ctx, flowID, flowState, user)
+			return
+		}
+	}
+
+	target := "/login?form=1"
+	if selected.Email != "" {
+		target += "&email=" + url.QueryEscape(selected.Email)
+	}
+	c.Redirect(http.StatusFound, target)
 }
 
 // accountLockedOut reports whether a user's account is currently locked due to
@@ -247,14 +366,14 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 	password := c.PostForm("password")
 
 	if flowID == "" || email == "" || password == "" {
-		wa.renderLoginPage(c, flowID, nil, "All fields are required.")
+		wa.renderLoginPage(c, flowID, nil, "All fields are required.", email)
 		return
 	}
 
 	rateLimitKey := c.ClientIP() + ":" + email
 	if !wa.rateLimiter.Allow(rateLimitKey) {
 		log.Warn().Str("email", email).Str("ip", c.ClientIP()).Msg("login: rate limited")
-		wa.renderLoginPage(c, flowID, nil, "Too many attempts. Please try again later.")
+		wa.renderLoginPage(c, flowID, nil, "Too many attempts. Please try again later.", email)
 		return
 	}
 
@@ -279,18 +398,19 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 		return
 	}
 
+	flowState.FlowID = flowID
 	user, err := wa.userRepo.GetUserByEmail(ctx, email)
 	if err != nil {
 		wa.rateLimiter.RecordFailure(rateLimitKey)
 		log.Warn().Err(err).Str("email", email).Msg("login: user not found")
-		wa.renderLoginPage(c, flowID, nil, "Invalid email or password.")
+		wa.renderLoginPage(c, flowID, nil, "Invalid email or password.", email)
 		return
 	}
 
 	if wa.accountLockedOut(ctx, user) {
 		wa.rateLimiter.RecordFailure(rateLimitKey)
 		log.Warn().Str("email", email).Str("user_id", user.ID).Msg("login: account locked out due to repeated failed attempts")
-		wa.renderLoginPage(c, flowID, nil, "Account is temporarily locked. Please try again later.")
+		wa.renderLoginPage(c, flowID, nil, "Account is temporarily locked. Please try again later.", email)
 		return
 	}
 
@@ -299,7 +419,7 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 		wa.rateLimiter.RecordFailure(rateLimitKey)
 		wa.recordLoginFailure(ctx, user.ID)
 		log.Warn().Str("email", email).Msg("login: password verification failed")
-		wa.renderLoginPage(c, flowID, nil, "Invalid email or password.")
+		wa.renderLoginPage(c, flowID, nil, "Invalid email or password.", email)
 		return
 	}
 
@@ -307,12 +427,40 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 		wa.rateLimiter.RecordFailure(rateLimitKey)
 		wa.recordLoginFailure(ctx, user.ID)
 		log.Warn().Str("email", email).Str("status", string(user.Status)).Msg("login: account not active")
-		wa.renderLoginPage(c, flowID, nil, "Account is not active. Please contact support.")
+		wa.renderLoginPage(c, flowID, nil, "Account is not active. Please contact support.", email)
 		return
 	}
 
 	wa.rateLimiter.Reset(rateLimitKey)
 	wa.resetLoginFailures(ctx, user.ID)
+
+	// Enrollment enforcement: when MFA is required (per user, per realm, or by
+	// the browser flow) and the account has no usable factor, send the user to
+	// enrollment instead of completing the sign-in.
+	enforced := requiresMFA || wa.mfaEnforced(ctx, user)
+	if enforced && !hasUsableTOTP(user) {
+		if hasUnverifiableActiveFactor(user) {
+			// Never silently downgrade to a factor the login page cannot verify.
+			log.Warn().Str("flow_id", flowID).Str("user_id", user.ID).Str("method", user.TwoFactorMethod).Msg("login: configured MFA method is not verifiable by the web login page")
+			c.HTML(http.StatusForbidden, "error.html", gin.H{
+				"PageTitle": "Second factor unavailable",
+				"Message":   "This account has a second factor that the sign-in page cannot verify. Contact your administrator to reset it.",
+			})
+			return
+		}
+		flowState.UserID = user.ID
+		flowState.UserAuthenticatedAt = time.Now()
+		if err := wa.flowStore.UpdateFlow(ctx, flowID, flowState); err != nil {
+			log.Error().Err(err).Str("flow_id", flowID).Msg("login: failed to update flow for MFA enrollment")
+			c.HTML(http.StatusInternalServerError, "error.html", gin.H{
+				"PageTitle": "Error",
+				"Message":   "Internal error. Please try again.",
+			})
+			return
+		}
+		c.Redirect(http.StatusFound, "/mfa/enroll?flow_id="+url.QueryEscape(flowID))
+		return
+	}
 
 	if requiresMFA {
 		flowState.UserID = user.ID
@@ -356,6 +504,11 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 	// SSO cookie and continues to consent/authorization.
 	wa.finishLogin(c, ctx, flowID, flowState, user)
 }
+
+// opSessionEstablished carries the server-side OP session a login path already
+// created (account selection), so completeLogin reuses it instead of minting a
+// second one for the same switch.
+const opSessionEstablishedKey = "sso_op_session_established"
 
 // redirectAfterAuthentication completes a login (password, MFA, or cached
 // account selection) by sending the browser to consent, the return_to
@@ -474,6 +627,59 @@ func (wa *WebAuth) SelectAccountSubmitHandler(c *gin.Context) {
 // validateCSRFTokenForm validates CSRF using a hidden form field compared against
 // the double-submit cookie. This differs from the header-based validation used
 // by API endpoints.
+// mfaEnforced reports whether a user must complete a second factor at login,
+// combining the per-user flag with the realm-wide policy.
+func (wa *WebAuth) mfaEnforced(ctx context.Context, user *domain.User) bool {
+	if user == nil {
+		return false
+	}
+	if user.MFARequired {
+		return true
+	}
+	if wa.realmSettingsRepo == nil {
+		return false
+	}
+	settings, err := wa.realmSettingsRepo.GetRealmSettings(ctx)
+	if err != nil || settings == nil {
+		return false
+	}
+	return settings.RequireMFA
+}
+
+// hasUsableTOTP reports whether the server-rendered login page can verify a
+// TOTP code for this user. It is the only second factor the /mfa page supports.
+func hasUsableTOTP(user *domain.User) bool {
+	return user != nil &&
+		user.IsTwoFactorEnabled &&
+		user.TwoFactorMethod == "TOTP" &&
+		user.TwoFactorSecret != ""
+}
+
+// hasUnverifiableActiveFactor reports whether the account has an enabled
+// second factor that the /mfa page cannot verify. Such accounts must not be
+// routed to enrollment, because that would replace their existing factor with
+// a weaker path.
+func hasUnverifiableActiveFactor(user *domain.User) bool {
+	if user == nil {
+		return false
+	}
+	if user.IsTwoFactorEnabled && user.TwoFactorSecret == "" {
+		return true
+	}
+	if user.IsTwoFactorEnabled && user.TwoFactorMethod != "" && user.TwoFactorMethod != "NONE" && user.TwoFactorMethod != "TOTP" {
+		return true
+	}
+	if user.EmailMFAEnabled || user.PushMFAEnabled {
+		return true
+	}
+	for _, m := range user.MfaMethods {
+		if m.Verified && m.Type != domain.MfaMethodTypeTOTP {
+			return true
+		}
+	}
+	return false
+}
+
 func validateCSRFTokenForm(c *gin.Context) bool {
 	cookieVal, err := c.Cookie(CSRFCookieName)
 	if err != nil || cookieVal == "" {

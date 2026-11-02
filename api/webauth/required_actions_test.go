@@ -109,7 +109,7 @@ func TestLogin_MFAMarksFlowPending(t *testing.T) {
 	flow := raFlow("")
 	flow.UserID, flow.UserAuthenticatedAt = "", time.Time{}
 	e.flows.EXPECT().GetFlow(gomock.Any(), "f1").Return(flow, nil)
-	user := &domain.User{ID: "u1", Email: "a@b.c", PasswordHash: "h", Status: domain.UserStatusActive, IsTwoFactorEnabled: true}
+	user := &domain.User{ID: "u1", Email: "a@b.c", PasswordHash: "h", Status: domain.UserStatusActive, IsTwoFactorEnabled: true, TwoFactorMethod: "TOTP", TwoFactorSecret: "secret"}
 	e.users.EXPECT().GetUserByEmail(gomock.Any(), "a@b.c").Return(user, nil)
 	e.hasher.EXPECT().Verify("h", "pw").Return(nil)
 	var saved *domain.LoginFlowState
