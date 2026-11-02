@@ -1,5 +1,10 @@
 # LDAP User Repository Implementation Plan
 
+> **Superseded in scope by [auth-source-plan.md](auth-source-plan.md).** That
+> document generalizes this plan into pluggable authenticator and attribute
+> source interfaces (local, LDAP, PiDirectory, Kerberos) and keeps this LDAP
+> adapter as one implementation.
+
 ## Overview
 
 This plan extends the existing LDAP authentication in ShadowSSO to use LDAP/Active Directory as the user store/repository. It includes three main components:
