@@ -57,12 +57,32 @@ func (r *TokenRepository) GetRefreshToken(ctx context.Context, tokenValue string
 	return &token, err
 }
 
+// GetRefreshTokenInfo returns token metadata for the refresh grant. Unlike
+// GetRefreshToken it does not filter on revocation, because the refresh flow
+// must be able to tell "revoked because rotated" (replay) from "unknown token".
 func (r *TokenRepository) GetRefreshTokenInfo(ctx context.Context, tokenValue string) (*domain.TokenInfo, error) {
-	token, err := r.GetRefreshToken(ctx, tokenValue)
+	var token domain.Token
+	err := r.coll.FindOne(ctx, bson.M{"token_value": tokenValue, "token_type": "refresh_token"}).Decode(&token)
 	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, errors.New("refresh token not found or invalid")
+		}
 		return nil, err
 	}
-	return &domain.TokenInfo{ID: token.ID, TokenType: token.TokenType, ClientID: token.ClientID, UserID: token.UserID, Scope: token.Scope, IssuedAt: token.CreatedAt, ExpiresAt: token.ExpiresAt, IsRevoked: token.IsRevoked, Roles: token.Roles}, nil
+	return &domain.TokenInfo{
+		ID:                 token.ID,
+		TokenType:          token.TokenType,
+		ClientID:           token.ClientID,
+		UserID:             token.UserID,
+		Scope:              token.Scope,
+		IssuedAt:           token.CreatedAt,
+		ExpiresAt:          token.ExpiresAt,
+		IsRevoked:          token.IsRevoked,
+		Roles:              token.Roles,
+		RefreshTokenFamily: token.Family,
+		SessionID:          token.SessionID,
+		UsedAt:             token.UsedAt,
+	}, nil
 }
 
 func (r *TokenRepository) GetAccessTokenInfo(ctx context.Context, tokenValue string) (*domain.TokenInfo, error) {
@@ -87,6 +107,40 @@ func (r *TokenRepository) RevokeRefreshToken(ctx context.Context, tokenValue str
 		log.Debug().Str("refreshToken", tokenValue).Msg("Refresh token marked as revoked.")
 	}
 	return nil
+}
+
+// MarkRefreshTokenUsed records a successful rotation. Presenting the same token
+// again is treated as replay by the refresh grant.
+func (r *TokenRepository) MarkRefreshTokenUsed(ctx context.Context, tokenValue, rotatedTo string) error {
+	set := bson.M{"used_at": time.Now().UTC()}
+	if rotatedTo != "" {
+		set["rotated_to"] = rotatedTo
+	}
+	_, err := r.coll.UpdateOne(ctx,
+		bson.M{"token_value": tokenValue, "token_type": "refresh_token"},
+		bson.M{"$set": set},
+	)
+	return err
+}
+
+// RevokeTokenFamily revokes every token in a rotation family. Called when a
+// refresh token is replayed, which indicates theft.
+func (r *TokenRepository) RevokeTokenFamily(ctx context.Context, family string) error {
+	if family == "" {
+		return nil
+	}
+	_, err := r.coll.UpdateMany(ctx, bson.M{"family": family}, bson.M{"$set": bson.M{"is_revoked": true}})
+	return err
+}
+
+// RevokeTokensBySessionID revokes every token issued for a session, so kicking a
+// device also kills its access and refresh tokens.
+func (r *TokenRepository) RevokeTokensBySessionID(ctx context.Context, sessionID string) error {
+	if sessionID == "" {
+		return nil
+	}
+	_, err := r.coll.UpdateMany(ctx, bson.M{"session_id": sessionID}, bson.M{"$set": bson.M{"is_revoked": true}})
+	return err
 }
 
 func (r *TokenRepository) RevokeAllUserTokens(ctx context.Context, userID string) error {

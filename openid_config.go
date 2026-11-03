@@ -492,6 +492,7 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 			UserAttributeMapperRepo: userAttrMapperRepo,
 			ClientRepo:              clientRepo,
 			SessionRepo:             sessionRepo,
+			TokenRepo:               repoProvider.TokenRepository(gqlCtx),
 			IdPRepo:                 idpRepo,
 			GroupRepo:               groupRepo,
 			RoleRepo:                roleRepo,

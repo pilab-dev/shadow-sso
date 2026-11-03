@@ -22,6 +22,7 @@ type Resolver struct {
 	UserAttributeMapperRepo   domain.UserAttributeMapperRepository
 	ClientRepo               domain.ClientRepository
 	SessionRepo             domain.SessionRepository
+	TokenRepo               domain.TokenRepository
 	IdPRepo                 domain.IdPRepository
 	GroupRepo               domain.GroupRepository
 	RoleRepo                 domain.RoleRepository
@@ -861,8 +862,17 @@ func (r *mutationResolver) RevokeSession(ctx context.Context, sessionID string) 
 		return false, err
 	}
 	session.IsRevoked = true
-	err = r.SessionRepo.UpdateSession(ctx, session)
-	return err == nil, err
+	if err := r.SessionRepo.UpdateSession(ctx, session); err != nil {
+		return false, err
+	}
+	// Kicking a device must also kill its tokens, otherwise they stay valid
+	// until they expire.
+	if r.TokenRepo != nil {
+		if err := r.TokenRepo.RevokeTokensBySessionID(ctx, sessionID); err != nil {
+			return false, err
+		}
+	}
+	return true, nil
 }
 
 // RevokeAllSessions is the resolver for the revokeAllSessions field.
@@ -871,14 +881,48 @@ func (r *mutationResolver) RevokeAllSessions(ctx context.Context, userID string)
 		return false, err
 	}
 
-	_, err := r.SessionRepo.DeleteSessionsByUserID(ctx, userID)
-	return err == nil, err
+	sessions, err := r.SessionRepo.ListSessionsByUserID(ctx, userID, domain.SessionFilter{})
+	if err != nil {
+		return false, err
+	}
+	ids := make([]string, 0, len(sessions))
+	for _, s := range sessions {
+		ids = append(ids, s.ID)
+	}
+	if _, err := r.SessionRepo.DeleteSessionsByUserID(ctx, userID); err != nil {
+		return false, err
+	}
+	if r.TokenRepo != nil {
+		for _, id := range ids {
+			if err := r.TokenRepo.RevokeTokensBySessionID(ctx, id); err != nil {
+				return false, err
+			}
+		}
+	}
+	return true, nil
 }
 
 // LogoutUser is the resolver for the logoutUser field.
 func (r *mutationResolver) LogoutUser(ctx context.Context, userID string) (bool, error) {
-	_, err := r.SessionRepo.DeleteSessionsByUserID(ctx, userID)
-	return err == nil, err
+	sessions, err := r.SessionRepo.ListSessionsByUserID(ctx, userID, domain.SessionFilter{})
+	if err != nil {
+		return false, err
+	}
+	ids := make([]string, 0, len(sessions))
+	for _, s := range sessions {
+		ids = append(ids, s.ID)
+	}
+	if _, err := r.SessionRepo.DeleteSessionsByUserID(ctx, userID); err != nil {
+		return false, err
+	}
+	if r.TokenRepo != nil {
+		for _, id := range ids {
+			if err := r.TokenRepo.RevokeTokensBySessionID(ctx, id); err != nil {
+				return false, err
+			}
+		}
+	}
+	return true, nil
 }
 
 // UpdateRealm is the resolver for the updateRealm field.

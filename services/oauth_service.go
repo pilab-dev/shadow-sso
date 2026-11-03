@@ -324,6 +324,29 @@ func (s *defaultOAuthService) RefreshToken(ctx context.Context, refreshTokenValu
 		attribute.Bool("token.is_revoked", tokenInfo.IsRevoked),
 	)
 
+	// A rotated token presented a second time means the credential leaked: the
+	// legitimate client already exchanged it. Kill the family and the session.
+	if tokenInfo.UsedAt != nil {
+		log.Ctx(ctx).Error().
+			Str("client_id", clientID).
+			Str("user_id", tokenInfo.UserID).
+			Str("session_id", tokenInfo.SessionID).
+			Str("family", tokenInfo.RefreshTokenFamily).
+			Msg("Refresh token replay detected; revoking token family and session")
+
+		if tokenInfo.RefreshTokenFamily != "" {
+			if errRev := s.tokenRepo.RevokeTokenFamily(ctx, tokenInfo.RefreshTokenFamily); errRev != nil {
+				log.Ctx(ctx).Error().Err(errRev).Msg("Failed to revoke refresh token family after replay")
+			}
+		}
+		if tokenInfo.SessionID != "" {
+			if errRev := s.revokeSession(ctx, tokenInfo.SessionID); errRev != nil {
+				log.Ctx(ctx).Error().Err(errRev).Msg("Failed to revoke session after refresh token replay")
+			}
+		}
+		return nil, domain.NewInvalidGrant("refresh token has already been used")
+	}
+
 	if tokenInfo.IsRevoked || time.Now().After(tokenInfo.ExpiresAt) {
 		errRev := errors.New("refresh token expired or revoked")
 		telemetry.RecordSpanError(span, errRev, "refresh token invalid state")
@@ -337,11 +360,41 @@ func (s *defaultOAuthService) RefreshToken(ctx context.Context, refreshTokenValu
 		return nil, domain.NewInvalidGrant("refresh token expired or revoked")
 	}
 
+	// A token issued to one client must not be refreshable by another.
+	if clientID != "" && tokenInfo.ClientID != "" && tokenInfo.ClientID != clientID {
+		log.Ctx(ctx).Warn().Str("client_id", clientID).Str("token_client_id", tokenInfo.ClientID).
+			Msg("Refresh token presented by a different client")
+		return nil, domain.NewInvalidGrant("refresh token was not issued to this client")
+	}
+
+	// The session may have been kicked from the device list after this refresh
+	// token was issued.
+	if tokenInfo.SessionID != "" {
+		sess, errSess := s.sessionRepo.GetSessionByID(ctx, tokenInfo.SessionID)
+		if errSess != nil {
+			log.Ctx(ctx).Warn().Err(errSess).Str("session_id", tokenInfo.SessionID).Msg("Refresh rejected: session not found")
+			return nil, domain.NewInvalidGrant("session not found")
+		}
+		if sess.IsRevoked || time.Now().After(sess.ExpiresAt) {
+			log.Ctx(ctx).Warn().Str("session_id", tokenInfo.SessionID).Msg("Refresh rejected: session revoked or expired")
+			return nil, domain.NewInvalidGrant("session has been revoked")
+		}
+		sess.LastUsedAt = time.Now().UTC()
+		if errUpdate := s.sessionRepo.UpdateSession(ctx, sess); errUpdate != nil {
+			log.Ctx(ctx).Warn().Err(errUpdate).Str("session_id", sess.ID).Msg("Failed to update session last-used timestamp")
+		}
+	}
+
 	if err := s.tokenRepo.RevokeRefreshToken(ctx, refreshTokenValue); err != nil {
 		telemetry.RecordSpanError(span, err, "failed to revoke refresh token")
 		span.SetStatus(codes.Error, err.Error())
 		log.Ctx(ctx).Error().Err(err).Str("client_id", clientID).Str("user_id", tokenInfo.UserID).Msg("Failed to revoke current refresh token")
 		return nil, fmt.Errorf("failed to revoke refresh token: %w", err)
+	}
+	// Record the rotation so a replay of this token is detectable even after it
+	// has been revoked.
+	if err := s.tokenRepo.MarkRefreshTokenUsed(ctx, refreshTokenValue, ""); err != nil {
+		log.Ctx(ctx).Warn().Err(err).Str("client_id", clientID).Msg("Failed to mark refresh token as used")
 	}
 
 	tokenTTL, err := s.realmAccessTokenLifespan(ctx)
@@ -351,7 +404,10 @@ func (s *defaultOAuthService) RefreshToken(ctx context.Context, refreshTokenValu
 		log.Ctx(ctx).Error().Err(err).Str("client_id", clientID).Str("user_id", tokenInfo.UserID).Msg("Failed to resolve access token lifespan in RefreshToken")
 		return nil, err
 	}
-	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, tokenInfo.UserID, tokenInfo.Scope, tokenTTL, "")
+	tokenPair, err := s.tokenService.GenerateTokenPairWithSession(
+		ctx, clientID, tokenInfo.UserID, tokenInfo.Scope, tokenTTL,
+		tokenInfo.SessionID, tokenInfo.RefreshTokenFamily, tokenInfo.ID,
+	)
 	if err != nil {
 		telemetry.RecordSpanError(span, err, "failed to generate token pair")
 		span.SetStatus(codes.Error, err.Error())
@@ -359,8 +415,26 @@ func (s *defaultOAuthService) RefreshToken(ctx context.Context, refreshTokenValu
 		return nil, err
 	}
 
-	log.Ctx(ctx).Info().Str("client_id", clientID).Str("user_id", tokenInfo.UserID).Msg("Refresh token exchange successful")
+	log.Ctx(ctx).Info().
+		Str("client_id", clientID).
+		Str("user_id", tokenInfo.UserID).
+		Str("session_id", tokenInfo.SessionID).
+		Msg("Refresh token exchange successful")
 	return tokenPair, nil
+}
+
+// revokeSession marks a session revoked and kills every token issued for it.
+// Used when a refresh token is replayed.
+func (s *defaultOAuthService) revokeSession(ctx context.Context, sessionID string) error {
+	sess, err := s.sessionRepo.GetSessionByID(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	sess.IsRevoked = true
+	if err := s.sessionRepo.UpdateSession(ctx, sess); err != nil {
+		return err
+	}
+	return s.tokenRepo.RevokeTokensBySessionID(ctx, sessionID)
 }
 
 func (s *defaultOAuthService) GetJWKS() *domain.JWKS {

@@ -8,8 +8,9 @@ kicked or a refresh token is replayed.
 This document covers the session model, token/session binding, revocation,
 device and location metadata, the API surface, and the anti-theft controls.
 
-> Status: design. Nothing below is implemented yet. Phase 0 contains two
-> correctness bugs that should ship independently of the feature work.
+> Status: **Phase 0 implemented** (refresh keeps `sid`, refresh-token replay
+> detection with family revocation, cascade revocation from the admin API).
+> Phases 1–4 are design only.
 
 ## Current state
 
@@ -27,20 +28,25 @@ Three session-ish models coexist: `domain.Session` (`oauth_user_sessions`),
 login-UI cookie session in `internal/ssosession`. Pick one and collapse the rest;
 this design treats `domain.Session` as the source of truth.
 
-## Bugs to fix first (Phase 0)
+## Bugs fixed in Phase 0
 
-**1. `sid` is dropped on refresh.** `RefreshToken` calls
-`GenerateTokenPair(..., "")`, so refreshed tokens carry no `sid`
-(`services/oauth_service.go:354`). Any session lookup after the first refresh
-fails, which quietly breaks RP-initiated logout correlation.
+**1. `sid` is dropped on refresh.** `RefreshToken` called
+`GenerateTokenPair(..., "")`, so refreshed tokens carried no `sid`. It now uses
+`GenerateTokenPairWithSession`, which keeps the session and the refresh family.
 
-**2. Revoking a session does not revoke anything.** `RevokeSession` flips a flag
-in Mongo. Tokens with that `sid` stay valid until they expire, and there is no
-session check in token validation. "Kick device" is currently cosmetic.
+**2. Revoking a session did not revoke anything.** `RevokeSession`,
+`RevokeAllSessions` and `LogoutUser` now cascade: the session is marked revoked
+and `TokenRepository.RevokeTokensBySessionID` revokes every token carrying that
+`sid`.
 
-**3. Refresh replay is not detected.** A rotated refresh token is marked revoked,
-but replaying it yields only `invalid_grant`. There is no family revocation, no
-audit event, and no signal that the token may have been stolen.
+**3. Refresh replay was not detected.** Refresh tokens now carry `family`,
+`parent_jti`, `used_at` and `rotated_to`. Presenting an already-used token
+revokes the whole family **and** its session, logs the event, and returns
+`invalid_grant`.
+
+Remaining Phase 0 gap: validation still does not consult the session store, so a
+kicked device's *access* token stays valid until it expires. That is Phase 1's
+`strict` mode.
 
 ## Goals
 
@@ -317,10 +323,10 @@ Ordered by impact, cheapest first:
 
 | Phase | Scope | Done when |
 |---|---|---|
-| 0 | `sid` preserved on refresh; cascade revocation; session-aware refresh check | kicked device cannot refresh |
-| 1 | Session v2 fields, events, GraphQL + Connect list/revoke, `current` flag | account UI lists and kicks devices |
+| 0 ✅ | `sid` preserved on refresh; cascade revocation; session-aware refresh check; replay detection + family revocation | kicked device cannot refresh; replay kills the family |
+| 1 | Session v2 fields, events, GraphQL + Connect list/revoke, `current` flag, `strict` validation | account UI lists and kicks devices |
 | 2 | GeoIP + UA parsing, risk flags, new-device notification | new country produces an event + notification |
-| 3 | Refresh replay detection + family revocation, hashed refresh tokens | replaying an old token kills the family, audit shows it |
+| 3 | Hashed refresh tokens at rest, rotation telemetry | a database dump yields no replayable token |
 | 4 | DPoP / sender-constrained tokens | a stolen bearer token cannot be replayed |
 
 ## Metrics

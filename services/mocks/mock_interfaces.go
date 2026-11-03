@@ -425,6 +425,21 @@ func (mr *MockTokenServiceMockRecorder) GenerateTokenPairWithFamily(ctx, clientI
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GenerateTokenPairWithFamily", reflect.TypeOf((*MockTokenService)(nil).GenerateTokenPairWithFamily), ctx, clientID, userID, scope, tokenTTL, family, nonce, authTime)
 }
 
+// GenerateTokenPairWithSession mocks base method.
+func (m *MockTokenService) GenerateTokenPairWithSession(ctx context.Context, clientID, userID, scope string, tokenTTL time.Duration, sessionID, family, parentJTI string) (*api.TokenResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GenerateTokenPairWithSession", ctx, clientID, userID, scope, tokenTTL, sessionID, family, parentJTI)
+	ret0, _ := ret[0].(*api.TokenResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GenerateTokenPairWithSession indicates an expected call of GenerateTokenPairWithSession.
+func (mr *MockTokenServiceMockRecorder) GenerateTokenPairWithSession(ctx, clientID, userID, scope, tokenTTL, sessionID, family, parentJTI any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GenerateTokenPairWithSession", reflect.TypeOf((*MockTokenService)(nil).GenerateTokenPairWithSession), ctx, clientID, userID, scope, tokenTTL, sessionID, family, parentJTI)
+}
+
 // GetAccessTokenInfo mocks base method.
 func (m *MockTokenService) GetAccessTokenInfo(ctx context.Context, tokenValue string) (*domain.TokenInfo, error) {
 	m.ctrl.T.Helper()

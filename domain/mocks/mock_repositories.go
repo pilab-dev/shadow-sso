@@ -1474,6 +1474,48 @@ func (mr *MockTokenRepositoryMockRecorder) RevokeRefreshToken(ctx, tokenValue an
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RevokeRefreshToken", reflect.TypeOf((*MockTokenRepository)(nil).RevokeRefreshToken), ctx, tokenValue)
 }
 
+// MarkRefreshTokenUsed mocks base method.
+func (m *MockTokenRepository) MarkRefreshTokenUsed(ctx context.Context, tokenValue, rotatedTo string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MarkRefreshTokenUsed", ctx, tokenValue, rotatedTo)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// MarkRefreshTokenUsed indicates an expected call of MarkRefreshTokenUsed.
+func (mr *MockTokenRepositoryMockRecorder) MarkRefreshTokenUsed(ctx, tokenValue, rotatedTo any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkRefreshTokenUsed", reflect.TypeOf((*MockTokenRepository)(nil).MarkRefreshTokenUsed), ctx, tokenValue, rotatedTo)
+}
+
+// RevokeTokenFamily mocks base method.
+func (m *MockTokenRepository) RevokeTokenFamily(ctx context.Context, family string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RevokeTokenFamily", ctx, family)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RevokeTokenFamily indicates an expected call of RevokeTokenFamily.
+func (mr *MockTokenRepositoryMockRecorder) RevokeTokenFamily(ctx, family any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RevokeTokenFamily", reflect.TypeOf((*MockTokenRepository)(nil).RevokeTokenFamily), ctx, family)
+}
+
+// RevokeTokensBySessionID mocks base method.
+func (m *MockTokenRepository) RevokeTokensBySessionID(ctx context.Context, sessionID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RevokeTokensBySessionID", ctx, sessionID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RevokeTokensBySessionID indicates an expected call of RevokeTokensBySessionID.
+func (mr *MockTokenRepositoryMockRecorder) RevokeTokensBySessionID(ctx, sessionID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RevokeTokensBySessionID", reflect.TypeOf((*MockTokenRepository)(nil).RevokeTokensBySessionID), ctx, sessionID)
+}
+
 // RevokeToken mocks base method.
 func (m *MockTokenRepository) RevokeToken(ctx context.Context, tokenValue string) error {
 	m.ctrl.T.Helper()

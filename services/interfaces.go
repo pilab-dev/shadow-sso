@@ -42,6 +42,10 @@ type TokenService interface {
 	BuildToken(token *domain.Token) error
 	GenerateTokenPair(ctx context.Context, clientID, userID, scope string, tokenTTL time.Duration, sessionID string) (*api.TokenResponse, error)
 	GenerateTokenPairWithFamily(ctx context.Context, clientID, userID, scope string, tokenTTL time.Duration, family string, nonce string, authTime time.Time) (*api.TokenResponse, error)
+	// GenerateTokenPairWithSession issues a rotated token pair that keeps the
+	// session (`sid`) and refresh family, linking the new refresh token to the
+	// one it replaces. Used by the refresh grant.
+	GenerateTokenPairWithSession(ctx context.Context, clientID, userID, scope string, tokenTTL time.Duration, sessionID, family, parentJTI string) (*api.TokenResponse, error)
 	GenerateIDToken(ctx context.Context, userID, clientID, nonce, sessionID string, authTime time.Time, scope string) (string, error)
 	ValidateAccessToken(ctx context.Context, tokenValue string) (*domain.Token, error)
 	RevokeToken(ctx context.Context, token string) error

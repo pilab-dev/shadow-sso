@@ -318,17 +318,119 @@ func TestOAuthService_RefreshToken_Success(t *testing.T) {
 
 	mockTokenRepo.EXPECT().GetRefreshTokenInfo(ctx, refreshTokenValue).Return(tokenInfo, nil)
 	mockTokenRepo.EXPECT().RevokeRefreshToken(ctx, refreshTokenValue).Return(nil)
-	mockTokenServiceInterface.EXPECT().GenerateTokenPair(ctx, clientID, tokenInfo.UserID, tokenInfo.Scope, time.Hour, "").Return(&api.TokenResponse{
-		AccessToken:  "new-access-token",
-		RefreshToken: "new-refresh-token",
-		TokenType:    "Bearer",
-		ExpiresIn:    3600,
-	}, nil)
+	mockTokenRepo.EXPECT().MarkRefreshTokenUsed(ctx, refreshTokenValue, "").Return(nil)
+	mockTokenServiceInterface.EXPECT().
+		GenerateTokenPairWithSession(ctx, clientID, tokenInfo.UserID, tokenInfo.Scope, time.Hour, "", "family-123", "token-id").
+		Return(&api.TokenResponse{
+			AccessToken:  "new-access-token",
+			RefreshToken: "new-refresh-token",
+			TokenType:    "Bearer",
+			ExpiresIn:    3600,
+		}, nil)
 
 	resp, err := oauthService.RefreshToken(ctx, refreshTokenValue, clientID)
 
 	require.NoError(t, err)
 	assert.NotEmpty(t, resp.AccessToken)
+}
+
+func TestOAuthService_RefreshToken_ReplayRevokesFamilyAndSession(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
+	mockAuthCodeRepo := mock_domain.NewMockAuthorizationCodeRepository(ctrl)
+	mockDeviceAuthRepo := mock_domain.NewMockDeviceAuthorizationRepository(ctrl)
+	mockClientRepo := mock_domain.NewMockClientRepository(ctrl)
+	mockSessionRepo := mock_domain.NewMockSessionRepository(ctrl)
+	mockTokenServiceInterface := mock_domain.NewMockTokenServiceInterface(ctrl)
+
+	oauthService := services.NewOAuthService(
+		mockTokenRepo,
+		mockAuthCodeRepo,
+		mockDeviceAuthRepo,
+		mockClientRepo,
+		mockUserRepo,
+		mockSessionRepo,
+		mockTokenServiceInterface,
+		"test-issuer",
+	)
+
+	ctx := context.Background()
+	usedAt := time.Now().Add(-time.Minute)
+	tokenInfo := &domain.TokenInfo{
+		ID:                 "token-id",
+		ClientID:           "client-id",
+		UserID:             "user-id",
+		Scope:              "openid",
+		ExpiresAt:          time.Now().Add(time.Hour),
+		IsRevoked:          true,
+		UsedAt:             &usedAt,
+		RefreshTokenFamily: "family-123",
+		SessionID:          "session-1",
+	}
+	sess := &domain.Session{ID: "session-1", UserID: "user-id", ExpiresAt: time.Now().Add(time.Hour)}
+
+	mockTokenRepo.EXPECT().GetRefreshTokenInfo(ctx, "replayed").Return(tokenInfo, nil)
+	mockTokenRepo.EXPECT().RevokeTokenFamily(ctx, "family-123").Return(nil)
+	mockSessionRepo.EXPECT().GetSessionByID(ctx, "session-1").Return(sess, nil)
+	mockSessionRepo.EXPECT().UpdateSession(ctx, gomock.Any()).Return(nil)
+	mockTokenRepo.EXPECT().RevokeTokensBySessionID(ctx, "session-1").Return(nil)
+	// No new token pair may be issued.
+
+	_, err := oauthService.RefreshToken(ctx, "replayed", "client-id")
+
+	require.Error(t, err)
+	var oauthErr *domain.OAuth2Error
+	require.ErrorAs(t, err, &oauthErr)
+	assert.Equal(t, domain.InvalidGrant, oauthErr.Code)
+}
+
+func TestOAuthService_RefreshToken_RejectsRevokedSession(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
+	mockAuthCodeRepo := mock_domain.NewMockAuthorizationCodeRepository(ctrl)
+	mockDeviceAuthRepo := mock_domain.NewMockDeviceAuthorizationRepository(ctrl)
+	mockClientRepo := mock_domain.NewMockClientRepository(ctrl)
+	mockSessionRepo := mock_domain.NewMockSessionRepository(ctrl)
+	mockTokenServiceInterface := mock_domain.NewMockTokenServiceInterface(ctrl)
+
+	oauthService := services.NewOAuthService(
+		mockTokenRepo,
+		mockAuthCodeRepo,
+		mockDeviceAuthRepo,
+		mockClientRepo,
+		mockUserRepo,
+		mockSessionRepo,
+		mockTokenServiceInterface,
+		"test-issuer",
+	)
+
+	ctx := context.Background()
+	tokenInfo := &domain.TokenInfo{
+		ID:                 "token-id",
+		ClientID:           "client-id",
+		UserID:             "user-id",
+		Scope:              "openid",
+		ExpiresAt:          time.Now().Add(time.Hour),
+		RefreshTokenFamily: "family-123",
+		SessionID:          "session-1",
+	}
+	kicked := &domain.Session{ID: "session-1", IsRevoked: true, ExpiresAt: time.Now().Add(time.Hour)}
+
+	mockTokenRepo.EXPECT().GetRefreshTokenInfo(ctx, "refresh").Return(tokenInfo, nil)
+	mockSessionRepo.EXPECT().GetSessionByID(ctx, "session-1").Return(kicked, nil)
+
+	_, err := oauthService.RefreshToken(ctx, "refresh", "client-id")
+
+	require.Error(t, err)
+	var oauthErr *domain.OAuth2Error
+	require.ErrorAs(t, err, &oauthErr)
+	assert.Equal(t, domain.InvalidGrant, oauthErr.Code)
 }
 
 func TestOAuthService_RefreshToken_InvalidToken(t *testing.T) {

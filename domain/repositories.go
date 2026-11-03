@@ -161,6 +161,15 @@ type TokenRepository interface {
 	GetAccessTokenInfo(ctx context.Context, tokenValue string) (*TokenInfo, error)
 	RevokeToken(ctx context.Context, tokenValue string) error // Typically for access tokens
 	RevokeRefreshToken(ctx context.Context, tokenValue string) error
+	// MarkRefreshTokenUsed records a successful rotation: the presented token is
+	// marked as used and linked to the token that replaced it. Presenting a used
+	// token again is refresh-token replay.
+	MarkRefreshTokenUsed(ctx context.Context, tokenValue, rotatedTo string) error
+	// RevokeTokenFamily revokes every token in a refresh-token rotation family.
+	RevokeTokenFamily(ctx context.Context, family string) error
+	// RevokeTokensBySessionID revokes every token issued for a session (the `sid`
+	// claim). Used when a device is kicked.
+	RevokeTokensBySessionID(ctx context.Context, sessionID string) error
 	// RevokeAllUserTokens(ctx context.Context, userID string) error // These might be better handled by iterating in service layer
 	// RevokeAllClientTokens(ctx context.Context, clientID string) error // or having specific bulk operations if performance critical
 	DeleteExpiredTokens(ctx context.Context) error

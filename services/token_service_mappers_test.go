@@ -100,6 +100,11 @@ func (f *fakeTokenRepository) GetAccessTokenInfo(context.Context, string) (*doma
 }
 func (f *fakeTokenRepository) RevokeToken(context.Context, string) error    { return nil }
 func (f *fakeTokenRepository) RevokeRefreshToken(context.Context, string) error { return nil }
+func (f *fakeTokenRepository) MarkRefreshTokenUsed(context.Context, string, string) error {
+	return nil
+}
+func (f *fakeTokenRepository) RevokeTokenFamily(context.Context, string) error      { return nil }
+func (f *fakeTokenRepository) RevokeTokensBySessionID(context.Context, string) error { return nil }
 func (f *fakeTokenRepository) DeleteExpiredTokens(context.Context) error    { return nil }
 func (f *fakeTokenRepository) GetTokenInfo(context.Context, string) (*domain.Token, error) {
 	return nil, nil

@@ -491,6 +491,7 @@ func TestTokenHandler_RefreshTokenGrant_Success(t *testing.T) {
 	mockTokenRepo.EXPECT().GetRefreshTokenInfo(gomock.Any(), refreshTokenVal).Return(refreshTokenInfo, nil)
 	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), userID).AnyTimes().Return(&domain.User{ID: userID, Email: "user@example.com", Roles: []string{"user"}}, nil)
 	mockTokenRepo.EXPECT().RevokeRefreshToken(gomock.Any(), refreshTokenVal).Return(nil)
+	mockTokenRepo.EXPECT().MarkRefreshTokenUsed(gomock.Any(), refreshTokenVal, "").Return(nil)
 	mockTokenRepo.EXPECT().StoreToken(gomock.Any(), gomock.Any()).Times(2).Return(nil)
 	mockTokenCache.EXPECT().Set(gomock.Any(), gomock.Any()).Return(nil)
 

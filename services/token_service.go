@@ -261,6 +261,8 @@ func (s *defaultTokenService) CreateToken(ctx context.Context, opts domain.Creat
 		Audience:   audience,
 		Subject:    subject,
 		Groups:     opts.Groups,
+		Family:     opts.Family,
+		ParentJTI:  opts.ParentJTI,
 	}
 		if err := s.repo.StoreToken(ctx, token); err != nil {
 			telemetry.RecordSpanError(span, err, "failed to store token")
@@ -504,6 +506,20 @@ func (s *defaultTokenService) BuildToken(token *domain.Token) error { // Changed
 func (s *defaultTokenService) GenerateTokenPair(ctx context.Context,
 	clientID, userID, scope string, tokenTTL time.Duration, sessionID string,
 ) (*api.TokenResponse, error) {
+	return s.GenerateTokenPairWithSession(ctx, clientID, userID, scope, tokenTTL, sessionID, "", "")
+}
+
+// GenerateTokenPairWithSession issues an access/refresh/ID token triple bound to
+// a session and a refresh-token family. When family is empty a new family is
+// started (initial login); on rotation the caller passes the existing family and
+// the JTI of the token being replaced.
+func (s *defaultTokenService) GenerateTokenPairWithSession(ctx context.Context,
+	clientID, userID, scope string, tokenTTL time.Duration, sessionID, family, parentJTI string,
+) (*api.TokenResponse, error) {
+	if family == "" {
+		family = uuid.NewString()
+	}
+
 	ctx, span := telemetry.StartSpan(ctx, tokenTracerName, "GenerateTokenPair",
 		attribute.String("user.id", userID),
 		attribute.String("oauth.client_id", clientID),
@@ -541,6 +557,8 @@ func (s *defaultTokenService) GenerateTokenPair(ctx context.Context,
 		ExpireIn:     refreshTokenTTL,
 		SigningKeyID: "", // Use default key
 		SessionID:    sessionID,
+		Family:       family,
+		ParentJTI:    parentJTI,
 	}, nil)
 	if err != nil {
 			telemetry.RecordSpanError(span, err, "failed to create refresh token")

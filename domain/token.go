@@ -9,16 +9,18 @@ const (
 
 // TokenInfo represents metadata about a token.
 type TokenInfo struct {
-	ID                 string    `bson:"_id"        json:"id"`         // Unique token identifier
-	TokenType          string    `bson:"token_type" json:"token_type"` // "access_token" or "refresh_token"
-	ClientID           string    `bson:"client_id"  json:"client_id"`  // Client that the token was issued to
-	UserID             string    `bson:"user_id"    json:"user_id"`    // User that authorized the token
-	Scope              string    `bson:"scope"      json:"scope"`      // Authorized scopes
-	IssuedAt           time.Time `bson:"issued_at"  json:"issued_at"`  // When the token was issued
-	ExpiresAt          time.Time `bson:"expires_at" json:"expires_at"` // When the token expires
-	IsRevoked          bool      `bson:"is_revoked" json:"is_revoked"` // Whether token has been revoked
-	Roles              []string  `bson:"roles"      json:"roles"`
-	RefreshTokenFamily string    `bson:"refresh_token_family" json:"refresh_token_family"` // For token refresh families
+	ID                 string     `bson:"_id"        json:"id"`         // Unique token identifier
+	TokenType          string     `bson:"token_type" json:"token_type"` // "access_token" or "refresh_token"
+	ClientID           string     `bson:"client_id"  json:"client_id"`  // Client that the token was issued to
+	UserID             string     `bson:"user_id"    json:"user_id"`    // User that authorized the token
+	Scope              string     `bson:"scope"      json:"scope"`      // Authorized scopes
+	IssuedAt           time.Time  `bson:"issued_at"  json:"issued_at"`  // When the token was issued
+	ExpiresAt          time.Time  `bson:"expires_at" json:"expires_at"` // When the token expires
+	IsRevoked          bool       `bson:"is_revoked" json:"is_revoked"` // Whether token has been revoked
+	Roles              []string   `bson:"roles"      json:"roles"`
+	RefreshTokenFamily string     `bson:"refresh_token_family" json:"refresh_token_family"` // For token refresh families
+	SessionID          string     `bson:"session_id,omitempty" json:"session_id,omitempty"` // `sid` claim: the session this token belongs to
+	UsedAt             *time.Time `bson:"used_at,omitempty" json:"used_at,omitempty"`       // Set when a refresh token was rotated; a second use is replay
 }
 
 // Token represents an OAuth token, also used for synthetic service account tokens.
@@ -43,4 +45,14 @@ type Token struct {
 	Subject string `bson:"subject,omitempty" json:"subject,omitempty"`
 	// Groups mirrors the `groups` claim used for Kubernetes RBAC mapping.
 	Groups []string `bson:"groups,omitempty" json:"groups,omitempty"`
+	// Family links a refresh token to its rotation chain. The whole family is
+	// revoked when a used token is replayed.
+	Family string `bson:"family,omitempty" json:"family,omitempty"`
+	// ParentJTI is the ID of the refresh token this one replaced.
+	ParentJTI string `bson:"parent_jti,omitempty" json:"parent_jti,omitempty"`
+	// UsedAt is set when the refresh token was exchanged. A token with UsedAt
+	// set that is presented again indicates replay.
+	UsedAt *time.Time `bson:"used_at,omitempty" json:"used_at,omitempty"`
+	// RotatedTo is the ID of the refresh token issued in exchange.
+	RotatedTo string `bson:"rotated_to,omitempty" json:"rotated_to,omitempty"`
 }
