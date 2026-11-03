@@ -2,6 +2,12 @@
 
 This document outlines the comprehensive gRPC API services provided by Shadow SSO, covering authentication, user management, MFA, and administrative operations.
 
+The services are generated with connect-go and served on the main HTTP port.
+The same handlers accept the **Connect** protocol (JSON or protobuf), native
+**gRPC** over HTTP/2 (h2c on plaintext listeners, enabled via `h2c.NewHandler`),
+and **gRPC-Web**. Choose the protocol at the client: `connect.WithProtoJSON()`,
+default (Connect + protobuf), `connect.WithGRPC()` or `connect.WithGRPCWeb()`.
+
 ## Services Overview
 
 ### 🔐 Core Authentication Services

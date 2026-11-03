@@ -92,6 +92,36 @@ Contexts allow you to define and switch between different Shadow SSO server endp
    # my-prod-sso
    ```
 
+### Wire Protocol
+
+Commands backed by proto services can speak three protocols. The server accepts
+all of them on the same port (Connect, gRPC and gRPC-Web):
+
+| Protocol | Flag value | Notes |
+|---|---|---|
+| Connect + JSON | `connect` (default) | HTTP/1.1, debuggable with curl |
+| Connect + protobuf | `connect-proto` | binary, still HTTP/1.1 |
+| gRPC | `grpc` | HTTP/2; plaintext endpoints use h2c |
+
+```bash
+ssoctl --protocol grpc user list
+ssoctl --protocol connect-proto client list
+SSOCTL_PROTOCOL=grpc ssoctl session list
+```
+
+Precedence: `--protocol` flag → `protocol:` in the current context → `SSOCTL_PROTOCOL` → `connect`.
+Per context, set it once in the config file:
+
+```yaml
+contexts:
+  my-prod-sso:
+    server_endpoint: https://sso.example.com
+    protocol: grpc
+```
+
+Commands that use GraphQL (`role`, `group`, `realm`, `realm-key`, `client-scope`,
+`auth-flow`, `session revoke*`) are unaffected by this setting.
+
 ## Authentication Commands (`ssoctl auth`)
 
 Commands for logging in and out of the SSO server.
