@@ -466,6 +466,7 @@ func TestAuthServer_ClearUserSessions_Success(t *testing.T) {
 	}
 	ctx := context.WithValue(context.Background(), domain.TokenContextKey, tokenInfo)
 
+	mockSessionRepo.EXPECT().ListSessionsByUserID(gomock.Any(), "user-1", gomock.Any()).Return([]*domain.Session{{ID: "s1"}}, nil)
 	mockSessionRepo.EXPECT().DeleteSessionsByUserID(gomock.Any(), "user-1", "").Return(int64(2), nil)
 
 	resp, err := authServer.ClearUserSessions(ctx, connect.NewRequest(&ssov1.ClearUserSessionsRequest{

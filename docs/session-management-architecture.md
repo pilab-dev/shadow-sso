@@ -283,6 +283,19 @@ connect client then gives `ssoctl` and the account UI the same data.
 Account → Security → "Devices and sessions": current device pinned, others with
 device/location/last-seen and a Kick button. Revoking the current device logs out.
 
+## CLI
+
+```bash
+ssoctl session list [-o table|json|yaml]   # current session marked with *
+ssoctl session current                     # the session behind this token
+ssoctl session kick <session-id>           # kick one device
+ssoctl session kick-all                    # kick every device for the user
+```
+
+`kick*` go over gRPC (`AuthService.ClearUserSessions`) and cascade to token
+revocation. The older `session revoke*` commands go over GraphQL and remain for
+admin use.
+
 ## Anti-theft controls
 
 Ordered by impact, cheapest first:

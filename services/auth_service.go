@@ -98,6 +98,7 @@ type AuthServer struct {
 	clientService                                client.ClientServiceInterface
 	twoFactorSessions                            *twoFactorSessionStore
 	realmSettingsRepo                            domain.RealmSettingsRepository
+	tokenRepo                                    domain.TokenRepository
 }
 
 // authServerOption configures optional AuthServer dependencies.
@@ -107,6 +108,12 @@ type authServerOption func(*AuthServer)
 // the realm-wide MFA enforcement policy.
 func WithAuthRealmSettings(repo domain.RealmSettingsRepository) authServerOption {
 	return func(s *AuthServer) { s.realmSettingsRepo = repo }
+}
+
+// WithAuthTokenRepository injects the token repository so session revocation
+// also revokes the tokens issued for the session (`sid` claim).
+func WithAuthTokenRepository(repo domain.TokenRepository) authServerOption {
+	return func(s *AuthServer) { s.tokenRepo = repo }
 }
 
 // NewAuthServer creates a new AuthServer.
@@ -481,6 +488,11 @@ func (s *AuthServer) Logout(ctx context.Context, req *connect.Request[ssov1.Logo
 		} else {
 			logger.Info().Str("sessionID", session.ID).Str("userID", actingUserID).Msg("Logout: Session marked as revoked")
 			audit.Log("AuthService", "Logout", actingUserID, session.ID, "Session marked as revoked successfully", true, nil)
+			if s.tokenRepo != nil {
+				if errRevoke := s.tokenRepo.RevokeTokensBySessionID(ctx, session.ID); errRevoke != nil {
+					logger.Warn().Err(errRevoke).Str("sessionID", session.ID).Msg("Logout: Failed to revoke session tokens")
+				}
+			}
 		}
 	}
 
@@ -547,8 +559,10 @@ func (s *AuthServer) ListUserSessions(ctx context.Context, req *connect.Request[
 
 	protoSessions := make([]*ssov1.SessionInfo, 0, len(dbSessions))
 	for _, ds := range dbSessions {
-		// Check if this session's TokenID matches the calling token's JTI (ID)
-		isCurrentSession := ds.TokenID == authedToken.ID
+		// The caller's access token carries the session ID as `sid`. Fall back to
+		// TokenID comparison for sessions created before the sid claim existed.
+		isCurrentSession := (authedToken.SessionID != "" && ds.ID == authedToken.SessionID) ||
+			(authedToken.ID != "" && ds.TokenID == authedToken.ID)
 		protoSessions = append(protoSessions, &ssov1.SessionInfo{
 			Id:               ds.ID,
 			UserId:           ds.UserID,
@@ -602,6 +616,12 @@ func (s *AuthServer) ClearUserSessions(ctx context.Context, req *connect.Request
 					telemetry.RecordSpanError(span, errUpdate, "failed to revoke specific session")
 					// Continue to try others, or return partial error?
 				}
+				// Kicking a device must also kill its tokens.
+				if s.tokenRepo != nil {
+					if errRevoke := s.tokenRepo.RevokeTokensBySessionID(ctx, sessionID); errRevoke != nil {
+						logger.Warn().Err(errRevoke).Str("sessionID", sessionID).Msg("ClearUserSessions: Failed to revoke session tokens")
+					}
+				}
 			} else if errGet != nil {
 				logger.Warn().Err(errGet).Str("sessionID", sessionID).Msg("ClearUserSessions: Failed to get session to revoke or session does not belong to user.")
 			}
@@ -618,12 +638,26 @@ func (s *AuthServer) ClearUserSessions(ctx context.Context, req *connect.Request
 			// This logic needs to be very clear. Let's assume if SessionIds is empty, it's all for that user.
 			// If service needs to protect current session, it has to get JTI from context token.
 		}
+		sessions, listErr := s.sessionRepo.ListSessionsByUserID(ctx, targetUserID, domain.SessionFilter{})
+		if listErr != nil {
+			logger.Warn().Err(listErr).Str("targetUserID", targetUserID).Msg("ClearUserSessions: Failed to list sessions before deleting; tokens may not be revoked")
+		}
 		_, err := s.sessionRepo.DeleteSessionsByUserID(ctx, targetUserID, exceptSessionID) // If exceptSessionID is empty, all are deleted for user.
 		if err != nil {
 			logger.Error().Err(err).Str("targetUserID", targetUserID).Msg("ClearUserSessions: Failed to delete sessions by user ID")
 			telemetry.RecordSpanError(span, err, "failed to delete sessions by user ID")
 			span.SetStatus(codes.Error, "failed to delete sessions")
 			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("could not clear sessions: %w", err))
+		}
+		if s.tokenRepo != nil {
+			for _, sess := range sessions {
+				if sess.ID == exceptSessionID {
+					continue
+				}
+				if errRevoke := s.tokenRepo.RevokeTokensBySessionID(ctx, sess.ID); errRevoke != nil {
+					logger.Warn().Err(errRevoke).Str("sessionID", sess.ID).Msg("ClearUserSessions: Failed to revoke session tokens")
+				}
+			}
 		}
 	}
 

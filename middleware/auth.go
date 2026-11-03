@@ -95,6 +95,7 @@ func NewAuthInterceptor(tokenService services.TokenService) connect.Interceptor 
 				ExpiresAt: tokenInfo.ExpiresAt,
 				IsRevoked: tokenInfo.IsRevoked,
 				Roles:     tokenInfo.Roles,
+				SessionID: tokenInfo.SessionID,
 			}
 
 			// Enrich context with authenticated token info

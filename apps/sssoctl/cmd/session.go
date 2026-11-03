@@ -2,26 +2,27 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
-
-	// "os" // Not directly used, fmt.Fprintf(os.Stderr,...) is okay
+	"text/tabwriter"
+	"time"
 
 	"connectrpc.com/connect"
-	"github.com/pilab-dev/shadow-sso/apps/sssoctl/cmd/client" // Path to your client package
+	"github.com/pilab-dev/shadow-sso/apps/sssoctl/cmd/client"
 	"github.com/pilab-dev/shadow-sso/apps/sssoctl/cmd/config"
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
+	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3" // For pretty printing session list
+	"gopkg.in/yaml.v3"
 )
 
 var sessionCmd = &cobra.Command{
 	Use:     "session",
-	Short:   "Manage user sessions",
+	Short:   "Manage user sessions (list devices, kick sessions)",
 	Aliases: []string{"sessions"},
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		// Ensure config is loaded and current context is available
 		if err := config.InitConfig(); err != nil {
 			return err
 		}
@@ -35,141 +36,254 @@ var sessionCmd = &cobra.Command{
 
 var sessionListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List active sessions for a user (defaults to current user, admins can specify other user IDs)",
-	Long: `Lists active sessions. By default, lists sessions for the currently authenticated user.
-If an administrator is authenticated, they can provide a User ID to list sessions for that specific user.`,
+	Short: "List active sessions (devices) for a user",
+	Long: `Lists active sessions. Defaults to the authenticated user; admins can pass --user-id
+to inspect another user. The current session is marked with '*'.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		userID, _ := cmd.Flags().GetString("user-id")
+		output, _ := cmd.Flags().GetString("output")
 
-		currentCtx, err := config.GetCurrentContext()
+		sessions, err := fetchSessions(userID)
 		if err != nil {
 			return err
 		}
+		return printSessions(sessions, output)
+	},
+}
 
-		if userID == "" {
-			fmt.Println("Listing sessions for the current authenticated user...")
-		} else {
-			fmt.Printf("Listing sessions for user ID: %s (requires admin privileges if not self)\n", userID)
-		}
-
-		authClient, err := client.AuthServiceClient(currentCtx) // Uses token from currentCtx
+var sessionCurrentCmd = &cobra.Command{
+	Use:   "current",
+	Short: "Show the session used by this CLI invocation",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		output, _ := cmd.Flags().GetString("output")
+		sessions, err := fetchSessions("")
 		if err != nil {
-			return fmt.Errorf("failed to create auth service client: %w", err)
+			return err
+		}
+		var current []*ssov1.SessionInfo
+		for _, s := range sessions {
+			if s.IsCurrentSession {
+				current = append(current, s)
+			}
+		}
+		if len(current) == 0 {
+			return errors.New("no current session found; the token may belong to a session that was already revoked")
+		}
+		return printSessions(current, output)
+	},
+}
+
+var sessionKickCmd = &cobra.Command{
+	Use:   "kick [SESSION_ID]",
+	Short: "Kick one device by session ID",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		sessionID := args[0]
+		userID, _ := cmd.Flags().GetString("user-id")
+		force, _ := cmd.Flags().GetBool("force")
+
+		if err := requireConfirmation(force,
+			fmt.Sprintf("Revoke session %s? The device will be signed out.", sessionID)); err != nil {
+			return err
 		}
 
-		req := &ssov1.ListUserSessionsRequest{
-			UserId: userID, // If empty, server should interpret as current user
-		}
-		resp, err := authClient.ListUserSessions(context.Background(), connect.NewRequest(req))
-		if err != nil {
-			return fmt.Errorf("failed to list sessions: %w", err)
+		currentID, _ := currentSessionID()
+		if _, err := clearSessions(userID, []string{sessionID}); err != nil {
+			return err
 		}
 
-		if resp.Msg == nil || len(resp.Msg.Sessions) == 0 {
-			fmt.Println("No active sessions found.")
-			return nil
+		fmt.Printf("Session %s revoked.\n", sessionID)
+		if currentID != "" && currentID == sessionID {
+			fmt.Println("That was the current session; clearing the local token.")
+			clearLocalToken()
 		}
-
-		fmt.Println("Active sessions:")
-		out, _ := yaml.Marshal(resp.Msg.Sessions)
-		fmt.Println(string(out))
 		return nil
 	},
 }
 
-var sessionClearCmd = &cobra.Command{
-	Use:   "clear",
-	Short: "Clear (revoke) sessions for a user (defaults to current user, admins can specify other user IDs)",
-	Long: `Clears/revokes sessions.
-Defaults to clearing all sessions for the currently authenticated user if no flags are specified.
-If an administrator is authenticated, they can provide a User ID (--user-id) to clear sessions for that user.
-Use --session-id to clear a specific session by its ID.
-Use --all to clear all sessions for the targeted user (current user by default, or one specified by --user-id).
-If clearing all sessions for the current user, this will effectively log out the current CLI session.`,
+var sessionKickAllCmd = &cobra.Command{
+	Use:   "kick-all",
+	Short: "Kick every session for a user",
+	Long: `Revokes all sessions for the authenticated user, or for --user-id when an admin
+is authenticated. This includes the current CLI session.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		userID, _ := cmd.Flags().GetString("user-id")
-		sessionID, _ := cmd.Flags().GetString("session-id") // Specific session to clear
-		clearAll, _ := cmd.Flags().GetBool("all")           // Clear all for the target user
+		force, _ := cmd.Flags().GetBool("force")
 
-		currentCtx, err := config.GetCurrentContext()
-		if err != nil {
+		target := userID
+		if target == "" {
+			target = "the current user"
+		}
+		if err := requireConfirmation(force,
+			fmt.Sprintf("Revoke ALL sessions for %s? Every device will be signed out.", target)); err != nil {
 			return err
 		}
 
-		targetUserDescription := "current authenticated user"
-		if userID != "" {
-			targetUserDescription = fmt.Sprintf("user ID: %s (requires admin privileges if not self)", userID)
+		if _, err := clearSessions(userID, nil); err != nil {
+			return err
 		}
-
-		var sessionIDsToClear []string
-		if sessionID != "" {
-			if clearAll {
-				return errors.New("--session-id and --all are mutually exclusive")
-			}
-			sessionIDsToClear = append(sessionIDsToClear, sessionID)
-			fmt.Printf("Clearing session ID: %s for %s...\n", sessionID, targetUserDescription)
-		} else if clearAll {
-			fmt.Printf("Clearing ALL sessions for %s...\n", targetUserDescription)
-			// req.SessionIds will be empty, server interprets as "all"
-		} else {
-			// Default behavior: clear all sessions for the target user if no specific flags given
-			fmt.Printf("Clearing ALL sessions for %s (default behavior, use --session-id for specific)...\n", targetUserDescription)
-		}
-
-		authClient, err := client.AuthServiceClient(currentCtx)
-		if err != nil {
-			return fmt.Errorf("failed to create auth service client: %w", err)
-		}
-
-		req := &ssov1.ClearUserSessionsRequest{
-			UserId:     userID, // If empty, server should use current authenticated user
-			SessionIds: sessionIDsToClear,
-		}
-
-		_, err = authClient.ClearUserSessions(context.Background(), connect.NewRequest(req))
-		if err != nil {
-			return fmt.Errorf("failed to clear sessions: %w", err)
-		}
-
-		fmt.Println("Session(s) cleared successfully.")
-		// If all sessions for the current user were targeted for clearing
-		if userID == "" && (clearAll || sessionID == "") && currentCtx.UserAuthToken != "" {
-			isCurrentSessionCleared := true
-			if sessionID != "" { // If a specific session was cleared, check if it was the current one
-				// This is hard to determine without knowing the current session's ID from the token.
-				// For simplicity, assume if a specific session ID was targeted, it might NOT be the current ssoctl session.
-				// However, if --all or no specific ID was given for self, then the current session is definitely gone.
-				isCurrentSessionCleared = false // Be conservative: only clear local token if explicitly clearing all for self.
-				if clearAll {
-					isCurrentSessionCleared = true
-				} // if --all was specified for self.
-				if !clearAll && sessionID == "" {
-					isCurrentSessionCleared = true
-				} // if no flags specified for self (default to all)
-			}
-
-			if isCurrentSessionCleared {
-				fmt.Println("Current user's session(s) including potentially the active ssoctl session were cleared. Updating local token state.")
-				currentCtx.UserAuthToken = ""
-				// Ensure the map in GlobalConfig is updated if currentCtx was a copy
-				config.GlobalConfig.Contexts[config.GlobalConfig.CurrentContext] = currentCtx
-				if err := config.SaveConfig(); err != nil {
-					fmt.Fprintf(os.Stderr, "Warning: failed to clear local token from config: %v\n", err)
-				}
-			}
+		fmt.Println("All sessions revoked.")
+		if userID == "" {
+			clearLocalToken()
 		}
 		return nil
 	},
+}
+
+// sessionClearCmd is kept as a backwards-compatible alias for revoke-all.
+var sessionClearCmd = &cobra.Command{
+	Use:    "clear",
+	Short:  "Deprecated: use 'kick-all' or 'kick <id>'",
+	Hidden: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return sessionKickAllCmd.RunE(cmd, args)
+	},
+}
+
+func fetchSessions(userID string) ([]*ssov1.SessionInfo, error) {
+	authClient, err := authClientFromConfig()
+	if err != nil {
+		return nil, err
+	}
+	resp, err := authClient.ListUserSessions(context.Background(), connect.NewRequest(&ssov1.ListUserSessionsRequest{
+		UserId: userID,
+	}))
+	if err != nil {
+		return nil, fmt.Errorf("failed to list sessions: %w", err)
+	}
+	if resp.Msg == nil {
+		return nil, nil
+	}
+	return resp.Msg.Sessions, nil
+}
+
+func clearSessions(userID string, sessionIDs []string) (int, error) {
+	authClient, err := authClientFromConfig()
+	if err != nil {
+		return 0, err
+	}
+	_, err = authClient.ClearUserSessions(context.Background(), connect.NewRequest(&ssov1.ClearUserSessionsRequest{
+		UserId:     userID,
+		SessionIds: sessionIDs,
+	}))
+	if err != nil {
+		return 0, fmt.Errorf("failed to clear sessions: %w", err)
+	}
+	return len(sessionIDs), nil
+}
+
+func currentSessionID() (string, error) {
+	sessions, err := fetchSessions("")
+	if err != nil {
+		return "", err
+	}
+	for _, s := range sessions {
+		if s.IsCurrentSession {
+			return s.Id, nil
+		}
+	}
+	return "", nil
+}
+
+func authClientFromConfig() (ssov1connect.AuthServiceClient, error) {
+	currentCtx, err := config.GetCurrentContext()
+	if err != nil {
+		return nil, err
+	}
+	return client.AuthServiceClient(currentCtx)
+}
+
+func printSessions(sessions []*ssov1.SessionInfo, output string) error {
+	if len(sessions) == 0 {
+		fmt.Println("No active sessions found.")
+		return nil
+	}
+
+	switch output {
+	case "json":
+		out, _ := json.MarshalIndent(sessions, "", "  ")
+		fmt.Println(string(out))
+		return nil
+	case "yaml":
+		out, _ := yaml.Marshal(sessions)
+		fmt.Println(string(out))
+		return nil
+	case "table", "":
+	default:
+		return fmt.Errorf("unknown output format %q (table, json, yaml)", output)
+	}
+
+	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(tw, "CURRENT\tSESSION ID\tUSER AGENT\tIP ADDRESS\tCREATED\tEXPIRES")
+	for _, s := range sessions {
+		marker := ""
+		if s.IsCurrentSession {
+			marker = "*"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			marker, s.Id, shorten(s.UserAgent, 40), s.IpAddress,
+			formatTime(s.CreatedAt.AsTime()), formatTime(s.ExpiresAt.AsTime()))
+	}
+	return tw.Flush()
+}
+
+func formatTime(t time.Time) string {
+	if t.IsZero() {
+		return "-"
+	}
+	return t.Local().Format("2006-01-02 15:04")
+}
+
+func shorten(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max-1] + "…"
+}
+
+func requireConfirmation(force bool, prompt string) error {
+	if force {
+		return nil
+	}
+	fmt.Printf("%s [y/N]: ", prompt)
+	var answer string
+	_, _ = fmt.Fscanln(os.Stdin, &answer)
+	if answer != "y" && answer != "Y" && answer != "yes" {
+		return errors.New("aborted")
+	}
+	return nil
+}
+
+// clearLocalToken drops the stored CLI token after the session behind it was
+// revoked.
+func clearLocalToken() {
+	currentCtx, err := config.GetCurrentContext()
+	if err != nil || currentCtx.UserAuthToken == "" {
+		return
+	}
+	currentCtx.UserAuthToken = ""
+	config.GlobalConfig.Contexts[config.GlobalConfig.CurrentContext] = currentCtx
+	if err := config.SaveConfig(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to clear local token from config: %v\n", err)
+	}
 }
 
 func init() {
 	rootCmd.AddCommand(sessionCmd)
 	sessionCmd.AddCommand(sessionListCmd)
+	sessionCmd.AddCommand(sessionCurrentCmd)
+	sessionCmd.AddCommand(sessionKickCmd)
+	sessionCmd.AddCommand(sessionKickAllCmd)
 	sessionCmd.AddCommand(sessionClearCmd)
 
 	sessionListCmd.Flags().String("user-id", "", "ID of the user whose sessions to list (admin only; defaults to current user)")
+	sessionListCmd.Flags().StringP("output", "o", "table", "Output format: table, json, yaml")
 
-	sessionClearCmd.Flags().String("user-id", "", "ID of the user whose sessions to clear (admin only; defaults to current user)")
-	sessionClearCmd.Flags().String("session-id", "", "Specific session ID to clear")
-	sessionClearCmd.Flags().Bool("all", false, "Clear all sessions for the user (if --session-id is not given). For current user, this implies the session used by ssoctl might be cleared.")
+	sessionCurrentCmd.Flags().StringP("output", "o", "table", "Output format: table, json, yaml")
+
+	sessionKickCmd.Flags().String("user-id", "", "ID of the user owning the session (admin only; defaults to current user)")
+	sessionKickCmd.Flags().Bool("force", false, "Do not ask for confirmation")
+
+	sessionKickAllCmd.Flags().String("user-id", "", "ID of the user whose sessions to revoke (admin only; defaults to current user)")
+	sessionKickAllCmd.Flags().Bool("force", false, "Do not ask for confirmation")
 }

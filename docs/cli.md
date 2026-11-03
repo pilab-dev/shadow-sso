@@ -539,27 +539,32 @@ Commands for managing service accounts and their keys. These typically require a
 Advanced session management for security monitoring and control.
 
 **1. List Sessions:**
-   Display active user sessions with metadata.
+   Display active user sessions with their device, IP and timestamps. The current
+   session is marked with `*`. Output formats: `table` (default), `json`, `yaml`.
    ```bash
-   ssoctl session list [--user-id <target_user_id>] [--include-expired]
-   # Active sessions with IP, User-Agent, creation time, expiry
+   ssoctl session list [--user-id <target_user_id>] [--output table|json|yaml]
    ```
 
-**2. Clear Sessions:**
-   Revoke specific or all user sessions for security.
+**2. Show the current session:**
    ```bash
-   # Clear specific session:
-   ssoctl session clear --session-id <session_id> [--user-id <target_user_id>]
-
-   # Clear all sessions for a user (admin):
-   ssoctl session clear --user-id <target_user_id>
-
-   # Clear all sessions for current user (including current session):
-   ssoctl session clear --all
-
-   # Clear all other sessions (keep current session active):
-   ssoctl session clear
+   ssoctl session current [--output table|json|yaml]
    ```
+
+**3. Kick one device:**
+   Revoking a session also revokes the access and refresh tokens issued for it.
+   If the kicked session is the one used by `ssoctl`, the local token is cleared.
+   ```bash
+   ssoctl session kick <session_id> [--user-id <target_user_id>] [--force]
+   ```
+
+**4. Kick every device:**
+   ```bash
+   ssoctl session kick-all [--user-id <target_user_id>] [--force]
+   ```
+
+`session revoke`, `session revoke-all` and `session logout-user` remain available
+as GraphQL-backed admin commands. `session clear` is a hidden alias of
+`kick-all`.
 
 ## Identity Provider Management (`ssoctl idp`)
 

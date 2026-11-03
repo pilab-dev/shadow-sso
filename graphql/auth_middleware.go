@@ -92,6 +92,7 @@ func AuthMiddleware(tokenService TokenService, bootstrapToken string, next http.
 			ExpiresAt: tokenInfo.ExpiresAt,
 			IsRevoked: tokenInfo.IsRevoked,
 			Roles:     tokenInfo.Roles,
+			SessionID: tokenInfo.SessionID,
 		}
 
 		// Enrich context with authenticated token info
