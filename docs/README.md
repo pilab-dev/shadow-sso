@@ -35,6 +35,7 @@ This file provides an overview of all documentation available for Shadow SSO.
 |----------|------------|
 | [docs/graphql.md](./graphql.md) | GraphQL API for administration |
 | [docs/cli.md](./cli.md) | ssoctl CLI tool usage |
+| [docs/cli-grpc-migration.md](./cli-grpc-migration.md) | Moving ssoctl off GraphQL onto typed ConnectRPC services |
 
 ## Releases
 
