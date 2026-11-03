@@ -128,3 +128,18 @@ func generateSAToken(keyFilePath, audience string) (string, error) {
 -   **Protect the Key File**: The JSON key file contains your private key. Treat it like any other sensitive credential. Do not embed it directly in source code. Use environment variables, secret management systems, or secure file permissions.
 -   **Principle of Least Privilege**: Grant service accounts only the permissions they need.
 -   **Regularly Rotate Keys**: Delete old keys and generate new ones periodically using `ssoctl sa delete-key` and `ssoctl sa create-key`.
+
+## Minting Tokens From a Key
+
+Instead of signing a bearer JWT per request, a service account can exchange its
+key for a short-lived access token at the token endpoint using
+`private_key_jwt` client authentication and the `client_credentials` grant.
+Tokens can be audience-scoped (RFC 8707), which is what makes them usable as
+Kubernetes OIDC bearer tokens. See
+[client_credentials_audience_groups.md](./client_credentials_audience_groups.md)
+for the request format, the `allowed_audiences` / `service_account_groups`
+client settings, and the kube-apiserver configuration.
+
+For the end-to-end design of a local credential helper (keychain storage, token
+caching, `.kube/config` exec plugin, temporary privilege escalation), see
+[credential-helper-and-k8s-oidc.md](./credential-helper-and-k8s-oidc.md).
