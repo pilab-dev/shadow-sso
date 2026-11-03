@@ -36,4 +36,11 @@ type Token struct {
 	Issuer     string    `bson:"issuer,omitempty" json:"issuer,omitempty"`
 	Roles      []string  `bson:"roles,omitempty" json:"roles,omitempty"`
 	SessionID  string    `bson:"session_id,omitempty" json:"session_id,omitempty"`
+	// Audience mirrors the `aud` claim when it differs from ClientID.
+	Audience []string `bson:"audience,omitempty" json:"audience,omitempty"`
+	// Subject mirrors the `sub` claim when it differs from UserID (e.g.
+	// client_credentials tokens, which have no end user).
+	Subject string `bson:"subject,omitempty" json:"subject,omitempty"`
+	// Groups mirrors the `groups` claim used for Kubernetes RBAC mapping.
+	Groups []string `bson:"groups,omitempty" json:"groups,omitempty"`
 }

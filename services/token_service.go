@@ -174,13 +174,26 @@ func (s *defaultTokenService) CreateToken(ctx context.Context, opts domain.Creat
 
 	expiresAt := time.Now().Add(opts.ExpireIn)
 
+	// sub defaults to the user ID. client_credentials tokens have no end user,
+	// so callers pass an explicit Subject (the client/service account identity)
+	// to keep `sub` non-empty — required by consumers such as kube-apiserver.
+	subject := opts.Subject
+	if subject == "" {
+		subject = opts.UserID
+	}
+	// aud defaults to the requesting client, which is the historical behaviour.
+	audience := opts.Audience
+	if len(audience) == 0 {
+		audience = []string{opts.ClientID}
+	}
+
 	// ? This is a default claim object, it can be used for both access and refresh tokens.
 	// ? Later it should be changed to a specific one for access_token, and id_token
 	// Access token claims
 	tokenClaimsMap := jwt.MapClaims{
 		"iss": s.issuer,
-		"sub": opts.UserID,
-		"aud": jwt.ClaimStrings{opts.ClientID},
+		"sub": subject,
+		"aud": jwt.ClaimStrings(audience),
 		"exp": jwt.NewNumericDate(expiresAt).Unix(),
 		"iat": jwt.NewNumericDate(time.Now()).Unix(),
 		"nbf": jwt.NewNumericDate(time.Now()).Unix(),
@@ -208,6 +221,13 @@ func (s *defaultTokenService) CreateToken(ctx context.Context, opts domain.Creat
 
 	if opts.SessionID != "" {
 		tokenClaimsMap["sid"] = opts.SessionID
+	}
+
+	// groups is a flat array consumed by Kubernetes OIDC (--oidc-groups-claim).
+	// It is separate from the role claims above so RBAC bindings can be managed
+	// independently of application roles.
+	if len(opts.Groups) > 0 {
+		tokenClaimsMap["groups"] = opts.Groups
 	}
 
 	// Apply token attribute mappers for access tokens
@@ -238,6 +258,9 @@ func (s *defaultTokenService) CreateToken(ctx context.Context, opts domain.Creat
 		LastUsedAt: time.Now(),
 		Roles:      userRoles, // Store roles in the token struct
 		SessionID:  opts.SessionID,
+		Audience:   audience,
+		Subject:    subject,
+		Groups:     opts.Groups,
 	}
 		if err := s.repo.StoreToken(ctx, token); err != nil {
 			telemetry.RecordSpanError(span, err, "failed to store token")
@@ -354,10 +377,18 @@ func (s *defaultTokenService) BuildToken(token *domain.Token) error { // Changed
 	// ? This is a default claim object, it can be used for both access and refresh tokens.
 	// ? Later it should be changed to a specific one for access_token, and id_token
 	// Access token claims
+	subject := token.Subject
+	if subject == "" {
+		subject = token.UserID
+	}
+	audience := token.Audience
+	if len(audience) == 0 {
+		audience = []string{token.ClientID}
+	}
 	tokenMapClaims := jwt.MapClaims{
 		"iss": s.issuer,
-		"sub": token.UserID,
-		"aud": jwt.ClaimStrings{token.ClientID},
+		"sub": subject,
+		"aud": jwt.ClaimStrings(audience),
 		"exp": jwt.NewNumericDate(token.ExpiresAt).Unix(),
 		"iat": jwt.NewNumericDate(token.CreatedAt).Unix(),
 		"nbf": jwt.NewNumericDate(token.CreatedAt).Unix(),
@@ -375,6 +406,9 @@ func (s *defaultTokenService) BuildToken(token *domain.Token) error { // Changed
 	// Or, more realistically, BuildToken is primarily for re-signing an existing ssso.Token, which should have roles.
 	if len(token.Roles) > 0 {
 		tokenMapClaims["roles"] = token.Roles
+	}
+	if len(token.Groups) > 0 {
+		tokenMapClaims["groups"] = token.Groups
 	}
 	// If UserID is present and token.Roles is empty, one might fetch roles here if context was available.
 	// else if token.UserID != "" && s.userRepo != nil { /* fetch roles - needs context */ }

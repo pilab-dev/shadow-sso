@@ -17,6 +17,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	oteltrace "go.opentelemetry.io/otel/trace"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -474,8 +475,12 @@ func (s *defaultOAuthService) DirectGrant(ctx context.Context,
 	return tokenPair, nil
 }
 
+// ClientCredentials validates the supplied credentials and issues an access
+// token for the client. It backs the standalone /client_credentials endpoint;
+// the main token endpoint uses IssueClientCredentialsForClient after it has
+// already authenticated the client.
 func (s *defaultOAuthService) ClientCredentials(ctx context.Context,
-	clientID, clientSecret, scope string,
+	clientID, clientSecret, scope string, audience []string,
 ) (*api.TokenResponse, error) {
 	_, span := telemetry.StartSpan(ctx, tracerName, "ClientCredentials",
 		attribute.String("oauth.client_id", clientID),
@@ -490,6 +495,35 @@ func (s *defaultOAuthService) ClientCredentials(ctx context.Context,
 		telemetry.RecordSpanError(span, err, "client validation failed")
 		return nil, err
 	}
+
+	return s.issueClientCredentialsForClient(ctx, span, cli, scope, audience)
+}
+
+// IssueClientCredentialsForClient issues an access token for a client that has
+// already been authenticated by the token endpoint. Using this instead of
+// ClientCredentials avoids re-validating a client secret that was never sent
+// (private_key_jwt / client_assertion authentication).
+func (s *defaultOAuthService) IssueClientCredentialsForClient(ctx context.Context,
+	cli *domain.Client, scope string, audience []string,
+) (*api.TokenResponse, error) {
+	_, span := telemetry.StartSpan(ctx, tracerName, "IssueClientCredentialsForClient",
+		attribute.String("oauth.client_id", cli.ID),
+		attribute.String("oauth.scope", scope),
+	)
+	defer span.End()
+
+	log.Ctx(ctx).Debug().Str("client_id", cli.ID).Str("scope", scope).Msg("Issuing Client Credentials token for authenticated client")
+
+	return s.issueClientCredentialsForClient(ctx, span, cli, scope, audience)
+}
+
+// issueClientCredentialsForClient performs the grant checks and token
+// generation common to both entry points above. The caller owns the span so a
+// single trace span covers the whole issuance.
+func (s *defaultOAuthService) issueClientCredentialsForClient(ctx context.Context, span oteltrace.Span,
+	cli *domain.Client, scope string, audience []string,
+) (*api.TokenResponse, error) {
+	clientID := cli.ID
 
 	if !contains(cli.AllowedGrantTypes, "client_credentials") {
 		errGrant := domain.ErrInvalidConfig
@@ -507,6 +541,14 @@ func (s *defaultOAuthService) ClientCredentials(ctx context.Context,
 		return nil, errScope
 	}
 
+	audiences, err := s.resolveClientCredentialsAudience(cli, audience)
+	if err != nil {
+		telemetry.RecordSpanError(span, err, "invalid audience requested")
+		span.SetStatus(codes.Error, "invalid audience")
+		log.Ctx(ctx).Warn().Err(err).Str("client_id", clientID).Msg("Client Credentials grant rejected: audience not allowed")
+		return nil, err
+	}
+
 	tokenTTL, err := s.realmAccessTokenLifespan(ctx)
 	if err != nil {
 		telemetry.RecordSpanError(span, err, "invalid realm settings access token lifespan")
@@ -515,15 +557,27 @@ func (s *defaultOAuthService) ClientCredentials(ctx context.Context,
 		return nil, err
 	}
 
+	// The token has no end user, so `sub` is the client identity. Keeping it
+	// non-empty matters for consumers that require a subject (kube-apiserver).
+	// Groups can be managed separately from roles so k8s RBAC bindings do not
+	// have to mirror application roles; when unset, roles are reused.
+	groups := cli.ServiceAccountGroups
+	if len(groups) == 0 {
+		groups = cli.ServiceAccountRoles
+	}
+
 	token, err := s.tokenService.CreateToken(ctx, domain.CreateTokenOptions{
 		TokenID:      uuid.NewString(),
 		Scope:        scope,
 		ClientID:     clientID,
 		UserID:       "", // No user for client_credentials
+		Subject:      clientID,
+		Audience:     audiences,
 		TokenType:    "access_token",
 		ExpireIn:     tokenTTL,
 		SigningKeyID: "",
 		Roles:        cli.ServiceAccountRoles,
+		Groups:       groups,
 	}, nil)
 	if err != nil {
 		telemetry.RecordSpanError(span, err, "failed to create token")
@@ -532,12 +586,51 @@ func (s *defaultOAuthService) ClientCredentials(ctx context.Context,
 		return nil, err
 	}
 
-	log.Ctx(ctx).Info().Str("client_id", clientID).Msg("Client Credentials token issuance successful")
+	log.Ctx(ctx).Info().
+		Str("client_id", clientID).
+		Strs("audience", audiences).
+		Msg("Client Credentials token issuance successful")
 	return &api.TokenResponse{
 		AccessToken: token.TokenValue,
 		TokenType:   "Bearer",
 		ExpiresIn:   int(tokenTTL.Seconds()),
 	}, nil
+}
+
+// resolveClientCredentialsAudience validates requested audiences against the
+// client's AllowedAudiences (RFC 8707). The client's own ID is always allowed
+// and is the default, preserving the previous `aud` behaviour for callers that
+// do not request a resource indicator.
+func (s *defaultOAuthService) resolveClientCredentialsAudience(cli *domain.Client, requested []string) ([]string, error) {
+	allowed := make(map[string]struct{}, len(cli.AllowedAudiences)+1)
+	allowed[cli.ID] = struct{}{}
+	for _, a := range cli.AllowedAudiences {
+		if a != "" {
+			allowed[a] = struct{}{}
+		}
+	}
+
+	seen := make(map[string]struct{}, len(requested))
+	out := make([]string, 0, len(requested))
+	for _, raw := range requested {
+		// Repeated parameters are canonical, but space- and comma-separated
+		// lists are common in the wild, so accept them too.
+		for _, a := range strings.FieldsFunc(raw, func(r rune) bool { return r == ' ' || r == ',' }) {
+			if _, ok := allowed[a]; !ok {
+				return nil, domain.NewInvalidTarget(fmt.Sprintf("audience %q is not allowed for client %q", a, cli.ID))
+			}
+			if _, dup := seen[a]; dup {
+				continue
+			}
+			seen[a] = struct{}{}
+			out = append(out, a)
+		}
+	}
+
+	if len(out) == 0 {
+		return []string{cli.ID}, nil
+	}
+	return out, nil
 }
 
 func (s *defaultOAuthService) validateScope(ctx context.Context, requestedScope string, allowedScopes []string) bool {
