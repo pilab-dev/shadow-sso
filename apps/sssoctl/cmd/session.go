@@ -74,9 +74,10 @@ var sessionCurrentCmd = &cobra.Command{
 }
 
 var sessionKickCmd = &cobra.Command{
-	Use:   "kick [SESSION_ID]",
-	Short: "Kick one device by session ID",
-	Args:  cobra.ExactArgs(1),
+	Use:     "kick [SESSION_ID]",
+	Aliases: []string{"revoke"},
+	Short:   "Kick one device by session ID",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		sessionID := args[0]
 		userID, _ := cmd.Flags().GetString("user-id")
@@ -102,8 +103,9 @@ var sessionKickCmd = &cobra.Command{
 }
 
 var sessionKickAllCmd = &cobra.Command{
-	Use:   "kick-all",
-	Short: "Kick every session for a user",
+	Use:     "kick-all",
+	Aliases: []string{"revoke-all"},
+	Short:   "Kick every session for a user",
 	Long: `Revokes all sessions for the authenticated user, or for --user-id when an admin
 is authenticated. This includes the current CLI session.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -126,6 +128,27 @@ is authenticated. This includes the current CLI session.`,
 		if userID == "" {
 			clearLocalToken()
 		}
+		return nil
+	},
+}
+
+// sessionLogoutUserCmd logs a user out everywhere. It uses the same gRPC call as
+// kick-all but takes an explicit user ID and is meant for admins.
+var sessionLogoutUserCmd = &cobra.Command{
+	Use:   "logout-user [USER_ID]",
+	Short: "Log a user out everywhere (admin)",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		userID := args[0]
+		force, _ := cmd.Flags().GetBool("force")
+		if err := requireConfirmation(force,
+			fmt.Sprintf("Revoke ALL sessions for user %s?", userID)); err != nil {
+			return err
+		}
+		if _, err := clearSessions(userID, nil); err != nil {
+			return err
+		}
+		fmt.Printf("All sessions revoked for user %s.\n", userID)
 		return nil
 	},
 }
@@ -274,6 +297,7 @@ func init() {
 	sessionCmd.AddCommand(sessionCurrentCmd)
 	sessionCmd.AddCommand(sessionKickCmd)
 	sessionCmd.AddCommand(sessionKickAllCmd)
+	sessionCmd.AddCommand(sessionLogoutUserCmd)
 	sessionCmd.AddCommand(sessionClearCmd)
 
 	sessionListCmd.Flags().String("user-id", "", "ID of the user whose sessions to list (admin only; defaults to current user)")
@@ -286,4 +310,6 @@ func init() {
 
 	sessionKickAllCmd.Flags().String("user-id", "", "ID of the user whose sessions to revoke (admin only; defaults to current user)")
 	sessionKickAllCmd.Flags().Bool("force", false, "Do not ask for confirmation")
+
+	sessionLogoutUserCmd.Flags().Bool("force", false, "Do not ask for confirmation")
 }

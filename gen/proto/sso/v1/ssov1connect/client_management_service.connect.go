@@ -49,6 +49,12 @@ const (
 	// ClientManagementServiceDeleteClientProcedure is the fully-qualified name of the
 	// ClientManagementService's DeleteClient RPC.
 	ClientManagementServiceDeleteClientProcedure = "/sso.v1.ClientManagementService/DeleteClient"
+	// ClientManagementServiceGenerateClientSecretProcedure is the fully-qualified name of the
+	// ClientManagementService's GenerateClientSecret RPC.
+	ClientManagementServiceGenerateClientSecretProcedure = "/sso.v1.ClientManagementService/GenerateClientSecret"
+	// ClientManagementServiceGenerateClientKeysProcedure is the fully-qualified name of the
+	// ClientManagementService's GenerateClientKeys RPC.
+	ClientManagementServiceGenerateClientKeysProcedure = "/sso.v1.ClientManagementService/GenerateClientKeys"
 )
 
 // ClientManagementServiceClient is a client for the sso.v1.ClientManagementService service.
@@ -63,6 +69,10 @@ type ClientManagementServiceClient interface {
 	UpdateClient(context.Context, *connect.Request[v1.UpdateClientRequest]) (*connect.Response[v1.UpdateClientResponse], error)
 	// Deletes an OAuth2 client by its ID.
 	DeleteClient(context.Context, *connect.Request[v1.DeleteClientRequest]) (*connect.Response[emptypb.Empty], error)
+	// Generates and stores a new client secret, returning the plaintext once.
+	GenerateClientSecret(context.Context, *connect.Request[v1.GenerateClientSecretRequest]) (*connect.Response[v1.GenerateClientSecretResponse], error)
+	// Generates a new RSA keypair and stores the public JWKS on the client.
+	GenerateClientKeys(context.Context, *connect.Request[v1.GenerateClientKeysRequest]) (*connect.Response[v1.GenerateClientKeysResponse], error)
 }
 
 // NewClientManagementServiceClient constructs a client for the sso.v1.ClientManagementService
@@ -100,16 +110,28 @@ func NewClientManagementServiceClient(httpClient connect.HTTPClient, baseURL str
 			baseURL+ClientManagementServiceDeleteClientProcedure,
 			opts...,
 		),
+		generateClientSecret: connect.NewClient[v1.GenerateClientSecretRequest, v1.GenerateClientSecretResponse](
+			httpClient,
+			baseURL+ClientManagementServiceGenerateClientSecretProcedure,
+			opts...,
+		),
+		generateClientKeys: connect.NewClient[v1.GenerateClientKeysRequest, v1.GenerateClientKeysResponse](
+			httpClient,
+			baseURL+ClientManagementServiceGenerateClientKeysProcedure,
+			opts...,
+		),
 	}
 }
 
 // clientManagementServiceClient implements ClientManagementServiceClient.
 type clientManagementServiceClient struct {
-	registerClient *connect.Client[v1.RegisterClientRequest, v1.RegisterClientResponse]
-	getClient      *connect.Client[v1.GetClientRequest, v1.GetClientResponse]
-	listClients    *connect.Client[v1.ListClientsRequest, v1.ListClientsResponse]
-	updateClient   *connect.Client[v1.UpdateClientRequest, v1.UpdateClientResponse]
-	deleteClient   *connect.Client[v1.DeleteClientRequest, emptypb.Empty]
+	registerClient       *connect.Client[v1.RegisterClientRequest, v1.RegisterClientResponse]
+	getClient            *connect.Client[v1.GetClientRequest, v1.GetClientResponse]
+	listClients          *connect.Client[v1.ListClientsRequest, v1.ListClientsResponse]
+	updateClient         *connect.Client[v1.UpdateClientRequest, v1.UpdateClientResponse]
+	deleteClient         *connect.Client[v1.DeleteClientRequest, emptypb.Empty]
+	generateClientSecret *connect.Client[v1.GenerateClientSecretRequest, v1.GenerateClientSecretResponse]
+	generateClientKeys   *connect.Client[v1.GenerateClientKeysRequest, v1.GenerateClientKeysResponse]
 }
 
 // RegisterClient calls sso.v1.ClientManagementService.RegisterClient.
@@ -137,6 +159,16 @@ func (c *clientManagementServiceClient) DeleteClient(ctx context.Context, req *c
 	return c.deleteClient.CallUnary(ctx, req)
 }
 
+// GenerateClientSecret calls sso.v1.ClientManagementService.GenerateClientSecret.
+func (c *clientManagementServiceClient) GenerateClientSecret(ctx context.Context, req *connect.Request[v1.GenerateClientSecretRequest]) (*connect.Response[v1.GenerateClientSecretResponse], error) {
+	return c.generateClientSecret.CallUnary(ctx, req)
+}
+
+// GenerateClientKeys calls sso.v1.ClientManagementService.GenerateClientKeys.
+func (c *clientManagementServiceClient) GenerateClientKeys(ctx context.Context, req *connect.Request[v1.GenerateClientKeysRequest]) (*connect.Response[v1.GenerateClientKeysResponse], error) {
+	return c.generateClientKeys.CallUnary(ctx, req)
+}
+
 // ClientManagementServiceHandler is an implementation of the sso.v1.ClientManagementService
 // service.
 type ClientManagementServiceHandler interface {
@@ -150,6 +182,10 @@ type ClientManagementServiceHandler interface {
 	UpdateClient(context.Context, *connect.Request[v1.UpdateClientRequest]) (*connect.Response[v1.UpdateClientResponse], error)
 	// Deletes an OAuth2 client by its ID.
 	DeleteClient(context.Context, *connect.Request[v1.DeleteClientRequest]) (*connect.Response[emptypb.Empty], error)
+	// Generates and stores a new client secret, returning the plaintext once.
+	GenerateClientSecret(context.Context, *connect.Request[v1.GenerateClientSecretRequest]) (*connect.Response[v1.GenerateClientSecretResponse], error)
+	// Generates a new RSA keypair and stores the public JWKS on the client.
+	GenerateClientKeys(context.Context, *connect.Request[v1.GenerateClientKeysRequest]) (*connect.Response[v1.GenerateClientKeysResponse], error)
 }
 
 // NewClientManagementServiceHandler builds an HTTP handler from the service implementation. It
@@ -183,6 +219,16 @@ func NewClientManagementServiceHandler(svc ClientManagementServiceHandler, opts 
 		svc.DeleteClient,
 		opts...,
 	)
+	clientManagementServiceGenerateClientSecretHandler := connect.NewUnaryHandler(
+		ClientManagementServiceGenerateClientSecretProcedure,
+		svc.GenerateClientSecret,
+		opts...,
+	)
+	clientManagementServiceGenerateClientKeysHandler := connect.NewUnaryHandler(
+		ClientManagementServiceGenerateClientKeysProcedure,
+		svc.GenerateClientKeys,
+		opts...,
+	)
 	return "/sso.v1.ClientManagementService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ClientManagementServiceRegisterClientProcedure:
@@ -195,6 +241,10 @@ func NewClientManagementServiceHandler(svc ClientManagementServiceHandler, opts 
 			clientManagementServiceUpdateClientHandler.ServeHTTP(w, r)
 		case ClientManagementServiceDeleteClientProcedure:
 			clientManagementServiceDeleteClientHandler.ServeHTTP(w, r)
+		case ClientManagementServiceGenerateClientSecretProcedure:
+			clientManagementServiceGenerateClientSecretHandler.ServeHTTP(w, r)
+		case ClientManagementServiceGenerateClientKeysProcedure:
+			clientManagementServiceGenerateClientKeysHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -222,4 +272,12 @@ func (UnimplementedClientManagementServiceHandler) UpdateClient(context.Context,
 
 func (UnimplementedClientManagementServiceHandler) DeleteClient(context.Context, *connect.Request[v1.DeleteClientRequest]) (*connect.Response[emptypb.Empty], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.ClientManagementService.DeleteClient is not implemented"))
+}
+
+func (UnimplementedClientManagementServiceHandler) GenerateClientSecret(context.Context, *connect.Request[v1.GenerateClientSecretRequest]) (*connect.Response[v1.GenerateClientSecretResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.ClientManagementService.GenerateClientSecret is not implemented"))
+}
+
+func (UnimplementedClientManagementServiceHandler) GenerateClientKeys(context.Context, *connect.Request[v1.GenerateClientKeysRequest]) (*connect.Response[v1.GenerateClientKeysResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.ClientManagementService.GenerateClientKeys is not implemented"))
 }
