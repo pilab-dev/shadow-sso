@@ -60,6 +60,7 @@ const (
 	InvalidScope           = "invalid_scope"
 	InvalidClient          = "invalid_client"
 	InvalidGrant           = "invalid_grant"
+	InvalidTarget          = "invalid_target"
 	ServerError            = "server_error"
 	TemporarilyUnavailable = "temporarily_unavailable"
 )
@@ -146,6 +147,18 @@ func NewUnsupportedGrantType() *OAuth2Error {
 	return &OAuth2Error{
 		Code:        UnsupportedGrantType,
 		Description: "The authorization grant type is not supported",
+		URI:         "",
+		State:       "",
+	}
+}
+
+// NewInvalidTarget creates an OAuth2Error with the invalid_target code, as
+// defined by RFC 8707 (Resource Indicators) for audience/resource requests the
+// client is not allowed to target.
+func NewInvalidTarget(description string) *OAuth2Error {
+	return &OAuth2Error{
+		Code:        InvalidTarget,
+		Description: description,
 		URI:         "",
 		State:       "",
 	}

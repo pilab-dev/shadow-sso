@@ -20,7 +20,11 @@ type OAuthService interface {
 	GetJWKS() *domain.JWKS
 	ValidateClient(ctx context.Context, clientID, clientSecret string) (*domain.Client, error)
 	DirectGrant(ctx context.Context, clientID, clientSecret, username, password, scope string) (*api.TokenResponse, error)
-	ClientCredentials(ctx context.Context, clientID, clientSecret, scope string) (*api.TokenResponse, error)
+	ClientCredentials(ctx context.Context, clientID, clientSecret, scope string, audience []string) (*api.TokenResponse, error)
+	// IssueClientCredentialsForClient issues a client_credentials token for a
+	// client that has already been authenticated at the token endpoint (via
+	// client_secret or private_key_jwt assertion). audience follows RFC 8707.
+	IssueClientCredentialsForClient(ctx context.Context, cli *domain.Client, scope string, audience []string) (*api.TokenResponse, error)
 	PasswordGrant(ctx context.Context, username, password, scope string, cli *domain.Client) (*api.TokenResponse, error)
 	ExchangeAuthorizationCode(ctx context.Context, code, clientID, clientSecret, redirectURI string) (*api.TokenResponse, error)
 	IntrospectToken(ctx context.Context, token, tokenTypeHint, clientID, clientSecret string) (*domain.TokenIntrospection, error)

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/pilab-dev/shadow-sso/api"
 	"github.com/pilab-dev/shadow-sso/domain"
 	mock_domain "github.com/pilab-dev/shadow-sso/domain/mocks"
@@ -740,11 +741,172 @@ func TestOAuthService_ClientCredentials_Success(t *testing.T) {
 		ExpiresAt:  time.Now().Add(time.Hour),
 	}, nil)
 
-	resp, err := oauthService.ClientCredentials(ctx, clientID, clientSecret, "openid")
+	resp, err := oauthService.ClientCredentials(ctx, clientID, clientSecret, "openid", nil)
 
 	require.NoError(t, err)
 	assert.NotNil(t, resp)
 	assert.NotEmpty(t, resp.AccessToken)
+}
+
+func TestOAuthService_ClientCredentials_AudienceSubjectAndGroups(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
+	mockAuthCodeRepo := mock_domain.NewMockAuthorizationCodeRepository(ctrl)
+	mockDeviceAuthRepo := mock_domain.NewMockDeviceAuthorizationRepository(ctrl)
+	mockClientRepo := mock_domain.NewMockClientRepository(ctrl)
+	mockSessionRepo := mock_domain.NewMockSessionRepository(ctrl)
+	mockTokenServiceInterface := mock_domain.NewMockTokenServiceInterface(ctrl)
+
+	oauthService := services.NewOAuthService(
+		mockTokenRepo,
+		mockAuthCodeRepo,
+		mockDeviceAuthRepo,
+		mockClientRepo,
+		mockUserRepo,
+		mockSessionRepo,
+		mockTokenServiceInterface,
+		"test-issuer",
+	)
+
+	ctx := context.Background()
+	const (
+		clientID     = "sa-1234@pilab.iam.sso.dev"
+		clientSecret = "secret"
+	)
+
+	client := &domain.Client{
+		ID:                  clientID,
+		Secret:              clientSecret,
+		AllowedGrantTypes:   []string{"client_credentials"},
+		AllowedScopes:       []string{"openid"},
+		AllowedAudiences:    []string{"kubernetes"},
+		ServiceAccountRoles: []string{"k8s-view"},
+	}
+
+	mockClientRepo.EXPECT().ValidateClient(ctx, clientID, clientSecret).Return(client, nil)
+	mockTokenServiceInterface.EXPECT().
+		CreateToken(gomock.Any(), gomock.Any(), nil).
+		DoAndReturn(func(_ context.Context, opts domain.CreateTokenOptions, _ jwt.Claims) (*domain.Token, error) {
+			assert.Equal(t, clientID, opts.Subject, "client_credentials tokens need a non-empty sub")
+			assert.Empty(t, opts.UserID)
+			assert.Equal(t, []string{"kubernetes"}, opts.Audience)
+			assert.Equal(t, []string{"k8s-view"}, opts.Roles)
+			assert.Equal(t, []string{"k8s-view"}, opts.Groups, "groups fall back to roles when not set")
+			return &domain.Token{
+				ID:         "token-id",
+				TokenValue: "access-token-value",
+				TokenType:  "access_token",
+				ClientID:   clientID,
+				ExpiresAt:  time.Now().Add(time.Hour),
+			}, nil
+		})
+
+	resp, err := oauthService.ClientCredentials(ctx, clientID, clientSecret, "openid", []string{"kubernetes"})
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, "access-token-value", resp.AccessToken)
+}
+
+func TestOAuthService_ClientCredentials_AudienceNotAllowed(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
+	mockAuthCodeRepo := mock_domain.NewMockAuthorizationCodeRepository(ctrl)
+	mockDeviceAuthRepo := mock_domain.NewMockDeviceAuthorizationRepository(ctrl)
+	mockClientRepo := mock_domain.NewMockClientRepository(ctrl)
+	mockSessionRepo := mock_domain.NewMockSessionRepository(ctrl)
+	mockTokenServiceInterface := mock_domain.NewMockTokenServiceInterface(ctrl)
+
+	oauthService := services.NewOAuthService(
+		mockTokenRepo,
+		mockAuthCodeRepo,
+		mockDeviceAuthRepo,
+		mockClientRepo,
+		mockUserRepo,
+		mockSessionRepo,
+		mockTokenServiceInterface,
+		"test-issuer",
+	)
+
+	ctx := context.Background()
+	const (
+		clientID     = "client-id"
+		clientSecret = "secret"
+	)
+
+	// No AllowedAudiences: the client may only mint tokens for itself.
+	client := &domain.Client{
+		ID:                clientID,
+		Secret:            clientSecret,
+		AllowedGrantTypes: []string{"client_credentials"},
+		AllowedScopes:     []string{"openid"},
+	}
+
+	mockClientRepo.EXPECT().ValidateClient(ctx, clientID, clientSecret).Return(client, nil)
+	// CreateToken must not be called.
+
+	resp, err := oauthService.ClientCredentials(ctx, clientID, clientSecret, "openid", []string{"kubernetes"})
+
+	require.Error(t, err)
+	assert.Nil(t, resp)
+
+	var oauthErr *domain.OAuth2Error
+	require.ErrorAs(t, err, &oauthErr)
+	assert.Equal(t, domain.InvalidTarget, oauthErr.Code)
+}
+
+func TestOAuthService_IssueClientCredentialsForClient_SkipsSecretValidation(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
+	mockAuthCodeRepo := mock_domain.NewMockAuthorizationCodeRepository(ctrl)
+	mockDeviceAuthRepo := mock_domain.NewMockDeviceAuthorizationRepository(ctrl)
+	mockClientRepo := mock_domain.NewMockClientRepository(ctrl)
+	mockSessionRepo := mock_domain.NewMockSessionRepository(ctrl)
+	mockTokenServiceInterface := mock_domain.NewMockTokenServiceInterface(ctrl)
+
+	oauthService := services.NewOAuthService(
+		mockTokenRepo,
+		mockAuthCodeRepo,
+		mockDeviceAuthRepo,
+		mockClientRepo,
+		mockUserRepo,
+		mockSessionRepo,
+		mockTokenServiceInterface,
+		"test-issuer",
+	)
+
+	ctx := context.Background()
+	client := &domain.Client{
+		ID:                "sa-private-key-jwt@pilab.iam.sso.dev",
+		AllowedGrantTypes: []string{"client_credentials"},
+		AllowedScopes:     []string{"openid"},
+		AllowedAudiences:  []string{"kubernetes"},
+	}
+
+	// No ValidateClient expectation: the client was authenticated with a
+	// private_key_jwt assertion and has no secret to re-validate.
+	mockTokenServiceInterface.EXPECT().CreateToken(gomock.Any(), gomock.Any(), nil).Return(&domain.Token{
+		ID:         "token-id",
+		TokenValue: "access-token-value",
+		TokenType:  "access_token",
+		ClientID:   client.ID,
+		ExpiresAt:  time.Now().Add(time.Hour),
+	}, nil)
+
+	resp, err := oauthService.IssueClientCredentialsForClient(ctx, client, "openid", []string{"kubernetes"})
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, "access-token-value", resp.AccessToken)
 }
 
 func TestOAuthService_PasswordGrant_Success(t *testing.T) {

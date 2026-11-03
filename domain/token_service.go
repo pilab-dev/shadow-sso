@@ -24,6 +24,19 @@ type CreateTokenOptions struct {
 	// instead of looking up roles from the user repository.
 	// This is useful for client_credentials tokens (no user context).
 	Roles []string
+	// Audience, when non-empty, is emitted as the `aud` claim instead of the
+	// default (the requesting client's ID). Use this to mint tokens for a
+	// specific resource, e.g. "kubernetes" for kube-apiserver OIDC.
+	Audience []string
+	// Subject, when non-empty, is emitted as the `sub` claim instead of
+	// UserID. client_credentials tokens have no end user, so callers set this
+	// to the client identity (e.g. the service account email) to produce a
+	// non-empty, stable subject. kube-apiserver rejects tokens without one.
+	Subject string
+	// Groups, when non-empty, is emitted as the `groups` claim: a flat array
+	// of strings that Kubernetes maps to RBAC group bindings via
+	// --oidc-groups-claim.
+	Groups []string
 }
 
 type TokenServiceInterface interface {

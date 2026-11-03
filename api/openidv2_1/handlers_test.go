@@ -561,7 +561,7 @@ func TestTokenHandler_ClientCredentialsGrant_Success(t *testing.T) {
 	scope := "read write"
 	mockReturnedClient := &domain.Client{ID: clientID, Secret: clientSecret, AllowedGrantTypes: []string{"client_credentials"}, AllowedScopes: []string{"read", "write", "admin"}}
 
-	mockClientStore.EXPECT().ValidateClient(gomock.Any(), clientID, clientSecret).Return(mockReturnedClient, nil).Times(2)
+	mockClientStore.EXPECT().ValidateClient(gomock.Any(), clientID, clientSecret).Return(mockReturnedClient, nil).Times(1)
 	mockClientStore.EXPECT().GetClient(gomock.Any(), clientID).Times(1).Return(mockReturnedClient, nil)
 	mockTokenRepo.EXPECT().StoreToken(gomock.Any(), gomock.Any()).Return(nil)
 	mockTokenCache.EXPECT().Set(gomock.Any(), gomock.Any()).Return(nil)
