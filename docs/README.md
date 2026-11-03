@@ -17,6 +17,8 @@ This file provides an overview of all documentation available for Shadow SSO.
 | [docs/service_accounts_usage.md](./service_accounts_usage.md) | Service account keys and JWT authentication |
 | [docs/client_credentials_audience_groups.md](./client_credentials_audience_groups.md) | Audience, subject and groups on client_credentials tokens (Kubernetes OIDC) |
 | [docs/credential-helper-and-k8s-oidc.md](./credential-helper-and-k8s-oidc.md) | Credential helper design and temporary privilege escalation |
+| [docs/client-sdk-architecture.md](./client-sdk-architecture.md) | Client SDK design (`client/ssox`) for apps and services |
+| [docs/session-management-architecture.md](./session-management-architecture.md) | Client session management, device tracking and token theft prevention |
 | [docs/user_attributes.md](./user_attributes.md) | Custom user attributes and token claim mappers |
 
 ## Security & Keys
