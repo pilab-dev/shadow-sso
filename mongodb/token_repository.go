@@ -2,6 +2,8 @@ package mongodb
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -41,8 +43,29 @@ func (r *TokenRepository) ensureIndexes(ctx context.Context) {
 
 // --- Token Methods (using *domain.Token and *domain.TokenInfo) ---
 func (r *TokenRepository) StoreToken(ctx context.Context, token *domain.Token) error {
-	_, err := r.coll.InsertOne(ctx, token)
+	stored := prepareTokenForStorage(token)
+	_, err := r.coll.InsertOne(ctx, stored)
 	return err
+}
+
+// prepareTokenForStorage returns a copy of token that is safe to persist:
+// refresh tokens are stored only as a SHA-256 hash. The caller's token is left
+// untouched so callers that still need the raw value (e.g. to return it in a
+// token response) keep it.
+func prepareTokenForStorage(token *domain.Token) *domain.Token {
+	if token == nil {
+		return nil
+	}
+	stored := *token
+	if stored.TokenType != "refresh_token" {
+		return &stored
+	}
+	if stored.TokenHash == "" && stored.TokenValue != "" {
+		stored.TokenHash = hashTokenValue(stored.TokenValue)
+	}
+	// Hashed refresh tokens at rest: never persist the raw JWT.
+	stored.TokenValue = ""
+	return &stored
 }
 
 func (r *TokenRepository) GetAccessToken(ctx context.Context, tokenValue string) (*domain.Token, error) {
@@ -65,11 +88,20 @@ func (r *TokenRepository) RevokeToken(ctx context.Context, tokenValue string) er
 func (r *TokenRepository) GetRefreshToken(ctx context.Context, tokenValue string) (*domain.Token, error) {
 	var token domain.Token
 	err := r.coll.FindOne(ctx, bson.M{
-		"token_value": tokenValue, "token_type": "refresh_token",
+		"$or": []bson.M{
+			{"token_value": tokenValue},
+			{"token_hash": hashTokenValue(tokenValue)},
+		},
+		"token_type": "refresh_token",
 		"is_revoked": false, "expires_at": bson.M{"$gt": time.Now().UTC()},
 	}).Decode(&token)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return nil, errors.New("refresh token not found or invalid")
+	}
+	// Dual-read: backfill hash for legacy rows.
+	if token.TokenHash == "" && token.TokenValue != "" {
+		_, _ = r.coll.UpdateOne(ctx, bson.M{"_id": token.ID}, bson.M{"$set": bson.M{"token_hash": hashTokenValue(token.TokenValue)}})
+		token.TokenHash = hashTokenValue(token.TokenValue)
 	}
 	return &token, err
 }
@@ -79,7 +111,13 @@ func (r *TokenRepository) GetRefreshToken(ctx context.Context, tokenValue string
 // must be able to tell "revoked because rotated" (replay) from "unknown token".
 func (r *TokenRepository) GetRefreshTokenInfo(ctx context.Context, tokenValue string) (*domain.TokenInfo, error) {
 	var token domain.Token
-	err := r.coll.FindOne(ctx, bson.M{"token_value": tokenValue, "token_type": "refresh_token"}).Decode(&token)
+	err := r.coll.FindOne(ctx, bson.M{
+		"$or": []bson.M{
+			{"token_value": tokenValue},
+			{"token_hash": hashTokenValue(tokenValue)},
+		},
+		"token_type": "refresh_token",
+	}).Decode(&token)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, errors.New("refresh token not found or invalid")
@@ -99,6 +137,7 @@ func (r *TokenRepository) GetRefreshTokenInfo(ctx context.Context, tokenValue st
 		RefreshTokenFamily: token.Family,
 		SessionID:          token.SessionID,
 		UsedAt:             token.UsedAt,
+		CnfJKT:             token.CnfJKT,
 	}, nil
 }
 
@@ -111,7 +150,10 @@ func (r *TokenRepository) GetAccessTokenInfo(ctx context.Context, tokenValue str
 }
 
 func (r *TokenRepository) RevokeRefreshToken(ctx context.Context, tokenValue string) error {
-	filter := bson.M{"token_value": tokenValue, "token_type": "refresh_token"}
+	filter := bson.M{"$or": []bson.M{
+		{"token_value": tokenValue},
+		{"token_hash": hashTokenValue(tokenValue)},
+	}, "token_type": "refresh_token"}
 	update := bson.M{"$set": bson.M{"is_revoked": true}}
 	result, err := r.coll.UpdateOne(ctx, filter, update)
 	if err != nil {
@@ -134,7 +176,10 @@ func (r *TokenRepository) MarkRefreshTokenUsed(ctx context.Context, tokenValue, 
 		set["rotated_to"] = rotatedTo
 	}
 	_, err := r.coll.UpdateOne(ctx,
-		bson.M{"token_value": tokenValue, "token_type": "refresh_token"},
+		bson.M{"$or": []bson.M{
+			{"token_value": tokenValue},
+			{"token_hash": hashTokenValue(tokenValue)},
+		}, "token_type": "refresh_token"},
 		bson.M{"$set": set},
 	)
 	return err
@@ -301,4 +346,10 @@ func (r *TokenRepository) MarkExpiryAudited(ctx context.Context, ids []string) e
 		bson.M{"_id": bson.M{"$in": ids}},
 		bson.M{"$set": bson.M{"expiry_audited_at": now}})
 	return err
+}
+
+// hashTokenValue returns the SHA-256 hex digest of a raw token value.
+func hashTokenValue(v string) string {
+	sum := sha256.Sum256([]byte(v))
+	return hex.EncodeToString(sum[:])
 }

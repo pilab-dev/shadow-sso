@@ -14,14 +14,16 @@ import (
 
 // SessionRepositoryMongo implements the domain.SessionRepository interface using MongoDB.
 type SessionRepositoryMongo struct {
-	collection *mongo.Collection
+	collection       *mongo.Collection
+	eventsCollection *mongo.Collection
 }
 
 // NewSessionRepositoryMongo creates a new SessionRepositoryMongo.
 // It also ensures that necessary indexes are created on the collection.
 func NewSessionRepositoryMongo(ctx context.Context, db *mongo.Database) (domain.SessionRepository, error) {
 	repo := &SessionRepositoryMongo{
-		collection: db.Collection(UserSessionsCollection), // "oauth_user_sessions"
+		collection:       db.Collection(UserSessionsCollection), // "oauth_user_sessions"
+		eventsCollection: db.Collection("session_events"),
 	}
 
 	indexModels := []mongo.IndexModel{
@@ -109,19 +111,13 @@ func (r *SessionRepositoryMongo) GetSessionByTokenID(ctx context.Context, tokenI
 	return &session, nil
 }
 
-// UpdateSession updates an existing session, e.g., to mark it as revoked.
+// UpdateSession replaces an existing session document (full update).
 func (r *SessionRepositoryMongo) UpdateSession(ctx context.Context, session *domain.Session) error {
 	if session.ID == "" {
 		return errors.New("session ID is required for update")
 	}
 	filter := bson.M{"_id": session.ID}
-	// Example: update IsRevoked and ExpiresAt if needed
-	update := bson.M{"$set": bson.M{
-		"is_revoked": session.IsRevoked,
-		"expires_at": session.ExpiresAt, // Allow extending or shortening session
-		// Potentially other fields like UserAgent, IPAddress if they can change post-creation
-	}}
-	result, err := r.collection.UpdateOne(ctx, filter, update)
+	result, err := r.collection.ReplaceOne(ctx, filter, session)
 	if err != nil {
 		log.Error().Err(err).Str("sessionID", session.ID).Msg("Error updating session in MongoDB")
 		return err
@@ -197,6 +193,43 @@ func (r *SessionRepositoryMongo) DeleteSessionsByUserID(ctx context.Context, use
 		return 0, err
 	}
 	return result.DeletedCount, nil
+}
+
+// StoreSessionEvent appends an immutable lifecycle event for a session.
+func (r *SessionRepositoryMongo) StoreSessionEvent(ctx context.Context, event *domain.SessionEvent) error {
+	if event.ID == "" {
+		event.ID = NewID()
+	}
+	if event.At.IsZero() {
+		event.At = time.Now().UTC()
+	}
+	_, err := r.eventsCollection.InsertOne(ctx, event)
+	if err != nil {
+		log.Error().Err(err).Msg("Error storing session event in MongoDB")
+		return err
+	}
+	return nil
+}
+
+// ListSessionEvents returns the most recent events for a session.
+func (r *SessionRepositoryMongo) ListSessionEvents(ctx context.Context, sessionID string, first int) ([]*domain.SessionEvent, error) {
+	if first <= 0 {
+		first = 50
+	}
+	filter := bson.M{"session_id": sessionID}
+	opts := options.Find().SetSort(bson.D{{Key: "at", Value: -1}}).SetLimit(int64(first))
+	cursor, err := r.eventsCollection.Find(ctx, filter, opts)
+	if err != nil {
+		log.Error().Err(err).Str("sessionID", sessionID).Msg("Error listing session events from MongoDB")
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+	var events []*domain.SessionEvent
+	if err := cursor.All(ctx, &events); err != nil {
+		log.Error().Err(err).Msg("Error decoding session events from MongoDB")
+		return nil, err
+	}
+	return events, nil
 }
 
 // Ensure interface compliance

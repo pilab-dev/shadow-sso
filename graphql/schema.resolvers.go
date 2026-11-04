@@ -4,8 +4,6 @@ package graphql
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,27 +13,6 @@ import (
 	"github.com/pilab-dev/shadow-sso/domain"
 	"github.com/pilab-dev/shadow-sso/internal/auth/rbac"
 )
-
-type Resolver struct {
-	UserRepo                 domain.UserRepository
-	UserAttributeRepo        domain.UserAttributeRepository
-	UserAttributeMapperRepo   domain.UserAttributeMapperRepository
-	ClientRepo               domain.ClientRepository
-	SessionRepo             domain.SessionRepository
-	TokenRepo               domain.TokenRepository
-	IdPRepo                 domain.IdPRepository
-	GroupRepo               domain.GroupRepository
-	RoleRepo                 domain.RoleRepository
-	ProtocolMapperRepo      domain.ProtocolMapperRepository
-	AuthFlowRepo            domain.AuthenticationFlowRepository
-	ClientScopeRepo         domain.ClientScopeRepository
-	RealmSettingsRepo       domain.RealmSettingsRepository
-	RealmKeysRepo           domain.RealmKeysRepository
-	EmailService           domain.EmailService
-	PasswordHasher        domain.PasswordHasher
-	AuditLogRepo           domain.AuditLogRepository
-	FederatedIdentityRepo  domain.UserFederatedIdentityRepository
-}
 
 // Executions is the resolver for the executions field.
 func (r *authenticationFlowResolver) Executions(ctx context.Context, obj *domain.AuthenticationFlow) ([]domain.AuthenticationExecution, error) {
@@ -1060,10 +1037,10 @@ func (r *mutationResolver) DeleteUserAttributesByUserID(ctx context.Context, use
 func (r *mutationResolver) CreateUserAttributeMapper(ctx context.Context, input CreateUserAttributeMapperInput) (*domain.UserAttributeMapper, error) {
 	mapper := &domain.UserAttributeMapper{
 		Name:           input.Name,
-		UserAttribute: input.UserAttribute,
+		UserAttribute:  input.UserAttribute,
 		TokenClaimName: input.TokenClaimName,
-		TokenType:     input.TokenType,
-		MultiValued:   input.MultiValued != nil && *input.MultiValued,
+		TokenType:      input.TokenType,
+		MultiValued:    input.MultiValued != nil && *input.MultiValued,
 	}
 	if input.Protocol != nil {
 		mapper.Protocol = *input.Protocol
@@ -1663,20 +1640,6 @@ func (r *queryResolver) GroupMembers(ctx context.Context, groupID string, first 
 // resolveRoleNames resolves role names (as stored on a user's Roles /
 // ClientRoles) into full role documents via the role repository.
 // Unresolvable names are skipped; the returned slice is never nil.
-func (r *Resolver) resolveRoleNames(ctx context.Context, names []string) []domain.Role {
-	roles := make([]domain.Role, 0, len(names))
-	for _, name := range names {
-		if name == "" {
-			continue
-		}
-		role, err := r.RoleRepo.GetRoleByName(ctx, name)
-		if err != nil || role == nil {
-			continue
-		}
-		roles = append(roles, *role)
-	}
-	return roles
-}
 
 // RoleMappings is the resolver for the roleMappings field.
 func (r *queryResolver) RoleMappings(ctx context.Context, userID string) (*RoleMapping, error) {
@@ -1931,10 +1894,6 @@ func (r *sessionResolver) State(ctx context.Context, obj *domain.Session) (*stri
 }
 
 // ClientID is the resolver for the clientId field.
-func (r *sessionResolver) ClientID(ctx context.Context, obj *domain.Session) (*string, error) {
-	// Session doesn't track client ID in domain model
-	return nil, nil
-}
 
 // ClientName is the resolver for the clientName field.
 func (r *sessionResolver) ClientName(ctx context.Context, obj *domain.Session) (*string, error) {
@@ -2140,47 +2099,17 @@ type sessionResolver struct{ *Resolver }
 type tokenIntrospectionResolver struct{ *Resolver }
 type userResolver struct{ *Resolver }
 
-func requireAdmin(ctx context.Context) error {
-	tokenInfo, ok := domain.GetAuthenticatedTokenFromContext(ctx)
-	if !ok || tokenInfo == nil {
-		return connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
-	}
-	if !rbac.HasPermission(tokenInfo.Roles, rbac.PermUsersDeleteAll) {
-		return connect.NewError(connect.CodePermissionDenied, errors.New("admin role required"))
-	}
-	return nil
-}
-
-func contains(slice []string, val string) bool {
-	for _, v := range slice {
-		if v == val {
-			return true
-		}
-	}
-	return false
-}
-
-func generateToken() string {
-	b := make([]byte, 32)
-	rand.Read(b)
-	return hex.EncodeToString(b)
-}
-
-func generateRandomSecret() string {
-	b := make([]byte, 32)
-	rand.Read(b)
-	return hex.EncodeToString(b)
-}
-
-func ptrInt(i int) *int {
-	return &i
-}
-
 type clientFilterResolver struct{ *Resolver }
 
-func (r *clientFilterResolver) ClientID(ctx context.Context, obj *domain.ClientFilter, data *string) error { return nil }
-func (r *clientFilterResolver) ClientName(ctx context.Context, obj *domain.ClientFilter, data *string) error { return nil }
-func (r *clientFilterResolver) Enabled(ctx context.Context, obj *domain.ClientFilter, data *bool) error { return nil }
+func (r *clientFilterResolver) ClientID(ctx context.Context, obj *domain.ClientFilter, data *string) error {
+	return nil
+}
+func (r *clientFilterResolver) ClientName(ctx context.Context, obj *domain.ClientFilter, data *string) error {
+	return nil
+}
+func (r *clientFilterResolver) Enabled(ctx context.Context, obj *domain.ClientFilter, data *bool) error {
+	return nil
+}
 
 func (r *Resolver) ClientFilter() ClientFilterResolver {
 	return &clientFilterResolver{r}

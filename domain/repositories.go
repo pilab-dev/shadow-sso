@@ -52,6 +52,11 @@ type EmailService interface {
 	SendMFAEmail(to, name, otp, method string) error
 }
 
+// SessionNotifier delivers soft risk notifications (new device/country) to a user.
+type SessionNotifier interface {
+	NotifyRisk(ctx context.Context, userID string, session *Session, flags []string) error
+}
+
 // PushNotificationService defines the interface for sending push notifications
 type PushNotificationService interface {
 	SendPushNotification(deviceToken, title, body string, data map[string]interface{}) error
@@ -150,6 +155,10 @@ type SessionRepository interface {
 	DeleteSession(ctx context.Context, id string) error
 	ListSessionsByUserID(ctx context.Context, userID string, filter SessionFilter) ([]*Session, error)
 	DeleteSessionsByUserID(ctx context.Context, userID string, exceptSessionID ...string) (int64, error) // Returns count of deleted
+
+	// Session lifecycle events (append-only audit trail).
+	StoreSessionEvent(ctx context.Context, event *SessionEvent) error
+	ListSessionEvents(ctx context.Context, sessionID string, first int) ([]*SessionEvent, error)
 }
 
 // TokenQueryRepository is the read/audit surface of the token store. It is

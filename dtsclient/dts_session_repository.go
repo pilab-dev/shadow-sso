@@ -194,5 +194,15 @@ func (r *dtsSessionRepository) DeleteSessionsByUserID(ctx context.Context, userI
 	return 0, status.Error(codes.Unimplemented, "DeleteSessionsByUserID is not implemented for DTS session store")
 }
 
+// StoreSessionEvent is a no-op for DTS.
+func (r *dtsSessionRepository) StoreSessionEvent(ctx context.Context, event *domain.SessionEvent) error {
+	return nil
+}
+
+// ListSessionEvents is not supported by DTS.
+func (r *dtsSessionRepository) ListSessionEvents(ctx context.Context, sessionID string, first int) ([]*domain.SessionEvent, error) {
+	return nil, status.Error(codes.Unimplemented, "ListSessionEvents is not implemented for DTS session store")
+}
+
 // Ensure dtsSessionRepository implements domain.SessionRepository
 var _ domain.SessionRepository = (*dtsSessionRepository)(nil)

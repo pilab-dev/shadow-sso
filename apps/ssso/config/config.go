@@ -81,7 +81,11 @@ type Config struct {
 	BootstrapToken string `mapstructure:"bootstrap_token"`
 
 	// Rate limiting
-	RateLimitMaxAttempts     int           `mapstructure:"rate_limit_max_attempts"`
+	RateLimitMaxAttempts int `mapstructure:"rate_limit_max_attempts"`
+
+	// GeoIP database for session location/risk (MaxMind GeoLite2/GeoIP2 .mmdb)
+	GeoIPDatabasePath        string        `mapstructure:"geoip_database_path"`
+	GeoIPASNDatabasePath     string        `mapstructure:"geoip_asn_database_path"`
 	RateLimitLockoutDuration time.Duration `mapstructure:"rate_limit_lockout_duration"`
 
 	// CORS configuration

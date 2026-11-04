@@ -9,6 +9,7 @@ import (
 	"github.com/pilab-dev/shadow-sso/apps/ssso/config"
 	"github.com/pilab-dev/shadow-sso/cache"
 	"github.com/pilab-dev/shadow-sso/domain"
+	"github.com/pilab-dev/shadow-sso/internal/geo"
 	"github.com/pilab-dev/shadow-sso/internal/notifications"
 	"github.com/pilab-dev/shadow-sso/internal/oidcflow"
 	pkgauth "github.com/pilab-dev/shadow-sso/pkg/auth"
@@ -27,6 +28,7 @@ type DefaultServiceProvider struct {
 
 	oauthService      OAuthService
 	tokenService      TokenService
+	geoResolver       geo.Resolver
 	pkceService       PKCEService
 	jwksService       JWKSService
 	clientService     ClientService
@@ -99,6 +101,14 @@ func NewDefaultServiceProvider(opts DefaultServiceProviderOptions) (*DefaultServ
 		userSessionStore:     userSessionStore,
 		passwordHasher:       pkgauth.NewBcryptPasswordHasher(bcrypt.DefaultCost),
 		configurationService: configurationService,
+		geoResolver:          geo.NoopResolver{},
+	}
+	if opts.AppConfig != nil && opts.AppConfig.GeoIPDatabasePath != "" {
+		if r, err := geo.NewMaxMindResolverWithASN(opts.AppConfig.GeoIPDatabasePath, opts.AppConfig.GeoIPASNDatabasePath); err == nil {
+			p.geoResolver = r
+		} else {
+			fmt.Printf("geoip resolver init failed: %v\n", err)
+		}
 	}
 
 	p.smsService = p.initializeSMSService(configurationService)
@@ -109,6 +119,19 @@ func NewDefaultServiceProvider(opts DefaultServiceProviderOptions) (*DefaultServ
 }
 
 var initCtx = context.Background()
+
+// SessionNotifier returns a notifier for session risk alerts.
+func (p *DefaultServiceProvider) SessionNotifier() domain.SessionNotifier {
+	return NewSessionNotifier(p.pushService)
+}
+
+// GeoResolver returns the configured GeoIP resolver (noop by default).
+func (p *DefaultServiceProvider) GeoResolver() geo.Resolver {
+	if p.geoResolver == nil {
+		return geo.NoopResolver{}
+	}
+	return p.geoResolver
+}
 
 func (p *DefaultServiceProvider) OAuthService() OAuthService {
 	if p.oauthService == nil {
@@ -122,6 +145,8 @@ func (p *DefaultServiceProvider) OAuthService() OAuthService {
 			p.TokenService(),
 			p.config.Issuer,
 			WithRealmSettings(p.repoProvider.RealmSettingsRepository(initCtx)),
+			WithOAuthGeoResolver(p.geoResolver),
+			WithOAuthSessionNotifier(NewSessionNotifier(p.pushService)),
 		)
 	}
 	return p.oauthService
@@ -144,6 +169,11 @@ func (p *DefaultServiceProvider) TokenService() TokenService {
 			p.repoProvider.GroupRepository(initCtx),
 			p.repoProvider.RoleRepository(initCtx),
 		)
+		if ts, ok := p.tokenService.(*defaultTokenService); ok {
+			ts.SetSessionRepository(p.repoProvider.SessionRepository(initCtx))
+			// Strict mode defaults to off (ttl mode) for high-throughput deployments.
+			ts.SetStrictSessionValidation(false)
+		}
 	}
 	return p.tokenService
 }

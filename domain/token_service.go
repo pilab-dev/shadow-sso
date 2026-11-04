@@ -41,6 +41,8 @@ type CreateTokenOptions struct {
 	Family string
 	// ParentJTI is the ID of the refresh token this token replaces.
 	ParentJTI string
+	// CnfJKT is the DPoP JWK thumbprint to bind the token to (Phase 4).
+	CnfJKT string
 }
 
 type TokenServiceInterface interface {

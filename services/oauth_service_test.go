@@ -148,7 +148,9 @@ func TestOAuthService_Login_Success(t *testing.T) {
 	}
 
 	mockUserRepo.EXPECT().GetUserByEmail(ctx, username).Return(user, nil)
+	mockSessionRepo.EXPECT().ListSessionsByUserID(gomock.Any(), user.ID, domain.SessionFilter{}).Return(nil, nil)
 	mockSessionRepo.EXPECT().StoreSession(ctx, gomock.Any()).Return(nil)
+	mockSessionRepo.EXPECT().StoreSessionEvent(gomock.Any(), gomock.Any()).Return(nil)
 	mockTokenServiceInterface.EXPECT().GenerateTokenPair(ctx, "oauth-service-login-client", user.ID, "openid profile email", time.Hour, gomock.Any()).Return(&api.TokenResponse{
 		AccessToken:  "access-token",
 		RefreshToken: "refresh-token",
@@ -741,7 +743,9 @@ func TestOAuthService_DirectGrant_Success(t *testing.T) {
 
 	mockClientRepo.EXPECT().ValidateClient(ctx, clientID, clientSecret).Return(client, nil)
 	mockUserRepo.EXPECT().GetUserByEmail(ctx, username).Return(user, nil)
+	mockSessionRepo.EXPECT().ListSessionsByUserID(gomock.Any(), user.ID, domain.SessionFilter{}).Return(nil, nil)
 	mockSessionRepo.EXPECT().StoreSession(ctx, gomock.Any()).Return(nil)
+	mockSessionRepo.EXPECT().StoreSessionEvent(gomock.Any(), gomock.Any()).Return(nil)
 	mockTokenServiceInterface.EXPECT().GenerateTokenPair(ctx, clientID, user.ID, "openid", gomock.Any(), gomock.Any()).Return(&api.TokenResponse{
 		AccessToken:  "jwt-access-token",
 		TokenType:    "Bearer",
@@ -1485,7 +1489,9 @@ func TestOAuthService_GenerateAuthCode_Success(t *testing.T) {
 	}
 
 	mockClientRepo.EXPECT().GetClient(gomock.Any(), clientID).Return(client, nil)
+	mockSessionRepo.EXPECT().ListSessionsByUserID(gomock.Any(), userID, domain.SessionFilter{}).Return(nil, nil)
 	mockSessionRepo.EXPECT().StoreSession(gomock.Any(), gomock.Any()).Return(nil)
+	mockSessionRepo.EXPECT().StoreSessionEvent(gomock.Any(), gomock.Any()).Return(nil)
 	mockAuthCodeRepo.EXPECT().SaveAuthCode(gomock.Any(), gomock.Any()).Return(nil)
 
 	code, err := oauthService.GenerateAuthCode(ctx, clientID, userID, redirectURI, scope, "", "", "", time.Now())
@@ -1936,11 +1942,11 @@ func TestOAuthService_TokenExchange_ScopeIntersection(t *testing.T) {
 	clientID := "client-id"
 
 	tests := []struct {
-		name            string
-		requestedScope  string
-		grantedScope    string
-		expectedScope   string
-		expectError     bool
+		name           string
+		requestedScope string
+		grantedScope   string
+		expectedScope  string
+		expectError    bool
 	}{
 		{
 			name:           "requested is subset of granted",

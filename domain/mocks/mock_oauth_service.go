@@ -58,21 +58,6 @@ func (mr *MockOAuthServiceInterfaceMockRecorder) ClientCredentials(ctx, clientID
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClientCredentials", reflect.TypeOf((*MockOAuthServiceInterface)(nil).ClientCredentials), ctx, clientID, clientSecret, scope, audience)
 }
 
-// IssueClientCredentialsForClient mocks base method.
-func (m *MockOAuthServiceInterface) IssueClientCredentialsForClient(ctx context.Context, cli *domain.Client, scope string, audience []string) (*api.TokenResponse, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "IssueClientCredentialsForClient", ctx, cli, scope, audience)
-	ret0, _ := ret[0].(*api.TokenResponse)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// IssueClientCredentialsForClient indicates an expected call of IssueClientCredentialsForClient.
-func (mr *MockOAuthServiceInterfaceMockRecorder) IssueClientCredentialsForClient(ctx, cli, scope, audience any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IssueClientCredentialsForClient", reflect.TypeOf((*MockOAuthServiceInterface)(nil).IssueClientCredentialsForClient), ctx, cli, scope, audience)
-}
-
 // DirectGrant mocks base method.
 func (m *MockOAuthServiceInterface) DirectGrant(ctx context.Context, clientID, clientSecret, username, password, scope string) (*api.TokenResponse, error) {
 	m.ctrl.T.Helper()
@@ -175,6 +160,21 @@ func (m *MockOAuthServiceInterface) IntrospectToken(ctx context.Context, token, 
 func (mr *MockOAuthServiceInterfaceMockRecorder) IntrospectToken(ctx, token, tokenTypeHint, clientID, clientSecret any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IntrospectToken", reflect.TypeOf((*MockOAuthServiceInterface)(nil).IntrospectToken), ctx, token, tokenTypeHint, clientID, clientSecret)
+}
+
+// IssueClientCredentialsForClient mocks base method.
+func (m *MockOAuthServiceInterface) IssueClientCredentialsForClient(ctx context.Context, cli *domain.Client, scope string, audience []string) (*api.TokenResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IssueClientCredentialsForClient", ctx, cli, scope, audience)
+	ret0, _ := ret[0].(*api.TokenResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// IssueClientCredentialsForClient indicates an expected call of IssueClientCredentialsForClient.
+func (mr *MockOAuthServiceInterfaceMockRecorder) IssueClientCredentialsForClient(ctx, cli, scope, audience any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IssueClientCredentialsForClient", reflect.TypeOf((*MockOAuthServiceInterface)(nil).IssueClientCredentialsForClient), ctx, cli, scope, audience)
 }
 
 // IssueTokenForDeviceFlow mocks base method.

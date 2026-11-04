@@ -21,6 +21,7 @@ type TokenInfo struct {
 	RefreshTokenFamily string     `bson:"refresh_token_family" json:"refresh_token_family"` // For token refresh families
 	SessionID          string     `bson:"session_id,omitempty" json:"session_id,omitempty"` // `sid` claim: the session this token belongs to
 	UsedAt             *time.Time `bson:"used_at,omitempty" json:"used_at,omitempty"`       // Set when a refresh token was rotated; a second use is replay
+	CnfJKT             string     `bson:"cnf_jkt,omitempty" json:"cnf_jkt,omitempty"`       // DPoP binding thumbprint
 }
 
 // Token represents an OAuth token, also used for synthetic service account tokens.
@@ -58,4 +59,9 @@ type Token struct {
 	// ExpiryAuditedAt is set once the expiry sweeper has emitted a
 	// TokenExpired audit event, so it does not repeat every interval.
 	ExpiryAuditedAt *time.Time `bson:"expiry_audited_at,omitempty" json:"expiry_audited_at,omitempty"`
+	// TokenHash is the SHA-256 hash of the raw refresh token value, used so
+	// refresh tokens are never stored in replayable form at rest.
+	TokenHash string `bson:"token_hash,omitempty" json:"token_hash,omitempty"`
+	// CnfJKT is the JWK thumbprint the token is bound to (DPoP, Phase 4).
+	CnfJKT string `bson:"cnf_jkt,omitempty" json:"cnf_jkt,omitempty"`
 }

@@ -36,6 +36,7 @@ type Query {
   # Session queries
   sessions(userId: ID, first: Int, after: Int): SessionConnection!
   session(id: ID!): Session
+  sessionEvents(sessionId: ID!, first: Int): [SessionEvent!]!
 
   # Identity provider queries
   identityProviders: [IdentityProvider!]!
@@ -129,6 +130,7 @@ type Mutation {
 
   # ----- Session Management -----
   revokeSession(sessionId: ID!): Boolean!
+  revokeOtherSessions(userId: ID!, exceptSessionId: ID): Int!
   revokeAllSessions(userId: ID!): Boolean!
   logoutUser(userId: ID!): Boolean!
 
@@ -715,7 +717,34 @@ type Session {
   clientId: String
   clientName: String
 
+  # Session v2 fields
+  current: Boolean
+  deviceName: String
+  deviceType: String
+  os: String
+  browser: String
+  ipCountry: String
+  ipRegion: String
+  ipCity: String
+  riskFlags: [String!]
+  revokedAt: Time
+  revokeReason: String
+
   # Note: token data not exposed
+}
+
+type SessionEvent {
+  id: ID!
+  sessionId: ID!
+  userId: String!
+  clientId: String
+  type: String!
+  ipAddress: String
+  geo: String
+  userAgent: String
+  at: Time!
+  actor: String
+  reason: String
 }
 
 type SessionConnection {

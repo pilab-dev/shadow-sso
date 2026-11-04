@@ -8,9 +8,13 @@ kicked or a refresh token is replayed.
 This document covers the session model, token/session binding, revocation,
 device and location metadata, the API surface, and the anti-theft controls.
 
-> Status: **Phase 0 implemented** (refresh keeps `sid`, refresh-token replay
-> detection with family revocation, cascade revocation from the admin API).
-> Phases 1–4 are design only.
+> Status: **Phases 0–4 implemented in code** (refresh keeps `sid`,
+> refresh-token replay detection with family revocation, cascade revocation,
+> session v2 fields, device/location/risk metadata, strict access-token
+> validation, hashed refresh tokens at rest, DPoP proof verification and
+> token binding, GraphQL session v2 fields/events). MaxMind GeoIP and ASN
+> databases are configurable via `SSSO_GEOIP_DATABASE_PATH` and
+> `SSSO_GEOIP_ASN_DATABASE_PATH`.
 
 ## Current state
 

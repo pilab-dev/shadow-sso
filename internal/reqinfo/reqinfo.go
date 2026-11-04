@@ -20,6 +20,10 @@ type Info struct {
 	Path      string
 	// Protocol is "connect", "grpc", "grpc-web" or "http".
 	Protocol string
+	// DPoPProof is the raw DPoP proof JWT from the request, if present.
+	DPoPProof string
+	// DPoPHTU is the expected htu value for DPoP proof verification.
+	DPoPHTU string
 }
 
 type contextKey struct{}

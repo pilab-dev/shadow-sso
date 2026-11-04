@@ -14,6 +14,8 @@ import (
 	"github.com/pilab-dev/shadow-sso/api"
 	"github.com/pilab-dev/shadow-sso/domain"
 	"github.com/pilab-dev/shadow-sso/internal/audit"
+	"github.com/pilab-dev/shadow-sso/internal/dpop"
+	"github.com/pilab-dev/shadow-sso/internal/geo"
 	"github.com/pilab-dev/shadow-sso/internal/reqinfo"
 	"github.com/pilab-dev/shadow-sso/internal/telemetry"
 	"github.com/rs/zerolog/log"
@@ -73,6 +75,8 @@ type defaultOAuthService struct {
 	tokenService      domain.TokenServiceInterface
 	issuer            string
 	realmSettingsRepo domain.RealmSettingsRepository
+	geoResolver       geo.Resolver
+	sessionNotifier   domain.SessionNotifier
 }
 
 // oauthServiceOption configures a defaultOAuthService at construction time.
@@ -85,6 +89,16 @@ func WithRealmSettings(repo domain.RealmSettingsRepository) oauthServiceOption {
 	return func(s *defaultOAuthService) {
 		s.realmSettingsRepo = repo
 	}
+}
+
+// WithOAuthGeoResolver injects the GeoIP resolver used for session location/risk.
+func WithOAuthGeoResolver(r geo.Resolver) oauthServiceOption {
+	return func(s *defaultOAuthService) { s.geoResolver = r }
+}
+
+// WithOAuthSessionNotifier injects the notifier used for session risk alerts.
+func WithOAuthSessionNotifier(n domain.SessionNotifier) oauthServiceOption {
+	return func(s *defaultOAuthService) { s.sessionNotifier = n }
 }
 
 // tokenServiceAdapter wraps the services.TokenService interface to satisfy domain.TokenServiceInterface
@@ -121,6 +135,9 @@ func newDefaultOAuthService(
 	for _, opt := range opts {
 		opt(svc)
 	}
+	if svc.geoResolver == nil {
+		svc.geoResolver = geo.NoopResolver{}
+	}
 	return svc
 }
 
@@ -148,6 +165,9 @@ func NewOAuthService(
 	}
 	for _, opt := range opts {
 		opt(svc)
+	}
+	if svc.geoResolver == nil {
+		svc.geoResolver = geo.NoopResolver{}
 	}
 	return svc
 }
@@ -261,9 +281,21 @@ func (s *defaultOAuthService) Login(ctx context.Context, username, password, dev
 		IsRevoked:  false,
 	}
 	session.TokenID = session.ID
+	enrichSession(ctx, session, s.geoResolver, s.sessionRepo, s.sessionNotifier)
 	if err := s.sessionRepo.StoreSession(ctx, session); err != nil {
 		log.Ctx(ctx).Warn().Err(err).Str("user_id", user.ID).Str("session_id", session.ID).Msg("Failed to store session in OAuthService.Login")
 	} else {
+		_ = s.sessionRepo.StoreSessionEvent(ctx, &domain.SessionEvent{
+			SessionID: session.ID,
+			UserID:    session.UserID,
+			ClientID:  session.ClientID,
+			Type:      "created",
+			IPAddress: session.IPAddress,
+			Geo:       session.IPCountry,
+			UserAgent: session.UserAgent,
+			At:        session.CreatedAt,
+			Actor:     "user",
+		})
 		log.Ctx(ctx).Debug().Str("user_id", user.ID).Str("session_id", session.ID).Msg("Session stored successfully during login")
 	}
 
@@ -398,6 +430,22 @@ func (s *defaultOAuthService) RefreshToken(ctx context.Context, refreshTokenValu
 		sess.LastUsedAt = time.Now().UTC()
 		if errUpdate := s.sessionRepo.UpdateSession(ctx, sess); errUpdate != nil {
 			log.Ctx(ctx).Warn().Err(errUpdate).Str("session_id", sess.ID).Msg("Failed to update session last-used timestamp")
+		}
+	}
+
+	// DPoP binding (Phase 4): a bound refresh token requires a matching proof.
+	info := reqinfo.FromContext(ctx)
+	if tokenInfo.CnfJKT != "" {
+		if info.DPoPProof == "" {
+			return nil, domain.NewInvalidGrant("DPoP proof required")
+		}
+		method := info.Method
+		if method == "" {
+			method = "POST"
+		}
+		jkt, errProof := dpop.VerifyProof(info.DPoPProof, method, info.DPoPHTU, "", time.Now())
+		if errProof != nil || jkt != tokenInfo.CnfJKT {
+			return nil, domain.NewInvalidGrant("invalid DPoP proof")
 		}
 	}
 
@@ -547,8 +595,21 @@ func (s *defaultOAuthService) DirectGrant(ctx context.Context,
 		IsRevoked:  false,
 	}
 	session.TokenID = session.ID
+	enrichSession(ctx, session, s.geoResolver, s.sessionRepo, s.sessionNotifier)
 	if err := s.sessionRepo.StoreSession(ctx, session); err != nil {
 		log.Ctx(ctx).Warn().Err(err).Str("session_id", session.ID).Str("user_id", user.ID).Msg("Failed to store session in OAuthService.DirectGrant")
+	} else {
+		_ = s.sessionRepo.StoreSessionEvent(ctx, &domain.SessionEvent{
+			SessionID: session.ID,
+			UserID:    session.UserID,
+			ClientID:  session.ClientID,
+			Type:      "created",
+			IPAddress: session.IPAddress,
+			Geo:       session.IPCountry,
+			UserAgent: session.UserAgent,
+			At:        session.CreatedAt,
+			Actor:     "user",
+		})
 	}
 
 	tokenTTL, err := s.realmAccessTokenLifespan(ctx)
@@ -1072,10 +1133,23 @@ func (s *defaultOAuthService) GenerateAuthCode(
 			CreatedAt:  now,
 			LastUsedAt: now,
 		}
+		enrichSession(ctx, session, s.geoResolver, s.sessionRepo, s.sessionNotifier)
 		if errStore := s.sessionRepo.StoreSession(ctx, session); errStore != nil {
 			log.Ctx(ctx).Warn().Err(errStore).Str("client_id", clientID).Str("user_id", userID).
 				Msg("Failed to store session for authorization code; tokens will not be linked to a device")
 			sessionID = ""
+		} else {
+			_ = s.sessionRepo.StoreSessionEvent(ctx, &domain.SessionEvent{
+				SessionID: session.ID,
+				UserID:    session.UserID,
+				ClientID:  session.ClientID,
+				Type:      "created",
+				IPAddress: session.IPAddress,
+				Geo:       session.IPCountry,
+				UserAgent: session.UserAgent,
+				At:        session.CreatedAt,
+				Actor:     "user",
+			})
 		}
 	}
 	authCode := &domain.AuthCode{

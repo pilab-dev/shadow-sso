@@ -23,6 +23,7 @@ import (
 	"github.com/pilab-dev/shadow-sso/internal/auth/totp" // For TOTP validation
 	"github.com/pilab-dev/shadow-sso/internal/browserinfo"
 	"github.com/pilab-dev/shadow-sso/internal/browserpolicy"
+	"github.com/pilab-dev/shadow-sso/internal/geo"
 	"github.com/pilab-dev/shadow-sso/internal/metrics"
 	"github.com/pilab-dev/shadow-sso/internal/reqinfo"
 	"github.com/pilab-dev/shadow-sso/internal/telemetry"
@@ -103,6 +104,8 @@ type AuthServer struct {
 	realmSettingsRepo                            domain.RealmSettingsRepository
 	tokenRepo                                    domain.TokenRepository
 	browserPolicy                                *browserpolicy.Provider
+	geoResolver                                  geo.Resolver
+	sessionNotifier                              domain.SessionNotifier
 }
 
 // authServerOption configures optional AuthServer dependencies.
@@ -124,6 +127,16 @@ func WithAuthTokenRepository(repo domain.TokenRepository) authServerOption {
 // RPC login path rejects outdated browsers as well as the web login page.
 func WithAuthBrowserPolicy(provider *browserpolicy.Provider) authServerOption {
 	return func(s *AuthServer) { s.browserPolicy = provider }
+}
+
+// WithAuthGeoResolver injects the GeoIP resolver used for session location/risk.
+func WithAuthGeoResolver(r geo.Resolver) authServerOption {
+	return func(s *AuthServer) { s.geoResolver = r }
+}
+
+// WithAuthSessionNotifier injects the notifier used for session risk alerts.
+func WithAuthSessionNotifier(n domain.SessionNotifier) authServerOption {
+	return func(s *AuthServer) { s.sessionNotifier = n }
 }
 
 // NewAuthServer creates a new AuthServer.
@@ -149,6 +162,9 @@ func NewAuthServer(
 	}
 	for _, opt := range opts {
 		opt(s)
+	}
+	if s.geoResolver == nil {
+		s.geoResolver = geo.NoopResolver{}
 	}
 	return s
 }
@@ -334,9 +350,22 @@ func (s *AuthServer) completeLogin(ctx context.Context, user *domain.User) (*con
 		LastUsedAt:   time.Now(),
 		IsRevoked:    false,
 	}
+	enrichSession(ctx, session, s.geoResolver, s.sessionRepo, s.sessionNotifier)
 	if err := s.sessionRepo.StoreSession(ctx, session); err != nil {
 		logger.Error().Err(err).Str("userID", user.ID).Msg("completeLogin: Failed to store session")
 		// Decide if this should be a fatal error for login. For now, log and continue.
+	} else {
+		_ = s.sessionRepo.StoreSessionEvent(ctx, &domain.SessionEvent{
+			SessionID: session.ID,
+			UserID:    session.UserID,
+			ClientID:  session.ClientID,
+			Type:      "created",
+			IPAddress: session.IPAddress,
+			Geo:       session.IPCountry,
+			UserAgent: session.UserAgent,
+			At:        session.CreatedAt,
+			Actor:     "user",
+		})
 	}
 
 	// Update LastLoginAt for user
@@ -577,7 +606,6 @@ func (s *AuthServer) ListUserSessions(ctx context.Context, req *connect.Request[
 	}
 	span.SetAttributes(attribute.String("target_user_id", targetUserID))
 
-	// TODO: Populate domain.SessionFilter from request if ListUserSessionsRequest has filter fields
 	dbSessions, err := s.sessionRepo.ListSessionsByUserID(ctx, targetUserID, domain.SessionFilter{})
 	if err != nil {
 		logger.Error().Err(err).Str("targetUserID", targetUserID).Msg("ListUserSessions: Failed to list sessions")

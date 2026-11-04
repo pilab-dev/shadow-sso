@@ -359,7 +359,10 @@ func (oa *OAuth2API) DeviceAuthorizationHandler(c *gin.Context) {
 //
 //nolint:funlen,gocognit // Funlen might still be triggered but gocognit should be lower.
 func (oa *OAuth2API) AuthorizeHandler(c *gin.Context) {
-	ctx := reqinfo.WithContext(c.Request.Context(), reqinfo.FromHTTP(c.Request))
+	info := reqinfo.FromHTTP(c.Request)
+	info.DPoPProof = strings.TrimSpace(c.GetHeader("DPoP"))
+	info.DPoPHTU = requestURL(c.Request)
+	ctx := reqinfo.WithContext(c.Request.Context(), info)
 
 	// ── flow_id redirect from login form ────────────────────────────────
 	// When the login form (webauth) successfully authenticates a user, it
@@ -1196,7 +1199,10 @@ func (oa *OAuth2API) TokenHandler(c *gin.Context) {
 	clientAssertionType := c.PostForm("client_assertion_type")
 	grantType := c.PostForm("grant_type")
 
-	ctx := reqinfo.WithContext(c.Request.Context(), reqinfo.FromHTTP(c.Request))
+	info := reqinfo.FromHTTP(c.Request)
+	info.DPoPProof = strings.TrimSpace(c.GetHeader("DPoP"))
+	info.DPoPHTU = requestURL(c.Request)
+	ctx := reqinfo.WithContext(c.Request.Context(), info)
 	var cli *domain.Client
 	var err error
 
@@ -1829,6 +1835,17 @@ func (oa *OAuth2API) handleClientCredentialsGrant(c *gin.Context, cli *domain.Cl
 // requestedAudiences collects RFC 8707 resource indicators from the token
 // request. Both `audience` (used by most real-world clients) and `resource`
 // (the RFC name) are accepted, and repeated values are honoured.
+func requestURL(r *http.Request) string {
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	if v := r.Header.Get("X-Forwarded-Proto"); v != "" {
+		scheme = strings.TrimSpace(strings.Split(v, ",")[0])
+	}
+	return scheme + "://" + r.Host + r.URL.RequestURI()
+}
+
 func requestedAudiences(c *gin.Context) []string {
 	out := make([]string, 0, 2)
 	out = append(out, c.PostFormArray("audience")...)

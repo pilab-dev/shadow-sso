@@ -371,6 +371,8 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		services.WithAuthRealmSettings(opts.RepositoryProvider.RealmSettingsRepository(ctx)),
 		services.WithAuthTokenRepository(opts.RepositoryProvider.TokenRepository(connectCtx)),
 		services.WithAuthBrowserPolicy(browserPolicyProvider),
+		services.WithAuthGeoResolver(serviceProvider.GeoResolver()),
+		services.WithAuthSessionNotifier(serviceProvider.SessionNotifier()),
 	)
 	authPath, authHandler := ssov1connect.NewAuthServiceHandler(authServer, interceptors)
 	router.Any(authPath+"*action", gin.WrapH(authHandler))
