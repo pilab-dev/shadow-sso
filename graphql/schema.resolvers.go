@@ -19,25 +19,26 @@ import (
 )
 
 type Resolver struct {
-	UserRepo                 domain.UserRepository
-	UserAttributeRepo        domain.UserAttributeRepository
-	UserAttributeMapperRepo   domain.UserAttributeMapperRepository
-	ClientRepo               domain.ClientRepository
+	UserRepo                domain.UserRepository
+	UserAttributeRepo       domain.UserAttributeRepository
+	UserAttributeMapperRepo domain.UserAttributeMapperRepository
+	ClientRepo              domain.ClientRepository
 	SessionRepo             domain.SessionRepository
+	TokenRepo               domain.TokenRepository
 	IdPRepo                 domain.IdPRepository
 	GroupRepo               domain.GroupRepository
-	RoleRepo                 domain.RoleRepository
+	RoleRepo                domain.RoleRepository
 	ProtocolMapperRepo      domain.ProtocolMapperRepository
 	AuthFlowRepo            domain.AuthenticationFlowRepository
 	ClientScopeRepo         domain.ClientScopeRepository
 	RealmSettingsRepo       domain.RealmSettingsRepository
 	RealmKeysRepo           domain.RealmKeysRepository
-	EmailService           domain.EmailService
+	EmailService            domain.EmailService
 	// PublicBaseURL is the SSO's public origin (no trailing slash) used for links in emails.
-	PublicBaseURL string
+	PublicBaseURL         string
 	PasswordHasher        domain.PasswordHasher
-	AuditLogRepo           domain.AuditLogRepository
-	FederatedIdentityRepo  domain.UserFederatedIdentityRepository
+	AuditLogRepo          domain.AuditLogRepository
+	FederatedIdentityRepo domain.UserFederatedIdentityRepository
 }
 
 // Executions is the resolver for the executions field.
@@ -908,14 +909,48 @@ func (r *mutationResolver) RevokeAllSessions(ctx context.Context, userID string)
 		return false, err
 	}
 
-	_, err := r.SessionRepo.DeleteSessionsByUserID(ctx, userID)
-	return err == nil, err
+	sessions, err := r.SessionRepo.ListSessionsByUserID(ctx, userID, domain.SessionFilter{})
+	if err != nil {
+		return false, err
+	}
+	ids := make([]string, 0, len(sessions))
+	for _, s := range sessions {
+		ids = append(ids, s.ID)
+	}
+	if _, err := r.SessionRepo.DeleteSessionsByUserID(ctx, userID); err != nil {
+		return false, err
+	}
+	if r.TokenRepo != nil {
+		for _, id := range ids {
+			if err := r.TokenRepo.RevokeTokensBySessionID(ctx, id); err != nil {
+				return false, err
+			}
+		}
+	}
+	return true, nil
 }
 
 // LogoutUser is the resolver for the logoutUser field.
 func (r *mutationResolver) LogoutUser(ctx context.Context, userID string) (bool, error) {
-	_, err := r.SessionRepo.DeleteSessionsByUserID(ctx, userID)
-	return err == nil, err
+	sessions, err := r.SessionRepo.ListSessionsByUserID(ctx, userID, domain.SessionFilter{})
+	if err != nil {
+		return false, err
+	}
+	ids := make([]string, 0, len(sessions))
+	for _, s := range sessions {
+		ids = append(ids, s.ID)
+	}
+	if _, err := r.SessionRepo.DeleteSessionsByUserID(ctx, userID); err != nil {
+		return false, err
+	}
+	if r.TokenRepo != nil {
+		for _, id := range ids {
+			if err := r.TokenRepo.RevokeTokensBySessionID(ctx, id); err != nil {
+				return false, err
+			}
+		}
+	}
+	return true, nil
 }
 
 // UpdateRealm is the resolver for the updateRealm field.
@@ -1053,10 +1088,10 @@ func (r *mutationResolver) DeleteUserAttributesByUserID(ctx context.Context, use
 func (r *mutationResolver) CreateUserAttributeMapper(ctx context.Context, input CreateUserAttributeMapperInput) (*domain.UserAttributeMapper, error) {
 	mapper := &domain.UserAttributeMapper{
 		Name:           input.Name,
-		UserAttribute: input.UserAttribute,
+		UserAttribute:  input.UserAttribute,
 		TokenClaimName: input.TokenClaimName,
-		TokenType:     input.TokenType,
-		MultiValued:   input.MultiValued != nil && *input.MultiValued,
+		TokenType:      input.TokenType,
+		MultiValued:    input.MultiValued != nil && *input.MultiValued,
 	}
 	if input.Protocol != nil {
 		mapper.Protocol = *input.Protocol

@@ -150,6 +150,113 @@ func TestTokenService_CreateToken_WithRoles(t *testing.T) {
 	assert.NotNil(t, token)
 }
 
+func TestTokenService_CreateToken_ServiceAccountClaims(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
+	mockCache := mock_cache.NewMockTokenStore(ctrl)
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockPubKeyRepo := mock_domain.NewMockPublicKeyRepository(ctrl)
+	mockSARepo := mock_domain.NewMockServiceAccountRepository(ctrl)
+
+	signer := services.NewTokenSigner()
+	signer.AddKeySigner("test-secret")
+
+	tokenService := services.NewTokenService(
+		mockTokenRepo,
+		mockCache,
+		"https://sso.example",
+		signer,
+		mockPubKeyRepo,
+		mockSARepo,
+		mockUserRepo,
+		nil,
+		nil,
+		nil, // groupRepo
+		nil, // roleRepo
+	)
+
+	const saIdentity = "sa-1234@pilab.iam.sso.dev"
+
+	opts := domain.CreateTokenOptions{
+		TokenID:   "token-id",
+		Scope:     "openid",
+		ClientID:  saIdentity,
+		Subject:   saIdentity, // no end user for client_credentials
+		Audience:  []string{"kubernetes"},
+		Groups:    []string{"k8s-view"},
+		ExpireIn:  time.Hour,
+		TokenType: api.TokenTypeAccessToken,
+	}
+
+	mockTokenRepo.EXPECT().StoreToken(gomock.Any(), gomock.Any()).Return(nil)
+	mockCache.EXPECT().Set(gomock.Any(), gomock.Any()).Return(nil)
+
+	token, err := tokenService.CreateToken(context.Background(), opts, nil)
+	require.NoError(t, err)
+	require.NotNil(t, token)
+
+	claims := jwt.MapClaims{}
+	parsed, err := jwt.ParseWithClaims(token.TokenValue, claims, func(*jwt.Token) (any, error) {
+		return []byte("test-secret"), nil
+	})
+	require.NoError(t, err)
+	require.True(t, parsed.Valid)
+
+	assert.Equal(t, saIdentity, claims["sub"], "sub must be non-empty for kube-apiserver")
+	assert.Equal(t, []any{"kubernetes"}, claims["aud"])
+	assert.Equal(t, []any{"k8s-view"}, claims["groups"])
+}
+
+func TestTokenService_CreateToken_DefaultsClaimsWhenUnset(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
+	mockCache := mock_cache.NewMockTokenStore(ctrl)
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockPubKeyRepo := mock_domain.NewMockPublicKeyRepository(ctrl)
+	mockSARepo := mock_domain.NewMockServiceAccountRepository(ctrl)
+
+	signer := services.NewTokenSigner()
+	signer.AddKeySigner("test-secret")
+
+	tokenService := services.NewTokenService(
+		mockTokenRepo, mockCache, "https://sso.example", signer,
+		mockPubKeyRepo, mockSARepo, mockUserRepo,
+		nil, nil, nil, nil,
+	)
+
+	opts := domain.CreateTokenOptions{
+		TokenID:   "token-id",
+		ClientID:  "client-id",
+		UserID:    "user-id",
+		ExpireIn:  time.Hour,
+		TokenType: api.TokenTypeAccessToken,
+	}
+
+	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user-id").Return(nil, errors.New("not found"))
+	mockTokenRepo.EXPECT().StoreToken(gomock.Any(), gomock.Any()).Return(nil)
+	mockCache.EXPECT().Set(gomock.Any(), gomock.Any()).Return(nil)
+
+	token, err := tokenService.CreateToken(context.Background(), opts, nil)
+	require.NoError(t, err)
+
+	claims := jwt.MapClaims{}
+	_, err = jwt.ParseWithClaims(token.TokenValue, claims, func(*jwt.Token) (any, error) {
+		return []byte("test-secret"), nil
+	})
+	require.NoError(t, err)
+
+	// Backwards compatibility: sub falls back to UserID, aud to the client ID,
+	// and no groups claim is emitted.
+	assert.Equal(t, "user-id", claims["sub"])
+	assert.Equal(t, []any{"client-id"}, claims["aud"])
+	_, hasGroups := claims["groups"]
+	assert.False(t, hasGroups)
+}
+
 func TestTokenService_GenerateTokenPair(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()

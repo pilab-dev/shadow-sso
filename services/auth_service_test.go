@@ -282,7 +282,9 @@ func TestAuthServer_Login_Success_GeneratesTokens(t *testing.T) {
 		TokenType:    "Bearer",
 		ExpiresIn:    3600,
 	}, nil)
+	mockSessionRepo.EXPECT().ListSessionsByUserID(gomock.Any(), user.ID, domain.SessionFilter{}).Return(nil, nil)
 	mockSessionRepo.EXPECT().StoreSession(gomock.Any(), gomock.Any()).Return(nil)
+	mockSessionRepo.EXPECT().StoreSessionEvent(gomock.Any(), gomock.Any()).Return(nil)
 	mockUserRepo.EXPECT().UpdateUser(gomock.Any(), gomock.Any()).Return(nil)
 
 	resp, err := authServer.Login(ctx, connect.NewRequest(&ssov1.LoginRequest{
@@ -466,6 +468,7 @@ func TestAuthServer_ClearUserSessions_Success(t *testing.T) {
 	}
 	ctx := context.WithValue(context.Background(), domain.TokenContextKey, tokenInfo)
 
+	mockSessionRepo.EXPECT().ListSessionsByUserID(gomock.Any(), "user-1", gomock.Any()).Return([]*domain.Session{{ID: "s1"}}, nil)
 	mockSessionRepo.EXPECT().DeleteSessionsByUserID(gomock.Any(), "user-1", "").Return(int64(2), nil)
 
 	resp, err := authServer.ClearUserSessions(ctx, connect.NewRequest(&ssov1.ClearUserSessionsRequest{
@@ -777,9 +780,9 @@ func TestVerify2FA_TokenFromUserAFailsForUserB(t *testing.T) {
 	tokenA := resp.Msg.TwoFactorSessionToken
 
 	_, err = auth.Verify2FA(context.Background(), connect.NewRequest(&ssov1.Verify2FARequest{
-		UserId:                 "user-b",
+		UserId:                "user-b",
 		TwoFactorSessionToken: tokenA,
-		TotpCode:               "123456",
+		TotpCode:              "123456",
 	}))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid or expired 2FA session")
@@ -813,9 +816,9 @@ func TestVerify2FA_ExpiredTokenFails(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = auth.Verify2FA(context.Background(), connect.NewRequest(&ssov1.Verify2FARequest{
-		UserId:                 "user-1",
+		UserId:                "user-1",
 		TwoFactorSessionToken: "completely-fake-token-that-was-never-stored",
-		TotpCode:               "123456",
+		TotpCode:              "123456",
 	}))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid or expired 2FA session")
@@ -849,9 +852,9 @@ func TestVerify2FA_NeverExistingTokenFails(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = auth.Verify2FA(context.Background(), connect.NewRequest(&ssov1.Verify2FARequest{
-		UserId:                 "user-1",
+		UserId:                "user-1",
 		TwoFactorSessionToken: "totally-fake-token",
-		TotpCode:               "123456",
+		TotpCode:              "123456",
 	}))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid or expired 2FA session")
@@ -886,9 +889,9 @@ func TestVerify2FA_OldPlaceholderFormatRejected(t *testing.T) {
 
 	oldPlaceholder := "placeholder_2fa_session_token_for_user-1"
 	_, err = auth.Verify2FA(context.Background(), connect.NewRequest(&ssov1.Verify2FARequest{
-		UserId:                 "user-1",
+		UserId:                "user-1",
 		TwoFactorSessionToken: oldPlaceholder,
-		TotpCode:               "123456",
+		TotpCode:              "123456",
 	}))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid or expired 2FA session")
@@ -924,17 +927,17 @@ func TestVerify2FA_TokenDeletedAfterUse(t *testing.T) {
 
 	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user-1").Return(user, nil)
 	_, err = auth.Verify2FA(context.Background(), connect.NewRequest(&ssov1.Verify2FARequest{
-		UserId:                 "user-1",
+		UserId:                "user-1",
 		TwoFactorSessionToken: token,
-		TotpCode:               "wrong-code",
+		TotpCode:              "wrong-code",
 	}))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid 2FA code")
 
 	_, err = auth.Verify2FA(context.Background(), connect.NewRequest(&ssov1.Verify2FARequest{
-		UserId:                 "user-1",
+		UserId:                "user-1",
 		TwoFactorSessionToken: token,
-		TotpCode:               "123456",
+		TotpCode:              "123456",
 	}))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid or expired 2FA session")

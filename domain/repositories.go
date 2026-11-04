@@ -52,6 +52,11 @@ type EmailService interface {
 	SendMFAEmail(to, name, otp, method string) error
 }
 
+// SessionNotifier delivers soft risk notifications (new device/country) to a user.
+type SessionNotifier interface {
+	NotifyRisk(ctx context.Context, userID string, session *Session, flags []string) error
+}
+
 // PushNotificationService defines the interface for sending push notifications
 type PushNotificationService interface {
 	SendPushNotification(deviceToken, title, body string, data map[string]interface{}) error
@@ -175,6 +180,40 @@ type SessionRepository interface {
 	DeleteSession(ctx context.Context, id string) error
 	ListSessionsByUserID(ctx context.Context, userID string, filter SessionFilter) ([]*Session, error)
 	DeleteSessionsByUserID(ctx context.Context, userID string, exceptSessionID ...string) (int64, error) // Returns count of deleted
+
+	// Session lifecycle events (append-only audit trail).
+	StoreSessionEvent(ctx context.Context, event *SessionEvent) error
+	ListSessionEvents(ctx context.Context, sessionID string, first int) ([]*SessionEvent, error)
+}
+
+// TokenQueryRepository is the read/audit surface of the token store. It is
+// separate from TokenRepository so alternative stores (for example a
+// distributed token service) can support issuing and validation without being
+// forced to implement admin querying. Services type-assert for it.
+type TokenQueryRepository interface {
+	// ListByUserID returns token metadata (never token values) for a user.
+	ListByUserID(ctx context.Context, filter TokenFilter, limit, offset int) ([]*Token, error)
+	// CountByUserID returns the number of tokens matching the filter.
+	CountByUserID(ctx context.Context, filter TokenFilter) (int64, error)
+	// GetTokenByID looks a token up by its JTI, regardless of state.
+	GetTokenByID(ctx context.Context, id string) (*Token, error)
+	// ListUnauditedExpired returns tokens whose expires_at is at or before
+	// `before` and that have not yet produced a TokenExpired audit event.
+	ListUnauditedExpired(ctx context.Context, before time.Time, limit int) ([]*Token, error)
+	// MarkExpiryAudited records that expiry events were emitted for these IDs.
+	MarkExpiryAudited(ctx context.Context, ids []string) error
+}
+
+// TokenFilter narrows token listing. Zero values mean "no restriction".
+type TokenFilter struct {
+	UserID         string
+	ClientID       string
+	SessionID      string
+	TokenType      string
+	IncludeRevoked bool
+	IncludeExpired bool
+	// Now is the reference clock for expiry checks; zero means time.Now().
+	Now time.Time
 }
 
 // TokenRepository defines methods for managing OAuth tokens.
@@ -186,6 +225,15 @@ type TokenRepository interface {
 	GetAccessTokenInfo(ctx context.Context, tokenValue string) (*TokenInfo, error)
 	RevokeToken(ctx context.Context, tokenValue string) error // Typically for access tokens
 	RevokeRefreshToken(ctx context.Context, tokenValue string) error
+	// MarkRefreshTokenUsed records a successful rotation: the presented token is
+	// marked as used and linked to the token that replaced it. Presenting a used
+	// token again is refresh-token replay.
+	MarkRefreshTokenUsed(ctx context.Context, tokenValue, rotatedTo string) error
+	// RevokeTokenFamily revokes every token in a refresh-token rotation family.
+	RevokeTokenFamily(ctx context.Context, family string) error
+	// RevokeTokensBySessionID revokes every token issued for a session (the `sid`
+	// claim). Used when a device is kicked.
+	RevokeTokensBySessionID(ctx context.Context, sessionID string) error
 	// RevokeAllUserTokens(ctx context.Context, userID string) error // These might be better handled by iterating in service layer
 	// RevokeAllClientTokens(ctx context.Context, clientID string) error // or having specific bulk operations if performance critical
 	DeleteExpiredTokens(ctx context.Context) error

@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -17,13 +18,13 @@ import (
 // or are explicitly designed to be unauthenticated.
 var publicProcedures = map[string]bool{
 	// AuthService - authentication endpoints
-	"/sso.v1.AuthService/Login":                    true,
-	"/sso.v1.AuthService/CompleteWebAuthnLogin":    true,
+	"/sso.v1.AuthService/Login":                 true,
+	"/sso.v1.AuthService/CompleteWebAuthnLogin": true,
 
 	// FederationService - federated login initiation and callback
-	"/sso.v1.FederationService/InitiateFederatedLogin":    true,
-	"/sso.v1.FederationService/HandleFederatedCallback":   true,
-	"/sso.v1.FederationService/AuthenticateDirect":        true,
+	"/sso.v1.FederationService/InitiateFederatedLogin":       true,
+	"/sso.v1.FederationService/HandleFederatedCallback":      true,
+	"/sso.v1.FederationService/AuthenticateDirect":           true,
 	"/sso.v1.FederationService/PromptMergeFederatedAccount":  true,
 	"/sso.v1.FederationService/ConfirmMergeFederatedAccount": true,
 }
@@ -37,80 +38,112 @@ const RolesContextKey rolesContextKeyType = "user_roles"
 // NewAuthInterceptor creates a Connect interceptor for authentication.
 // It extracts and validates JWT tokens from the Authorization header,
 // and enriches the context with the authenticated token info and user roles.
+// Both unary and server-streaming RPCs are covered: a stream must not bypass
+// authentication just because it is long-lived.
 func NewAuthInterceptor(tokenService services.TokenService) connect.Interceptor {
-	return connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
-		return connect.UnaryFunc(func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-			procedure := req.Spec().Procedure // e.g., "/sso.v1.UserService/ListUsers"
+	return &authInterceptor{tokenService: tokenService}
+}
 
-			// Check if this procedure is explicitly public (no auth required)
-			if publicProcedures[procedure] {
-				log.Debug().Str("procedure", procedure).Msg("Public procedure, skipping authentication.")
-				return next(ctx, req)
-			}
+type authInterceptor struct {
+	tokenService services.TokenService
+}
 
-			// Extract Authorization header
-			authHeader := req.Header().Get("Authorization")
-			if authHeader == "" {
-				log.Debug().Str("procedure", procedure).Msg("No Authorization header provided.")
-				return nil, connect.NewError(connect.CodeUnauthenticated,
-					fmt.Errorf("missing authorization header"))
-			}
+func (i *authInterceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
+	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+		ctx, err := i.authenticate(ctx, req.Spec().Procedure, req.Header())
+		if err != nil {
+			return nil, err
+		}
+		return next(ctx, req)
+	}
+}
 
-			// Extract Bearer token
-			rawToken, err := extractBearerToken(authHeader)
-			if err != nil {
-				log.Warn().Str("procedure", procedure).Err(err).Msg("Invalid Authorization header format.")
-				return nil, connect.NewError(connect.CodeUnauthenticated,
-					fmt.Errorf("invalid authorization header: %w", err))
-			}
+func (i *authInterceptor) WrapStreamingClient(next connect.StreamingClientFunc) connect.StreamingClientFunc {
+	return next
+}
 
-			// Validate the token via TokenService
-			tokenInfo, err := tokenService.ValidateAccessToken(ctx, rawToken)
-			if err != nil {
-				log.Warn().Str("procedure", procedure).Err(err).Msg("Token validation failed.")
-				return nil, connect.NewError(connect.CodeUnauthenticated,
-					fmt.Errorf("invalid or expired token: %w", err))
-			}
+func (i *authInterceptor) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
+	return func(ctx context.Context, conn connect.StreamingHandlerConn) error {
+		ctx, err := i.authenticate(ctx, conn.Spec().Procedure, conn.RequestHeader())
+		if err != nil {
+			return err
+		}
+		return next(ctx, conn)
+	}
+}
 
-			// Check token expiration (belt-and-suspenders: ValidateAccessToken should already check this)
-			if time.Now().After(tokenInfo.ExpiresAt) {
-				return nil, connect.NewError(connect.CodeUnauthenticated,
-					fmt.Errorf("token has expired"))
-			}
+func (i *authInterceptor) authenticate(ctx context.Context, procedure string, header http.Header) (context.Context, error) {
+	// Check if this procedure is explicitly public (no auth required)
+	if publicProcedures[procedure] {
+		log.Debug().Str("procedure", procedure).Msg("Public procedure, skipping authentication.")
+		return ctx, nil
+	}
 
-			// Check revocation
-			if tokenInfo.IsRevoked {
-				return nil, connect.NewError(connect.CodeUnauthenticated,
-					fmt.Errorf("token has been revoked"))
-			}
+	// Extract Authorization header
+	authHeader := ""
+	if header != nil {
+		authHeader = header.Get("Authorization")
+	}
+	if authHeader == "" {
+		log.Debug().Str("procedure", procedure).Msg("No Authorization header provided.")
+		return nil, connect.NewError(connect.CodeUnauthenticated,
+			fmt.Errorf("missing authorization header"))
+	}
 
-			// Convert domain.Token to domain.TokenInfo for context enrichment
-			tokenCtx := &domain.TokenInfo{
-				ID:        tokenInfo.ID,
-				TokenType: tokenInfo.TokenType,
-				ClientID:  tokenInfo.ClientID,
-				UserID:    tokenInfo.UserID,
-				Scope:     tokenInfo.Scope,
-				IssuedAt:  tokenInfo.CreatedAt,
-				ExpiresAt: tokenInfo.ExpiresAt,
-				IsRevoked: tokenInfo.IsRevoked,
-				Roles:     tokenInfo.Roles,
-			}
+	// Extract Bearer token
+	rawToken, err := extractBearerToken(authHeader)
+	if err != nil {
+		log.Warn().Str("procedure", procedure).Err(err).Msg("Invalid Authorization header format.")
+		return nil, connect.NewError(connect.CodeUnauthenticated,
+			fmt.Errorf("invalid authorization header: %w", err))
+	}
 
-			// Enrich context with authenticated token info
-			newCtx := context.WithValue(ctx, domain.TokenContextKey, tokenCtx)
+	// Validate the token via TokenService
+	tokenInfo, err := i.tokenService.ValidateAccessToken(ctx, rawToken)
+	if err != nil {
+		log.Warn().Str("procedure", procedure).Err(err).Msg("Token validation failed.")
+		return nil, connect.NewError(connect.CodeUnauthenticated,
+			fmt.Errorf("invalid or expired token: %w", err))
+	}
 
-			// Enrich context with user roles for RBAC interceptor
-			if len(tokenInfo.Roles) > 0 {
-				newCtx = context.WithValue(newCtx, RolesContextKey, tokenInfo.Roles)
-			}
+	// Check token expiration (belt-and-suspenders: ValidateAccessToken should already check this)
+	if time.Now().After(tokenInfo.ExpiresAt) {
+		return nil, connect.NewError(connect.CodeUnauthenticated,
+			fmt.Errorf("token has expired"))
+	}
 
-			log.Debug().Str("procedure", procedure).Str("userID", tokenInfo.UserID).
-				Strs("roles", tokenInfo.Roles).Msg("Token validated successfully, request proceeding.")
+	// Check revocation
+	if tokenInfo.IsRevoked {
+		return nil, connect.NewError(connect.CodeUnauthenticated,
+			fmt.Errorf("token has been revoked"))
+	}
 
-			return next(newCtx, req)
-		})
-	})
+	// Convert domain.Token to domain.TokenInfo for context enrichment
+	tokenCtx := &domain.TokenInfo{
+		ID:        tokenInfo.ID,
+		TokenType: tokenInfo.TokenType,
+		ClientID:  tokenInfo.ClientID,
+		UserID:    tokenInfo.UserID,
+		Scope:     tokenInfo.Scope,
+		IssuedAt:  tokenInfo.CreatedAt,
+		ExpiresAt: tokenInfo.ExpiresAt,
+		IsRevoked: tokenInfo.IsRevoked,
+		Roles:     tokenInfo.Roles,
+		SessionID: tokenInfo.SessionID,
+	}
+
+	// Enrich context with authenticated token info
+	newCtx := context.WithValue(ctx, domain.TokenContextKey, tokenCtx)
+
+	// Enrich context with user roles for RBAC interceptor
+	if len(tokenInfo.Roles) > 0 {
+		newCtx = context.WithValue(newCtx, RolesContextKey, tokenInfo.Roles)
+	}
+
+	log.Debug().Str("procedure", procedure).Str("userID", tokenInfo.UserID).
+		Strs("roles", tokenInfo.Roles).Msg("Token validated successfully, request proceeding.")
+
+	return newCtx, nil
 }
 
 // extractBearerToken extracts the token from a Bearer authorization header.

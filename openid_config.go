@@ -22,6 +22,7 @@ import (
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
 	"github.com/pilab-dev/shadow-sso/graphql"
 	"github.com/pilab-dev/shadow-sso/internal/audit"
+	"github.com/pilab-dev/shadow-sso/internal/browserpolicy"
 	"github.com/pilab-dev/shadow-sso/internal/notifications"
 	"github.com/pilab-dev/shadow-sso/internal/oidcflow"
 	"github.com/pilab-dev/shadow-sso/internal/oidclogout"
@@ -275,6 +276,11 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		router.Use(m)
 	}
 
+	// Enterprise browser baseline. It only inspects interactive login paths,
+	// so API and token endpoints keep working for non-browser clients.
+	browserPolicyProvider := browserpolicy.NewProvider(repoProvider.RealmSettingsRepository(context.Background()))
+	router.Use(browserPolicyProvider.Middleware())
+
 	if err := webauth.LoadTemplates(router); err != nil {
 		return nil, fmt.Errorf("failed to load webauth templates: %w", err)
 	}
@@ -422,7 +428,7 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 	}
 
 	interceptors := connect.WithInterceptors(
-		otelConnectInterceptor, authInterceptor, authzInterceptor)
+		otelConnectInterceptor, middleware.RequestInfoInterceptor(), authInterceptor, authzInterceptor)
 
 	// Auth Service — used by frontend login
 	authServer := services.NewAuthServer(
@@ -434,6 +440,10 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		serviceProvider.OAuthService(),
 		serviceProvider.ClientService(),
 		services.WithAuthRealmSettings(opts.RepositoryProvider.RealmSettingsRepository(ctx)),
+		services.WithAuthTokenRepository(opts.RepositoryProvider.TokenRepository(connectCtx)),
+		services.WithAuthBrowserPolicy(browserPolicyProvider),
+		services.WithAuthGeoResolver(serviceProvider.GeoResolver()),
+		services.WithAuthSessionNotifier(serviceProvider.SessionNotifier()),
 	)
 	authPath, authHandler := ssov1connect.NewAuthServiceHandler(authServer, interceptors)
 	router.Any(authPath+"*action", gin.WrapH(authHandler))
@@ -514,6 +524,25 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 	auditPath, auditHandler := ssov1connect.NewAuditServiceHandler(auditServer, interceptors)
 	router.Any(auditPath+"*action", gin.WrapH(auditHandler))
 
+	// Token Service — token/device traceability and targeted revocation
+	tokenAdminServer := services.NewTokenAdminServer(
+		repoProvider.TokenRepository(connectCtx),
+		repoProvider.SessionRepository(connectCtx),
+	)
+	tokenPath, tokenHandler := ssov1connect.NewTokenServiceHandler(tokenAdminServer, interceptors)
+	router.Any(tokenPath+"*action", gin.WrapH(tokenHandler))
+
+	// Browser Policy Service — enterprise browser baseline
+	browserPolicyServer := services.NewBrowserPolicyServer(
+		repoProvider.RealmSettingsRepository(connectCtx),
+		browserPolicyProvider,
+	)
+	browserPolicyPath, browserPolicyHandler := ssov1connect.NewBrowserPolicyServiceHandler(browserPolicyServer, interceptors)
+	router.Any(browserPolicyPath+"*action", gin.WrapH(browserPolicyHandler))
+
+	// Emit TokenExpired audit events once each token crosses expires_at.
+	services.StartTokenExpirySweeper(repoProvider.TokenRepository(connectCtx))
+
 	connectSpan.End()
 	log.Info().Msg("Connect-RPC handlers registered successfully")
 	// ---------- End Connect-RPC handlers ----------
@@ -563,6 +592,7 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 			UserAttributeMapperRepo: userAttrMapperRepo,
 			ClientRepo:              clientRepo,
 			SessionRepo:             sessionRepo,
+			TokenRepo:               repoProvider.TokenRepository(gqlCtx),
 			IdPRepo:                 idpRepo,
 			GroupRepo:               groupRepo,
 			RoleRepo:                roleRepo,

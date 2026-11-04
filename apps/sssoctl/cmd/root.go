@@ -35,4 +35,9 @@ func init() {
 	// missing parameters then fail with the list of required flags.
 	rootCmd.PersistentFlags().BoolVar(&noInteractive, "no-interactive", false,
 		"Never prompt or launch a TUI; fail when required parameters are missing")
+
+	// --protocol selects the wire protocol for proto-based commands. The server
+	// accepts Connect, gRPC and gRPC-Web on the same port.
+	rootCmd.PersistentFlags().StringVar(&config.ProtocolOverride, "protocol", "",
+		"RPC protocol for proto commands: connect (default), connect-proto, grpc")
 }

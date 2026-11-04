@@ -6,4 +6,7 @@ tools
 /sso_config.yaml
 /coverage.out
 .env
-.omo//vendor/
+.omo/
+# Go dependency cache is not vendored
+/vendor/
+.DS_Store

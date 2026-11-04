@@ -1,0 +1,69 @@
+syntax = "proto3";
+
+package sso.v1;
+
+import "google/protobuf/timestamp.proto";
+import "buf/validate/validate.proto";
+
+option go_package = "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1;ssov1";
+
+// BrowserPolicyService manages the enterprise browser-baseline policy. The
+// policy applies to interactive login surfaces (the web login page, the
+// authorization endpoint and AuthService.Login), not to machine clients.
+service BrowserPolicyService {
+  rpc GetBrowserPolicy(GetBrowserPolicyRequest) returns (GetBrowserPolicyResponse);
+  rpc UpdateBrowserPolicy(UpdateBrowserPolicyRequest) returns (UpdateBrowserPolicyResponse);
+  // CheckBrowser evaluates a User-Agent without changing anything. Useful for
+  // support desks and for testing a policy before enabling it.
+  rpc CheckBrowser(CheckBrowserRequest) returns (CheckBrowserResponse);
+}
+
+message BrowserPolicy {
+  bool enabled = 1;
+  // "block" (default) rejects violations; "warn" allows them but audits.
+  string enforcement = 2;
+  bool block_unknown = 3;
+  bool block_bots = 4;
+  // browser family -> minimum major version, e.g. {"chrome":"120"}.
+  map<string, string> min_versions = 5;
+  // Case-insensitive substrings that bypass the policy.
+  repeated string exempt_user_agents = 6;
+  google.protobuf.Timestamp updated_at = 7;
+}
+
+message GetBrowserPolicyRequest {}
+
+message GetBrowserPolicyResponse {
+  BrowserPolicy policy = 1;
+  // defaults are the built-in baseline versions used when the policy has no
+  // explicit entry for a browser.
+  map<string, string> defaults = 2;
+}
+
+message UpdateBrowserPolicyRequest {
+  // policy replaces the stored policy. Ignored when reset is true.
+  BrowserPolicy policy = 1;
+  // reset removes the policy entirely (equivalent to disabled).
+  bool reset = 2;
+}
+
+message UpdateBrowserPolicyResponse { BrowserPolicy policy = 1; }
+
+message CheckBrowserRequest {
+  string user_agent = 1 [(buf.validate.field).string.min_len = 1];
+  string client_id = 2;
+}
+
+message CheckBrowserResponse {
+  bool allowed = 1;
+  // reason is a stable machine-readable code: allowed, exempt, disabled,
+  // unknown_browser, bot, outdated_browser.
+  string reason = 2;
+  string browser = 3;
+  string browser_version = 4;
+  string os = 5;
+  string device_type = 6;
+  bool is_bot = 7;
+  string required_version = 8;
+  string enforcement = 9;
+}

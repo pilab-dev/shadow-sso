@@ -92,6 +92,19 @@ type Client struct {
 	// client_credentials grant for this client. Empty means no roles.
 	ServiceAccountRoles []string `bson:"service_account_roles,omitempty"      json:"service_account_roles,omitempty"`
 
+	// ServiceAccountGroups defines the `groups` claim emitted on tokens issued
+	// via the client_credentials grant. Kubernetes consumes this claim (via
+	// --oidc-groups-claim) to map RBAC bindings. When empty, ServiceAccountRoles
+	// is used so a single role list can drive both claims.
+	ServiceAccountGroups []string `bson:"service_account_groups,omitempty"     json:"service_account_groups,omitempty"`
+
+	// AllowedAudiences lists the `aud` values this client may request with the
+	// RFC 8707 audience/resource parameters. The client's own ID is always
+	// allowed. Empty means this client may only mint tokens for itself, which
+	// keeps a service account from requesting an audience (e.g. "kubernetes")
+	// it was not provisioned for.
+	AllowedAudiences []string `bson:"allowed_audiences,omitempty"           json:"allowed_audiences,omitempty"`
+
 	// SigningKeyID optionally points at a dedicated RealmKey.ID used to sign
 	// tokens issued for this client. Empty means "use the realm-default
 	// active signing key".

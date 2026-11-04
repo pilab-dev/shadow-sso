@@ -173,6 +173,10 @@ type RealmSettings struct {
 	// Users without a usable factor are sent to the enrollment page at login.
 	RequireMFA bool `bson:"require_mfa,omitempty" json:"requireMFA,omitempty"`
 
+	// BrowserPolicy restricts interactive logins to patched browser versions.
+	// Nil or disabled means no restriction.
+	BrowserPolicy *BrowserPolicy `bson:"browser_policy,omitempty" json:"browserPolicy,omitempty"`
+
 	// Password policy
 	PasswordMinLength    int  `bson:"password_min_length,omitempty" json:"passwordMinLength,omitempty"`
 	PasswordMaxLength    int  `bson:"password_max_length,omitempty" json:"passwordMaxLength,omitempty"`
@@ -196,6 +200,33 @@ type RealmSettings struct {
 type RealmSettingsRepository interface {
 	GetRealmSettings(ctx context.Context) (*RealmSettings, error)
 	UpdateRealmSettings(ctx context.Context, settings *RealmSettings) error
+}
+
+// Browser policy enforcement modes.
+const (
+	BrowserPolicyEnforcementBlock = "block"
+	BrowserPolicyEnforcementWarn  = "warn"
+)
+
+// BrowserPolicy is an enterprise control that refuses interactive logins from
+// browsers older than the configured minimum versions. Machine clients (curl,
+// ssoctl, SDKs) are not browsers and remain usable unless BlockUnknown is set.
+type BrowserPolicy struct {
+	Enabled bool `bson:"enabled" json:"enabled"`
+	// Enforcement is "block" (default) or "warn". In warn mode a violating
+	// login is allowed but the attempt is audited.
+	Enforcement string `bson:"enforcement" json:"enforcement"`
+	// BlockUnknown rejects agents that cannot be identified as a browser.
+	BlockUnknown bool `bson:"block_unknown" json:"blockUnknown"`
+	// BlockBots rejects crawlers, link previewers and headless browsers.
+	BlockBots bool `bson:"block_bots" json:"blockBots"`
+	// MinVersions maps a browser family (chrome, edge, firefox, safari, opera,
+	// samsung) to its minimum allowed version, e.g. "120" or "17.2".
+	MinVersions map[string]string `bson:"min_versions" json:"minVersions"`
+	// ExemptUserAgents is a list of case-insensitive substrings that bypass the
+	// policy (service accounts, health checks, CI clients).
+	ExemptUserAgents []string  `bson:"exempt_user_agents" json:"exemptUserAgents"`
+	UpdatedAt        time.Time `bson:"updated_at" json:"updatedAt"`
 }
 
 // RealmKeyStatus describes a signing key's position in its rotation lifecycle.

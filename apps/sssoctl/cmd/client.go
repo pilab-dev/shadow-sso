@@ -486,3 +486,57 @@ func init() {
 	// Flag for DeleteClient
 	clientDeleteCmd.Flags().Bool("force", false, "Force deletion without confirmation")
 }
+
+var clientGenerateSecretCmd = &cobra.Command{
+	Use:   "generate-secret [CLIENT_ID]",
+	Short: "Generate and return a new client secret (shown once)",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		currentCtx, err := config.GetCurrentContext()
+		if err != nil {
+			return err
+		}
+		apiClient, err := client.ClientManagementServiceClient(currentCtx)
+		if err != nil {
+			return err
+		}
+		resp, err := apiClient.GenerateClientSecret(context.Background(),
+			connect.NewRequest(&ssov1.GenerateClientSecretRequest{ClientId: args[0]}))
+		if err != nil {
+			return fmt.Errorf("failed to generate client secret: %w", err)
+		}
+		fmt.Printf("New secret for client %s:\n\n%s\n\nStore it now; it cannot be retrieved again.\n",
+			resp.Msg.GetClientId(), resp.Msg.GetClientSecret())
+		return nil
+	},
+}
+
+var clientGenerateKeysCmd = &cobra.Command{
+	Use:   "generate-keys [CLIENT_ID]",
+	Short: "Generate a new RSA keypair and publish its JWKS",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		keyType, _ := cmd.Flags().GetString("key-type")
+		keyBits, _ := cmd.Flags().GetInt("key-bits")
+
+		currentCtx, err := config.GetCurrentContext()
+		if err != nil {
+			return err
+		}
+		apiClient, err := client.ClientManagementServiceClient(currentCtx)
+		if err != nil {
+			return err
+		}
+		resp, err := apiClient.GenerateClientKeys(context.Background(),
+			connect.NewRequest(&ssov1.GenerateClientKeysRequest{
+				ClientId: args[0],
+				KeyType:  keyType,
+				KeyBits:  int32(keyBits),
+			}))
+		if err != nil {
+			return fmt.Errorf("failed to generate client keys: %w", err)
+		}
+		fmt.Printf("Client %s now uses key %s:\n\n%s\n", resp.Msg.GetClientId(), resp.Msg.GetKeyId(), resp.Msg.GetJwksJson())
+		return nil
+	},
+}

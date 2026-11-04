@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/pilab-dev/shadow-sso/domain"
+	"github.com/pilab-dev/shadow-sso/internal/dpop"
 	"github.com/rs/zerolog/log"
 )
 
@@ -81,6 +82,21 @@ func AuthMiddleware(tokenService TokenService, bootstrapToken string, next http.
 			return
 		}
 
+		// DPoP (Phase 4)
+		if tokenInfo.CnfJKT != "" {
+			proof := strings.TrimSpace(r.Header.Get("DPoP"))
+			if proof == "" {
+				http.Error(w, `{"error":"invalid_dpop_proof"}`, http.StatusUnauthorized)
+				return
+			}
+			htu := requestURL(r)
+			jkt, err := dpop.VerifyProof(proof, r.Method, htu, dpop.AccessTokenHash(rawToken), time.Now())
+			if err != nil || jkt != tokenInfo.CnfJKT {
+				http.Error(w, `{"error":"invalid_dpop_proof"}`, http.StatusUnauthorized)
+				return
+			}
+		}
+
 		// Convert domain.Token to domain.TokenInfo for context enrichment
 		tokenCtx := &domain.TokenInfo{
 			ID:        tokenInfo.ID,
@@ -92,6 +108,7 @@ func AuthMiddleware(tokenService TokenService, bootstrapToken string, next http.
 			ExpiresAt: tokenInfo.ExpiresAt,
 			IsRevoked: tokenInfo.IsRevoked,
 			Roles:     tokenInfo.Roles,
+			SessionID: tokenInfo.SessionID,
 		}
 
 		// Enrich context with authenticated token info
@@ -102,6 +119,17 @@ func AuthMiddleware(tokenService TokenService, bootstrapToken string, next http.
 
 		next.ServeHTTP(w, r.WithContext(newCtx))
 	})
+}
+
+func requestURL(r *http.Request) string {
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	if v := r.Header.Get("X-Forwarded-Proto"); v != "" {
+		scheme = strings.TrimSpace(strings.Split(v, ",")[0])
+	}
+	return scheme + "://" + r.Host + r.URL.RequestURI()
 }
 
 // extractBearerToken extracts the token from a Bearer authorization header.

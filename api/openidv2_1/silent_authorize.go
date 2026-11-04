@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/pilab-dev/shadow-sso/domain"
+	"github.com/pilab-dev/shadow-sso/internal/reqinfo"
 	"github.com/rs/zerolog/log"
 )
 
@@ -42,7 +43,7 @@ type silentAuthorizeUser struct {
 // must be an absolute http(s) URL on the application's origin. The response is
 // frameable only by that origin.
 func (oa *OAuth2API) SilentAuthorizeHandler(c *gin.Context) {
-	ctx := c.Request.Context()
+	ctx := reqinfo.WithContext(c.Request.Context(), reqinfo.FromHTTP(c.Request))
 
 	if c.Request.Method == http.MethodHead || c.Request.Method == http.MethodOptions {
 		oa.handleSilentPreflight(c)

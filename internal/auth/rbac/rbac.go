@@ -69,6 +69,12 @@ const (
 	PermAuditRead = "audit:read"
 )
 
+// Browser Baseline Policy (Admin only)
+const (
+	PermBrowserPolicyRead   = "browser_policy:read"
+	PermBrowserPolicyManage = "browser_policy:manage"
+)
+
 // RoleToPermissionsMap maps roles to their granted permissions.
 // This can be used by the authorization interceptor.
 var RoleToPermissionsMap = map[string][]string{
@@ -120,6 +126,9 @@ var RoleToPermissionsMap = map[string][]string{
 		PermTokenMappersManage,
 
 		PermAuditRead,
+
+		PermBrowserPolicyRead,
+		PermBrowserPolicyManage,
 	},
 }
 
@@ -183,5 +192,17 @@ var MethodPermissions = map[string]string{
 	"/sso.v1.UserAttributeMapperService/DeleteUserAttributeMapper": PermTokenMappersManage,
 
 	// AuditService (All admin)
-	"/sso.v1.AuditService/ListAuditEvents": PermAuditRead,
+	"/sso.v1.AuditService/ListAuditEvents":   PermAuditRead,
+	"/sso.v1.AuditService/FollowAuditEvents": PermAuditRead,
+
+	// TokenService — self vs other is resolved in the service.
+	"/sso.v1.TokenService/ListUserTokens":  "",
+	"/sso.v1.TokenService/GetToken":        "",
+	"/sso.v1.TokenService/ListUserDevices": "",
+	"/sso.v1.TokenService/RevokeToken":     "",
+
+	// BrowserPolicyService
+	"/sso.v1.BrowserPolicyService/GetBrowserPolicy":    PermBrowserPolicyRead,
+	"/sso.v1.BrowserPolicyService/CheckBrowser":        PermBrowserPolicyRead,
+	"/sso.v1.BrowserPolicyService/UpdateBrowserPolicy": PermBrowserPolicyManage,
 }

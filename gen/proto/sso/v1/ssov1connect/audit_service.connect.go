@@ -36,12 +36,20 @@ const (
 	// AuditServiceListAuditEventsProcedure is the fully-qualified name of the AuditService's
 	// ListAuditEvents RPC.
 	AuditServiceListAuditEventsProcedure = "/sso.v1.AuditService/ListAuditEvents"
+	// AuditServiceFollowAuditEventsProcedure is the fully-qualified name of the AuditService's
+	// FollowAuditEvents RPC.
+	AuditServiceFollowAuditEventsProcedure = "/sso.v1.AuditService/FollowAuditEvents"
 )
 
 // AuditServiceClient is a client for the sso.v1.AuditService service.
 type AuditServiceClient interface {
 	// Lists persisted audit events filtered by user/action/time with pagination.
 	ListAuditEvents(context.Context, *connect.Request[v1.ListAuditEventsRequest]) (*connect.Response[v1.ListAuditEventsResponse], error)
+	// Streams audit events as they are persisted, in oldest-first order. Like
+	// `kubectl logs -f`, it optionally replays existing events first and then
+	// keeps the stream open. The server polls the audit store, so the stream
+	// also sees events written by other server replicas.
+	FollowAuditEvents(context.Context, *connect.Request[v1.FollowAuditEventsRequest]) (*connect.ServerStreamForClient[v1.AuditEventProto], error)
 }
 
 // NewAuditServiceClient constructs a client for the sso.v1.AuditService service. By default, it
@@ -59,12 +67,18 @@ func NewAuditServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			baseURL+AuditServiceListAuditEventsProcedure,
 			opts...,
 		),
+		followAuditEvents: connect.NewClient[v1.FollowAuditEventsRequest, v1.AuditEventProto](
+			httpClient,
+			baseURL+AuditServiceFollowAuditEventsProcedure,
+			opts...,
+		),
 	}
 }
 
 // auditServiceClient implements AuditServiceClient.
 type auditServiceClient struct {
-	listAuditEvents *connect.Client[v1.ListAuditEventsRequest, v1.ListAuditEventsResponse]
+	listAuditEvents   *connect.Client[v1.ListAuditEventsRequest, v1.ListAuditEventsResponse]
+	followAuditEvents *connect.Client[v1.FollowAuditEventsRequest, v1.AuditEventProto]
 }
 
 // ListAuditEvents calls sso.v1.AuditService.ListAuditEvents.
@@ -72,10 +86,20 @@ func (c *auditServiceClient) ListAuditEvents(ctx context.Context, req *connect.R
 	return c.listAuditEvents.CallUnary(ctx, req)
 }
 
+// FollowAuditEvents calls sso.v1.AuditService.FollowAuditEvents.
+func (c *auditServiceClient) FollowAuditEvents(ctx context.Context, req *connect.Request[v1.FollowAuditEventsRequest]) (*connect.ServerStreamForClient[v1.AuditEventProto], error) {
+	return c.followAuditEvents.CallServerStream(ctx, req)
+}
+
 // AuditServiceHandler is an implementation of the sso.v1.AuditService service.
 type AuditServiceHandler interface {
 	// Lists persisted audit events filtered by user/action/time with pagination.
 	ListAuditEvents(context.Context, *connect.Request[v1.ListAuditEventsRequest]) (*connect.Response[v1.ListAuditEventsResponse], error)
+	// Streams audit events as they are persisted, in oldest-first order. Like
+	// `kubectl logs -f`, it optionally replays existing events first and then
+	// keeps the stream open. The server polls the audit store, so the stream
+	// also sees events written by other server replicas.
+	FollowAuditEvents(context.Context, *connect.Request[v1.FollowAuditEventsRequest], *connect.ServerStream[v1.AuditEventProto]) error
 }
 
 // NewAuditServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -89,10 +113,17 @@ func NewAuditServiceHandler(svc AuditServiceHandler, opts ...connect.HandlerOpti
 		svc.ListAuditEvents,
 		opts...,
 	)
+	auditServiceFollowAuditEventsHandler := connect.NewServerStreamHandler(
+		AuditServiceFollowAuditEventsProcedure,
+		svc.FollowAuditEvents,
+		opts...,
+	)
 	return "/sso.v1.AuditService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AuditServiceListAuditEventsProcedure:
 			auditServiceListAuditEventsHandler.ServeHTTP(w, r)
+		case AuditServiceFollowAuditEventsProcedure:
+			auditServiceFollowAuditEventsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -104,4 +135,8 @@ type UnimplementedAuditServiceHandler struct{}
 
 func (UnimplementedAuditServiceHandler) ListAuditEvents(context.Context, *connect.Request[v1.ListAuditEventsRequest]) (*connect.Response[v1.ListAuditEventsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.AuditService.ListAuditEvents is not implemented"))
+}
+
+func (UnimplementedAuditServiceHandler) FollowAuditEvents(context.Context, *connect.Request[v1.FollowAuditEventsRequest], *connect.ServerStream[v1.AuditEventProto]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.AuditService.FollowAuditEvents is not implemented"))
 }

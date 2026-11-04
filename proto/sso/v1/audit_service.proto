@@ -12,6 +12,11 @@ option go_package = "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1;ssov1";
 service AuditService {
   // Lists persisted audit events filtered by user/action/time with pagination.
   rpc ListAuditEvents(ListAuditEventsRequest) returns (ListAuditEventsResponse);
+  // Streams audit events as they are persisted, in oldest-first order. Like
+  // `kubectl logs -f`, it optionally replays existing events first and then
+  // keeps the stream open. The server polls the audit store, so the stream
+  // also sees events written by other server replicas.
+  rpc FollowAuditEvents(FollowAuditEventsRequest) returns (stream AuditEventProto);
 }
 
 // --- ListAuditEvents ---
@@ -41,4 +46,25 @@ message ListAuditEventsResponse {
   int64 total = 2;                     // Total matching events (ignores limit/offset)
   int32 limit = 3;
   int32 offset = 4;
+}
+
+// --- FollowAuditEvents ---
+message FollowAuditEventsRequest {
+  string user = 1;   // Filter by user ID or username; empty means any
+  string action = 2; // Filter by action name; empty means any
+
+  // from is the initial cursor. When unset the stream starts at "now" unless
+  // include_existing is true, in which case it starts one hour in the past.
+  google.protobuf.Timestamp from = 3;
+
+  // include_existing replays events from `from` before switching to live
+  // tailing. Without it, only events persisted after the stream opened are sent.
+  bool include_existing = 4;
+
+  // poll_interval_ms is how often the server checks the audit store for new
+  // events. Defaults to 1000ms; values are clamped to [250, 30000].
+  int32 poll_interval_ms = 5;
+
+  // batch_size caps how many events are sent per poll. Defaults to 200.
+  int32 batch_size = 6;
 }

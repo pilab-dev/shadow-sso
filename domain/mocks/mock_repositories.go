@@ -1320,6 +1320,21 @@ func (mr *MockSessionRepositoryMockRecorder) GetSessionByTokenID(ctx, tokenID an
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSessionByTokenID", reflect.TypeOf((*MockSessionRepository)(nil).GetSessionByTokenID), ctx, tokenID)
 }
 
+// ListSessionEvents mocks base method.
+func (m *MockSessionRepository) ListSessionEvents(ctx context.Context, sessionID string, first int) ([]*domain.SessionEvent, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListSessionEvents", ctx, sessionID, first)
+	ret0, _ := ret[0].([]*domain.SessionEvent)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListSessionEvents indicates an expected call of ListSessionEvents.
+func (mr *MockSessionRepositoryMockRecorder) ListSessionEvents(ctx, sessionID, first any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListSessionEvents", reflect.TypeOf((*MockSessionRepository)(nil).ListSessionEvents), ctx, sessionID, first)
+}
+
 // ListSessionsByUserID mocks base method.
 func (m *MockSessionRepository) ListSessionsByUserID(ctx context.Context, userID string, filter domain.SessionFilter) ([]*domain.Session, error) {
 	m.ctrl.T.Helper()
@@ -1349,6 +1364,20 @@ func (mr *MockSessionRepositoryMockRecorder) StoreSession(ctx, session any) *gom
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StoreSession", reflect.TypeOf((*MockSessionRepository)(nil).StoreSession), ctx, session)
 }
 
+// StoreSessionEvent mocks base method.
+func (m *MockSessionRepository) StoreSessionEvent(ctx context.Context, event *domain.SessionEvent) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StoreSessionEvent", ctx, event)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// StoreSessionEvent indicates an expected call of StoreSessionEvent.
+func (mr *MockSessionRepositoryMockRecorder) StoreSessionEvent(ctx, event any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StoreSessionEvent", reflect.TypeOf((*MockSessionRepository)(nil).StoreSessionEvent), ctx, event)
+}
+
 // UpdateSession mocks base method.
 func (m *MockSessionRepository) UpdateSession(ctx context.Context, session *domain.Session) error {
 	m.ctrl.T.Helper()
@@ -1361,6 +1390,104 @@ func (m *MockSessionRepository) UpdateSession(ctx context.Context, session *doma
 func (mr *MockSessionRepositoryMockRecorder) UpdateSession(ctx, session any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateSession", reflect.TypeOf((*MockSessionRepository)(nil).UpdateSession), ctx, session)
+}
+
+// MockTokenQueryRepository is a mock of TokenQueryRepository interface.
+type MockTokenQueryRepository struct {
+	ctrl     *gomock.Controller
+	recorder *MockTokenQueryRepositoryMockRecorder
+	isgomock struct{}
+}
+
+// MockTokenQueryRepositoryMockRecorder is the mock recorder for MockTokenQueryRepository.
+type MockTokenQueryRepositoryMockRecorder struct {
+	mock *MockTokenQueryRepository
+}
+
+// NewMockTokenQueryRepository creates a new mock instance.
+func NewMockTokenQueryRepository(ctrl *gomock.Controller) *MockTokenQueryRepository {
+	mock := &MockTokenQueryRepository{ctrl: ctrl}
+	mock.recorder = &MockTokenQueryRepositoryMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockTokenQueryRepository) EXPECT() *MockTokenQueryRepositoryMockRecorder {
+	return m.recorder
+}
+
+// CountByUserID mocks base method.
+func (m *MockTokenQueryRepository) CountByUserID(ctx context.Context, filter domain.TokenFilter) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CountByUserID", ctx, filter)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CountByUserID indicates an expected call of CountByUserID.
+func (mr *MockTokenQueryRepositoryMockRecorder) CountByUserID(ctx, filter any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountByUserID", reflect.TypeOf((*MockTokenQueryRepository)(nil).CountByUserID), ctx, filter)
+}
+
+// GetTokenByID mocks base method.
+func (m *MockTokenQueryRepository) GetTokenByID(ctx context.Context, id string) (*domain.Token, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetTokenByID", ctx, id)
+	ret0, _ := ret[0].(*domain.Token)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetTokenByID indicates an expected call of GetTokenByID.
+func (mr *MockTokenQueryRepositoryMockRecorder) GetTokenByID(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTokenByID", reflect.TypeOf((*MockTokenQueryRepository)(nil).GetTokenByID), ctx, id)
+}
+
+// ListByUserID mocks base method.
+func (m *MockTokenQueryRepository) ListByUserID(ctx context.Context, filter domain.TokenFilter, limit, offset int) ([]*domain.Token, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListByUserID", ctx, filter, limit, offset)
+	ret0, _ := ret[0].([]*domain.Token)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListByUserID indicates an expected call of ListByUserID.
+func (mr *MockTokenQueryRepositoryMockRecorder) ListByUserID(ctx, filter, limit, offset any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListByUserID", reflect.TypeOf((*MockTokenQueryRepository)(nil).ListByUserID), ctx, filter, limit, offset)
+}
+
+// ListUnauditedExpired mocks base method.
+func (m *MockTokenQueryRepository) ListUnauditedExpired(ctx context.Context, before time.Time, limit int) ([]*domain.Token, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListUnauditedExpired", ctx, before, limit)
+	ret0, _ := ret[0].([]*domain.Token)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListUnauditedExpired indicates an expected call of ListUnauditedExpired.
+func (mr *MockTokenQueryRepositoryMockRecorder) ListUnauditedExpired(ctx, before, limit any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListUnauditedExpired", reflect.TypeOf((*MockTokenQueryRepository)(nil).ListUnauditedExpired), ctx, before, limit)
+}
+
+// MarkExpiryAudited mocks base method.
+func (m *MockTokenQueryRepository) MarkExpiryAudited(ctx context.Context, ids []string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MarkExpiryAudited", ctx, ids)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// MarkExpiryAudited indicates an expected call of MarkExpiryAudited.
+func (mr *MockTokenQueryRepositoryMockRecorder) MarkExpiryAudited(ctx, ids any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkExpiryAudited", reflect.TypeOf((*MockTokenQueryRepository)(nil).MarkExpiryAudited), ctx, ids)
 }
 
 // MockTokenRepository is a mock of TokenRepository interface.
@@ -1476,6 +1603,20 @@ func (mr *MockTokenRepositoryMockRecorder) GetTokenInfo(ctx, tokenValue any) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTokenInfo", reflect.TypeOf((*MockTokenRepository)(nil).GetTokenInfo), ctx, tokenValue)
 }
 
+// MarkRefreshTokenUsed mocks base method.
+func (m *MockTokenRepository) MarkRefreshTokenUsed(ctx context.Context, tokenValue, rotatedTo string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MarkRefreshTokenUsed", ctx, tokenValue, rotatedTo)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// MarkRefreshTokenUsed indicates an expected call of MarkRefreshTokenUsed.
+func (mr *MockTokenRepositoryMockRecorder) MarkRefreshTokenUsed(ctx, tokenValue, rotatedTo any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkRefreshTokenUsed", reflect.TypeOf((*MockTokenRepository)(nil).MarkRefreshTokenUsed), ctx, tokenValue, rotatedTo)
+}
+
 // RevokeRefreshToken mocks base method.
 func (m *MockTokenRepository) RevokeRefreshToken(ctx context.Context, tokenValue string) error {
 	m.ctrl.T.Helper()
@@ -1502,6 +1643,34 @@ func (m *MockTokenRepository) RevokeToken(ctx context.Context, tokenValue string
 func (mr *MockTokenRepositoryMockRecorder) RevokeToken(ctx, tokenValue any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RevokeToken", reflect.TypeOf((*MockTokenRepository)(nil).RevokeToken), ctx, tokenValue)
+}
+
+// RevokeTokenFamily mocks base method.
+func (m *MockTokenRepository) RevokeTokenFamily(ctx context.Context, family string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RevokeTokenFamily", ctx, family)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RevokeTokenFamily indicates an expected call of RevokeTokenFamily.
+func (mr *MockTokenRepositoryMockRecorder) RevokeTokenFamily(ctx, family any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RevokeTokenFamily", reflect.TypeOf((*MockTokenRepository)(nil).RevokeTokenFamily), ctx, family)
+}
+
+// RevokeTokensBySessionID mocks base method.
+func (m *MockTokenRepository) RevokeTokensBySessionID(ctx context.Context, sessionID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RevokeTokensBySessionID", ctx, sessionID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RevokeTokensBySessionID indicates an expected call of RevokeTokensBySessionID.
+func (mr *MockTokenRepositoryMockRecorder) RevokeTokensBySessionID(ctx, sessionID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RevokeTokensBySessionID", reflect.TypeOf((*MockTokenRepository)(nil).RevokeTokensBySessionID), ctx, sessionID)
 }
 
 // StoreToken mocks base method.

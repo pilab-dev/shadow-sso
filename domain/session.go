@@ -5,17 +5,68 @@ import "time"
 // Session represents an active user session.
 // This could be stored in Redis for quick access and MongoDB for longer-term audit if needed.
 type Session struct {
-	ID           string    `bson:"_id,omitempty"` // Session ID (could be the JWT JTI)
-	UserID       string    `bson:"user_id"`
-	ClientID     string    `bson:"client_id,omitempty"`
-	TokenID      string    `bson:"token_id,unique"`                // Corresponds to JTI of the JWT
-	RefreshToken string    `bson:"refresh_token,omitempty,unique"` // If using refresh tokens
-	UserAgent    string    `bson:"user_agent,omitempty"`
-	IPAddress    string    `bson:"ip_address,omitempty"`
-	ExpiresAt    time.Time `bson:"expires_at"`
-	CreatedAt    time.Time `bson:"created_at"`
-	LastUsedAt   time.Time `bson:"last_used_at,omitempty"` // Added LastUsedAt
-	IsRevoked    bool      `bson:"is_revoked,omitempty"`   // To mark session as logged out
+	ID       string    `bson:"_id,omitempty"` // Session ID (could be the JWT JTI)
+	UserID   string    `bson:"user_id"`
+	ClientID string    `bson:"client_id,omitempty"` // OAuth client that created the session, when known
+	AuthTime time.Time `bson:"auth_time,omitempty"`
+	AMR      []string  `bson:"amr,omitempty"`
+	ACR      string    `bson:"acr,omitempty"`
+
+	// Device
+	UserAgent  string `bson:"user_agent,omitempty"`
+	DeviceName string `bson:"device_name,omitempty"`
+	DeviceType string `bson:"device_type,omitempty"` // desktop | mobile | tablet | cli | api
+	OS         string `bson:"os,omitempty"`
+	Browser    string `bson:"browser,omitempty"`
+
+	// Location (coarse only)
+	IPAddress string `bson:"ip_address,omitempty"`
+	IPCountry string `bson:"ip_country,omitempty"`
+	IPRegion  string `bson:"ip_region,omitempty"`
+	IPCity    string `bson:"ip_city,omitempty"`
+	IPASN     string `bson:"ip_asn,omitempty"`
+
+	// Token correlation
+	TokenID      string `bson:"token_id,unique"`                // Corresponds to JTI of the JWT
+	RefreshToken string `bson:"refresh_token,omitempty,unique"` // If using refresh tokens
+
+	// Lifecycle
+	CreatedAt   time.Time `bson:"created_at"`
+	LastSeenAt  time.Time `bson:"last_seen_at,omitempty"`
+	LastSeenIP  string    `bson:"last_seen_ip,omitempty"`
+	ExpiresAt   time.Time `bson:"expires_at"`
+	AbsoluteEnd time.Time `bson:"absolute_end,omitempty"`
+
+	// Revocation
+	IsRevoked    bool       `bson:"is_revoked,omitempty"`
+	RevokedAt    *time.Time `bson:"revoked_at,omitempty"`
+	RevokedBy    string     `bson:"revoked_by,omitempty"`
+	RevokeReason string     `bson:"revoke_reason,omitempty"`
+	RevokedFrom  string     `bson:"revoked_from,omitempty"`
+
+	// Risk
+	RiskFlags   []string `bson:"risk_flags,omitempty"`
+	Trusted     bool     `bson:"trusted,omitempty"`
+	BindKeyHash string   `bson:"bind_key_hash,omitempty"`
+
+	// Back-compat
+	LastUsedAt time.Time `bson:"last_used_at,omitempty"`
+}
+
+// SessionEvent is an append-only lifecycle log entry for a session.
+type SessionEvent struct {
+	ID        string         `bson:"_id,omitempty"`
+	SessionID string         `bson:"session_id"`
+	UserID    string         `bson:"user_id"`
+	ClientID  string         `bson:"client_id,omitempty"`
+	Type      string         `bson:"type"` // created|refreshed|rotated|reuse_detected|revoked|expired|risk_flagged|step_up
+	IPAddress string         `bson:"ip_address,omitempty"`
+	Geo       string         `bson:"geo,omitempty"`
+	UserAgent string         `bson:"user_agent,omitempty"`
+	At        time.Time      `bson:"at"`
+	Actor     string         `bson:"actor,omitempty"`
+	Reason    string         `bson:"reason,omitempty"`
+	Metadata  map[string]any `bson:"metadata,omitempty"`
 }
 
 // LoginFlowState holds the parameters and state for an OIDC authorization flow

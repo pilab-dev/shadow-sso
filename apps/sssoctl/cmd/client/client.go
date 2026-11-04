@@ -2,35 +2,84 @@ package client
 
 import (
 	"context"
-	// "crypto/tls" // Only if TLSClientConfig is actually used
+	"crypto/tls"
 	"fmt"
+	"net"
 	"net/http"
+	"os"
+	"strings"
 
 	"connectrpc.com/connect"
 	"github.com/pilab-dev/shadow-sso/apps/sssoctl/cmd/config"
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
+	"golang.org/x/net/http2"
 )
+
+// protocol resolves the wire protocol for proto-based RPCs. Precedence:
+// --protocol flag, context setting, SSOCTL_PROTOCOL, then Connect+JSON.
+func protocol(cfg *config.Context) string {
+	p := strings.ToLower(strings.TrimSpace(config.ProtocolOverride))
+	if p == "" && cfg != nil {
+		p = strings.ToLower(strings.TrimSpace(cfg.Protocol))
+	}
+	if p == "" {
+		p = strings.ToLower(strings.TrimSpace(os.Getenv("SSOCTL_PROTOCOL")))
+	}
+	switch p {
+	case "grpc":
+		return "grpc"
+	case "connect-proto", "connect-binary", "binary":
+		return "connect-proto"
+	default:
+		return "connect"
+	}
+}
+
+// clientOptions returns the codec/protocol options for the selected protocol.
+func clientOptions(cfg *config.Context) []connect.ClientOption {
+	switch protocol(cfg) {
+	case "grpc":
+		return []connect.ClientOption{connect.WithGRPC()}
+	case "connect-proto":
+		// Connect's default codec is protobuf binary.
+		return nil
+	default:
+		return []connect.ClientOption{connect.WithProtoJSON()}
+	}
+}
+
+// options adds the bearer-token interceptor when a token is available.
+func options(cfg *config.Context) []connect.ClientOption {
+	opts := clientOptions(cfg)
+	if cfg != nil && cfg.UserAuthToken != "" {
+		opts = append(opts, connect.WithInterceptors(&authInterceptor{token: cfg.UserAuthToken}))
+	}
+	return opts
+}
+
+// newHTTPClient returns a client capable of the selected protocol. gRPC over a
+// plaintext endpoint needs HTTP/2 with prior knowledge (h2c), which net/http
+// does not enable by itself.
+func newHTTPClient(cfg *config.Context) *http.Client {
+	if protocol(cfg) == "grpc" && cfg != nil && strings.HasPrefix(strings.ToLower(cfg.ServerEndpoint), "http://") {
+		return &http.Client{Transport: &http2.Transport{
+			AllowHTTP: true,
+			DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
+				var d net.Dialer
+				return d.DialContext(ctx, network, addr)
+			},
+		}}
+	}
+	return &http.Client{}
+}
 
 // AuthServiceClient returns a new AuthService client.
 func AuthServiceClient(cfg *config.Context) (ssov1connect.AuthServiceClient, error) {
 	if cfg == nil || cfg.ServerEndpoint == "" {
 		return nil, fmt.Errorf("invalid context or server endpoint for AuthService client")
 	}
-	httpClient := &http.Client{
-		// For development, allow insecure connections if endpoint is not HTTPS.
-		// For production, ensure TLS. Transport can be configured here.
-		// Example for local dev if server is HTTP only:
-		// Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}},
-		// However, for h2c (HTTP/2 Cleartext), no special TLS config is needed for the client if server supports it.
-		// If server is HTTPS, http.DefaultClient or a client with proper TLS config should be used.
-	}
-	opts := []connect.ClientOption{
-		connect.WithProtoJSON(), // Use JSON, can also use connect.WithProtoBinary()
-	}
-	// If token is present, add an interceptor to set Authorization header.
-	if cfg.UserAuthToken != "" {
-		opts = append(opts, connect.WithInterceptors(&authInterceptor{token: cfg.UserAuthToken}))
-	}
+	httpClient := newHTTPClient(cfg)
+	opts := options(cfg)
 
 	return ssov1connect.NewAuthServiceClient(httpClient, cfg.ServerEndpoint, opts...), nil
 }
@@ -43,11 +92,8 @@ func UserServiceClient(cfg *config.Context) (ssov1connect.UserServiceClient, err
 	if cfg.UserAuthToken == "" { // Most user commands will require auth
 		return nil, fmt.Errorf("user authentication token not found in current context. Please login using 'ssoctl auth login'")
 	}
-	httpClient := &http.Client{ /* Consider sharing httpClient or transport config if used across clients */ }
-	opts := []connect.ClientOption{
-		connect.WithProtoJSON(),
-		connect.WithInterceptors(&authInterceptor{token: cfg.UserAuthToken}), // Always add auth for UserService
-	}
+	httpClient := newHTTPClient(cfg)
+	opts := options(cfg)
 	return ssov1connect.NewUserServiceClient(httpClient, cfg.ServerEndpoint, opts...), nil
 }
 
@@ -59,11 +105,8 @@ func ServiceAccountServiceClient(cfg *config.Context) (ssov1connect.ServiceAccou
 	if cfg.UserAuthToken == "" { // Service account management requires auth
 		return nil, fmt.Errorf("user authentication token not found in current context. Please login using 'ssoctl auth login'")
 	}
-	httpClient := &http.Client{ /* ... consider shared transport ... */ }
-	opts := []connect.ClientOption{
-		connect.WithProtoJSON(),
-		connect.WithInterceptors(&authInterceptor{token: cfg.UserAuthToken}),
-	}
+	httpClient := newHTTPClient(cfg)
+	opts := options(cfg)
 	return ssov1connect.NewServiceAccountServiceClient(httpClient, cfg.ServerEndpoint, opts...), nil
 }
 
@@ -75,11 +118,8 @@ func ClientManagementServiceClient(cfg *config.Context) (ssov1connect.ClientMana
 	if cfg.UserAuthToken == "" { // Client management requires auth (admin)
 		return nil, fmt.Errorf("user authentication token not found in current context. Please login using 'ssoctl auth login'")
 	}
-	httpClient := &http.Client{ /* ... consider shared transport ... */ }
-	opts := []connect.ClientOption{
-		connect.WithProtoJSON(),
-		connect.WithInterceptors(&authInterceptor{token: cfg.UserAuthToken}),
-	}
+	httpClient := newHTTPClient(cfg)
+	opts := options(cfg)
 	return ssov1connect.NewClientManagementServiceClient(httpClient, cfg.ServerEndpoint, opts...), nil
 }
 
@@ -91,11 +131,8 @@ func IdPManagementServiceClient(cfg *config.Context) (ssov1connect.IdPManagement
 	if cfg.UserAuthToken == "" { // IdP management requires auth (admin)
 		return nil, fmt.Errorf("user authentication token not found in current context. Please login using 'ssoctl auth login'")
 	}
-	httpClient := &http.Client{ /* ... consider shared transport ... */ }
-	opts := []connect.ClientOption{
-		connect.WithProtoJSON(),
-		connect.WithInterceptors(&authInterceptor{token: cfg.UserAuthToken}),
-	}
+	httpClient := newHTTPClient(cfg)
+	opts := options(cfg)
 	return ssov1connect.NewIdPManagementServiceClient(httpClient, cfg.ServerEndpoint, opts...), nil
 }
 
@@ -107,11 +144,8 @@ func TwoFactorServiceClient(cfg *config.Context) (ssov1connect.TwoFactorServiceC
 	if cfg.UserAuthToken == "" { // 2FA self-management requires auth
 		return nil, fmt.Errorf("user authentication token not found in current context. Please login using 'ssoctl auth login'")
 	}
-	httpClient := &http.Client{ /* ... consider shared transport ... */ }
-	opts := []connect.ClientOption{
-		connect.WithProtoJSON(),
-		connect.WithInterceptors(&authInterceptor{token: cfg.UserAuthToken}),
-	}
+	httpClient := newHTTPClient(cfg)
+	opts := options(cfg)
 	return ssov1connect.NewTwoFactorServiceClient(httpClient, cfg.ServerEndpoint, opts...), nil
 }
 
@@ -123,11 +157,8 @@ func FederationServiceClient(cfg *config.Context) (ssov1connect.FederationServic
 	if cfg.UserAuthToken == "" { // Federated identity self-management requires auth
 		return nil, fmt.Errorf("user authentication token not found in current context. Please login using 'ssoctl auth login'")
 	}
-	httpClient := &http.Client{ /* ... consider shared transport ... */ }
-	opts := []connect.ClientOption{
-		connect.WithProtoJSON(),
-		connect.WithInterceptors(&authInterceptor{token: cfg.UserAuthToken}),
-	}
+	httpClient := newHTTPClient(cfg)
+	opts := options(cfg)
 	return ssov1connect.NewFederationServiceClient(httpClient, cfg.ServerEndpoint, opts...), nil
 }
 
@@ -139,12 +170,35 @@ func AuditServiceClient(cfg *config.Context) (ssov1connect.AuditServiceClient, e
 	if cfg.UserAuthToken == "" {
 		return nil, fmt.Errorf("user authentication token not found in current context. Please login using 'ssoctl auth login'")
 	}
-	httpClient := &http.Client{}
-	opts := []connect.ClientOption{
-		connect.WithProtoJSON(),
-		connect.WithInterceptors(&authInterceptor{token: cfg.UserAuthToken}),
-	}
+	httpClient := newHTTPClient(cfg)
+	opts := options(cfg)
 	return ssov1connect.NewAuditServiceClient(httpClient, cfg.ServerEndpoint, opts...), nil
+}
+
+// TokenServiceClient returns a traceability client for token/device listings.
+func TokenServiceClient(cfg *config.Context) (ssov1connect.TokenServiceClient, error) {
+	if cfg == nil || cfg.ServerEndpoint == "" {
+		return nil, fmt.Errorf("invalid context or server endpoint for TokenService client")
+	}
+	if cfg.UserAuthToken == "" {
+		return nil, fmt.Errorf("user authentication token not found in current context. Please login using 'ssoctl auth login'")
+	}
+	httpClient := newHTTPClient(cfg)
+	opts := options(cfg)
+	return ssov1connect.NewTokenServiceClient(httpClient, cfg.ServerEndpoint, opts...), nil
+}
+
+// BrowserPolicyServiceClient returns the enterprise browser-baseline client.
+func BrowserPolicyServiceClient(cfg *config.Context) (ssov1connect.BrowserPolicyServiceClient, error) {
+	if cfg == nil || cfg.ServerEndpoint == "" {
+		return nil, fmt.Errorf("invalid context or server endpoint for BrowserPolicyService client")
+	}
+	if cfg.UserAuthToken == "" {
+		return nil, fmt.Errorf("user authentication token not found in current context. Please login using 'ssoctl auth login'")
+	}
+	httpClient := newHTTPClient(cfg)
+	opts := options(cfg)
+	return ssov1connect.NewBrowserPolicyServiceClient(httpClient, cfg.ServerEndpoint, opts...), nil
 }
 
 // UserAttributeServiceClient returns a new UserAttributeService client.
@@ -155,11 +209,8 @@ func UserAttributeServiceClient(cfg *config.Context) (ssov1connect.UserAttribute
 	if cfg.UserAuthToken == "" { // User attribute management requires auth (admin)
 		return nil, fmt.Errorf("user authentication token not found in current context. Please login using 'ssoctl auth login'")
 	}
-	httpClient := &http.Client{ /* ... consider shared transport ... */ }
-	opts := []connect.ClientOption{
-		connect.WithProtoJSON(),
-		connect.WithInterceptors(&authInterceptor{token: cfg.UserAuthToken}),
-	}
+	httpClient := newHTTPClient(cfg)
+	opts := options(cfg)
 	return ssov1connect.NewUserAttributeServiceClient(httpClient, cfg.ServerEndpoint, opts...), nil
 }
 
@@ -171,11 +222,8 @@ func UserAttributeMapperServiceClient(cfg *config.Context) (ssov1connect.UserAtt
 	if cfg.UserAuthToken == "" { // Token mapper management requires auth (admin)
 		return nil, fmt.Errorf("user authentication token not found in current context. Please login using 'ssoctl auth login'")
 	}
-	httpClient := &http.Client{ /* ... consider shared transport ... */ }
-	opts := []connect.ClientOption{
-		connect.WithProtoJSON(),
-		connect.WithInterceptors(&authInterceptor{token: cfg.UserAuthToken}),
-	}
+	httpClient := newHTTPClient(cfg)
+	opts := options(cfg)
 	return ssov1connect.NewUserAttributeMapperServiceClient(httpClient, cfg.ServerEndpoint, opts...), nil
 }
 

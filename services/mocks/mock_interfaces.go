@@ -46,18 +46,33 @@ func (m *MockOAuthService) EXPECT() *MockOAuthServiceMockRecorder {
 }
 
 // ClientCredentials mocks base method.
-func (m *MockOAuthService) ClientCredentials(ctx context.Context, clientID, clientSecret, scope string) (*api.TokenResponse, error) {
+func (m *MockOAuthService) ClientCredentials(ctx context.Context, clientID, clientSecret, scope string, audience []string) (*api.TokenResponse, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ClientCredentials", ctx, clientID, clientSecret, scope)
+	ret := m.ctrl.Call(m, "ClientCredentials", ctx, clientID, clientSecret, scope, audience)
 	ret0, _ := ret[0].(*api.TokenResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ClientCredentials indicates an expected call of ClientCredentials.
-func (mr *MockOAuthServiceMockRecorder) ClientCredentials(ctx, clientID, clientSecret, scope any) *gomock.Call {
+func (mr *MockOAuthServiceMockRecorder) ClientCredentials(ctx, clientID, clientSecret, scope, audience any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClientCredentials", reflect.TypeOf((*MockOAuthService)(nil).ClientCredentials), ctx, clientID, clientSecret, scope)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClientCredentials", reflect.TypeOf((*MockOAuthService)(nil).ClientCredentials), ctx, clientID, clientSecret, scope, audience)
+}
+
+// IssueClientCredentialsForClient mocks base method.
+func (m *MockOAuthService) IssueClientCredentialsForClient(ctx context.Context, cli *domain.Client, scope string, audience []string) (*api.TokenResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IssueClientCredentialsForClient", ctx, cli, scope, audience)
+	ret0, _ := ret[0].(*api.TokenResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// IssueClientCredentialsForClient indicates an expected call of IssueClientCredentialsForClient.
+func (mr *MockOAuthServiceMockRecorder) IssueClientCredentialsForClient(ctx, cli, scope, audience any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IssueClientCredentialsForClient", reflect.TypeOf((*MockOAuthService)(nil).IssueClientCredentialsForClient), ctx, cli, scope, audience)
 }
 
 // DirectGrant mocks base method.
@@ -408,6 +423,21 @@ func (m *MockTokenService) GenerateTokenPairWithFamily(ctx context.Context, clie
 func (mr *MockTokenServiceMockRecorder) GenerateTokenPairWithFamily(ctx, clientID, userID, scope, tokenTTL, family, nonce, authTime any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GenerateTokenPairWithFamily", reflect.TypeOf((*MockTokenService)(nil).GenerateTokenPairWithFamily), ctx, clientID, userID, scope, tokenTTL, family, nonce, authTime)
+}
+
+// GenerateTokenPairWithSession mocks base method.
+func (m *MockTokenService) GenerateTokenPairWithSession(ctx context.Context, clientID, userID, scope string, tokenTTL time.Duration, sessionID, family, parentJTI string) (*api.TokenResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GenerateTokenPairWithSession", ctx, clientID, userID, scope, tokenTTL, sessionID, family, parentJTI)
+	ret0, _ := ret[0].(*api.TokenResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GenerateTokenPairWithSession indicates an expected call of GenerateTokenPairWithSession.
+func (mr *MockTokenServiceMockRecorder) GenerateTokenPairWithSession(ctx, clientID, userID, scope, tokenTTL, sessionID, family, parentJTI any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GenerateTokenPairWithSession", reflect.TypeOf((*MockTokenService)(nil).GenerateTokenPairWithSession), ctx, clientID, userID, scope, tokenTTL, sessionID, family, parentJTI)
 }
 
 // GetAccessTokenInfo mocks base method.

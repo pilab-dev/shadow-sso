@@ -39,5 +39,10 @@ type AuditLogFilter struct {
 type AuditLogRepository interface {
 	Insert(ctx context.Context, event *AuditLog) error
 	List(ctx context.Context, filter AuditLogFilter, limit, offset int) ([]*AuditLog, error)
+	// ListAfter returns events at or after `after` ordered oldest-first. It backs
+	// the live follower, which needs a forward cursor rather than the
+	// newest-first ordering of List; callers de-duplicate overlapping events by
+	// ID because `after` is inclusive to avoid losing same-timestamp events.
+	ListAfter(ctx context.Context, filter AuditLogFilter, after time.Time, limit int) ([]*AuditLog, error)
 	Count(ctx context.Context, filter AuditLogFilter) (int64, error)
 }

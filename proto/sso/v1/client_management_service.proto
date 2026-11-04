@@ -20,6 +20,10 @@ service ClientManagementService {
   rpc UpdateClient(UpdateClientRequest) returns (UpdateClientResponse);
   // Deletes an OAuth2 client by its ID.
   rpc DeleteClient(DeleteClientRequest) returns (google.protobuf.Empty);
+  // Generates and stores a new client secret, returning the plaintext once.
+  rpc GenerateClientSecret(GenerateClientSecretRequest) returns (GenerateClientSecretResponse);
+  // Generates a new RSA keypair and stores the public JWKS on the client.
+  rpc GenerateClientKeys(GenerateClientKeysRequest) returns (GenerateClientKeysResponse);
 }
 
 // Corresponds to client.ClientType
@@ -172,3 +176,31 @@ message UpdateClientResponse {
 message DeleteClientRequest { string client_id = 1 [(buf.validate.field).string.min_len = 1]; }
 
 // (google.protobuf.Empty is used for DeleteClientResponse)
+
+// --- GenerateClientSecret ---
+message GenerateClientSecretRequest {
+  string client_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message GenerateClientSecretResponse {
+  string client_id = 1;
+  // client_secret is the plaintext secret. It is returned once and cannot be
+  // retrieved later; only the hash is stored.
+  string client_secret = 2;
+}
+
+// --- GenerateClientKeys ---
+message GenerateClientKeysRequest {
+  string client_id = 1 [(buf.validate.field).string.min_len = 1];
+  // key_type is currently RSA only.
+  string key_type = 2;
+  // key_bits defaults to 2048 and is clamped to a minimum of 2048.
+  int32 key_bits = 3;
+}
+
+message GenerateClientKeysResponse {
+  string client_id = 1;
+  string key_id = 2;
+  // jwks_json is the public JWKS as JSON, ready to publish.
+  string jwks_json = 3;
+}
