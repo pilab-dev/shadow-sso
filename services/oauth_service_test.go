@@ -1485,6 +1485,7 @@ func TestOAuthService_GenerateAuthCode_Success(t *testing.T) {
 	}
 
 	mockClientRepo.EXPECT().GetClient(gomock.Any(), clientID).Return(client, nil)
+	mockSessionRepo.EXPECT().StoreSession(gomock.Any(), gomock.Any()).Return(nil)
 	mockAuthCodeRepo.EXPECT().SaveAuthCode(gomock.Any(), gomock.Any()).Return(nil)
 
 	code, err := oauthService.GenerateAuthCode(ctx, clientID, userID, redirectURI, scope, "", "", "", time.Now())

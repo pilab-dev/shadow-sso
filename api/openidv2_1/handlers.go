@@ -22,6 +22,7 @@ import (
 	"github.com/pilab-dev/shadow-sso/api/webauth"
 	"github.com/pilab-dev/shadow-sso/domain"           // Corrected: Single import of domain
 	"github.com/pilab-dev/shadow-sso/internal/metrics" // For custom metrics
+	"github.com/pilab-dev/shadow-sso/internal/reqinfo"
 	"github.com/pilab-dev/shadow-sso/internal/ssosession"
 
 	// Removed duplicate domain import
@@ -358,7 +359,7 @@ func (oa *OAuth2API) DeviceAuthorizationHandler(c *gin.Context) {
 //
 //nolint:funlen,gocognit // Funlen might still be triggered but gocognit should be lower.
 func (oa *OAuth2API) AuthorizeHandler(c *gin.Context) {
-	ctx := c.Request.Context()
+	ctx := reqinfo.WithContext(c.Request.Context(), reqinfo.FromHTTP(c.Request))
 
 	// ── flow_id redirect from login form ────────────────────────────────
 	// When the login form (webauth) successfully authenticates a user, it
@@ -1195,7 +1196,7 @@ func (oa *OAuth2API) TokenHandler(c *gin.Context) {
 	clientAssertionType := c.PostForm("client_assertion_type")
 	grantType := c.PostForm("grant_type")
 
-	ctx := c.Request.Context()
+	ctx := reqinfo.WithContext(c.Request.Context(), reqinfo.FromHTTP(c.Request))
 	var cli *domain.Client
 	var err error
 

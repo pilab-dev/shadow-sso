@@ -342,6 +342,11 @@ Ordered by impact, cheapest first:
 | 3 | Hashed refresh tokens at rest, rotation telemetry | a database dump yields no replayable token |
 | 4 | DPoP / sender-constrained tokens | a stolen bearer token cannot be replayed |
 
+**Shipped in v1.2.0:** the observation half of Phase 1/2 — per-user token
+metadata, parsed browser/OS devices, live audit streaming and targeted token
+revocation. Server-side `strict` access-token validation and GeoIP/risk scoring
+remain open.
+
 ## Metrics
 
 - `sso_sessions_active{client_id}`

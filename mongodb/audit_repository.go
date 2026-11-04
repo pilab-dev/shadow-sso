@@ -41,6 +41,10 @@ func (r *AuditRepository) createIndexes(ctx context.Context) error {
 		{
 			Keys: bson.D{{Key: "action", Value: 1}, {Key: "timestamp", Value: -1}},
 		},
+		{
+			// Global followers sort by timestamp with no user/action filter.
+			Keys: bson.D{{Key: "timestamp", Value: 1}},
+		},
 	}
 	_, err := r.audit.Indexes().CreateMany(ctx, indexModels)
 	return err
@@ -88,6 +92,41 @@ func (r *AuditRepository) List(ctx context.Context, filter domain.AuditLogFilter
 
 func (r *AuditRepository) Count(ctx context.Context, filter domain.AuditLogFilter) (int64, error) {
 	return r.audit.CountDocuments(ctx, r.buildFilter(filter))
+}
+
+// ListAfter returns events at or after `after` ordered oldest-first. The
+// inclusive bound is intentional: the follower de-duplicates by event ID, and
+// an inclusive cursor cannot drop an event whose timestamp ties the cursor.
+func (r *AuditRepository) ListAfter(ctx context.Context, filter domain.AuditLogFilter, after time.Time, limit int) ([]*domain.AuditLog, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 200
+	}
+	query := r.buildFilter(filter)
+	bound := after
+	if filter.From != nil && filter.From.After(bound) {
+		bound = *filter.From
+	}
+	if ts, ok := query["timestamp"].(bson.M); ok {
+		ts["$gte"] = bound
+	} else {
+		query["timestamp"] = bson.M{"$gte": bound}
+	}
+
+	findOpts := options.Find().
+		SetSort(bson.D{{Key: "timestamp", Value: 1}}).
+		SetLimit(int64(limit))
+
+	cursor, err := r.audit.Find(ctx, query, findOpts)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var events []*domain.AuditLog
+	if err := cursor.All(ctx, &events); err != nil {
+		return nil, err
+	}
+	return events, nil
 }
 
 func (r *AuditRepository) buildFilter(filter domain.AuditLogFilter) bson.M {

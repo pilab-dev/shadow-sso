@@ -1,0 +1,124 @@
+syntax = "proto3";
+
+package sso.v1;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "buf/validate/validate.proto";
+
+option go_package = "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1;ssov1";
+
+// TokenService is the administrative traceability surface for issued tokens and
+// the devices (sessions) they belong to. It never returns token values.
+service TokenService {
+  // Lists token metadata for a user. Admins can query any user; a normal user
+  // can query themselves with user_id = "me".
+  rpc ListUserTokens(ListUserTokensRequest) returns (ListUserTokensResponse);
+
+  // Returns metadata for one token by its JTI.
+  rpc GetToken(GetTokenRequest) returns (GetTokenResponse);
+
+  // Lists devices (sessions) for a user, enriched with parsed browser/OS and
+  // token counts.
+  rpc ListUserDevices(ListUserDevicesRequest) returns (ListUserDevicesResponse);
+
+  // Revokes one token by JTI. Use this for a compromised token; use
+  // AuthService.ClearUserSessions to kick a whole device.
+  rpc RevokeToken(RevokeTokenRequest) returns (google.protobuf.Empty);
+}
+
+enum UserTokenStatus {
+  USER_TOKEN_STATUS_UNSPECIFIED = 0;
+  USER_TOKEN_STATUS_ACTIVE = 1;
+  USER_TOKEN_STATUS_REVOKED = 2;
+  USER_TOKEN_STATUS_EXPIRED = 3;
+  // A refresh token that was exchanged and replaced by another token.
+  USER_TOKEN_STATUS_ROTATED = 4;
+}
+
+message UserToken {
+  string id = 1;          // JTI
+  string token_type = 2;  // access_token or refresh_token
+  string client_id = 3;
+  string user_id = 4;
+  string scope = 5;
+  google.protobuf.Timestamp issued_at = 6;
+  google.protobuf.Timestamp expires_at = 7;
+  bool is_revoked = 8;
+  string session_id = 9;
+  string family = 10;      // refresh-token rotation family
+  string parent_jti = 11;  // token replaced by this one, if any
+  google.protobuf.Timestamp used_at = 12;
+  string rotated_to = 13;  // token that replaced this one, if any
+  UserTokenStatus status = 14;
+  // Device context from the owning session, when available.
+  string user_agent = 15;
+  string ip_address = 16;
+  string browser = 17;
+  string browser_version = 18;
+  string os = 19;
+  string device_type = 20;
+}
+
+message ListUserTokensRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1]; // "me" or a user ID for admins
+  bool include_revoked = 2;
+  bool include_expired = 3;
+  string token_type = 4; // access_token, refresh_token, or empty for both
+  string session_id = 5;
+  string client_id = 6;
+  int32 limit = 7;  // 1-1000, default 100
+  int32 offset = 8;
+}
+
+message ListUserTokensResponse {
+  repeated UserToken tokens = 1; // newest first
+  int64 total = 2;
+  int32 limit = 3;
+  int32 offset = 4;
+}
+
+message GetTokenRequest {
+  string token_id = 1 [(buf.validate.field).string.min_len = 1]; // JTI
+}
+
+message GetTokenResponse { UserToken token = 1; }
+
+message UserDevice {
+  string session_id = 1;
+  string user_id = 2;
+  string user_agent = 3;
+  string ip_address = 4;
+  string browser = 5;
+  string browser_version = 6;
+  string os = 7;
+  string device_type = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp last_used_at = 10;
+  google.protobuf.Timestamp expires_at = 11;
+  bool is_revoked = 12;
+  bool is_current_session = 13;
+  repeated string client_ids = 14;
+  int32 token_count = 15;
+  int32 active_token_count = 16;
+}
+
+message ListUserDevicesRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1]; // "me" or a user ID for admins
+  bool include_revoked = 2;
+  bool include_expired = 3;
+  int32 limit = 4;
+  int32 offset = 5;
+}
+
+message ListUserDevicesResponse {
+  repeated UserDevice devices = 1;
+  int64 total = 2;
+  int32 limit = 3;
+  int32 offset = 4;
+}
+
+message RevokeTokenRequest {
+  string token_id = 1 [(buf.validate.field).string.min_len = 1]; // JTI
+  string reason = 2; // free-form audit reason
+}

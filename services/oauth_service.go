@@ -13,6 +13,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/pilab-dev/shadow-sso/api"
 	"github.com/pilab-dev/shadow-sso/domain"
+	"github.com/pilab-dev/shadow-sso/internal/audit"
+	"github.com/pilab-dev/shadow-sso/internal/reqinfo"
 	"github.com/pilab-dev/shadow-sso/internal/telemetry"
 	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/otel/attribute"
@@ -62,14 +64,14 @@ func generateUserCode(length int, charset string, chunkSize int) string {
 }
 
 type defaultOAuthService struct {
-	tokenRepo        domain.TokenRepository
-	authCodeRepo     domain.AuthorizationCodeRepository
-	deviceAuthRepo   domain.DeviceAuthorizationRepository
-	clientRepo       domain.ClientRepository // Changed from client.ClientStore for consistency
-	userRepo         domain.UserRepository
-	sessionRepo      domain.SessionRepository
-	tokenService     domain.TokenServiceInterface
-	issuer           string
+	tokenRepo         domain.TokenRepository
+	authCodeRepo      domain.AuthorizationCodeRepository
+	deviceAuthRepo    domain.DeviceAuthorizationRepository
+	clientRepo        domain.ClientRepository // Changed from client.ClientStore for consistency
+	userRepo          domain.UserRepository
+	sessionRepo       domain.SessionRepository
+	tokenService      domain.TokenServiceInterface
+	issuer            string
 	realmSettingsRepo domain.RealmSettingsRepository
 }
 
@@ -251,6 +253,7 @@ func (s *defaultOAuthService) Login(ctx context.Context, username, password, dev
 	session := &domain.Session{
 		ID:         uuid.NewString(),
 		UserID:     user.ID,
+		ClientID:   "oauth-service-login-client",
 		UserAgent:  deviceInfo,
 		ExpiresAt:  time.Now().Add(24 * 30 * time.Hour), // Example long-lived session
 		CreatedAt:  time.Now(),
@@ -344,6 +347,11 @@ func (s *defaultOAuthService) RefreshToken(ctx context.Context, refreshTokenValu
 				log.Ctx(ctx).Error().Err(errRev).Msg("Failed to revoke session after refresh token replay")
 			}
 		}
+		info := reqinfo.FromContext(ctx)
+		audit.Log("OAuthService", "RefreshTokenReplay", tokenInfo.UserID, tokenInfo.ID,
+			fmt.Sprintf("used refresh token presented again; family=%s session=%s client=%s %s",
+				tokenInfo.RefreshTokenFamily, tokenInfo.SessionID, clientID, info.Details()), false,
+			errors.New("refresh token replay"))
 		return nil, domain.NewInvalidGrant("refresh token has already been used")
 	}
 
@@ -357,6 +365,14 @@ func (s *defaultOAuthService) RefreshToken(ctx context.Context, refreshTokenValu
 			Bool("is_revoked", tokenInfo.IsRevoked).
 			Time("expires_at", tokenInfo.ExpiresAt).
 			Msg("Refresh token grant rejected: expired or revoked")
+		action := "RefreshTokenRevoked"
+		if !tokenInfo.IsRevoked {
+			action = "TokenExpired"
+		}
+		audit.Log("OAuthService", action, tokenInfo.UserID, tokenInfo.ID,
+			fmt.Sprintf("refresh grant rejected; client=%s session=%s expires=%s",
+				clientID, tokenInfo.SessionID, tokenInfo.ExpiresAt.UTC().Format(time.RFC3339)),
+			false, errRev)
 		return nil, domain.NewInvalidGrant("refresh token expired or revoked")
 	}
 
@@ -434,7 +450,10 @@ func (s *defaultOAuthService) revokeSession(ctx context.Context, sessionID strin
 	if err := s.sessionRepo.UpdateSession(ctx, sess); err != nil {
 		return err
 	}
-	return s.tokenRepo.RevokeTokensBySessionID(ctx, sessionID)
+	err = s.tokenRepo.RevokeTokensBySessionID(ctx, sessionID)
+	audit.Log("OAuthService", "SessionRevoked", sess.UserID, sessionID,
+		"session and its tokens revoked after refresh-token replay", err == nil, err)
+	return err
 }
 
 func (s *defaultOAuthService) GetJWKS() *domain.JWKS {
@@ -519,7 +538,9 @@ func (s *defaultOAuthService) DirectGrant(ctx context.Context,
 	session := &domain.Session{
 		ID:         uuid.NewString(),
 		UserID:     user.ID,
+		ClientID:   clientID,
 		UserAgent:  "Direct Grant",
+		IPAddress:  reqinfo.FromContext(ctx).IP,
 		ExpiresAt:  time.Now().Add(time.Hour),
 		CreatedAt:  time.Now(),
 		LastUsedAt: time.Now(),
@@ -854,7 +875,7 @@ func (s *defaultOAuthService) ExchangeAuthorizationCode(ctx context.Context,
 		log.Ctx(ctx).Error().Err(err).Str("client_id", clientID).Str("user_id", authCodeDomain.UserID).Msg("Failed to resolve access token lifespan in auth code exchange")
 		return nil, err
 	}
-	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, authCodeDomain.UserID, authCodeDomain.Scope, tokenTTL, "")
+	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, authCodeDomain.UserID, authCodeDomain.Scope, tokenTTL, authCodeDomain.AuthCodeData.SessionID)
 	if err != nil {
 		telemetry.RecordSpanError(span, err, "failed to generate token pair")
 		span.SetStatus(codes.Error, err.Error())
@@ -864,7 +885,7 @@ func (s *defaultOAuthService) ExchangeAuthorizationCode(ctx context.Context,
 
 	// If a nonce was stored in the auth code, regenerate the ID token with it.
 	if authCodeDomain.Nonce != "" {
-		idToken, err := s.tokenService.GenerateIDToken(ctx, authCodeDomain.UserID, clientID, authCodeDomain.Nonce, "", authCodeDomain.CreatedAt, authCodeDomain.Scope)
+		idToken, err := s.tokenService.GenerateIDToken(ctx, authCodeDomain.UserID, clientID, authCodeDomain.Nonce, authCodeDomain.AuthCodeData.SessionID, authCodeDomain.CreatedAt, authCodeDomain.Scope)
 		if err != nil {
 			log.Ctx(ctx).Warn().Err(err).Str("client_id", clientID).Msg("Failed to generate ID token with nonce, continuing without it")
 		} else {
@@ -1035,6 +1056,28 @@ func (s *defaultOAuthService) GenerateAuthCode(
 		return "", err
 	}
 	code := base64.RawURLEncoding.EncodeToString(b)
+	sessionID := ""
+	if s.sessionRepo != nil {
+		sessionID = uuid.NewString()
+		now := time.Now()
+		info := reqinfo.FromContext(ctx)
+		session := &domain.Session{
+			ID:         sessionID,
+			UserID:     userID,
+			ClientID:   clientID,
+			TokenID:    sessionID,
+			UserAgent:  info.UserAgent,
+			IPAddress:  info.IP,
+			ExpiresAt:  now.Add(30 * 24 * time.Hour),
+			CreatedAt:  now,
+			LastUsedAt: now,
+		}
+		if errStore := s.sessionRepo.StoreSession(ctx, session); errStore != nil {
+			log.Ctx(ctx).Warn().Err(errStore).Str("client_id", clientID).Str("user_id", userID).
+				Msg("Failed to store session for authorization code; tokens will not be linked to a device")
+			sessionID = ""
+		}
+	}
 	authCode := &domain.AuthCode{
 		Code:                code,
 		ClientID:            clientID,
@@ -1047,6 +1090,7 @@ func (s *defaultOAuthService) GenerateAuthCode(
 		CodeChallenge:       codeChallenge,
 		CodeChallengeMethod: codeChallengeMethod,
 		Nonce:               nonce,
+		AuthCodeData:        domain.AuthCodeData{SessionID: sessionID},
 	}
 
 	if err := s.authCodeRepo.SaveAuthCode(ctx, authCode); err != nil {

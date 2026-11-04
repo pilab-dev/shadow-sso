@@ -45,6 +45,7 @@ func persistAsync(event Event) {
 	}
 
 	log := &domain.AuditLog{
+		ID:        event.ID,
 		Timestamp: event.Timestamp,
 		Service:   event.Service,
 		Action:    event.Action,

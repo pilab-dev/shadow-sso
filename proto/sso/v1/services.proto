@@ -527,6 +527,13 @@ message SessionInfo {
     google.protobuf.Timestamp created_at = 5;
     google.protobuf.Timestamp expires_at = 6;
     bool is_current_session = 7; // To highlight the session that made the request
+    google.protobuf.Timestamp last_used_at = 8;
+    bool is_revoked = 9;
+    // Parsed from user_agent; empty when the agent could not be identified.
+    string browser = 10;
+    string browser_version = 11;
+    string os = 12;
+    string device_type = 13;
 }
 
 message ListUserSessionsRequest {

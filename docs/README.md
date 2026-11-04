@@ -19,6 +19,7 @@ This file provides an overview of all documentation available for Shadow SSO.
 | [docs/credential-helper-and-k8s-oidc.md](./credential-helper-and-k8s-oidc.md) | Credential helper design and temporary privilege escalation |
 | [docs/client-sdk-architecture.md](./client-sdk-architecture.md) | Client SDK design (`client/ssox`) for apps and services |
 | [docs/session-management-architecture.md](./session-management-architecture.md) | Client session management, device tracking and token theft prevention |
+| [docs/traceability.md](./traceability.md) | Live audit streaming, per-user tokens/devices and the enterprise browser baseline |
 | [docs/user_attributes.md](./user_attributes.md) | Custom user attributes and token claim mappers |
 
 ## Security & Keys
@@ -41,6 +42,7 @@ This file provides an overview of all documentation available for Shadow SSO.
 
 | Document | Description |
 |----------|------------|
+| [docs/releases/v1.2.0.md](./releases/v1.2.0.md) | v1.2.0 — traceability stream, token/device views, browser baseline |
 | [docs/releases/v1.1.0.md](./releases/v1.1.0.md) | v1.1.0 — client_credentials for Kubernetes OIDC |
 
 ## Configuration & Setup

@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
-	"time"
 
 	"connectrpc.com/connect"
 	"github.com/pilab-dev/shadow-sso/apps/sssoctl/cmd/client"
@@ -237,24 +237,25 @@ func printSessions(sessions []*ssov1.SessionInfo, output string) error {
 	}
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "CURRENT\tSESSION ID\tUSER AGENT\tIP ADDRESS\tCREATED\tEXPIRES")
+	fmt.Fprintln(tw, "CURRENT\tSESSION ID\tBROWSER\tOS\tDEVICE\tIP ADDRESS\tLAST USED\tEXPIRES\tSTATE")
 	for _, s := range sessions {
 		marker := ""
 		if s.IsCurrentSession {
 			marker = "*"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			marker, s.Id, shorten(s.UserAgent, 40), s.IpAddress,
-			formatTime(s.CreatedAt.AsTime()), formatTime(s.ExpiresAt.AsTime()))
+		browser := strings.TrimSpace(s.Browser + " " + s.BrowserVersion)
+		if browser == "" {
+			browser = shorten(s.UserAgent, 28)
+		}
+		state := "active"
+		if s.IsRevoked {
+			state = "revoked"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			marker, s.Id, browser, dash(s.Os), dash(s.DeviceType), dash(s.IpAddress),
+			formatTS(s.LastUsedAt), formatTS(s.ExpiresAt), state)
 	}
 	return tw.Flush()
-}
-
-func formatTime(t time.Time) string {
-	if t.IsZero() {
-		return "-"
-	}
-	return t.Local().Format("2006-01-02 15:04")
 }
 
 func shorten(s string, max int) string {

@@ -21,7 +21,10 @@ import (
 	"github.com/pilab-dev/shadow-sso/internal/audit"
 	"github.com/pilab-dev/shadow-sso/internal/auth/rbac"
 	"github.com/pilab-dev/shadow-sso/internal/auth/totp" // For TOTP validation
+	"github.com/pilab-dev/shadow-sso/internal/browserinfo"
+	"github.com/pilab-dev/shadow-sso/internal/browserpolicy"
 	"github.com/pilab-dev/shadow-sso/internal/metrics"
+	"github.com/pilab-dev/shadow-sso/internal/reqinfo"
 	"github.com/pilab-dev/shadow-sso/internal/telemetry"
 	// "github.com/pilab-dev/shadow-sso/middleware" // No longer needed here
 	"github.com/rs/zerolog/log"
@@ -99,6 +102,7 @@ type AuthServer struct {
 	twoFactorSessions                            *twoFactorSessionStore
 	realmSettingsRepo                            domain.RealmSettingsRepository
 	tokenRepo                                    domain.TokenRepository
+	browserPolicy                                *browserpolicy.Provider
 }
 
 // authServerOption configures optional AuthServer dependencies.
@@ -114,6 +118,12 @@ func WithAuthRealmSettings(repo domain.RealmSettingsRepository) authServerOption
 // also revokes the tokens issued for the session (`sid` claim).
 func WithAuthTokenRepository(repo domain.TokenRepository) authServerOption {
 	return func(s *AuthServer) { s.tokenRepo = repo }
+}
+
+// WithAuthBrowserPolicy injects the enterprise browser-baseline policy so the
+// RPC login path rejects outdated browsers as well as the web login page.
+func WithAuthBrowserPolicy(provider *browserpolicy.Provider) authServerOption {
+	return func(s *AuthServer) { s.browserPolicy = provider }
 }
 
 // NewAuthServer creates a new AuthServer.
@@ -175,6 +185,13 @@ func mapDomainStatusToProto(ds domain.UserStatus) ssov1.UserStatus {
 func (s *AuthServer) Login(ctx context.Context, req *connect.Request[ssov1.LoginRequest]) (*connect.Response[ssov1.LoginResponse], error) {
 	ctx, span := telemetry.StartSpan(ctx, authTracerName, "Login", attribute.String("user.email", req.Msg.Email))
 	defer span.End()
+
+	if s.browserPolicy != nil {
+		if err := s.browserPolicy.CheckConnect(ctx, req.Header()); err != nil {
+			telemetry.RecordSpanError(span, err, "browser policy rejected login")
+			return nil, err
+		}
+	}
 
 	logger := log.Ctx(ctx)
 	logger.Debug().Str("email", req.Msg.Email).Msg("Login attempt")
@@ -303,14 +320,19 @@ func (s *AuthServer) completeLogin(ctx context.Context, user *domain.User) (*con
 	// Create and store session. The session ID doubles as the `sid` claim on
 	// the issued tokens (see GenerateTokenPair above) so RP-initiated/
 	// back-channel logout can correlate and revoke it later.
+	info := reqinfo.FromContext(ctx)
 	session := &domain.Session{
 		ID:           sessionID,
 		UserID:       user.ID,
+		ClientID:     clientID,
 		TokenID:      sessionID,
 		RefreshToken: tokenPair.RefreshToken,
-		// TODO: Populate IPAddress, UserAgent from ctx/request if available and desired
-		ExpiresAt: time.Now().Add(30 * 24 * time.Hour), // Example: Long session expiry, e.g., 30 days
-		IsRevoked: false,
+		UserAgent:    info.UserAgent,
+		IPAddress:    info.IP,
+		ExpiresAt:    time.Now().Add(30 * 24 * time.Hour), // Example: Long session expiry, e.g., 30 days
+		CreatedAt:    time.Now(),
+		LastUsedAt:   time.Now(),
+		IsRevoked:    false,
 	}
 	if err := s.sessionRepo.StoreSession(ctx, session); err != nil {
 		logger.Error().Err(err).Str("userID", user.ID).Msg("completeLogin: Failed to store session")
@@ -351,7 +373,8 @@ func (s *AuthServer) completeLogin(ctx context.Context, user *domain.User) (*con
 		userInfoProto.LastLoginAt = timestamppb.New(*user.LastLoginAt)
 	}
 
-	audit.Log("AuthService", "LoginComplete", user.ID, user.ID, "Login successful, tokens and session created", true, nil)
+	audit.Log("AuthService", "LoginComplete", user.ID, user.ID,
+		"Login successful, tokens and session created; client="+clientID+" session="+sessionID+" "+info.Details(), true, nil)
 	return connect.NewResponse(&ssov1.LoginResponse{
 		AccessToken:           tokenPair.AccessToken,
 		TokenType:             tokenPair.TokenType,
@@ -368,6 +391,13 @@ func (s *AuthServer) completeLogin(ctx context.Context, user *domain.User) (*con
 func (s *AuthServer) Verify2FA(ctx context.Context, req *connect.Request[ssov1.Verify2FARequest]) (*connect.Response[ssov1.LoginResponse], error) {
 	ctx, span := telemetry.StartSpan(ctx, authTracerName, "Verify2FA", attribute.String("user.id", req.Msg.UserId))
 	defer span.End()
+
+	if s.browserPolicy != nil {
+		if err := s.browserPolicy.CheckConnect(ctx, req.Header()); err != nil {
+			telemetry.RecordSpanError(span, err, "browser policy rejected 2FA login")
+			return nil, err
+		}
+	}
 
 	logger := log.Ctx(ctx)
 	logger.Debug().Str("userID", req.Msg.UserId).Msg("Verify2FA attempt")
@@ -563,7 +593,8 @@ func (s *AuthServer) ListUserSessions(ctx context.Context, req *connect.Request[
 		// TokenID comparison for sessions created before the sid claim existed.
 		isCurrentSession := (authedToken.SessionID != "" && ds.ID == authedToken.SessionID) ||
 			(authedToken.ID != "" && ds.TokenID == authedToken.ID)
-		protoSessions = append(protoSessions, &ssov1.SessionInfo{
+		parsed := browserinfo.Parse(ds.UserAgent)
+		session := &ssov1.SessionInfo{
 			Id:               ds.ID,
 			UserId:           ds.UserID,
 			UserAgent:        ds.UserAgent,
@@ -571,7 +602,16 @@ func (s *AuthServer) ListUserSessions(ctx context.Context, req *connect.Request[
 			CreatedAt:        timestamppb.New(ds.CreatedAt),
 			ExpiresAt:        timestamppb.New(ds.ExpiresAt),
 			IsCurrentSession: isCurrentSession,
-		})
+			IsRevoked:        ds.IsRevoked,
+			Browser:          parsed.Browser,
+			BrowserVersion:   parsed.Version,
+			Os:               parsed.OS,
+			DeviceType:       parsed.DeviceType,
+		}
+		if !ds.LastUsedAt.IsZero() {
+			session.LastUsedAt = timestamppb.New(ds.LastUsedAt)
+		}
+		protoSessions = append(protoSessions, session)
 	}
 	return connect.NewResponse(&ssov1.ListUserSessionsResponse{Sessions: protoSessions}), nil
 }
@@ -622,6 +662,8 @@ func (s *AuthServer) ClearUserSessions(ctx context.Context, req *connect.Request
 						logger.Warn().Err(errRevoke).Str("sessionID", sessionID).Msg("ClearUserSessions: Failed to revoke session tokens")
 					}
 				}
+				audit.Log("AuthService", "SessionKicked", targetUserID, sessionID,
+					"session revoked by admin/self request", true, nil)
 			} else if errGet != nil {
 				logger.Warn().Err(errGet).Str("sessionID", sessionID).Msg("ClearUserSessions: Failed to get session to revoke or session does not belong to user.")
 			}
@@ -657,6 +699,8 @@ func (s *AuthServer) ClearUserSessions(ctx context.Context, req *connect.Request
 				if errRevoke := s.tokenRepo.RevokeTokensBySessionID(ctx, sess.ID); errRevoke != nil {
 					logger.Warn().Err(errRevoke).Str("sessionID", sess.ID).Msg("ClearUserSessions: Failed to revoke session tokens")
 				}
+				audit.Log("AuthService", "SessionKicked", targetUserID, sess.ID,
+					"all sessions revoked by admin/self request", true, nil)
 			}
 		}
 	}

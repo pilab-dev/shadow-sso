@@ -10,15 +10,32 @@ import (
 	"github.com/rs/zerolog/log"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 type TokenRepository struct {
 	coll *mongo.Collection
 }
 
-func NewTokenRepository(_ context.Context, db *mongo.Database) domain.TokenRepository {
-	return &TokenRepository{
+func NewTokenRepository(ctx context.Context, db *mongo.Database) domain.TokenRepository {
+	r := &TokenRepository{
 		coll: db.Collection(TokensCollection),
+	}
+	r.ensureIndexes(ctx)
+	return r
+}
+
+// ensureIndexes makes token listing and per-session revocation cheap. Failures
+// are logged, not fatal: queries still work, just more slowly.
+func (r *TokenRepository) ensureIndexes(ctx context.Context) {
+	models := []mongo.IndexModel{
+		{Keys: bson.D{{Key: "user_id", Value: 1}, {Key: "created_at", Value: -1}}},
+		{Keys: bson.D{{Key: "session_id", Value: 1}}},
+		{Keys: bson.D{{Key: "family", Value: 1}}},
+		{Keys: bson.D{{Key: "expires_at", Value: 1}}},
+	}
+	if _, err := r.coll.Indexes().CreateMany(ctx, models); err != nil {
+		log.Warn().Err(err).Msg("Failed to create token indexes")
 	}
 }
 
@@ -173,4 +190,115 @@ func (r *TokenRepository) GetTokenInfo(ctx context.Context, tokenValue string) (
 		return nil, errors.New("token not found or invalid")
 	}
 	return &token, err
+}
+
+// ListByUserID returns token metadata for a user, newest first. Token values
+// are intentionally not selectable here: the admin and traceability surfaces
+// must never expose bearer credentials.
+func (r *TokenRepository) ListByUserID(ctx context.Context, filter domain.TokenFilter, limit, offset int) ([]*domain.Token, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 200
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	opts := options.Find().
+		SetSort(bson.D{{Key: "created_at", Value: -1}}).
+		SetSkip(int64(offset)).
+		SetLimit(int64(limit)).
+		SetProjection(bson.M{"token_value": 0})
+
+	cursor, err := r.coll.Find(ctx, buildTokenFilter(filter), opts)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var tokens []*domain.Token
+	if err := cursor.All(ctx, &tokens); err != nil {
+		return nil, err
+	}
+	return tokens, nil
+}
+
+// CountByUserID returns the number of tokens matching the filter.
+func (r *TokenRepository) CountByUserID(ctx context.Context, filter domain.TokenFilter) (int64, error) {
+	return r.coll.CountDocuments(ctx, buildTokenFilter(filter))
+}
+
+// GetTokenByID looks up a token by JTI regardless of revocation or expiry.
+// The token value is loaded for internal revocation but never leaves the
+// server.
+func (r *TokenRepository) GetTokenByID(ctx context.Context, id string) (*domain.Token, error) {
+	var token domain.Token
+	err := r.coll.FindOne(ctx, bson.M{"_id": id}).Decode(&token)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, errors.New("token not found")
+	}
+	return &token, err
+}
+
+func buildTokenFilter(filter domain.TokenFilter) bson.M {
+	query := bson.M{}
+	if filter.UserID != "" {
+		query["user_id"] = filter.UserID
+	}
+	if filter.ClientID != "" {
+		query["client_id"] = filter.ClientID
+	}
+	if filter.SessionID != "" {
+		query["session_id"] = filter.SessionID
+	}
+	if filter.TokenType != "" {
+		query["token_type"] = filter.TokenType
+	}
+	if !filter.IncludeRevoked {
+		query["is_revoked"] = bson.M{"$ne": true}
+	}
+	if !filter.IncludeExpired {
+		now := filter.Now
+		if now.IsZero() {
+			now = time.Now().UTC()
+		}
+		query["expires_at"] = bson.M{"$gt": now}
+	}
+	return query
+}
+
+// ListUnauditedExpired returns tokens that have expired but have not yet
+// produced a TokenExpired audit event.
+func (r *TokenRepository) ListUnauditedExpired(ctx context.Context, before time.Time, limit int) ([]*domain.Token, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 200
+	}
+	opts := options.Find().
+		SetSort(bson.D{{Key: "expires_at", Value: 1}}).
+		SetLimit(int64(limit)).
+		SetProjection(bson.M{"token_value": 0})
+	cursor, err := r.coll.Find(ctx, bson.M{
+		"expires_at":        bson.M{"$lte": before},
+		"expiry_audited_at": bson.M{"$exists": false},
+	}, opts)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var tokens []*domain.Token
+	if err := cursor.All(ctx, &tokens); err != nil {
+		return nil, err
+	}
+	return tokens, nil
+}
+
+// MarkExpiryAudited records that a TokenExpired event was emitted.
+func (r *TokenRepository) MarkExpiryAudited(ctx context.Context, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	now := time.Now().UTC()
+	_, err := r.coll.UpdateMany(ctx,
+		bson.M{"_id": bson.M{"$in": ids}},
+		bson.M{"$set": bson.M{"expiry_audited_at": now}})
+	return err
 }

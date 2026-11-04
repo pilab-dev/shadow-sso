@@ -592,9 +592,44 @@ Advanced session management for security monitoring and control.
    ssoctl session kick-all [--user-id <target_user_id>] [--force]
    ```
 
-`session revoke`, `session revoke-all` and `session logout-user` remain available
-as GraphQL-backed admin commands. `session clear` is a hidden alias of
+`session revoke`, `session revoke-all` and `session logout-user` are aliases of
+the ConnectRPC kick/kick-all path. `session clear` is a hidden alias of
 `kick-all`.
+
+## Device, Token and Traceability Commands
+
+See [traceability.md](./traceability.md) for the full guide.
+
+**1. Devices (browsers and agents):**
+   ```bash
+   ssoctl device list [--user-id <id|me>] [--all] [--json]
+   ssoctl device show <session_id>
+   ```
+
+**2. Tokens (metadata only; values are never shown):**
+   ```bash
+   ssoctl token list [--user-id <id|me>] [--all] [--type access_token|refresh_token]
+   ssoctl token list --session <session_id> --client <client_id>
+   ssoctl token get <jti>
+   ssoctl token revoke <jti> --reason "lost laptop"
+   ```
+
+**3. Follow audit events (`kubectl logs -f` style):**
+   ```bash
+   ssoctl audit follow [--since 15m] [--user <id>] [--action <action>] [--json]
+   ssoctl audit follow --since now          # only future events
+   ssoctl audit follow --interval-ms 5000   # slower polling
+   ```
+
+**4. Enterprise browser baseline:**
+   ```bash
+   ssoctl browser-policy show
+   ssoctl browser-policy check "<user-agent>"
+   ssoctl browser-policy set --enabled --enforcement warn --block-bots
+   ssoctl browser-policy set --enforcement block --min chrome=126 --min safari=17.5
+   ssoctl browser-policy set --exempt "MyCorpUpdater/"
+   ssoctl browser-policy reset
+   ```
 
 ## Identity Provider Management (`ssoctl idp`)
 

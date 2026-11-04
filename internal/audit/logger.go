@@ -5,11 +5,16 @@ import (
 	"os"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 )
 
 // Event represents an audit log event.
 type Event struct {
+	// ID is a stable identifier. It lets a follower de-duplicate events when it
+	// overlaps its polling window, and lets operators reference one event
+	// unambiguously.
+	ID        string    `json:"id"`
 	Timestamp time.Time `json:"timestamp"`
 	Service   string    `json:"service"`
 	Action    string    `json:"action"`
@@ -25,6 +30,7 @@ var auditLogger = log.Output(os.Stdout).With().Logger()
 // Log records an audit event.
 func Log(service, action, user, target, details string, success bool, err error) {
 	event := Event{
+		ID:        uuid.NewString(),
 		Timestamp: time.Now().UTC(),
 		Service:   service,
 		Action:    action,

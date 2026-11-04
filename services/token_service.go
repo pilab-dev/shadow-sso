@@ -17,7 +17,9 @@ import (
 	"github.com/pilab-dev/shadow-sso/api"
 	"github.com/pilab-dev/shadow-sso/cache"
 	"github.com/pilab-dev/shadow-sso/domain"
+	"github.com/pilab-dev/shadow-sso/internal/audit"
 	"github.com/pilab-dev/shadow-sso/internal/metrics"
+	"github.com/pilab-dev/shadow-sso/internal/reqinfo"
 	"github.com/pilab-dev/shadow-sso/internal/telemetry"
 	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/otel/attribute"
@@ -279,6 +281,20 @@ func (s *defaultTokenService) CreateToken(ctx context.Context, opts domain.Creat
 	if metrics.TokensCreatedTotal != nil {
 		metrics.TokensCreatedTotal.Inc()
 	}
+
+	action := "TokenIssued"
+	if opts.ParentJTI != "" {
+		action = "TokenRefreshed"
+	}
+	info := reqinfo.FromContext(ctx)
+	details := fmt.Sprintf("type=%s client=%s session=%s family=%s parent=%s expires=%s",
+		opts.TokenType, opts.ClientID, opts.SessionID, opts.Family, opts.ParentJTI,
+		expiresAt.UTC().Format(time.RFC3339))
+	if d := info.Details(); d != "" {
+		details += " " + d
+	}
+	audit.Log("TokenService", action, opts.UserID, opts.TokenID, details, true, nil)
+
 	return token, nil
 }
 
@@ -814,6 +830,13 @@ func (s *defaultTokenService) RevokeToken(ctx context.Context, token string) err
 	_, span := telemetry.StartSpan(ctx, tokenTracerName, "RevokeToken")
 	defer span.End()
 
+	user, jti := tokenAuditSubject(token)
+	info := reqinfo.FromContext(ctx)
+	details := "access token revoked"
+	if d := info.Details(); d != "" {
+		details += "; " + d
+	}
+
 	if err := s.cache.Delete(ctx, token); err != nil {
 		log.Ctx(ctx).Warn().Err(err).Msg("failed to delete token from cache")
 	}
@@ -821,9 +844,28 @@ func (s *defaultTokenService) RevokeToken(ctx context.Context, token string) err
 	if err := s.repo.RevokeToken(ctx, token); err != nil {
 		telemetry.RecordSpanError(span, err, "failed to revoke token")
 		span.SetStatus(codes.Error, "failed to revoke token")
+		audit.Log("TokenService", "TokenRevokeFailed", user, jti, details, false, err)
 		return err
 	}
+	audit.Log("TokenService", "TokenRevoked", user, jti, details, true, nil)
 	return nil
+}
+
+// tokenAuditSubject extracts non-sensitive claims for an audit event. It does
+// not verify the signature: the token was already presented to a trusted
+// endpoint, and audit events must never contain the token itself.
+func tokenAuditSubject(tokenValue string) (userID, jti string) {
+	claims := jwt.MapClaims{}
+	if _, _, err := jwt.NewParser().ParseUnverified(tokenValue, claims); err != nil {
+		return "", ""
+	}
+	if sub, ok := claims["sub"].(string); ok {
+		userID = sub
+	}
+	if id, ok := claims["jti"].(string); ok {
+		jti = id
+	}
+	return userID, jti
 }
 
 // GetRefreshTokenInfo retrieves metadata about a refresh token. Returns the token info if found,

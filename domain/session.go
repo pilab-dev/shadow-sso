@@ -7,6 +7,7 @@ import "time"
 type Session struct {
 	ID           string    `bson:"_id,omitempty"` // Session ID (could be the JWT JTI)
 	UserID       string    `bson:"user_id"`
+	ClientID     string    `bson:"client_id,omitempty"`            // OAuth client that created the session, when known
 	TokenID      string    `bson:"token_id,unique"`                // Corresponds to JTI of the JWT
 	RefreshToken string    `bson:"refresh_token,omitempty,unique"` // If using refresh tokens
 	UserAgent    string    `bson:"user_agent,omitempty"`

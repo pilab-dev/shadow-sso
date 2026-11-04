@@ -2,6 +2,7 @@ package webauth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -10,6 +11,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/pilab-dev/shadow-sso/domain"
+	"github.com/pilab-dev/shadow-sso/internal/audit"
+	"github.com/pilab-dev/shadow-sso/internal/reqinfo"
 	"github.com/pilab-dev/shadow-sso/internal/ssosession"
 	"github.com/rs/zerolog/log"
 )
@@ -368,6 +371,7 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
+	requestInfo := reqinfo.FromHTTP(c.Request)
 
 	flowState, err := wa.flowStore.GetFlow(ctx, flowID)
 	if err != nil {
@@ -393,6 +397,7 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 	if err != nil {
 		wa.rateLimiter.RecordFailure(rateLimitKey)
 		log.Warn().Err(err).Str("email", email).Msg("login: user not found")
+		audit.Log("WebAuth", "Login", email, "", "user not found; "+requestInfo.Details(), false, err)
 		wa.renderLoginPage(c, flowID, nil, "Invalid email or password.", email)
 		return
 	}
@@ -400,6 +405,7 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 	if wa.accountLockedOut(ctx, user) {
 		wa.rateLimiter.RecordFailure(rateLimitKey)
 		log.Warn().Str("email", email).Str("user_id", user.ID).Msg("login: account locked out due to repeated failed attempts")
+		audit.Log("WebAuth", "Login", user.ID, "", "account locked; "+requestInfo.Details(), false, errors.New("account locked"))
 		wa.renderLoginPage(c, flowID, nil, "Account is temporarily locked. Please try again later.", email)
 		return
 	}
@@ -409,6 +415,7 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 		wa.rateLimiter.RecordFailure(rateLimitKey)
 		wa.recordLoginFailure(ctx, user.ID)
 		log.Warn().Str("email", email).Msg("login: password verification failed")
+		audit.Log("WebAuth", "Login", user.ID, "", "password verification failed; "+requestInfo.Details(), false, err)
 		wa.renderLoginPage(c, flowID, nil, "Invalid email or password.", email)
 		return
 	}
@@ -417,6 +424,7 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 		wa.rateLimiter.RecordFailure(rateLimitKey)
 		wa.recordLoginFailure(ctx, user.ID)
 		log.Warn().Str("email", email).Str("status", string(user.Status)).Msg("login: account not active")
+		audit.Log("WebAuth", "Login", user.ID, "", "account not active ("+string(user.Status)+"); "+requestInfo.Details(), false, errors.New("account not active"))
 		wa.renderLoginPage(c, flowID, nil, "Account is not active. Please contact support.", email)
 		return
 	}
@@ -513,6 +521,8 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 		return
 	}
 
+	audit.Log("WebAuth", "LoginComplete", user.ID, flowState.ClientID,
+		"interactive login successful; client="+flowState.ClientID+" "+requestInfo.Details(), true, nil)
 	wa.completeLogin(c, flowState, isSecure)
 }
 

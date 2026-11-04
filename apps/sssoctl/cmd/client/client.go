@@ -175,6 +175,32 @@ func AuditServiceClient(cfg *config.Context) (ssov1connect.AuditServiceClient, e
 	return ssov1connect.NewAuditServiceClient(httpClient, cfg.ServerEndpoint, opts...), nil
 }
 
+// TokenServiceClient returns a traceability client for token/device listings.
+func TokenServiceClient(cfg *config.Context) (ssov1connect.TokenServiceClient, error) {
+	if cfg == nil || cfg.ServerEndpoint == "" {
+		return nil, fmt.Errorf("invalid context or server endpoint for TokenService client")
+	}
+	if cfg.UserAuthToken == "" {
+		return nil, fmt.Errorf("user authentication token not found in current context. Please login using 'ssoctl auth login'")
+	}
+	httpClient := newHTTPClient(cfg)
+	opts := options(cfg)
+	return ssov1connect.NewTokenServiceClient(httpClient, cfg.ServerEndpoint, opts...), nil
+}
+
+// BrowserPolicyServiceClient returns the enterprise browser-baseline client.
+func BrowserPolicyServiceClient(cfg *config.Context) (ssov1connect.BrowserPolicyServiceClient, error) {
+	if cfg == nil || cfg.ServerEndpoint == "" {
+		return nil, fmt.Errorf("invalid context or server endpoint for BrowserPolicyService client")
+	}
+	if cfg.UserAuthToken == "" {
+		return nil, fmt.Errorf("user authentication token not found in current context. Please login using 'ssoctl auth login'")
+	}
+	httpClient := newHTTPClient(cfg)
+	opts := options(cfg)
+	return ssov1connect.NewBrowserPolicyServiceClient(httpClient, cfg.ServerEndpoint, opts...), nil
+}
+
 // UserAttributeServiceClient returns a new UserAttributeService client.
 func UserAttributeServiceClient(cfg *config.Context) (ssov1connect.UserAttributeServiceClient, error) {
 	if cfg == nil || cfg.ServerEndpoint == "" {

@@ -55,4 +55,7 @@ type Token struct {
 	UsedAt *time.Time `bson:"used_at,omitempty" json:"used_at,omitempty"`
 	// RotatedTo is the ID of the refresh token issued in exchange.
 	RotatedTo string `bson:"rotated_to,omitempty" json:"rotated_to,omitempty"`
+	// ExpiryAuditedAt is set once the expiry sweeper has emitted a
+	// TokenExpired audit event, so it does not repeat every interval.
+	ExpiryAuditedAt *time.Time `bson:"expiry_audited_at,omitempty" json:"expiry_audited_at,omitempty"`
 }

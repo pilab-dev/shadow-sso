@@ -152,6 +152,36 @@ type SessionRepository interface {
 	DeleteSessionsByUserID(ctx context.Context, userID string, exceptSessionID ...string) (int64, error) // Returns count of deleted
 }
 
+// TokenQueryRepository is the read/audit surface of the token store. It is
+// separate from TokenRepository so alternative stores (for example a
+// distributed token service) can support issuing and validation without being
+// forced to implement admin querying. Services type-assert for it.
+type TokenQueryRepository interface {
+	// ListByUserID returns token metadata (never token values) for a user.
+	ListByUserID(ctx context.Context, filter TokenFilter, limit, offset int) ([]*Token, error)
+	// CountByUserID returns the number of tokens matching the filter.
+	CountByUserID(ctx context.Context, filter TokenFilter) (int64, error)
+	// GetTokenByID looks a token up by its JTI, regardless of state.
+	GetTokenByID(ctx context.Context, id string) (*Token, error)
+	// ListUnauditedExpired returns tokens whose expires_at is at or before
+	// `before` and that have not yet produced a TokenExpired audit event.
+	ListUnauditedExpired(ctx context.Context, before time.Time, limit int) ([]*Token, error)
+	// MarkExpiryAudited records that expiry events were emitted for these IDs.
+	MarkExpiryAudited(ctx context.Context, ids []string) error
+}
+
+// TokenFilter narrows token listing. Zero values mean "no restriction".
+type TokenFilter struct {
+	UserID         string
+	ClientID       string
+	SessionID      string
+	TokenType      string
+	IncludeRevoked bool
+	IncludeExpired bool
+	// Now is the reference clock for expiry checks; zero means time.Now().
+	Now time.Time
+}
+
 // TokenRepository defines methods for managing OAuth tokens.
 type TokenRepository interface {
 	StoreToken(ctx context.Context, token *Token) error
