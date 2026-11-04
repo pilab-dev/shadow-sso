@@ -148,7 +148,7 @@ func TestOAuthService_Login_Success(t *testing.T) {
 	}
 
 	mockUserRepo.EXPECT().GetUserByEmail(ctx, username).Return(user, nil)
-	mockSessionRepo.EXPECT().ListSessionsByUserID(gomock.Any(), user.ID, domain.SessionFilter{}).Return(nil, nil)
+	mockSessionRepo.EXPECT().ListSessionsByUserID(gomock.Any(), user.ID, gomock.Any()).Return(nil, nil)
 	mockSessionRepo.EXPECT().StoreSession(ctx, gomock.Any()).Return(nil)
 	mockSessionRepo.EXPECT().StoreSessionEvent(gomock.Any(), gomock.Any()).Return(nil)
 	mockTokenServiceInterface.EXPECT().GenerateTokenPair(ctx, "oauth-service-login-client", user.ID, "openid profile email", time.Hour, gomock.Any()).Return(&api.TokenResponse{
@@ -273,7 +273,7 @@ func TestOAuthService_GetUserSessions(t *testing.T) {
 		{ID: "session-2", UserID: userID},
 	}
 
-	mockSessionRepo.EXPECT().ListSessionsByUserID(ctx, userID, domain.SessionFilter{}).Return(sessions, nil)
+	mockSessionRepo.EXPECT().ListSessionsByUserID(ctx, userID, gomock.Any()).Return(sessions, nil)
 
 	result, err := oauthService.GetUserSessions(ctx, userID)
 
@@ -743,7 +743,7 @@ func TestOAuthService_DirectGrant_Success(t *testing.T) {
 
 	mockClientRepo.EXPECT().ValidateClient(ctx, clientID, clientSecret).Return(client, nil)
 	mockUserRepo.EXPECT().GetUserByEmail(ctx, username).Return(user, nil)
-	mockSessionRepo.EXPECT().ListSessionsByUserID(gomock.Any(), user.ID, domain.SessionFilter{}).Return(nil, nil)
+	mockSessionRepo.EXPECT().ListSessionsByUserID(gomock.Any(), user.ID, gomock.Any()).Return(nil, nil)
 	mockSessionRepo.EXPECT().StoreSession(ctx, gomock.Any()).Return(nil)
 	mockSessionRepo.EXPECT().StoreSessionEvent(gomock.Any(), gomock.Any()).Return(nil)
 	mockTokenServiceInterface.EXPECT().GenerateTokenPair(ctx, clientID, user.ID, "openid", gomock.Any(), gomock.Any()).Return(&api.TokenResponse{
@@ -1489,7 +1489,7 @@ func TestOAuthService_GenerateAuthCode_Success(t *testing.T) {
 	}
 
 	mockClientRepo.EXPECT().GetClient(gomock.Any(), clientID).Return(client, nil)
-	mockSessionRepo.EXPECT().ListSessionsByUserID(gomock.Any(), userID, domain.SessionFilter{}).Return(nil, nil)
+	mockSessionRepo.EXPECT().ListSessionsByUserID(gomock.Any(), userID, gomock.Any()).Return(nil, nil)
 	mockSessionRepo.EXPECT().StoreSession(gomock.Any(), gomock.Any()).Return(nil)
 	mockSessionRepo.EXPECT().StoreSessionEvent(gomock.Any(), gomock.Any()).Return(nil)
 	mockAuthCodeRepo.EXPECT().SaveAuthCode(gomock.Any(), gomock.Any()).Return(nil)

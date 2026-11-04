@@ -2,9 +2,12 @@ package graphql
 
 import (
 	"context"
+	"errors"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/pilab-dev/shadow-sso/domain"
+	"github.com/pilab-dev/shadow-sso/internal/auth/rbac"
 )
 
 // Current reports whether obj is the caller's current session.
@@ -66,8 +69,20 @@ func (r *mutationResolver) RevokeOtherSessions(ctx context.Context, userID strin
 	return revoked, nil
 }
 
-// SessionEvents returns the lifecycle event log for a session.
+// SessionEvents returns the lifecycle event log for a session. Admins may read
+// any session; other callers may only read their own.
 func (r *queryResolver) SessionEvents(ctx context.Context, sessionID string, first *int) ([]domain.SessionEvent, error) {
+	info, ok := domain.GetAuthenticatedTokenFromContext(ctx)
+	if !ok || info == nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("authentication required"))
+	}
+	session, err := r.SessionRepo.GetSessionByID(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if session.UserID != info.UserID && !rbac.HasPermission(info.Roles, rbac.PermUsersDeleteAll) {
+		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("admin role required"))
+	}
 	limit := 50
 	if first != nil && *first > 0 {
 		limit = *first

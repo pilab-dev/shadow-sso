@@ -16,7 +16,7 @@ func TestEnrichSession_GeoIPRiskFlags(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	repo := mock_domain.NewMockSessionRepository(ctrl)
-	repo.EXPECT().ListSessionsByUserID(gomock.Any(), "user-1", domain.SessionFilter{}).Return([]*domain.Session{
+	repo.EXPECT().ListSessionsByUserID(gomock.Any(), "user-1", gomock.Any()).Return([]*domain.Session{
 		{ID: "prior", IPCountry: "US", Browser: "chrome", OS: "macos", IPASN: "AS1"},
 	}, nil)
 	repo.EXPECT().StoreSessionEvent(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()

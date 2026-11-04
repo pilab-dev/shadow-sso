@@ -355,17 +355,7 @@ func (s *AuthServer) completeLogin(ctx context.Context, user *domain.User) (*con
 		logger.Error().Err(err).Str("userID", user.ID).Msg("completeLogin: Failed to store session")
 		// Decide if this should be a fatal error for login. For now, log and continue.
 	} else {
-		_ = s.sessionRepo.StoreSessionEvent(ctx, &domain.SessionEvent{
-			SessionID: session.ID,
-			UserID:    session.UserID,
-			ClientID:  session.ClientID,
-			Type:      "created",
-			IPAddress: session.IPAddress,
-			Geo:       session.IPCountry,
-			UserAgent: session.UserAgent,
-			At:        session.CreatedAt,
-			Actor:     "user",
-		})
+		recordSessionCreated(ctx, s.sessionRepo, session, "user")
 	}
 
 	// Update LastLoginAt for user

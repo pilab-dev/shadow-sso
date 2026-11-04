@@ -48,9 +48,12 @@ and `TokenRepository.RevokeTokensBySessionID` revokes every token carrying that
 revokes the whole family **and** its session, logs the event, and returns
 `invalid_grant`.
 
-Remaining Phase 0 gap: validation still does not consult the session store, so a
-kicked device's *access* token stays valid until it expires. That is Phase 1's
-`strict` mode.
+Access-token validation consults the session store only when
+`SSSO_SESSION_STRICT_VALIDATION=true`. It is off by default so a kicked device's
+*access* token stays valid until it expires; enabling strict mode makes
+revocation effective within the short liveness-cache TTL. DPoP proofs are
+rejected on replay: accepted `(jkt, jti)` pairs are remembered for the proof
+lifetime (in-process, so each replica rejects its own replays).
 
 ## Goals
 

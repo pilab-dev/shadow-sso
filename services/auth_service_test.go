@@ -282,7 +282,7 @@ func TestAuthServer_Login_Success_GeneratesTokens(t *testing.T) {
 		TokenType:    "Bearer",
 		ExpiresIn:    3600,
 	}, nil)
-	mockSessionRepo.EXPECT().ListSessionsByUserID(gomock.Any(), user.ID, domain.SessionFilter{}).Return(nil, nil)
+	mockSessionRepo.EXPECT().ListSessionsByUserID(gomock.Any(), user.ID, gomock.Any()).Return(nil, nil)
 	mockSessionRepo.EXPECT().StoreSession(gomock.Any(), gomock.Any()).Return(nil)
 	mockSessionRepo.EXPECT().StoreSessionEvent(gomock.Any(), gomock.Any()).Return(nil)
 	mockUserRepo.EXPECT().UpdateUser(gomock.Any(), gomock.Any()).Return(nil)
@@ -362,7 +362,7 @@ func TestAuthServer_ListUserSessions_Success(t *testing.T) {
 	}
 	ctx = context.WithValue(ctx, domain.TokenContextKey, tokenInfo)
 
-	mockSessionRepo.EXPECT().ListSessionsByUserID(gomock.Any(), userID, domain.SessionFilter{}).Return(sessions, nil)
+	mockSessionRepo.EXPECT().ListSessionsByUserID(gomock.Any(), userID, gomock.Any()).Return(sessions, nil)
 
 	resp, err := authServer.ListUserSessions(ctx, connect.NewRequest(&ssov1.ListUserSessionsRequest{
 		UserId: userID,
@@ -432,7 +432,7 @@ func TestAuthServer_ListUserSessions_MeConvention(t *testing.T) {
 	}
 	ctx := context.WithValue(context.Background(), domain.TokenContextKey, tokenInfo)
 
-	mockSessionRepo.EXPECT().ListSessionsByUserID(gomock.Any(), "user-1", domain.SessionFilter{}).Return(nil, nil)
+	mockSessionRepo.EXPECT().ListSessionsByUserID(gomock.Any(), "user-1", gomock.Any()).Return(nil, nil)
 
 	resp, err := authServer.ListUserSessions(ctx, connect.NewRequest(&ssov1.ListUserSessionsRequest{
 		UserId: "me",

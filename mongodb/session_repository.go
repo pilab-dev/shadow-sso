@@ -12,6 +12,13 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
+// sessionEventRetention bounds how long the append-only session event log is
+// kept before MongoDB's TTL index removes it.
+const sessionEventRetention = 90 * 24 * time.Hour
+
+// maxSessionEvents caps a single ListSessionEvents page.
+const maxSessionEvents = 200
+
 // SessionRepositoryMongo implements the domain.SessionRepository interface using MongoDB.
 type SessionRepositoryMongo struct {
 	collection       *mongo.Collection
@@ -57,6 +64,17 @@ func NewSessionRepositoryMongo(ctx context.Context, db *mongo.Database) (domain.
 		// return nil, fmt.Errorf("failed to create session indexes: %w", err) // Stricter option
 	} else {
 		log.Info().Msg("Indexes for user_sessions collection ensured.")
+	}
+
+	// Session events are queried per session, newest first, and retained for a
+	// bounded period; the TTL index keeps the append-only log from growing
+	// without limit.
+	eventIndexModels := []mongo.IndexModel{
+		{Keys: bson.D{{Key: "session_id", Value: 1}, {Key: "at", Value: -1}}},
+		{Keys: bson.D{{Key: "at", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(int32(sessionEventRetention / time.Second))},
+	}
+	if _, err := repo.eventsCollection.Indexes().CreateMany(ctx, eventIndexModels, opts); err != nil {
+		log.Warn().Err(err).Msg("Issue creating indexes for session_events collection")
 	}
 
 	return repo, nil
@@ -117,7 +135,22 @@ func (r *SessionRepositoryMongo) UpdateSession(ctx context.Context, session *dom
 		return errors.New("session ID is required for update")
 	}
 	filter := bson.M{"_id": session.ID}
-	result, err := r.collection.ReplaceOne(ctx, filter, session)
+	// Update only mutable fields instead of replacing the whole document: a
+	// full replace can resurrect a just-revoked session (or wipe device/risk
+	// metadata) when the caller is working from a stale read.
+	update := bson.M{"$set": bson.M{
+		"is_revoked":    session.IsRevoked,
+		"expires_at":    session.ExpiresAt,
+		"last_used_at":  session.LastUsedAt,
+		"last_seen_at":  session.LastSeenAt,
+		"last_seen_ip":  session.LastSeenIP,
+		"revoked_at":    session.RevokedAt,
+		"revoked_by":    session.RevokedBy,
+		"revoke_reason": session.RevokeReason,
+		"revoked_from":  session.RevokedFrom,
+		"trusted":       session.Trusted,
+	}}
+	result, err := r.collection.UpdateOne(ctx, filter, update)
 	if err != nil {
 		log.Error().Err(err).Str("sessionID", session.ID).Msg("Error updating session in MongoDB")
 		return err
@@ -225,6 +258,9 @@ func (r *SessionRepositoryMongo) StoreSessionEvent(ctx context.Context, event *d
 func (r *SessionRepositoryMongo) ListSessionEvents(ctx context.Context, sessionID string, first int) ([]*domain.SessionEvent, error) {
 	if first <= 0 {
 		first = 50
+	}
+	if first > maxSessionEvents {
+		first = maxSessionEvents
 	}
 	filter := bson.M{"session_id": sessionID}
 	opts := options.Find().SetSort(bson.D{{Key: "at", Value: -1}}).SetLimit(int64(first))

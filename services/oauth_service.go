@@ -286,17 +286,7 @@ func (s *defaultOAuthService) Login(ctx context.Context, username, password, dev
 	if err := s.sessionRepo.StoreSession(ctx, session); err != nil {
 		log.Ctx(ctx).Warn().Err(err).Str("user_id", user.ID).Str("session_id", session.ID).Msg("Failed to store session in OAuthService.Login")
 	} else {
-		_ = s.sessionRepo.StoreSessionEvent(ctx, &domain.SessionEvent{
-			SessionID: session.ID,
-			UserID:    session.UserID,
-			ClientID:  session.ClientID,
-			Type:      "created",
-			IPAddress: session.IPAddress,
-			Geo:       session.IPCountry,
-			UserAgent: session.UserAgent,
-			At:        session.CreatedAt,
-			Actor:     "user",
-		})
+		recordSessionCreated(ctx, s.sessionRepo, session, "user")
 		log.Ctx(ctx).Debug().Str("user_id", user.ID).Str("session_id", session.ID).Msg("Session stored successfully during login")
 	}
 
@@ -443,7 +433,7 @@ func (s *defaultOAuthService) RefreshToken(ctx context.Context, refreshTokenValu
 		if method == "" {
 			method = "POST"
 		}
-		jkt, errProof := dpop.VerifyProof(info.DPoPProof, method, info.DPoPHTU, "", time.Now())
+		jkt, errProof := dpop.VerifyProofOnce(info.DPoPProof, method, info.DPoPHTU, "", time.Now())
 		if errProof != nil || jkt != tokenInfo.CnfJKT {
 			return nil, domain.NewInvalidGrant("invalid DPoP proof")
 		}
@@ -599,17 +589,7 @@ func (s *defaultOAuthService) DirectGrant(ctx context.Context,
 	if err := s.sessionRepo.StoreSession(ctx, session); err != nil {
 		log.Ctx(ctx).Warn().Err(err).Str("session_id", session.ID).Str("user_id", user.ID).Msg("Failed to store session in OAuthService.DirectGrant")
 	} else {
-		_ = s.sessionRepo.StoreSessionEvent(ctx, &domain.SessionEvent{
-			SessionID: session.ID,
-			UserID:    session.UserID,
-			ClientID:  session.ClientID,
-			Type:      "created",
-			IPAddress: session.IPAddress,
-			Geo:       session.IPCountry,
-			UserAgent: session.UserAgent,
-			At:        session.CreatedAt,
-			Actor:     "user",
-		})
+		recordSessionCreated(ctx, s.sessionRepo, session, "user")
 	}
 
 	tokenTTL, err := s.realmAccessTokenLifespan(ctx)
@@ -1139,17 +1119,7 @@ func (s *defaultOAuthService) GenerateAuthCode(
 				Msg("Failed to store session for authorization code; tokens will not be linked to a device")
 			sessionID = ""
 		} else {
-			_ = s.sessionRepo.StoreSessionEvent(ctx, &domain.SessionEvent{
-				SessionID: session.ID,
-				UserID:    session.UserID,
-				ClientID:  session.ClientID,
-				Type:      "created",
-				IPAddress: session.IPAddress,
-				Geo:       session.IPCountry,
-				UserAgent: session.UserAgent,
-				At:        session.CreatedAt,
-				Actor:     "user",
-			})
+			recordSessionCreated(ctx, s.sessionRepo, session, "user")
 		}
 	}
 	authCode := &domain.AuthCode{

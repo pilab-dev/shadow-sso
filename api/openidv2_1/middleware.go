@@ -83,7 +83,7 @@ func UserAuthMiddleware(tokenService services.TokenService) gin.HandlerFunc {
 				return
 			}
 			htu := requestURL(c.Request)
-			jkt, err := dpop.VerifyProof(proof, c.Request.Method, htu, dpop.AccessTokenHash(jwtToken), time.Now())
+			jkt, err := dpop.VerifyProofOnce(proof, c.Request.Method, htu, dpop.AccessTokenHash(jwtToken), time.Now())
 			if err != nil || jkt != token.CnfJKT {
 				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid_dpop_proof", "error_description": "invalid DPoP proof"})
 				return

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/pilab-dev/shadow-sso/api"
 	"github.com/pilab-dev/shadow-sso/apps/ssso/config"
@@ -13,6 +14,7 @@ import (
 	"github.com/pilab-dev/shadow-sso/internal/notifications"
 	"github.com/pilab-dev/shadow-sso/internal/oidcflow"
 	pkgauth "github.com/pilab-dev/shadow-sso/pkg/auth"
+	"github.com/rs/zerolog/log"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -107,7 +109,7 @@ func NewDefaultServiceProvider(opts DefaultServiceProviderOptions) (*DefaultServ
 		if r, err := geo.NewMaxMindResolverWithASN(opts.AppConfig.GeoIPDatabasePath, opts.AppConfig.GeoIPASNDatabasePath); err == nil {
 			p.geoResolver = r
 		} else {
-			fmt.Printf("geoip resolver init failed: %v\n", err)
+			log.Warn().Err(err).Msg("GeoIP resolver init failed; session location will be empty")
 		}
 	}
 
@@ -119,6 +121,14 @@ func NewDefaultServiceProvider(opts DefaultServiceProviderOptions) (*DefaultServ
 }
 
 var initCtx = context.Background()
+
+// Close releases resources owned by the provider, such as the GeoIP database.
+func (p *DefaultServiceProvider) Close() error {
+	if c, ok := p.geoResolver.(io.Closer); ok {
+		return c.Close()
+	}
+	return nil
+}
 
 // SessionNotifier returns a notifier for session risk alerts.
 func (p *DefaultServiceProvider) SessionNotifier() domain.SessionNotifier {
@@ -171,8 +181,9 @@ func (p *DefaultServiceProvider) TokenService() TokenService {
 		)
 		if ts, ok := p.tokenService.(*defaultTokenService); ok {
 			ts.SetSessionRepository(p.repoProvider.SessionRepository(initCtx))
-			// Strict mode defaults to off (ttl mode) for high-throughput deployments.
-			ts.SetStrictSessionValidation(false)
+			// Off by default for high-throughput deployments; enable with
+			// SSSO_SESSION_STRICT_VALIDATION=true to make revocation immediate.
+			ts.SetStrictSessionValidation(p.appConfig != nil && p.appConfig.SessionStrictValidation)
 		}
 	}
 	return p.tokenService

@@ -35,6 +35,10 @@ func (r *TokenRepository) ensureIndexes(ctx context.Context) {
 		{Keys: bson.D{{Key: "session_id", Value: 1}}},
 		{Keys: bson.D{{Key: "family", Value: 1}}},
 		{Keys: bson.D{{Key: "expires_at", Value: 1}}},
+		// Refresh tokens are looked up by hash; token_value only remains for
+		// rows written before hashing was introduced.
+		{Keys: bson.D{{Key: "token_hash", Value: 1}}, Options: options.Index().SetUnique(true).SetSparse(true)},
+		{Keys: bson.D{{Key: "token_value", Value: 1}}, Options: options.Index().SetSparse(true)},
 	}
 	if _, err := r.coll.Indexes().CreateMany(ctx, models); err != nil {
 		log.Warn().Err(err).Msg("Failed to create token indexes")
@@ -98,10 +102,14 @@ func (r *TokenRepository) GetRefreshToken(ctx context.Context, tokenValue string
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return nil, errors.New("refresh token not found or invalid")
 	}
-	// Dual-read: backfill hash for legacy rows.
+	// Dual-read: backfill the hash for legacy rows and drop the raw value so it
+	// is never stored in replayable form again.
 	if token.TokenHash == "" && token.TokenValue != "" {
-		_, _ = r.coll.UpdateOne(ctx, bson.M{"_id": token.ID}, bson.M{"$set": bson.M{"token_hash": hashTokenValue(token.TokenValue)}})
 		token.TokenHash = hashTokenValue(token.TokenValue)
+		_, _ = r.coll.UpdateOne(ctx, bson.M{"_id": token.ID}, bson.M{
+			"$set":   bson.M{"token_hash": token.TokenHash},
+			"$unset": bson.M{"token_value": ""},
+		})
 	}
 	return &token, err
 }

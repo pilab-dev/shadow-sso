@@ -3,8 +3,9 @@ package services
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/pilab-dev/shadow-sso/domain"
 	"github.com/pilab-dev/shadow-sso/internal/audit"
@@ -51,9 +52,9 @@ func enrichSession(ctx context.Context, session *domain.Session, geoResolver geo
 
 	flags := []string{}
 	if sessionRepo != nil && session.UserID != "" {
-		func() {
-			defer func() { recover() }()
-			prior, _ := sessionRepo.ListSessionsByUserID(ctx, session.UserID, domain.SessionFilter{})
+		active := false
+		prior, err := sessionRepo.ListSessionsByUserID(ctx, session.UserID, domain.SessionFilter{IsRevoked: &active})
+		if err == nil {
 			seenCountry := false
 			seenDevice := false
 			seenASN := false
@@ -82,10 +83,10 @@ func enrichSession(ctx context.Context, session *domain.Session, geoResolver geo
 					flags = append(flags, "new_asn")
 				}
 			}
-		}()
+		}
 	}
 	session.RiskFlags = flags
-	if len(flags) > 0 && sessionRepo != nil && !isMockSessionRepo(sessionRepo) {
+	if len(flags) > 0 && sessionRepo != nil {
 		_ = sessionRepo.StoreSessionEvent(ctx, &domain.SessionEvent{
 			SessionID: session.ID,
 			UserID:    session.UserID,
@@ -106,14 +107,29 @@ func enrichSession(ctx context.Context, session *domain.Session, geoResolver geo
 	}
 }
 
-func isMockSessionRepo(repo domain.SessionRepository) bool {
-	t := reflect.TypeOf(repo)
-	return t != nil && (strings.Contains(t.String(), "Mock"))
+// recordSessionCreated appends the "created" lifecycle event for a session.
+// It is best-effort: a failure only loses an audit entry.
+func recordSessionCreated(ctx context.Context, repo domain.SessionRepository, session *domain.Session, actor string) {
+	if repo == nil || session == nil {
+		return
+	}
+	_ = repo.StoreSessionEvent(ctx, &domain.SessionEvent{
+		SessionID: session.ID,
+		UserID:    session.UserID,
+		ClientID:  session.ClientID,
+		Type:      "created",
+		IPAddress: session.IPAddress,
+		Geo:       session.IPCountry,
+		UserAgent: session.UserAgent,
+		At:        session.CreatedAt,
+		Actor:     actor,
+	})
 }
 
 func titleCase(s string) string {
 	if s == "" {
 		return "Unknown"
 	}
-	return strings.ToUpper(s[:1]) + s[1:]
+	r, size := utf8.DecodeRuneInString(s)
+	return string(unicode.ToUpper(r)) + s[size:]
 }

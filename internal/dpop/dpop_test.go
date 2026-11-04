@@ -62,6 +62,26 @@ func TestVerifyProof(t *testing.T) {
 	}
 }
 
+func TestVerifyProofOnce_RejectsReplay(t *testing.T) {
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	requireNoErr(t, err)
+	htu := "https://issuer.example/token"
+	proof := makeProof(t, priv, "POST", htu)
+	now := time.Now()
+	if _, err := VerifyProofOnce(proof, "POST", htu, "", now); err != nil {
+		t.Fatalf("first use: %v", err)
+	}
+	if _, err := VerifyProofOnce(proof, "POST", htu, "", now); err == nil {
+		t.Fatal("expected replay rejection")
+	}
+	// A different key with the same jti is not a replay of the first proof.
+	other, err := rsa.GenerateKey(rand.Reader, 2048)
+	requireNoErr(t, err)
+	if _, err := VerifyProofOnce(makeProof(t, other, "POST", htu), "POST", htu, "", now); err != nil {
+		t.Fatalf("distinct key: %v", err)
+	}
+}
+
 func TestAccessTokenHash(t *testing.T) {
 	h := AccessTokenHash("abc")
 	if h == "" {

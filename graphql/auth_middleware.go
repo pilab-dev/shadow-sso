@@ -90,7 +90,7 @@ func AuthMiddleware(tokenService TokenService, bootstrapToken string, next http.
 				return
 			}
 			htu := requestURL(r)
-			jkt, err := dpop.VerifyProof(proof, r.Method, htu, dpop.AccessTokenHash(rawToken), time.Now())
+			jkt, err := dpop.VerifyProofOnce(proof, r.Method, htu, dpop.AccessTokenHash(rawToken), time.Now())
 			if err != nil || jkt != tokenInfo.CnfJKT {
 				http.Error(w, `{"error":"invalid_dpop_proof"}`, http.StatusUnauthorized)
 				return
@@ -121,13 +121,18 @@ func AuthMiddleware(tokenService TokenService, bootstrapToken string, next http.
 	})
 }
 
+// requestURL reconstructs the absolute URL a request was made to, used for the
+// DPoP htu check. Only http/https are accepted from X-Forwarded-Proto so a
+// client cannot inject an arbitrary scheme through a header.
 func requestURL(r *http.Request) string {
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
 	}
 	if v := r.Header.Get("X-Forwarded-Proto"); v != "" {
-		scheme = strings.TrimSpace(strings.Split(v, ",")[0])
+		if p := strings.ToLower(strings.TrimSpace(strings.Split(v, ",")[0])); p == "http" || p == "https" {
+			scheme = p
+		}
 	}
 	return scheme + "://" + r.Host + r.URL.RequestURI()
 }

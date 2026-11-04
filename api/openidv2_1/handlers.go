@@ -1841,20 +1841,25 @@ func (oa *OAuth2API) handleClientCredentialsGrant(c *gin.Context, cli *domain.Cl
 	return oa.service.IssueClientCredentialsForClient(ctx, cli, scope, requestedAudiences(c))
 }
 
-// requestedAudiences collects RFC 8707 resource indicators from the token
-// request. Both `audience` (used by most real-world clients) and `resource`
-// (the RFC name) are accepted, and repeated values are honoured.
+// requestURL reconstructs the absolute URL a request was made to, used for the
+// DPoP htu check. Only http/https are accepted from X-Forwarded-Proto so a
+// client cannot inject an arbitrary scheme through a header.
 func requestURL(r *http.Request) string {
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
 	}
 	if v := r.Header.Get("X-Forwarded-Proto"); v != "" {
-		scheme = strings.TrimSpace(strings.Split(v, ",")[0])
+		if p := strings.ToLower(strings.TrimSpace(strings.Split(v, ",")[0])); p == "http" || p == "https" {
+			scheme = p
+		}
 	}
 	return scheme + "://" + r.Host + r.URL.RequestURI()
 }
 
+// requestedAudiences collects RFC 8707 resource indicators from the token
+// request. Both `audience` (used by most real-world clients) and `resource`
+// (the RFC name) are accepted, and repeated values are honoured.
 func requestedAudiences(c *gin.Context) []string {
 	out := make([]string, 0, 2)
 	out = append(out, c.PostFormArray("audience")...)

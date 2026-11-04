@@ -88,6 +88,10 @@ type Config struct {
 	GeoIPASNDatabasePath     string        `mapstructure:"geoip_asn_database_path"`
 	RateLimitLockoutDuration time.Duration `mapstructure:"rate_limit_lockout_duration"`
 
+	// SessionStrictValidation rejects access tokens whose session has been
+	// revoked or has expired, instead of only relying on token expiry.
+	SessionStrictValidation bool `mapstructure:"session_strict_validation"`
+
 	// CORS configuration
 	AllowedOrigins []string `mapstructure:"allowed_origins"`
 

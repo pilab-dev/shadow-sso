@@ -30,6 +30,14 @@ import (
 
 var errMissingKidSAValidation = errors.New("missing kid header, not a service account token, try other validation")
 
+const (
+	// sessionLivenessTTL bounds how stale a cached session-liveness answer may
+	// be. Revocation therefore takes at most this long to affect validation.
+	sessionLivenessTTL = 30 * time.Second
+	// sessionLivenessMaxEntries bounds the in-process liveness cache.
+	sessionLivenessMaxEntries = 10_000
+)
+
 type sessionLivenessEntry struct {
 	active  bool
 	expires time.Time
@@ -200,7 +208,7 @@ func (s *defaultTokenService) CreateToken(ctx context.Context, opts domain.Creat
 		if method == "" {
 			method = "POST"
 		}
-		jkt, err := dpop.VerifyProof(reqInfo.DPoPProof, method, reqInfo.DPoPHTU, "", time.Now())
+		jkt, err := dpop.VerifyProofOnce(reqInfo.DPoPProof, method, reqInfo.DPoPHTU, "", time.Now())
 		if err != nil {
 			telemetry.RecordSpanError(span, err, "invalid DPoP proof")
 			span.SetStatus(codes.Error, "invalid DPoP proof")
@@ -796,11 +804,12 @@ func (s *defaultTokenService) validateUserToken(ctx context.Context, tokenValue 
 // sessionActive reports whether the session behind sid is still live, using a
 // short-lived in-process cache to avoid a DB round trip on every request.
 func (s *defaultTokenService) sessionActive(ctx context.Context, sid string) bool {
+	now := time.Now()
 	s.sessionLivenessMu.Lock()
 	if s.sessionLivenessCache == nil {
 		s.sessionLivenessCache = make(map[string]sessionLivenessEntry)
 	}
-	if e, ok := s.sessionLivenessCache[sid]; ok && time.Now().Before(e.expires) {
+	if e, ok := s.sessionLivenessCache[sid]; ok && now.Before(e.expires) {
 		s.sessionLivenessMu.Unlock()
 		return e.active
 	}
@@ -808,15 +817,35 @@ func (s *defaultTokenService) sessionActive(ctx context.Context, sid string) boo
 
 	active := false
 	if sess, err := s.sessionRepo.GetSessionByID(ctx, sid); err == nil && sess != nil {
-		if !sess.IsRevoked && time.Now().Before(sess.ExpiresAt) {
+		if !sess.IsRevoked && now.Before(sess.ExpiresAt) {
 			active = true
 		}
 	}
 
-	s.sessionLivenessMu.Lock()
-	s.sessionLivenessCache[sid] = sessionLivenessEntry{active: active, expires: time.Now().Add(30 * time.Second)}
-	s.sessionLivenessMu.Unlock()
+	s.cacheSessionLiveness(sid, active, now)
 	return active
+}
+
+// cacheSessionLiveness stores a liveness result, keeping the cache bounded by
+// pruning expired entries (and, if still saturated, dropping the whole cache)
+// so a long-lived process cannot grow it without limit.
+func (s *defaultTokenService) cacheSessionLiveness(sid string, active bool, now time.Time) {
+	s.sessionLivenessMu.Lock()
+	defer s.sessionLivenessMu.Unlock()
+	if s.sessionLivenessCache == nil {
+		s.sessionLivenessCache = make(map[string]sessionLivenessEntry)
+	}
+	if len(s.sessionLivenessCache) >= sessionLivenessMaxEntries {
+		for k, e := range s.sessionLivenessCache {
+			if !now.Before(e.expires) {
+				delete(s.sessionLivenessCache, k)
+			}
+		}
+		if len(s.sessionLivenessCache) >= sessionLivenessMaxEntries {
+			s.sessionLivenessCache = make(map[string]sessionLivenessEntry)
+		}
+	}
+	s.sessionLivenessCache[sid] = sessionLivenessEntry{active: active, expires: now.Add(sessionLivenessTTL)}
 }
 
 func (s *defaultTokenService) validateRS256Token(ctx context.Context, tokenValue string) (*domain.Token, error) {
