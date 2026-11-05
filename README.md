@@ -559,6 +559,16 @@ Shadow SSO supports modern OIDC authentication flows with separate frontend UI i
 
 For detailed frontend integration instructions, see `README_FRONTEND.md`.
 
+### 🖱️ One Tap & Silent Login SDK
+
+The official JavaScript/TypeScript helper for silent login and the One Tap
+corner card lives in
+[`pilab-cloud/shadow-sso`](https://github.com/pilab-cloud/shadow-sso)
+(`@pilab/shadow-sso` on npm). It drives the server's
+`/oauth2/silent-authorize` endpoint (including `mode=session`) and validates
+the `sso-silent-result` postMessage and `state`, so browser clients should use
+that package instead of hand-rolling the iframe bridge.
+
 ## 🧩 Repository Interfaces
 
 Shadow SSO uses a modular architecture with well-defined interfaces for data persistence. The current implementation provides MongoDB and in-memory implementations:

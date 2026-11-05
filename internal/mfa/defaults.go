@@ -12,6 +12,7 @@ func BuildDefaultRegistry(
 	webauthnCfg WebAuthnConfig,
 	yubicoCfg YubicoConfig,
 	smsService domain.SMSService,
+	emailService domain.EmailService,
 	pushMFA port.PushMFAProvider,
 ) (*DefaultMFARegistry, error) {
 	reg := NewMFARegistry()
@@ -24,6 +25,9 @@ func BuildDefaultRegistry(
 	}
 	reg.Register(NewYubicoProvider(yubicoCfg, store, dir))
 	reg.Register(NewSMSProvider(smsService, store, dir))
+	if emailService != nil {
+		reg.Register(NewEmailProvider(emailService, store, dir))
+	}
 	reg.Register(NewPushProvider(pushMFA, store, dir))
 	return reg, nil
 }

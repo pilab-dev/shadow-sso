@@ -123,7 +123,7 @@ func TestConsentPage_RARAuthorizationDetails(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "payment_initiation")
 }
 
 func TestConsentPage_NoFlowID(t *testing.T) {
