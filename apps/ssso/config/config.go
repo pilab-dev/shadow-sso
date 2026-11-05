@@ -117,6 +117,12 @@ type Config struct {
 	// offline_access scope.
 	OfflineRefreshTokenTTL time.Duration `mapstructure:"offline_refresh_token_ttl"`
 
+	// CIBANotificationURL receives a JSON POST for every CIBA authentication
+	// request so a push service can reach the user's device. When empty, such
+	// requests can only be resolved through the gRPC API.
+	CIBANotificationURL    string `mapstructure:"ciba_notification_url"`
+	CIBANotificationSecret string `mapstructure:"ciba_notification_secret"`
+
 	// CORS configuration
 	AllowedOrigins []string `mapstructure:"allowed_origins"`
 
@@ -297,6 +303,8 @@ func LoadConfig() (config Config, err error) {
 	viper.SetDefault("rate_limit_max_attempts", 5)
 	viper.SetDefault("rate_limit_lockout_duration", "15m")
 	viper.SetDefault("offline_refresh_token_ttl", "2160h")
+	viper.SetDefault("ciba_notification_url", "")
+	viper.SetDefault("ciba_notification_secret", "")
 	// Fail closed by default: no cross-origin requests are allowed unless
 	// SSSO_ALLOWED_ORIGINS is explicitly set. Local dev sets "*" via .env.dev.
 	viper.SetDefault("allowed_origins", []string{})

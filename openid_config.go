@@ -412,6 +412,18 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 	authPath, authHandler := ssov1connect.NewAuthServiceHandler(authServer, interceptors)
 	router.Any(authPath+"*action", gin.WrapH(authHandler))
 
+	// CIBA (poll mode): optional webhook notifier plus the admin resolve API.
+	if cibaSvc, ok := serviceProvider.OAuthService().(services.CIBAService); ok {
+		if opts.AppConfig != nil && opts.AppConfig.CIBANotificationURL != "" {
+			if n, ok := cibaSvc.(interface{ SetCIBANotifier(domain.CIBANotifier) }); ok {
+				n.SetCIBANotifier(services.NewWebhookCIBANotifier(
+					opts.AppConfig.CIBANotificationURL, opts.AppConfig.CIBANotificationSecret))
+			}
+		}
+		cibaPath, cibaHandler := ssov1connect.NewBackchannelAuthenticationServiceHandler(services.NewCIBAServer(cibaSvc), interceptors)
+		router.Any(cibaPath+"*action", gin.WrapH(cibaHandler))
+	}
+
 	// User Service
 	userServer := services.NewUserServer(
 		opts.RepositoryProvider.UserRepository(connectCtx),

@@ -135,6 +135,26 @@ Set `frontchannel_logout_uri` (and optionally `frontchannel_logout_session_requi
 
 Set `userinfo_signed_response_alg` on a client (gRPC `ClientManagement`) to receive UserInfo as an `application/jwt` response signed by the realm key (`iss` = issuer, `aud` = client_id). The value must match the algorithm of the active signing key, otherwise UserInfo answers `server_error`. Discovery lists `userinfo_signing_alg_values_supported`.
 
+### CIBA (poll mode)
+
+Client-Initiated Backchannel Authentication lets a confidential client start a
+login for a known user without a browser redirect. Discovery advertises
+`backchannel_authentication_endpoint` and `backchannel_token_delivery_modes_supported: ["poll"]`.
+
+1. `POST /oauth2/ciba` with client authentication, `scope` (must include `openid`),
+   `login_hint` (email or user ID) and optional `binding_message`. Returns
+   `auth_req_id`, `expires_in` (300) and `interval` (5).
+2. The user is notified by the webhook configured with `SSSO_CIBA_NOTIFICATION_URL`
+   (and `SSSO_CIBA_NOTIFICATION_SECRET`, sent as a Bearer token). Your push service
+   approves or denies through the admin gRPC `BackchannelAuthenticationService`
+   (`ResolveBackchannelAuthentication`, permission `ciba:resolve`).
+3. The client polls `/oauth2/token` with
+   `grant_type=urn:openid:params:grant-type:ciba&auth_req_id=...`, receiving
+   `authorization_pending`, `slow_down`, `expired_token`, `access_denied` or tokens.
+
+The client needs the CIBA grant type in its allowed grant types. Ping and push
+delivery modes (`client_notification_token`) are not supported.
+
 ## Rich Authorization Requests (RFC 9396)
 
 Clients may send `authorization_details` (a JSON array of objects, each with a `type`) on `/oauth2/authorize` or

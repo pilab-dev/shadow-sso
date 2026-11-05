@@ -54,6 +54,7 @@ type OAuth2API struct {
 	config              *sssoapi.OpenIDProviderConfig
 	flowStore           domain.FlowStore
 	parStore            domain.PARStore
+	ciba                services.CIBAService
 	clientSecretKey     []byte
 	rarTypesCache       rarTypesCache
 	userSessionStore    domain.UserSessionStore
@@ -130,7 +131,12 @@ func NewOAuth2API(
 	if parStore == nil {
 		parStore = parstore.NewMemory()
 	}
+	var cibaSvc services.CIBAService
+	if opts.OAuthService != nil {
+		cibaSvc, _ = opts.OAuthService.(services.CIBAService)
+	}
 	return &OAuth2API{
+		ciba:                cibaSvc,
 		service:             opts.OAuthService,
 		jwksService:         opts.JSKSService,
 		clientService:       opts.ClientService,
@@ -175,6 +181,9 @@ func (oa *OAuth2API) RegisterRoutes(e *gin.Engine) {
 	e.POST("/oauth2/userinfo", oa.UserInfoHandler)
 	e.POST("/oauth2/revoke", oa.RevokeHandler)
 	e.POST("/oauth2/introspect", oa.IntrospectHandler)
+	if oa.ciba != nil {
+		e.POST("/oauth2/ciba", oa.BackchannelAuthenticationHandler)
+	}
 
 	if oa.config.EnabledEndpoints.EndSession {
 		e.GET("/oauth2/logout", oa.LogoutHandler)
@@ -1434,6 +1443,7 @@ const (
 	GrantTypeClientCredentials GrantType = "client_credentials"
 	GrantTypePassword          GrantType = "password"
 	GrantTypeDeviceCode        GrantType = "urn:ietf:params:oauth:grant-type:device_code" // New
+	GrantTypeCIBA              GrantType = domain.GrantTypeCIBA
 )
 
 // TokenHandler handles OAuth2 token requests. It:
@@ -1513,6 +1523,8 @@ func (oa *OAuth2API) TokenHandler(c *gin.Context) {
 		tokenResponse, processErr = oa.handlePasswordGrant(c, cli)
 	case GrantTypeDeviceCode:
 		tokenResponse, processErr = oa.handleDeviceCodeGrant(c, cli)
+	case GrantTypeCIBA:
+		tokenResponse, processErr = oa.handleCIBAGrant(c, cli)
 	default:
 		c.JSON(http.StatusBadRequest, domain.NewUnsupportedGrantType())
 		return
@@ -1955,6 +1967,11 @@ func (oa *OAuth2API) OpenIDConfigurationHandler(c *gin.Context) {
 	}
 	if cfg.EnabledGrantTypes.DeviceCode {
 		grantTypesSupported = append(grantTypesSupported, "urn:ietf:params:oauth:grant-type:device_code")
+	}
+	if oa.ciba != nil {
+		grantTypesSupported = append(grantTypesSupported, domain.GrantTypeCIBA)
+		resp.BackchannelAuthenticationEndpoint = ToPtr(baseURL + "/oauth2/ciba")
+		resp.BackchannelTokenDeliveryModesSupported = []string{"poll"}
 	}
 	resp.GrantTypesSupported = grantTypesSupported
 

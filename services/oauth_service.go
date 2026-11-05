@@ -81,6 +81,7 @@ type defaultOAuthService struct {
 	geoResolver       geo.Resolver
 	sessionNotifier   domain.SessionNotifier
 	identity          identity.Verifier
+	cibaNotifier      domain.CIBANotifier
 }
 
 // oauthServiceOption configures a defaultOAuthService at construction time.
@@ -1347,6 +1348,11 @@ func (s *defaultOAuthService) VerifyUserCode(ctx context.Context, userCode strin
 			return nil, domain.ErrUserCodeNotFound
 		}
 		return nil, fmt.Errorf("failed to retrieve device authorization by user code: %w", err)
+	}
+	if domain.ParseCIBAMeta(deviceAuth) != nil {
+		// CIBA requests are approved only by their target user through the
+		// backchannel resolve call; never through the device user-code page.
+		return nil, domain.ErrUserCodeNotFound
 	}
 
 	span.SetAttributes(

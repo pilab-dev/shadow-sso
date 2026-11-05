@@ -90,6 +90,8 @@ type OpenIDConfiguration struct {
 	EndSessionEndpoint                         *string  `json:"end_session_endpoint,omitempty"`
 	FrontchannelLogoutSupported                bool     `json:"frontchannel_logout_supported,omitempty"`
 	FrontchannelLogoutSessionSupported         bool     `json:"frontchannel_logout_session_supported,omitempty"`
+	BackchannelAuthenticationEndpoint          *string  `json:"backchannel_authentication_endpoint,omitempty"`
+	BackchannelTokenDeliveryModesSupported     []string `json:"backchannel_token_delivery_modes_supported,omitempty"`
 	BackchannelLogoutSupported                 bool     `json:"backchannel_logout_supported,omitempty"`
 	BackchannelLogoutSessionSupported          bool     `json:"backchannel_logout_session_supported,omitempty"`
 	UserInfoEndpoint                           string   `json:"userinfo_endpoint"`

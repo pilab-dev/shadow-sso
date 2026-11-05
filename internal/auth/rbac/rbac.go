@@ -53,6 +53,9 @@ const (
 	PermSessionsClearOthers = "sessions:clear_others"
 )
 
+// CIBA (answering backchannel authentication requests on behalf of a user)
+const PermCIBAResolve = "ciba:resolve"
+
 // Service Account Management (Admin only)
 const (
 	PermServiceAccountsManage = "serviceaccounts:manage"
@@ -139,6 +142,8 @@ var RoleToPermissionsMap = map[string][]string{
 		PermSessionsClearOthers,
 
 		PermServiceAccountsManage,
+
+		PermCIBAResolve,
 
 		PermUserAttributesManage,
 		PermTokenMappersManage,
@@ -314,6 +319,10 @@ var MethodPermissions = map[string]string{
 	"/sso.v1.AuthenticationFlowService/UpdateAuthenticationFlow":       PermAuthFlowsManage,
 	"/sso.v1.AuthenticationFlowService/DeleteAuthenticationFlow":       PermAuthFlowsManage,
 	"/sso.v1.AuthenticationFlowService/UpdateAuthenticationExecutions": PermAuthFlowsManage,
+
+	// BackchannelAuthenticationService
+	"/sso.v1.BackchannelAuthenticationService/GetBackchannelAuthentication":     PermCIBAResolve,
+	"/sso.v1.BackchannelAuthenticationService/ResolveBackchannelAuthentication": PermCIBAResolve,
 
 	// UserAdminService
 	"/sso.v1.UserAdminService/SendVerificationEmail":  PermUsersUpdateAll,

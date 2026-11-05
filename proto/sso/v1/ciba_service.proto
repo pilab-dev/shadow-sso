@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package sso.v1;
+
+import "buf/validate/validate.proto";
+
+option go_package = "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1;ssov1";
+
+// BackchannelAuthenticationService lets a trusted backend (the BFF or the
+// user's authentication app backend) answer OpenID CIBA requests on behalf of
+// an authenticated user.
+service BackchannelAuthenticationService {
+  rpc GetBackchannelAuthentication(GetBackchannelAuthenticationRequest) returns (GetBackchannelAuthenticationResponse);
+  rpc ResolveBackchannelAuthentication(ResolveBackchannelAuthenticationRequest) returns (ResolveBackchannelAuthenticationResponse);
+}
+
+message GetBackchannelAuthenticationRequest {
+  string auth_req_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message GetBackchannelAuthenticationResponse {
+  string client_id = 1;
+  string user_id = 2;
+  string scope = 3;
+  string binding_message = 4;
+  // "pending", "authorized", "denied", "expired" or "redeemed".
+  string status = 5;
+  int64 expires_at = 6;
+}
+
+message ResolveBackchannelAuthenticationRequest {
+  string auth_req_id = 1 [(buf.validate.field).string.min_len = 1];
+  // The user who authenticated; must be the user the client asked for.
+  string user_id = 2 [(buf.validate.field).string.min_len = 1];
+  bool approve = 3;
+}
+
+message ResolveBackchannelAuthenticationResponse {}
