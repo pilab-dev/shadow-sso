@@ -570,15 +570,15 @@ func (oa *OAuth2API) parseAndValidateAuthorizeParams(c *gin.Context) (*authorize
 	// RFC 9126: a pushed authorization request carries a request_uri instead
 	// of the parameters inline. Resolve it into the same data struct.
 	if ru := c.Query("request_uri"); ru != "" {
-		params, ok := LookupPAR(ru)
+		params, ok := ConsumePAR(ru, data.clientID)
 		if !ok {
 			err := domain.NewInvalidRequest("unknown or expired request_uri")
 			oa.sendHTMLError(c, http.StatusBadRequest, err)
 			return nil, err
 		}
-		if v := params["client_id"]; v != "" {
-			data.clientID = v
-		}
+		// The pushed (authenticated) client_id is authoritative.
+		data.clientID = params["client_id"]
+		c.Set(parResolvedKey, params)
 		if v := params["redirect_uri"]; v != "" {
 			data.redirectURI = v
 		}
@@ -1039,6 +1039,8 @@ func validateCSRFToken(c *gin.Context) bool {
 	return subtle.ConstantTimeCompare([]byte(cookieVal), []byte(headerVal)) == 1
 }
 
+const parResolvedKey = "par_resolved_params"
+
 // extractOriginalOIDCParams extracts all query parameters from the request.
 func (oa *OAuth2API) extractOriginalOIDCParams(c *gin.Context) map[string]string {
 	params := make(map[string]string)
@@ -1049,13 +1051,9 @@ func (oa *OAuth2API) extractOriginalOIDCParams(c *gin.Context) map[string]string
 	}
 	// PAR: resolve request_uri into the stored flow params so the login flow
 	// carries the full authorization request.
-	if ru := c.Query("request_uri"); ru != "" {
-		if p, ok := LookupPAR(ru); ok {
-			for k, v := range p {
-				if _, exists := params[k]; !exists {
-					params[k] = v
-				}
-			}
+	if v, ok := c.Get(parResolvedKey); ok {
+		for k, val := range v.(map[string]string) {
+			params[k] = val
 		}
 	}
 	return params
