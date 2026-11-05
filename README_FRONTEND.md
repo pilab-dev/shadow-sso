@@ -135,6 +135,30 @@ Set `frontchannel_logout_uri` (and optionally `frontchannel_logout_session_requi
 
 Set `userinfo_signed_response_alg` on a client (gRPC `ClientManagement`) to receive UserInfo as an `application/jwt` response signed by the realm key (`iss` = issuer, `aud` = client_id). The value must match the algorithm of the active signing key, otherwise UserInfo answers `server_error`. Discovery lists `userinfo_signing_alg_values_supported`.
 
+### FedCM (One Tap without an iframe)
+
+Shadow SSO is a FedCM identity provider: the browser shows the account chooser
+and no third-party cookie or iframe is needed. `/.well-known/web-identity` must be
+reachable at the registrable domain root of the issuer.
+
+```js
+const cred = await navigator.credentials.get({
+  identity: { providers: [{
+    configURL: 'https://sso.example.com/fedcm/config.json',
+    clientId: 'YOUR_CLIENT_ID',
+    nonce: crypto.randomUUID(),
+  }] },
+});
+// cred.token is an ID token; verify it with the JWKS and check the nonce.
+```
+
+The page origin must match the origin of one of the client's registered
+redirect URIs. Endpoints: `/fedcm/config.json`, `/fedcm/accounts`,
+`/fedcm/client_metadata`, `/fedcm/assertion`. The OP session cookie is
+`SameSite=None; Secure` over HTTPS (required by browsers), and `Set-Login`
+headers keep the browser's login status in sync. The token's `aud` is the client
+ID; scopes are `openid` plus `email`/`profile` when the client allows them.
+
 ### CIBA (poll mode)
 
 Client-Initiated Backchannel Authentication lets a confidential client start a

@@ -56,6 +56,7 @@ func EstablishOPSession(
 // deployments it uses SameSite=None so the cookie is also sent when the
 // authorize endpoint is loaded in a cross-site iframe for silent login.
 func SetOPSessionCookie(w http.ResponseWriter, sessionID string, isSecure bool) {
+	w.Header().Set("Set-Login", "logged-in") // FedCM login status
 	http.SetCookie(w, &http.Cookie{
 		Name:     OPSessionCookieName,
 		Value:    sessionID,
@@ -70,6 +71,7 @@ func SetOPSessionCookie(w http.ResponseWriter, sessionID string, isSecure bool) 
 
 // ClearOPSessionCookie immediately expires the OP session cookie.
 func ClearOPSessionCookie(w http.ResponseWriter, isSecure bool) {
+	w.Header().Set("Set-Login", "logged-out") // FedCM login status
 	http.SetCookie(w, &http.Cookie{
 		Name:     OPSessionCookieName,
 		Value:    "",

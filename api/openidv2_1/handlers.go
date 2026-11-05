@@ -195,6 +195,8 @@ func (oa *OAuth2API) RegisterRoutes(e *gin.Engine) {
 		e.DELETE("/oauth2/register/:client_id", oa.RegistrationDeleteHandler)
 	}
 
+	oa.registerFedCMRoutes(e)
+
 	// OpenID Configuration endpoints
 	e.GET("/.well-known/openid-configuration", oa.OpenIDConfigurationHandler)
 	e.GET("/.well-known/jwks.json", oa.JWKSHandler)
