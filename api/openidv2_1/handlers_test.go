@@ -1001,6 +1001,7 @@ func TestUserInfoHandler_Success_GET(t *testing.T) {
 	mockTokenSvc.EXPECT().ValidateAccessToken(gomock.Any(), "valid-token").Return(&domain.Token{
 		UserID:    "user1",
 		TokenType: "access_token",
+		Scope:     "openid profile email",
 	}, nil)
 	mockTokenSvc.EXPECT().ApplyTokenMappers(gomock.Any(), gomock.Any(), "", "user1", "userinfo").Return(nil)
 	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user1").Return(&domain.User{
@@ -1049,6 +1050,7 @@ func TestUserInfoHandler_Success_POST(t *testing.T) {
 	mockTokenSvc.EXPECT().ValidateAccessToken(gomock.Any(), "valid-token").Return(&domain.Token{
 		UserID:    "user1",
 		TokenType: "access_token",
+		Scope:     "openid profile email",
 	}, nil)
 	mockTokenSvc.EXPECT().ApplyTokenMappers(gomock.Any(), gomock.Any(), "", "user1", "userinfo").Return(nil)
 	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user1").Return(&domain.User{
@@ -1137,6 +1139,7 @@ func TestUserInfoHandler_UserNotFound(t *testing.T) {
 	mockTokenSvc.EXPECT().ValidateAccessToken(gomock.Any(), "valid-token").Return(&domain.Token{
 		UserID:    "user1",
 		TokenType: "access_token",
+		Scope:     "openid profile email",
 	}, nil)
 	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user1").Return(nil, errors.New("not found"))
 
@@ -1160,6 +1163,7 @@ func TestUserInfoHandler_LockedUser(t *testing.T) {
 	mockTokenSvc.EXPECT().ValidateAccessToken(gomock.Any(), "valid-token").Return(&domain.Token{
 		UserID:    "user1",
 		TokenType: "access_token",
+		Scope:     "openid profile email",
 	}, nil)
 	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user1").Return(&domain.User{
 		ID:     "user1",
@@ -1187,6 +1191,7 @@ func TestUserInfoHandler_PendingUser(t *testing.T) {
 	mockTokenSvc.EXPECT().ValidateAccessToken(gomock.Any(), "valid-token").Return(&domain.Token{
 		UserID:    "user1",
 		TokenType: "access_token",
+		Scope:     "openid profile email",
 	}, nil)
 	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user1").Return(&domain.User{
 		ID:     "user1",
@@ -1239,6 +1244,7 @@ func TestUserInfoHandler_AliasRoute(t *testing.T) {
 	mockTokenSvc.EXPECT().ValidateAccessToken(gomock.Any(), "valid-token").Return(&domain.Token{
 		UserID:    "user1",
 		TokenType: "access_token",
+		Scope:     "openid profile email",
 	}, nil)
 	mockTokenSvc.EXPECT().ApplyTokenMappers(gomock.Any(), gomock.Any(), "", "user1", "userinfo").Return(nil)
 	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user1").Return(&domain.User{
@@ -1613,4 +1619,60 @@ func TestTokenHandler_ConfidentialClientWithAuthNone_StillRequiresCredentials(t 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d. Body: %s", w.Code, w.Body.String())
 	}
+}
+
+func TestUserInfoHandler_ScopeEnforcement(t *testing.T) {
+	t.Run("missing openid scope is forbidden", func(t *testing.T) {
+		router, ctrl, mockTokenSvc, _ := setupUserInfoTest(t)
+		defer ctrl.Finish()
+		mockTokenSvc.EXPECT().ValidateAccessToken(gomock.Any(), "valid-token").Return(&domain.Token{
+			UserID: "user1", TokenType: "access_token", Scope: "profile",
+		}, nil)
+
+		req := httptest.NewRequest("GET", "/oauth2/userinfo", nil)
+		req.Header.Set("Authorization", "bearer valid-token")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusForbidden, w.Code)
+	})
+
+	t.Run("claims limited to granted scopes", func(t *testing.T) {
+		router, ctrl, mockTokenSvc, mockUserRepo := setupUserInfoTest(t)
+		defer ctrl.Finish()
+		mockTokenSvc.EXPECT().ValidateAccessToken(gomock.Any(), "valid-token").Return(&domain.Token{
+			UserID: "user1", TokenType: "access_token", Scope: "openid",
+		}, nil)
+		mockTokenSvc.EXPECT().ApplyTokenMappers(gomock.Any(), gomock.Any(), "", "user1", "userinfo").Return(nil)
+		mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user1").Return(&domain.User{
+			ID: "user1", Email: "a@b.c", FirstName: "A", Status: domain.UserStatusActive,
+		}, nil)
+
+		req := httptest.NewRequest("GET", "/oauth2/userinfo", nil)
+		req.Header.Set("Authorization", "Bearer valid-token")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, http.StatusOK, w.Code)
+		var resp map[string]any
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		assert.Equal(t, "user1", resp["sub"])
+		assert.NotContains(t, resp, "email")
+		assert.NotContains(t, resp, "name")
+	})
+
+	t.Run("DPoP bound token requires proof", func(t *testing.T) {
+		router, ctrl, mockTokenSvc, _ := setupUserInfoTest(t)
+		defer ctrl.Finish()
+		mockTokenSvc.EXPECT().ValidateAccessToken(gomock.Any(), "valid-token").Return(&domain.Token{
+			UserID: "user1", TokenType: "access_token", Scope: "openid", CnfJKT: "thumb",
+		}, nil)
+
+		req := httptest.NewRequest("GET", "/oauth2/userinfo", nil)
+		req.Header.Set("Authorization", "Bearer valid-token")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusUnauthorized, w.Code)
+	})
 }

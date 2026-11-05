@@ -20,8 +20,8 @@ const AuthUserIDKey = "auth-user-id"
 // extractJWTFromHeader extracts the JWT from the Authorization header.
 func extractJWTFromHeader(bearerToken string) (string, error) {
 	const prefix = "Bearer "
-	if strings.HasPrefix(bearerToken, prefix) {
-		return strings.TrimPrefix(bearerToken, prefix), nil
+	if len(bearerToken) > len(prefix) && strings.EqualFold(bearerToken[:len(prefix)], prefix) {
+		return strings.TrimSpace(bearerToken[len(prefix):]), nil
 	}
 	return "", errors.New("invalid bearer token")
 }

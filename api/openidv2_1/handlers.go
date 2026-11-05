@@ -13,11 +13,13 @@ import (
 	"net/http"
 	"encoding/json"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/pilab-dev/shadow-sso/internal/dpop"
 	sssoapi "github.com/pilab-dev/shadow-sso/api"
 
 	"github.com/google/uuid"
@@ -1506,18 +1508,39 @@ func (oa *OAuth2API) UserInfoHandler(c *gin.Context) {
 		return
 	}
 
-	tokenParts := strings.Split(authHeader, " ")
-	if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
+	token, err := extractJWTFromHeader(authHeader)
+	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
 		return
 	}
 
-	token := tokenParts[1]
 	ctx := c.Request.Context()
 
 	tokenInfo, err := oa.tokenService.ValidateAccessToken(ctx, token)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_token"})
+		return
+	}
+
+	if tokenInfo.CnfJKT != "" {
+		proof := strings.TrimSpace(c.GetHeader("DPoP"))
+		if proof == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_dpop_proof", "error_description": "DPoP proof required"})
+			return
+		}
+		jkt, err := dpop.VerifyProofOnce(proof, c.Request.Method, requestURL(c.Request), dpop.AccessTokenHash(token), time.Now())
+		if err != nil || jkt != tokenInfo.CnfJKT {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_dpop_proof", "error_description": "invalid DPoP proof"})
+			return
+		}
+	}
+
+	grantedScopes := strings.Fields(tokenInfo.Scope)
+	hasScope := func(name string) bool { return slices.Contains(grantedScopes, name) }
+
+	if tokenInfo.TokenType != "service_account_jwt" && !hasScope("openid") {
+		c.Header("WWW-Authenticate", `Bearer error="insufficient_scope", scope="openid"`)
+		c.JSON(http.StatusForbidden, gin.H{"error": "insufficient_scope"})
 		return
 	}
 
@@ -1554,14 +1577,16 @@ func (oa *OAuth2API) UserInfoHandler(c *gin.Context) {
 		preferredUsername := user.Email
 		emailVerified := user.IsEmailVerified
 
-		userInfo = sssoapi.UserInfo{
-			Sub:               user.ID,
-			Name:              name,
-			GivenName:         givenName,
-			FamilyName:        familyName,
-			PreferredUsername: &preferredUsername,
-			Email:             &email,
-			EmailVerified:     &emailVerified,
+		userInfo = sssoapi.UserInfo{Sub: user.ID}
+		if hasScope("profile") {
+			userInfo.Name = name
+			userInfo.GivenName = givenName
+			userInfo.FamilyName = familyName
+			userInfo.PreferredUsername = &preferredUsername
+		}
+		if hasScope("email") {
+			userInfo.Email = &email
+			userInfo.EmailVerified = &emailVerified
 		}
 	}
 
