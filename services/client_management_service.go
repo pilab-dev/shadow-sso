@@ -119,6 +119,7 @@ func toClientProto(c *domain.Client, includeSecret bool) *ssov1.ClientProto {
 		RequirePkce:                c.RequirePKCE,
 		RequirePar:                 c.RequirePAR,
 		RequireSignedRequestObject: c.RequireSignedRequestObject,
+		UserinfoSignedResponseAlg:  c.UserinfoSignedResponseAlg,
 		IsActive:                   c.IsActive,
 
 		// LDAP Attribute Mapping Fields (assuming they exist on ssov1.ClientProto)
@@ -182,6 +183,7 @@ func (s *ClientManagementServer) RegisterClient(ctx context.Context, req *connec
 		RequireConsent:             req.Msg.RequireConsent,
 		RequirePAR:                 req.Msg.RequirePar,
 		RequireSignedRequestObject: req.Msg.RequireSignedRequestObject,
+		UserinfoSignedResponseAlg:  req.Msg.UserinfoSignedResponseAlg,
 		IsActive:                   true,
 		CreatedAt:                  time.Now().UTC(),
 		UpdatedAt:                  time.Now().UTC(),
@@ -329,6 +331,7 @@ func (s *ClientManagementServer) UpdateClient(ctx context.Context, req *connect.
 	dbClient.RequireConsent = req.Msg.RequireConsent
 	dbClient.RequirePAR = req.Msg.RequirePar
 	dbClient.RequireSignedRequestObject = req.Msg.RequireSignedRequestObject
+	dbClient.UserinfoSignedResponseAlg = req.Msg.UserinfoSignedResponseAlg
 	dbClient.IsActive = req.Msg.IsActive
 
 	// Update LDAP attribute mapping fields

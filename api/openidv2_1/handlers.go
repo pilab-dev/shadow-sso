@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	goerrors "errors" // Standard Go errors package
 	"fmt"
 	"html/template" // Added for HTML rendering
@@ -1704,7 +1705,59 @@ func (oa *OAuth2API) UserInfoHandler(c *gin.Context) {
 	}
 
 	c.Header("Cache-Control", "no-store")
+	if oa.respondSignedUserInfo(c, tokenInfo.ClientID, userInfo) {
+		return
+	}
 	c.JSON(http.StatusOK, userInfo)
+}
+
+// respondSignedUserInfo answers with an application/jwt UserInfo response when
+// the client registered userinfo_signed_response_alg. It reports whether a
+// response was written.
+func (oa *OAuth2API) respondSignedUserInfo(c *gin.Context, clientID string, userInfo any) bool {
+	if clientID == "" || oa.clientService == nil {
+		return false
+	}
+	ctx := c.Request.Context()
+	client, err := oa.clientService.GetClient(ctx, clientID)
+	if err != nil || client == nil || client.UserinfoSignedResponseAlg == "" || client.UserinfoSignedResponseAlg == "none" {
+		return false
+	}
+	if oa.tokenSigner == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return true
+	}
+	raw, err := json.Marshal(userInfo)
+	claims := jwt.MapClaims{}
+	if err == nil {
+		err = json.Unmarshal(raw, &claims)
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return true
+	}
+	claims["iss"] = oa.config.Issuer
+	claims["aud"] = clientID
+	signed, err := oa.tokenSigner.SignForClient(claims, clientID)
+	if err == nil {
+		var hdr struct {
+			Alg string `json:"alg"`
+		}
+		parts := strings.Split(signed, ".")
+		if h, derr := base64.RawURLEncoding.DecodeString(parts[0]); derr == nil {
+			_ = json.Unmarshal(h, &hdr)
+		}
+		if hdr.Alg != client.UserinfoSignedResponseAlg {
+			err = fmt.Errorf("active key alg %q does not match registered %q", hdr.Alg, client.UserinfoSignedResponseAlg)
+		}
+	}
+	if err != nil {
+		log.Ctx(ctx).Error().Err(err).Str("client_id", clientID).Msg("UserInfo: signing failed")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server_error"})
+		return true
+	}
+	c.Data(http.StatusOK, "application/jwt", []byte(signed))
+	return true
 }
 
 // RevokeHandler handles token revocation requests according to RFC 7009.
@@ -1955,6 +2008,10 @@ func (oa *OAuth2API) OpenIDConfigurationHandler(c *gin.Context) {
 		if !strings.HasPrefix(strings.ToUpper(alg), "HS") {
 			resp.IDTokenSigningAlgValuesSupported = append(resp.IDTokenSigningAlgValuesSupported, alg)
 		}
+	}
+	// Signed UserInfo uses the same loaded asymmetric keys as ID tokens.
+	if len(resp.IDTokenSigningAlgValuesSupported) > 0 && oa.tokenSigner != nil {
+		resp.UserinfoSigningAlgValuesSupported = append([]string{}, resp.IDTokenSigningAlgValuesSupported...)
 	}
 	// client_secret_jwt needs a key to recover sealed client secrets.
 	if len(oa.clientSecretKey) == 32 && !containsString(resp.TokenEndpointAuthMethodsSupported, "client_secret_jwt") {

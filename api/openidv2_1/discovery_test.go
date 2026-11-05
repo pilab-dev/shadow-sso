@@ -148,8 +148,6 @@ func TestOpenIDConfiguration_IsTruthful(t *testing.T) {
 	require.NotEmpty(t, doc["token_endpoint_auth_methods_supported"])
 	require.Contains(t, doc["token_endpoint_auth_methods_supported"], "client_secret_basic",
 		"basic auth is parsed at the token, PAR, introspection and revocation endpoints")
-	require.NotContains(t, doc, "userinfo_signing_alg_values_supported",
-		"UserInfo responses are plain JSON")
 	require.Equal(t, "https://sso.example.com/oauth2/par", doc["pushed_authorization_request_endpoint"])
 	require.Equal(t, true, doc["backchannel_logout_supported"])
 	require.Equal(t, true, doc["backchannel_logout_session_supported"])

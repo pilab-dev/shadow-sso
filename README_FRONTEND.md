@@ -123,6 +123,10 @@ ID tokens carry `amr` (RFC 8176: `pwd`, `otp`, `mfa`, `hwk`) and `acr` (`loa1` s
 
 `/oauth2/authorize` accepts `request=<JWT>`. The object must be signed (RS/PS 256/384/512, never `none`) with a key from the client's registered JWKS, carry `iss` = the client_id and `aud` = the issuer, and include `response_type`, `redirect_uri` etc.; only its signed values are used, unsigned query parameters do not fill gaps. Set `require_signed_request_object` on a client (gRPC `ClientManagement`) to refuse plain authorization requests (PAR remains allowed). `request_uri` still only resolves PAR-issued URIs; JWE-encrypted objects and remote `request_uri` fetching are not supported.
 
+### Signed UserInfo
+
+Set `userinfo_signed_response_alg` on a client (gRPC `ClientManagement`) to receive UserInfo as an `application/jwt` response signed by the realm key (`iss` = issuer, `aud` = client_id). The value must match the algorithm of the active signing key, otherwise UserInfo answers `server_error`. Discovery lists `userinfo_signing_alg_values_supported`.
+
 ## Rich Authorization Requests (RFC 9396)
 
 Clients may send `authorization_details` (a JSON array of objects, each with a `type`) on `/oauth2/authorize` or

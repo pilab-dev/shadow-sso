@@ -88,6 +88,7 @@ type Client struct {
 	TermsURI                    string     `bson:"tos_uri,omitempty"                   json:"terms_uri,omitempty"`
 	RequireConsent              bool       `bson:"require_consent"                     json:"require_consent,omitempty"`
 	RequirePKCE                 bool       `bson:"require_pkce"                        json:"require_pkce,omitempty"`
+	UserinfoSignedResponseAlg   string     `bson:"userinfo_signed_response_alg,omitempty" json:"userinfo_signed_response_alg,omitempty"`
 	RequireSignedRequestObject  bool       `bson:"require_signed_request_object,omitempty" json:"require_signed_request_object,omitempty"`
 	RequirePAR                  bool       `bson:"require_par,omitempty"               json:"require_par,omitempty"`
 	CreatedAt                   time.Time  `bson:"created_at"                          json:"created_at,omitempty"`
