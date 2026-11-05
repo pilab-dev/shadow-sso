@@ -1062,3 +1062,146 @@ func TestTokenService_CreateToken_SigningKeyResolution(t *testing.T) {
 	overrideOpts.SigningKeyID = "realm-active"
 	assert.Equal(t, "realm-active", kidOf(overrideOpts), "explicit SigningKeyID must win over per-client resolution")
 }
+
+func TestTokenService_CreateToken_IncludesScopeClaim(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
+	mockCache := mock_cache.NewMockTokenStore(ctrl)
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+
+	signer := services.NewTokenSigner()
+	signer.AddKeySigner("test-secret")
+
+	ts := services.NewTokenService(
+		mockTokenRepo,
+		mockCache,
+		"test-issuer",
+		signer,
+		mock_domain.NewMockPublicKeyRepository(ctrl),
+		mock_domain.NewMockServiceAccountRepository(ctrl),
+		mockUserRepo,
+		nil, nil, nil, nil,
+	)
+
+	const grantedScope = "openid profile email"
+	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user-id").Return(nil, errors.New("not found"))
+	mockTokenRepo.EXPECT().StoreToken(gomock.Any(), gomock.Any()).Return(nil)
+	mockCache.EXPECT().Set(gomock.Any(), gomock.Any()).Return(nil)
+
+	token, err := ts.CreateToken(context.Background(), domain.CreateTokenOptions{
+		TokenID:   "token-id",
+		Scope:     grantedScope,
+		ClientID:  "client-id",
+		UserID:    "user-id",
+		ExpireIn:  time.Hour,
+		TokenType: api.TokenTypeAccessToken,
+	}, nil)
+	require.NoError(t, err)
+
+	parsed, err := jwt.Parse(token.TokenValue, func(*jwt.Token) (interface{}, error) {
+		return []byte("test-secret"), nil
+	})
+	require.NoError(t, err)
+	claims, ok := parsed.Claims.(jwt.MapClaims)
+	require.True(t, ok)
+	assert.Equal(t, grantedScope, claims["scope"], "resource servers read the granted scope from the access token")
+}
+
+func TestTokenService_GenerateIDToken_GatesEmailByScope(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	signer := services.NewTokenSigner()
+	signer.AddKeySigner("test-secret")
+
+	ts := services.NewTokenService(
+		mock_domain.NewMockTokenRepository(ctrl),
+		mock_cache.NewMockTokenStore(ctrl),
+		"test-issuer",
+		signer,
+		mock_domain.NewMockPublicKeyRepository(ctrl),
+		mock_domain.NewMockServiceAccountRepository(ctrl),
+		mockUserRepo,
+		nil, nil, nil, nil,
+	)
+
+	user := &domain.User{
+		ID:              "user-id",
+		Email:           "user@example.com",
+		FirstName:       "Test",
+		LastName:        "User",
+		IsEmailVerified: false,
+	}
+	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user-id").Return(user, nil).AnyTimes()
+
+	parse := func(t *testing.T, token string) jwt.MapClaims {
+		t.Helper()
+		parsed, err := jwt.Parse(token, func(*jwt.Token) (interface{}, error) {
+			return []byte("test-secret"), nil
+		})
+		require.NoError(t, err)
+		claims, ok := parsed.Claims.(jwt.MapClaims)
+		require.True(t, ok)
+		return claims
+	}
+
+	openidOnly, err := ts.GenerateIDToken(context.Background(), "user-id", "client-id", "", "", time.Now(), "openid")
+	require.NoError(t, err)
+	claims := parse(t, openidOnly)
+	assert.NotContains(t, claims, "email", "email must only be released with the email scope")
+
+	withEmail, err := ts.GenerateIDToken(context.Background(), "user-id", "client-id", "", "", time.Now(), "openid email")
+	require.NoError(t, err)
+	claims = parse(t, withEmail)
+	assert.Equal(t, "user@example.com", claims["email"])
+	assert.Equal(t, false, claims["email_verified"], "email_verified must reflect the user record")
+}
+
+func TestTokenService_ValidateAccessToken_RejectsIDToken(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	keyPath := filepath.Join(t.TempDir(), "key.pem")
+	require.NoError(t, os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{
+		Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key),
+	}), 0o600))
+
+	signer := services.NewTokenSigner()
+	require.NoError(t, signer.AddRSASigner(keyPath))
+
+	pubKeyRepo := mock_domain.NewMockPublicKeyRepository(ctrl)
+	pubKeyRepo.EXPECT().GetPublicKey(gomock.Any(), gomock.Any()).AnyTimes().Return(nil, errors.New("not found"))
+	mockCache := mock_cache.NewMockTokenStore(ctrl)
+	mockCache.EXPECT().Get(gomock.Any(), gomock.Any()).AnyTimes().Return(nil, errors.New("miss"))
+	mockRepo := mock_domain.NewMockTokenRepository(ctrl)
+	mockRepo.EXPECT().GetAccessToken(gomock.Any(), gomock.Any()).AnyTimes().Return(nil, errors.New("not found"))
+	ts := services.NewTokenService(
+		mockRepo,
+		mockCache,
+		"https://sso.example",
+		signer,
+		pubKeyRepo,
+		mock_domain.NewMockServiceAccountRepository(ctrl),
+		mock_domain.NewMockUserRepository(ctrl),
+		nil, nil, nil, nil,
+	)
+
+	exp := jwt.NewNumericDate(time.Now().Add(time.Hour))
+	cases := map[string]jwt.MapClaims{
+		"id token":        {"iss": "https://sso.example", "sub": "u", "aud": "c", "exp": exp, "token_use": "id"},
+		"legacy id token": {"iss": "https://sso.example", "sub": "u", "aud": "c", "exp": exp, "auth_time": exp},
+	}
+	for name, claims := range cases {
+		t.Run(name, func(t *testing.T) {
+			tok, err := signer.Sign(claims, "")
+			require.NoError(t, err)
+			_, err = ts.ValidateAccessToken(context.Background(), tok)
+			require.Error(t, err)
+		})
+	}
+}

@@ -242,6 +242,12 @@ func (s *defaultTokenService) CreateToken(ctx context.Context, opts domain.Creat
 		"nbf": jwt.NewNumericDate(time.Now()).Unix(),
 		"jti": opts.TokenID,
 	}
+	// Granted scopes. Keycloak-compatible resource servers read this claim
+	// directly from the JWT, so it must be present even though the token
+	// record also stores the scope.
+	if opts.Scope != "" {
+		tokenClaimsMap["scope"] = opts.Scope
+	}
 
 	var userRoles []string
 	if len(opts.Roles) > 0 {
@@ -874,6 +880,16 @@ func (s *defaultTokenService) validateRS256Token(ctx context.Context, tokenValue
 		return nil, errors.New("invalid claims type in RS256 token")
 	}
 
+	if use, _ := (*claims)["token_use"].(string); use == "id" {
+		return nil, errors.New("ID token cannot be used as an access token")
+	}
+	// Legacy ID tokens carry auth_time but never a scope claim.
+	if _, hasAuthTime := (*claims)["auth_time"]; hasAuthTime {
+		if _, hasScope := (*claims)["scope"]; !hasScope {
+			return nil, errors.New("ID token cannot be used as an access token")
+		}
+	}
+
 	userID, _ := (*claims)["sub"].(string)
 	if userID == "" {
 		return nil, errors.New("RS256 token missing 'sub' claim")
@@ -1032,7 +1048,8 @@ func (s *defaultTokenService) GenerateIDToken(ctx context.Context, userID, clien
 		"exp":       jwt.NewNumericDate(authTime.Add(time.Hour)),
 		"iat":       jwt.NewNumericDate(authTime),
 		"auth_time": jwt.NewNumericDate(authTime),
-		"email":     user.Email,
+		// Marks the JWT as an ID token so it is never accepted as an access token.
+		"token_use": "id",
 	}
 
 	if nonce != "" {
@@ -1050,7 +1067,7 @@ func (s *defaultTokenService) GenerateIDToken(ctx context.Context, userID, clien
 			claims["preferred_username"] = user.Email
 		} else if s == "email" {
 			claims["email"] = user.Email
-			claims["email_verified"] = true
+			claims["email_verified"] = user.IsEmailVerified
 		}
 	}
 
