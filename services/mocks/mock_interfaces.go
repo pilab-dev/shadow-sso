@@ -538,6 +538,20 @@ func (m *MockPKCEService) EXPECT() *MockPKCEServiceMockRecorder {
 	return m.recorder
 }
 
+// HasCodeChallenge mocks base method.
+func (m *MockPKCEService) HasCodeChallenge(ctx context.Context, code string) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "HasCodeChallenge", ctx, code)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// HasCodeChallenge indicates an expected call of HasCodeChallenge.
+func (mr *MockPKCEServiceMockRecorder) HasCodeChallenge(ctx, code any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasCodeChallenge", reflect.TypeOf((*MockPKCEService)(nil).HasCodeChallenge), ctx, code)
+}
+
 // SavePKCEChallenge mocks base method.
 func (m *MockPKCEService) SavePKCEChallenge(ctx context.Context, code, challenge string) error {
 	m.ctrl.T.Helper()

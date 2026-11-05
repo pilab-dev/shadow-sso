@@ -678,17 +678,15 @@ func (oa *OAuth2API) validateClientDetails(ctx context.Context, clientID, redire
 // Returns *domain.OAuth2Error or nil.
 func (oa *OAuth2API) validatePKCE(ctx context.Context, clientID, codeChallenge, codeChallengeMethod string) error {
 	requiresPKCE, _ := oa.clientService.RequiresPKCE(ctx, clientID) // Error on GetClient already handled by validateClientDetails
-	if requiresPKCE {
-		if codeChallenge == "" {
-			log.Warn().Str("client_id", clientID).Msg("AuthorizeHandler: PKCE code_challenge required but not provided")
-			return domain.NewPKCERequired()
-		}
-		// "" for method defaults to plain if allowed, or S256 if plain disabled by server/client config
-		// This logic should ideally be within pkceService or clientService configuration
-		if codeChallengeMethod != "" && codeChallengeMethod != "S256" && codeChallengeMethod != "plain" {
-			log.Warn().Str("client_id", clientID).Str("method", codeChallengeMethod).Msg("AuthorizeHandler: Invalid code_challenge_method")
-			return domain.NewInvalidRequest("invalid code_challenge_method, only S256 or plain (if enabled) are supported")
-		}
+	if requiresPKCE && codeChallenge == "" {
+		log.Warn().Str("client_id", clientID).Msg("AuthorizeHandler: PKCE code_challenge required but not provided")
+		return domain.NewPKCERequired()
+	}
+	// Only S256 can be verified at the token endpoint, so any supplied
+	// challenge (required or not) must use it; plain would never validate.
+	if codeChallenge != "" && codeChallengeMethod != "S256" {
+		log.Warn().Str("client_id", clientID).Str("method", codeChallengeMethod).Msg("AuthorizeHandler: Invalid code_challenge_method")
+		return domain.NewInvalidRequest("invalid code_challenge_method, only S256 is supported")
 	}
 	return nil
 }
@@ -1934,8 +1932,10 @@ func (oa *OAuth2API) handleAuthorizationCodeGrant(c *gin.Context, cli *domain.Cl
 	ctx := c.Request.Context()
 
 	// Validate PKCE if required
+	// A challenge bound to the code must always be proven, even when the client
+	// does not require PKCE; otherwise a stolen code could skip the check.
 	requiresPKCE, _ := oa.clientService.RequiresPKCE(ctx, cli.ID)
-	if requiresPKCE {
+	if requiresPKCE || codeVerifier != "" || (oa.pkceService != nil && oa.pkceService.HasCodeChallenge(ctx, code)) {
 		if codeVerifier == "" {
 			return nil, domain.NewPKCERequired()
 		}

@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
 
@@ -56,10 +57,20 @@ func (s *defaultPKCEService) ValidateCodeVerifier(ctx context.Context, code, ver
 // ValidatePKCEChallenge validates a code verifier against a code challenge using S256 only.
 // The "plain" method is not supported as it is insecure (RFC 7636 recommends S256).
 func ValidatePKCEChallenge(challenge, verifier string) bool {
+	if len(verifier) < 43 || len(verifier) > 128 {
+		return false
+	}
 	h := sha256.New()
 	h.Write([]byte(verifier))
 	calculatedChallenge := base64.RawURLEncoding.EncodeToString(h.Sum(nil))
-	return challenge == calculatedChallenge
+	return subtle.ConstantTimeCompare([]byte(challenge), []byte(calculatedChallenge)) == 1
+}
+
+// HasCodeChallenge reports whether a PKCE challenge is bound to the code, in
+// which case the token request must prove possession of the code verifier.
+func (s *defaultPKCEService) HasCodeChallenge(ctx context.Context, code string) bool {
+	challenge, err := s.pkceRepo.GetCodeChallenge(ctx, code)
+	return err == nil && challenge != ""
 }
 
 func (s *defaultPKCEService) SavePKCEChallenge(ctx context.Context, code, challenge string) error {

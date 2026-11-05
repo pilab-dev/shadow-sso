@@ -758,7 +758,7 @@ func TestTokenHandler_DeviceCodeGrant_AuthorizationPending(t *testing.T) {
 }
 
 func TestTokenHandler_AuthorizationCodeGrant_ExchangeError(t *testing.T) {
-	router, ctrl, _, mockAuthCodeRepo, _, mockClientStore, _, _, _, _, _, _, _ := setupTokenHandlerTest(t)
+	router, ctrl, _, mockAuthCodeRepo, _, mockClientStore, _, _, mockPkceRepo, _, _, _, _ := setupTokenHandlerTest(t)
 	defer ctrl.Finish()
 
 	clientID := "test-client-exchange-err"
@@ -770,6 +770,7 @@ func TestTokenHandler_AuthorizationCodeGrant_ExchangeError(t *testing.T) {
 
 	mockClientStore.EXPECT().ValidateClient(gomock.Any(), clientID, clientSecret).Return(mockReturnedClient, nil).Times(1)
 	mockClientStore.EXPECT().GetClient(gomock.Any(), clientID).Times(2).Return(mockReturnedClient, nil)
+	mockPkceRepo.EXPECT().GetCodeChallenge(gomock.Any(), authCodeVal).AnyTimes().Return("", errors.New("not found"))
 	mockAuthCodeRepo.EXPECT().GetAuthCode(gomock.Any(), authCodeVal).Return(nil, domain.NewInvalidGrant("exchange failed"))
 
 	data := url.Values{}
@@ -806,7 +807,7 @@ func TestTokenHandler_PublicClient_NoSecretProvided(t *testing.T) {
 	redirectURI := "http://localhost/public-callback"
 	userID := "user-public"
 	scope := "openid"
-	codeVerifier := "s256_code_verifier_for_public_client"
+	codeVerifier := "s256_code_verifier_for_public_client_0123456789"
 
 	mockReturnedClient := &domain.Client{ID: clientID, Secret: "", AllowedGrantTypes: []string{"authorization_code"}, RedirectURIs: []string{redirectURI}, RequirePKCE: true}
 	mockChallenge := CalculateS256Challenge(codeVerifier)
@@ -838,6 +839,37 @@ func TestTokenHandler_PublicClient_NoSecretProvided(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected status %d, got %d. Body: %s", http.StatusOK, w.Code, w.Body.String())
+	}
+}
+
+func TestTokenHandler_AuthorizationCodeGrant_BoundChallengeEnforcedWithoutClientRequirement(t *testing.T) {
+	router, ctrl, _, _, _, mockClientStore, _, _, mockPkceRepo, _, _, _, _ := setupTokenHandlerTest(t)
+	defer ctrl.Finish()
+
+	clientID := "client-no-pkce-requirement"
+	clientSecret := "secret"
+	authCodeVal := "code-with-bound-challenge"
+	redirectURI := "http://localhost/cb"
+
+	cli := &domain.Client{ID: clientID, Secret: clientSecret, AllowedGrantTypes: []string{"authorization_code"}, RedirectURIs: []string{redirectURI}, RequirePKCE: false}
+	mockClientStore.EXPECT().ValidateClient(gomock.Any(), clientID, clientSecret).Return(cli, nil)
+	mockClientStore.EXPECT().GetClient(gomock.Any(), clientID).AnyTimes().Return(cli, nil)
+	mockPkceRepo.EXPECT().GetCodeChallenge(gomock.Any(), authCodeVal).Return(CalculateS256Challenge("a-verifier-the-attacker-does-not-know-0123456789"), nil)
+
+	data := url.Values{}
+	data.Set("grant_type", "authorization_code")
+	data.Set("client_id", clientID)
+	data.Set("client_secret", clientSecret)
+	data.Set("code", authCodeVal)
+	data.Set("redirect_uri", redirectURI)
+
+	req, _ := http.NewRequest(http.MethodPost, "/oauth2/token", strings.NewReader(data.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d. Body: %s", http.StatusBadRequest, w.Code, w.Body.String())
 	}
 }
 
@@ -877,10 +909,11 @@ func TestTokenHandler_ConfidentialClient_SecretNotProvided_CorrectedLogic(t *tes
 }
 
 func TestTokenHandler_InternalServerError(t *testing.T) {
-	router, ctrl, _, mockAuthCodeRepo, _, mockClientStore, _, _, _, _, _, _, _ := setupTokenHandlerTest(t)
+	router, ctrl, _, mockAuthCodeRepo, _, mockClientStore, _, _, mockPkceRepo, _, _, _, _ := setupTokenHandlerTest(t)
 	defer ctrl.Finish()
 
 	_ = mockAuthCodeRepo
+	mockPkceRepo.EXPECT().GetCodeChallenge(gomock.Any(), gomock.Any()).AnyTimes().Return("", errors.New("not found"))
 
 	clientID := "client-internal-error"
 	clientSecret := "secret"

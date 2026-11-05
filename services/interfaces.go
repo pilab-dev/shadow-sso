@@ -59,6 +59,7 @@ type TokenService interface {
 type PKCEService interface {
 	ValidateCodeVerifier(ctx context.Context, code, verifier string) error
 	SavePKCEChallenge(ctx context.Context, code, challenge string) error
+	HasCodeChallenge(ctx context.Context, code string) bool
 }
 
 // JWKSService defines the interface for JSON Web Key Set operations.
