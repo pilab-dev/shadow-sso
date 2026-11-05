@@ -1064,7 +1064,43 @@ func (s *defaultOAuthService) RevokeToken(ctx context.Context, tokenToRevoke, to
 		return fmt.Errorf("invalid client: %w", err)
 	}
 
-	if err := s.tokenService.RevokeToken(ctx, tokenToRevoke); err != nil {
+	// RFC 7009 §2.1: only the client the token was issued to may revoke it.
+	// A foreign or unknown token is a silent no-op so tokens cannot be probed.
+	var info *domain.TokenInfo
+	isRefresh := false
+	if tokenTypeHint == "refresh_token" {
+		info, err = s.tokenService.GetRefreshTokenInfo(ctx, tokenToRevoke)
+		isRefresh = err == nil
+		if err != nil {
+			info, err = s.tokenService.GetAccessTokenInfo(ctx, tokenToRevoke)
+		}
+	} else {
+		info, err = s.tokenService.GetAccessTokenInfo(ctx, tokenToRevoke)
+		if err != nil {
+			info, err = s.tokenService.GetRefreshTokenInfo(ctx, tokenToRevoke)
+			isRefresh = err == nil
+		}
+	}
+	if err != nil || info == nil {
+		return nil
+	}
+	if info.ClientID != clientID {
+		log.Ctx(ctx).Warn().Str("client_id", clientID).Str("token_client_id", info.ClientID).
+			Msg("Token revocation ignored: token was issued to a different client")
+		return nil
+	}
+
+	if isRefresh {
+		if err := s.tokenRepo.RevokeRefreshToken(ctx, tokenToRevoke); err != nil {
+			telemetry.RecordSpanError(span, err, "failed to revoke refresh token")
+			log.Ctx(ctx).Warn().Err(err).Str("client_id", clientID).Msg("Refresh token revocation returned warning/error")
+		}
+		if info.RefreshTokenFamily != "" {
+			if err := s.tokenRepo.RevokeTokenFamily(ctx, info.RefreshTokenFamily); err != nil {
+				log.Ctx(ctx).Warn().Err(err).Str("client_id", clientID).Msg("Refresh token family revocation returned warning/error")
+			}
+		}
+	} else if err := s.tokenService.RevokeToken(ctx, tokenToRevoke); err != nil {
 		telemetry.RecordSpanError(span, err, "failed to revoke token")
 		log.Ctx(ctx).Warn().Err(err).Str("client_id", clientID).Msg("Token revocation returned warning/error")
 	}

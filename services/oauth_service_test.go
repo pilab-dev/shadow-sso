@@ -1415,43 +1415,55 @@ func TestOAuthService_IntrospectToken_InvalidClient(t *testing.T) {
 }
 
 func TestOAuthService_RevokeToken(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
-	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
-	mockAuthCodeRepo := mock_domain.NewMockAuthorizationCodeRepository(ctrl)
-	mockDeviceAuthRepo := mock_domain.NewMockDeviceAuthorizationRepository(ctrl)
-	mockClientRepo := mock_domain.NewMockClientRepository(ctrl)
-	mockSessionRepo := mock_domain.NewMockSessionRepository(ctrl)
-	mockTokenServiceInterface := mock_domain.NewMockTokenServiceInterface(ctrl)
-
-	oauthService := services.NewOAuthService(
-		mockTokenRepo,
-		mockAuthCodeRepo,
-		mockDeviceAuthRepo,
-		mockClientRepo,
-		mockUserRepo,
-		mockSessionRepo,
-		mockTokenServiceInterface,
-		"test-issuer",
-	)
+	setup := func(t *testing.T) (services.OAuthService, *mock_domain.MockTokenRepository, *mock_domain.MockClientRepository, *mock_domain.MockTokenServiceInterface) {
+		ctrl := gomock.NewController(t)
+		mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
+		mockClientRepo := mock_domain.NewMockClientRepository(ctrl)
+		mockTokenService := mock_domain.NewMockTokenServiceInterface(ctrl)
+		svc := services.NewOAuthService(
+			mockTokenRepo,
+			mock_domain.NewMockAuthorizationCodeRepository(ctrl),
+			mock_domain.NewMockDeviceAuthorizationRepository(ctrl),
+			mockClientRepo,
+			mock_domain.NewMockUserRepository(ctrl),
+			mock_domain.NewMockSessionRepository(ctrl),
+			mockTokenService,
+			"test-issuer",
+		)
+		return svc, mockTokenRepo, mockClientRepo, mockTokenService
+	}
 
 	ctx := context.Background()
 	clientID := "client-id"
 	clientSecret := "secret"
+	client := &domain.Client{ID: clientID, Secret: clientSecret}
 
-	client := &domain.Client{
-		ID:     clientID,
-		Secret: clientSecret,
-	}
+	t.Run("owner revokes access token", func(t *testing.T) {
+		svc, _, clientRepo, tokenSvc := setup(t)
+		clientRepo.EXPECT().ValidateClient(ctx, clientID, clientSecret).Return(client, nil)
+		tokenSvc.EXPECT().GetAccessTokenInfo(ctx, "token-to-revoke").Return(&domain.TokenInfo{ClientID: clientID}, nil)
+		tokenSvc.EXPECT().RevokeToken(ctx, "token-to-revoke").Return(nil)
 
-	mockClientRepo.EXPECT().ValidateClient(ctx, clientID, clientSecret).Return(client, nil)
-	mockTokenServiceInterface.EXPECT().RevokeToken(ctx, "token-to-revoke").Return(nil)
+		require.NoError(t, svc.RevokeToken(ctx, "token-to-revoke", "", clientID, clientSecret))
+	})
 
-	err := oauthService.RevokeToken(ctx, "token-to-revoke", "", clientID, clientSecret)
+	t.Run("foreign client cannot revoke", func(t *testing.T) {
+		svc, _, clientRepo, tokenSvc := setup(t)
+		clientRepo.EXPECT().ValidateClient(ctx, clientID, clientSecret).Return(client, nil)
+		tokenSvc.EXPECT().GetAccessTokenInfo(ctx, "other-token").Return(&domain.TokenInfo{ClientID: "someone-else"}, nil)
 
-	require.NoError(t, err)
+		require.NoError(t, svc.RevokeToken(ctx, "other-token", "", clientID, clientSecret))
+	})
+
+	t.Run("owner revokes refresh token and its family", func(t *testing.T) {
+		svc, tokenRepo, clientRepo, tokenSvc := setup(t)
+		clientRepo.EXPECT().ValidateClient(ctx, clientID, clientSecret).Return(client, nil)
+		tokenSvc.EXPECT().GetRefreshTokenInfo(ctx, "rt").Return(&domain.TokenInfo{ClientID: clientID, RefreshTokenFamily: "fam"}, nil)
+		tokenRepo.EXPECT().RevokeRefreshToken(ctx, "rt").Return(nil)
+		tokenRepo.EXPECT().RevokeTokenFamily(ctx, "fam").Return(nil)
+
+		require.NoError(t, svc.RevokeToken(ctx, "rt", "refresh_token", clientID, clientSecret))
+	})
 }
 
 func TestOAuthService_GenerateAuthCode_Success(t *testing.T) {
