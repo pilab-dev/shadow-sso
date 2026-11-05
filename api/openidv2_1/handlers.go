@@ -181,6 +181,9 @@ func (oa *OAuth2API) RegisterRoutes(e *gin.Engine) {
 	}
 	if oa.config.EnabledEndpoints.Registration {
 		e.POST("/oauth2/register", oa.RegisterHandler)
+		e.GET("/oauth2/register/:client_id", oa.RegistrationReadHandler)
+		e.PUT("/oauth2/register/:client_id", oa.RegistrationUpdateHandler)
+		e.DELETE("/oauth2/register/:client_id", oa.RegistrationDeleteHandler)
 	}
 
 	// OpenID Configuration endpoints

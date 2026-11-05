@@ -825,3 +825,74 @@ func TestRPInitiatedLogout_FrontchannelIframe(t *testing.T) {
 	require.Contains(t, body, redirectURI)
 	require.Contains(t, w.Header().Get("Content-Security-Policy"), "frame-src https://rp.example.com")
 }
+
+func TestRegistrationManagement_Lifecycle(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	metrics.InitCustomMetrics(nil)
+	log.Logger = zerolog.Nop()
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	api, repo, _, _, _ := newFullOIDCAPI(t, ctrl, defaultTestConfig())
+	router := newOIDCRouter(t, api)
+
+	var stored *domain.Client
+	deleted := false
+	repo.EXPECT().CreateClient(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, c *domain.Client) error {
+		stored = c
+		return nil
+	})
+	repo.EXPECT().GetClient(gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(func(_ context.Context, id string) (*domain.Client, error) {
+		if stored == nil || deleted || stored.ID != id {
+			return nil, domain.ErrClientNotFound
+		}
+		cp := *stored
+		return &cp, nil
+	})
+	repo.EXPECT().UpdateClient(gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(func(_ context.Context, c *domain.Client) error {
+		stored = c
+		return nil
+	})
+	repo.EXPECT().DeleteClient(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, _ string) error {
+		deleted = true
+		return nil
+	})
+
+	do := func(method, path, auth, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		if auth != "" {
+			req.Header.Set("Authorization", auth)
+		}
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		return w
+	}
+
+	w := do(http.MethodPost, "/oauth2/register", "Bearer initial-access-token-123",
+		`{"client_name":"A","redirect_uris":["https://rp.example.com/cb"]}`)
+	require.Equal(t, http.StatusOK, w.Code)
+	var reg map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &reg))
+	rat, _ := reg["registration_access_token"].(string)
+	uri, _ := reg["registration_client_uri"].(string)
+	require.NotEmpty(t, rat)
+	require.Contains(t, uri, "/oauth2/register/")
+	require.NotEqual(t, rat, stored.RegistrationTokenHash, "only a digest of the token is stored")
+	path := "/oauth2/register/" + stored.ID
+
+	require.Equal(t, http.StatusUnauthorized, do(http.MethodGet, path, "", "").Code)
+	require.Equal(t, http.StatusUnauthorized, do(http.MethodGet, path, "Bearer wrong", "").Code)
+	require.Equal(t, http.StatusUnauthorized, do(http.MethodGet, path, "Bearer initial-access-token-123", "").Code)
+	require.Equal(t, http.StatusOK, do(http.MethodGet, path, "Bearer "+rat, "").Code)
+
+	w = do(http.MethodPut, path, "Bearer "+rat, `{"client_name":"B","redirect_uris":["https://rp.example.com/new"]}`)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "B", stored.Name)
+	require.Equal(t, []string{"https://rp.example.com/new"}, stored.RedirectURIs)
+	require.NotEmpty(t, stored.RegistrationTokenHash)
+	require.Equal(t, http.StatusBadRequest, do(http.MethodPut, path, "Bearer "+rat, `{"client_id":"other","redirect_uris":["https://x.example/cb"]}`).Code)
+
+	require.Equal(t, http.StatusNoContent, do(http.MethodDelete, path, "Bearer "+rat, "").Code)
+	require.Equal(t, http.StatusUnauthorized, do(http.MethodGet, path, "Bearer "+rat, "").Code)
+}

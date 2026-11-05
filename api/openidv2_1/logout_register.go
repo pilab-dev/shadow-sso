@@ -180,12 +180,15 @@ func (oa *OAuth2API) LogoutHandler(c *gin.Context) {
 }
 
 type registerClientRequest struct {
-	ClientName           string   `json:"client_name"`
-	ClientType           string   `json:"client_type"`
-	RedirectURIs         []string `json:"redirect_uris"`
-	PostLogoutURIs       []string `json:"post_logout_redirect_uris"`
-	BackchannelLogoutURI string   `json:"backchannel_logout_uri"`
-	TokenEndpointAuth    string   `json:"token_endpoint_auth_method"`
+	ClientName                        string   `json:"client_name"`
+	ClientType                        string   `json:"client_type"`
+	RedirectURIs                      []string `json:"redirect_uris"`
+	PostLogoutURIs                    []string `json:"post_logout_redirect_uris"`
+	BackchannelLogoutURI              string   `json:"backchannel_logout_uri"`
+	FrontchannelLogoutURI             string   `json:"frontchannel_logout_uri"`
+	FrontchannelLogoutSessionRequired bool     `json:"frontchannel_logout_session_required"`
+	ClientID                          string   `json:"client_id"`
+	TokenEndpointAuth                 string   `json:"token_endpoint_auth_method"`
 }
 
 // RegisterHandler implements RFC 7591 dynamic client registration
@@ -210,11 +213,9 @@ func (oa *OAuth2API) RegisterHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, domain.NewInvalidRequest("redirect_uris is required"))
 		return
 	}
-	for _, uri := range append(append([]string{}, req.RedirectURIs...), req.PostLogoutURIs...) {
-		if !validRegistrationURI(uri) {
-			c.JSON(http.StatusBadRequest, domain.NewInvalidRequest("invalid redirect uri: "+uri))
-			return
-		}
+	if msg := validateRegistrationMetadata(&req); msg != "" {
+		c.JSON(http.StatusBadRequest, domain.NewInvalidRequest(msg))
+		return
 	}
 
 	clientType := domain.ClientTypeConfidential
@@ -223,17 +224,19 @@ func (oa *OAuth2API) RegisterHandler(c *gin.Context) {
 	}
 
 	newClient := &domain.Client{
-		ID:                   uuid.NewString(),
-		Type:                 clientType,
-		IsConfidential:       clientType == domain.ClientTypeConfidential,
-		Name:                 req.ClientName,
-		RedirectURIs:         req.RedirectURIs,
-		PostLogoutURIs:       req.PostLogoutURIs,
-		BackchannelLogoutURI: req.BackchannelLogoutURI,
-		TokenEndpointAuth:    req.TokenEndpointAuth,
-		IsActive:             true,
-		CreatedAt:            time.Now().UTC(),
-		UpdatedAt:            time.Now().UTC(),
+		ID:                                uuid.NewString(),
+		Type:                              clientType,
+		IsConfidential:                    clientType == domain.ClientTypeConfidential,
+		Name:                              req.ClientName,
+		RedirectURIs:                      req.RedirectURIs,
+		PostLogoutURIs:                    req.PostLogoutURIs,
+		BackchannelLogoutURI:              req.BackchannelLogoutURI,
+		FrontchannelLogoutURI:             req.FrontchannelLogoutURI,
+		FrontchannelLogoutSessionRequired: req.FrontchannelLogoutSessionRequired,
+		TokenEndpointAuth:                 req.TokenEndpointAuth,
+		IsActive:                          true,
+		CreatedAt:                         time.Now().UTC(),
+		UpdatedAt:                         time.Now().UTC(),
 	}
 
 	if clientType == domain.ClientTypeConfidential {
@@ -255,6 +258,13 @@ func (oa *OAuth2API) RegisterHandler(c *gin.Context) {
 		newClient.AllowedGrantTypes = []string{"authorization_code", "refresh_token"}
 	}
 
+	regToken, regHash, err := newRegistrationToken()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, domain.NewServerError("failed to register client"))
+		return
+	}
+	newClient.RegistrationTokenHash = regHash
+
 	created, err := oa.clientService.CreateClient(ctx, newClient)
 	if err != nil {
 		log.Error().Err(err).Str("clientID", newClient.ID).Msg("RegisterHandler: failed to create client")
@@ -262,11 +272,10 @@ func (oa *OAuth2API) RegisterHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"client_id":     created.ID,
-		"client_secret": created.Secret,
-		"client_name":   created.Name,
-	})
+	resp := oa.registrationResponse(created)
+	resp["client_secret"] = created.Secret
+	resp["registration_access_token"] = regToken
+	c.JSON(http.StatusOK, resp)
 }
 
 func (oa *OAuth2API) bootstrapAuthorized(authHeader string) bool {

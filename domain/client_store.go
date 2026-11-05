@@ -77,6 +77,7 @@ type Client struct {
 	PostLogoutURIs                    []string   `bson:"post_logout_redirect_uris,omitempty" json:"post_logout_uris,omitempty"`
 	FrontchannelLogoutURI             string     `bson:"frontchannel_logout_uri,omitempty" json:"frontchannel_logout_uri,omitempty"`
 	FrontchannelLogoutSessionRequired bool       `bson:"frontchannel_logout_session_required,omitempty" json:"frontchannel_logout_session_required,omitempty"`
+	RegistrationTokenHash             string     `bson:"registration_token_hash,omitempty" json:"-"`
 	BackchannelLogoutURI              string     `bson:"backchannel_logout_uri,omitempty"    json:"backchannel_logout_uri,omitempty"`
 	AllowedScopes                     []string   `bson:"allowed_scopes"                      json:"allowed_scopes,omitempty"`
 	AllowedAuthorizationDetails       []string   `bson:"allowed_authorization_details"        json:"allowed_authorization_details,omitempty"`

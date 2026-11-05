@@ -123,6 +123,10 @@ ID tokens carry `amr` (RFC 8176: `pwd`, `otp`, `mfa`, `hwk`) and `acr` (`loa1` s
 
 `/oauth2/authorize` accepts `request=<JWT>`. The object must be signed (RS/PS 256/384/512, never `none`) with a key from the client's registered JWKS, carry `iss` = the client_id and `aud` = the issuer, and include `response_type`, `redirect_uri` etc.; only its signed values are used, unsigned query parameters do not fill gaps. Set `require_signed_request_object` on a client (gRPC `ClientManagement`) to refuse plain authorization requests (PAR remains allowed). `request_uri` still only resolves PAR-issued URIs; JWE-encrypted objects and remote `request_uri` fetching are not supported.
 
+### Dynamic client registration management (RFC 7592)
+
+`POST /oauth2/register` (initial access token) now also returns `registration_access_token` and `registration_client_uri`. With that token as a Bearer credential, `GET`, `PUT` and `DELETE` on `/oauth2/register/{client_id}` read, replace the metadata of (name, redirect/post-logout/logout URIs) and delete the client. Only a SHA-256 digest of the token is stored; clients created through the admin API have no token and cannot be managed this way. Any auth failure is a bare 401. The token is not rotated on update, and the client secret is only shown at creation.
+
 ### Front-channel logout
 
 Set `frontchannel_logout_uri` (and optionally `frontchannel_logout_session_required`, which appends `iss` and `sid`) on a client via gRPC `ClientManagement`; `backchannel_logout_uri` is settable there too. `/oauth2/logout` then renders a page that loads the client's URI in a hidden iframe and continues to `post_logout_redirect_uri` through a meta refresh. Only the client named in `id_token_hint` is notified; other clients sharing the SSO session are not (yet).
