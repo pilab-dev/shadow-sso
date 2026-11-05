@@ -48,8 +48,9 @@ func domainTokenToProtoRefreshToken(token *domain.Token) *ssov1.RefreshToken {
 		Scope:                token.Scope,
 		ExpiresAt:            timestamppb.New(token.ExpiresAt),
 		AuthorizationDetails: token.AuthorizationDetails,
-		// SessionId: // Needs mapping if available in domain.Token
-		// Claims:    // Needs mapping if available in domain.Token
+		SessionId:            token.SessionID,
+		Family:               token.Family,
+		ParentJti:            token.ParentJTI,
 	}
 }
 
@@ -69,6 +70,9 @@ func protoRefreshTokenToDomainToken(protoRT *ssov1.RefreshToken) *domain.Token {
 		ExpiresAt:            protoRT.ExpiresAt.AsTime(),
 		IsRevoked:            false, // If we get it from DTS, it's not revoked
 		AuthorizationDetails: protoRT.AuthorizationDetails,
+		SessionID:            protoRT.SessionId,
+		Family:               protoRT.Family,
+		ParentJTI:            protoRT.ParentJti,
 		// CreatedAt, LastUsedAt, Issuer, Roles need to be sourced differently if required
 	}
 }

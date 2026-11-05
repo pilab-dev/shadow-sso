@@ -99,6 +99,7 @@ message AuthCode {
   string claims = 10; // JSON string for claims
   string auth_time_iat = 11; // Added from domain.AuthCodeData
   string authorization_details = 12; // RFC 9396 authorization_details (JSON array)
+  string nonce = 13; // OIDC nonce echoed into the ID token
 }
 
 message StoreAuthCodeRequest {
@@ -126,6 +127,8 @@ message RefreshToken {
   string session_id = 6; // Added from domain.RefreshTokenData
   string claims = 7; // JSON string for claims // Added from domain.RefreshTokenData
   string authorization_details = 8; // RFC 9396 authorization_details (JSON array)
+  string family = 9; // rotation chain identifier
+  string parent_jti = 10; // ID of the refresh token this one replaced
 }
 
 message StoreRefreshTokenRequest {

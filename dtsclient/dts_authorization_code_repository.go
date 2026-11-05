@@ -47,6 +47,7 @@ func toProtoAuthCode(domainAC *domain.AuthCode) *ssov1.AuthCode {
 		Claims:               domainAC.AuthCodeData.Claims,      // Assuming Claims is already a JSON string
 		AuthTimeIat:          domainAC.AuthCodeData.AuthTimeIat, // Assuming this is a string Unix timestamp
 		AuthorizationDetails: domainAC.AuthorizationDetails,
+		Nonce:                domainAC.Nonce,
 	}
 }
 
@@ -69,6 +70,7 @@ func fromProtoAuthCode(protoAC *ssov1.AuthCode) *domain.AuthCode {
 		CodeChallenge:        protoAC.CodeChallenge,
 		CodeChallengeMethod:  protoAC.CodeChallengeMethod,
 		AuthorizationDetails: protoAC.AuthorizationDetails,
+		Nonce:                protoAC.Nonce,
 		AuthCodeData: domain.AuthCodeData{ // Populate embedded struct
 			SessionID:   protoAC.SessionId,
 			Claims:      protoAC.Claims,
@@ -114,7 +116,7 @@ func (r *dtsAuthCodeRepository) GetAuthCode(ctx context.Context, codeStr string)
 
 	protoAC, err := r.client.DTS.GetAuthCode(ctx, req)
 	if err != nil {
-		if status.Code(err) == codes.NotFound {
+		if connect.CodeOf(err) == connect.CodeNotFound {
 			log.Printf("Auth code %s not found in DTS.", codeStr)
 			return nil, nil // Per interface, return nil, nil if not found (or specific error if preferred by caller)
 		}
