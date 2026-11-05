@@ -1,24 +1,29 @@
-name: Feature Request
-description: Got an idea for a feature? Submit it here!
-labels: ["type/feature"]
+name: Feature request
+description: Suggest a new feature or enhancement
+title: "feat: "
+labels: ["enhancement"]
 body:
-  - type: markdown
-    attributes:
-      value: |
-        1. Please speak English.
-        2. Check that a similar idea hasn't already been suggested.
   - type: textarea
-    id: description
+    id: problem
     attributes:
-      label: Feature Description
-      placeholder: I think it would be great if shadow-sso had...
+      label: Problem statement
+      description: What problem does this solve?
     validations:
       required: true
   - type: textarea
-    id: motivation
+    id: proposal
     attributes:
-      label: Motivation / use case
+      label: Proposed solution
+    validations:
+      required: true
   - type: textarea
     id: alternatives
     attributes:
       label: Alternatives considered
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and PRs.
+          required: true
