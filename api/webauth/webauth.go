@@ -5,11 +5,13 @@ import (
 	"html/template"
 	"io/fs"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/pilab-dev/shadow-sso/domain"
+	"github.com/pilab-dev/shadow-sso/port"
 	"github.com/pilab-dev/shadow-sso/internal/authflow"
 	"github.com/pilab-dev/shadow-sso/internal/oidcflow"
 	"github.com/pilab-dev/shadow-sso/services"
@@ -127,10 +129,39 @@ func New(opts *Options) *WebAuth {
 
 // LoadTemplates parses the embedded HTML templates and registers them with
 // the gin engine so that c.HTML() calls resolve correctly.
-func LoadTemplates(router *gin.Engine) error {
-	subFS, err := fs.Sub(templatesFS, "templates")
-	if err != nil {
-		return err
+// LoadTemplates parses HTML templates and registers them with the gin engine.
+// If loader is non-nil (e.g. an internal/templates.Loader), its filesystem is
+// used so operators can override templates on disk without rebuilding.
+func LoadTemplates(router *gin.Engine, loader ...port.TemplateLoader) error {
+	var subFS fs.FS
+	if len(loader) > 0 && loader[0] != nil {
+		subFS = loader[0].FS()
+		if _, err := fs.Stat(subFS, "templates"); err == nil {
+			if s, err := fs.Sub(subFS, "templates"); err == nil {
+				subFS = s
+			}
+		}
+	} else if dir := os.Getenv("SHADOW_SSO_TEMPLATE_DIR"); dir != "" {
+		if _, err := os.Stat(dir); err == nil {
+			subFS = os.DirFS(dir)
+			if _, err := fs.Stat(subFS, "templates"); err == nil {
+				if s, err := fs.Sub(subFS, "templates"); err == nil {
+					subFS = s
+				}
+			}
+		} else {
+			s, err := fs.Sub(templatesFS, "templates")
+			if err != nil {
+				return err
+			}
+			subFS = s
+		}
+	} else {
+		s, err := fs.Sub(templatesFS, "templates")
+		if err != nil {
+			return err
+		}
+		subFS = s
 	}
 	tmpl := template.New("")
 	if _, err := tmpl.ParseFS(subFS, "*.html"); err != nil {

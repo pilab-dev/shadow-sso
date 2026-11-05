@@ -974,6 +974,17 @@ func (oa *OAuth2API) extractOriginalOIDCParams(c *gin.Context) map[string]string
 			params[key] = values[0] // Take the first value for simplicity
 		}
 	}
+	// PAR: resolve request_uri into the stored flow params so the login flow
+	// carries the full authorization request.
+	if ru := c.Query("request_uri"); ru != "" {
+		if p, ok := LookupPAR(ru); ok {
+			for k, v := range p {
+				if _, exists := params[k]; !exists {
+					params[k] = v
+				}
+			}
+		}
+	}
 	return params
 }
 
