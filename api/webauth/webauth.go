@@ -36,6 +36,7 @@ type WebAuth struct {
 	rateLimiter       *RateLimiter
 	runner            *authflow.Runner
 	realmSettingsRepo domain.RealmSettingsRepository
+	mfaService        services.MFAService
 	// deviceAuthRepo backs the device authorization flow verification UI.
 	// It is nil-safe: consumers MUST check for nil and degrade gracefully
 	// (e.g. render an error page) rather than panic when unset.
@@ -57,6 +58,7 @@ type Options struct {
 	SSOCookieSecret   string
 	AuthFlowRepo      domain.AuthenticationFlowRepository
 	RealmSettingsRepo domain.RealmSettingsRepository
+	MFAService        services.MFAService
 	// DeviceAuthRepo is optional; when nil, device-flow handlers must not panic.
 	DeviceAuthRepo domain.DeviceAuthorizationRepository
 }
@@ -84,6 +86,7 @@ func New(opts *Options) *WebAuth {
 		rateLimiter:       NewRateLimiter(cfg.RateLimitMaxAttempts, cfg.RateLimitLockoutDuration),
 		runner:            authflow.NewRunner(opts.AuthFlowRepo, opts.PasswordHasher),
 		realmSettingsRepo: opts.RealmSettingsRepo,
+		mfaService:        opts.MFAService,
 		deviceAuthRepo:    opts.DeviceAuthRepo,
 	}
 }

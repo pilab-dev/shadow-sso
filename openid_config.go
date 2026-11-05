@@ -322,6 +322,7 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		AuthFlowRepo:      authFlowRepo,
 		RealmSettingsRepo: repoProvider.RealmSettingsRepository(context.Background()),
 		DeviceAuthRepo:    repoProvider.DeviceAuthorizationRepository(context.Background()),
+		MFAService:        serviceProvider.MFAService(),
 	})
 
 	router.GET("/", webauthAPI.LandingPageHandler)

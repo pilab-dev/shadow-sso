@@ -428,8 +428,8 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 	// the browser flow) and the account has no usable factor, send the user to
 	// enrollment instead of completing the sign-in.
 	enforced := requiresMFA || wa.mfaEnforced(ctx, user)
-	if enforced && !hasUsableTOTP(user) {
-		if hasUnverifiableActiveFactor(user) {
+	if enforced && !hasUsableTOTP(user) && !wa.hasUsableEmailMFA(user) {
+		if wa.hasUnverifiableActiveFactor(user) {
 			// Never silently downgrade to a factor the login page cannot verify.
 			log.Warn().Str("flow_id", flowID).Str("user_id", user.ID).Str("method", user.TwoFactorMethod).Msg("login: configured MFA method is not verifiable by the web login page")
 			c.HTML(http.StatusForbidden, "error.html", gin.H{
@@ -462,6 +462,13 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 				"Message":   "Internal error. Please try again.",
 			})
 			return
+		}
+		// If the user's second factor is email-based, send a fresh OTP now so
+		// the /mfa page has a code to verify against.
+		if user.IsTwoFactorEnabled && user.TwoFactorMethod == "EMAIL" && wa.mfaService != nil {
+			if _, _, _, err := wa.mfaService.SendMFAChallenge(ctx, user.ID); err != nil {
+				log.Warn().Err(err).Str("user_id", user.ID).Msg("login: failed to send email MFA challenge")
+			}
 		}
 		wa.renderMFAPage(c, flowID, "")
 		return
@@ -572,7 +579,7 @@ func (wa *WebAuth) mfaEnforced(ctx context.Context, user *domain.User) bool {
 }
 
 // hasUsableTOTP reports whether the server-rendered login page can verify a
-// TOTP code for this user. It is the only second factor the /mfa page supports.
+// TOTP code for this user.
 func hasUsableTOTP(user *domain.User) bool {
 	return user != nil &&
 		user.IsTwoFactorEnabled &&
@@ -580,25 +587,41 @@ func hasUsableTOTP(user *domain.User) bool {
 		user.TwoFactorSecret != ""
 }
 
+// hasUsableEmailMFA reports whether the server-rendered login page can verify
+// an email OTP for this user (requires the MFA service to be wired up).
+func (wa *WebAuth) hasUsableEmailMFA(user *domain.User) bool {
+	if wa.mfaService == nil {
+		return false
+	}
+	return user != nil &&
+		user.IsTwoFactorEnabled &&
+		user.TwoFactorMethod == "EMAIL" &&
+		user.EmailMFAEnabled
+}
+
 // hasUnverifiableActiveFactor reports whether the account has an enabled
 // second factor that the /mfa page cannot verify. Such accounts must not be
 // routed to enrollment, because that would replace their existing factor with
 // a weaker path.
-func hasUnverifiableActiveFactor(user *domain.User) bool {
+func (wa *WebAuth) hasUnverifiableActiveFactor(user *domain.User) bool {
 	if user == nil {
 		return false
 	}
-	if user.IsTwoFactorEnabled && user.TwoFactorSecret == "" {
+	if user.IsTwoFactorEnabled && user.TwoFactorSecret == "" && user.TwoFactorMethod != "EMAIL" {
 		return true
 	}
-	if user.IsTwoFactorEnabled && user.TwoFactorMethod != "" && user.TwoFactorMethod != "NONE" && user.TwoFactorMethod != "TOTP" {
+	if user.IsTwoFactorEnabled && user.TwoFactorMethod != "" && user.TwoFactorMethod != "NONE" && user.TwoFactorMethod != "TOTP" && user.TwoFactorMethod != "EMAIL" {
 		return true
 	}
-	if user.EmailMFAEnabled || user.PushMFAEnabled {
+	// Email MFA is only verifiable when the MFA service is available.
+	if user.EmailMFAEnabled && wa.mfaService == nil {
+		return true
+	}
+	if user.PushMFAEnabled {
 		return true
 	}
 	for _, m := range user.MfaMethods {
-		if m.Verified && m.Type != domain.MfaMethodTypeTOTP {
+		if m.Verified && m.Type != domain.MfaMethodTypeTOTP && m.Type != domain.MfaMethodTypeEmail {
 			return true
 		}
 	}
