@@ -150,6 +150,7 @@ func (oa *OAuth2API) RegisterRoutes(e *gin.Engine) {
 	e.HEAD("/oauth2/silent-authorize", oa.SilentAuthorizeHandler)
 	e.OPTIONS("/oauth2/silent-authorize", oa.SilentAuthorizeHandler)
 	e.POST("/oauth2/device_authorization", oa.DeviceAuthorizationHandler)
+	e.POST("/oauth2/par", oa.PushedAuthorizationRequestHandler)
 	e.GET("/oauth2/userinfo", oa.UserInfoHandler)
 	e.POST("/oauth2/userinfo", oa.UserInfoHandler)
 	e.POST("/oauth2/revoke", oa.RevokeHandler)
