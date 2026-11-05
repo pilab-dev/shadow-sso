@@ -60,8 +60,13 @@ type Query {
   clientRoleMappings(userId: ID!, clientId: String!): [Role!]!
 
   # Token mapper queries
+  # tokenMappers returns every mapper (realm-wide and client-specific).
   tokenMappers: [ProtocolMapper!]!
+  # clientTokenMappers returns the mappers that apply to a client:
+  # its own mappers plus the realm-wide ones.
   clientTokenMappers(clientId: String!): [ProtocolMapper!]!
+  # realmTokenMappers returns only the mappers inherited by every client.
+  realmTokenMappers: [ProtocolMapper!]!
 
   # Groups for user
   userGroups(userId: ID!): [Group!]!
@@ -428,6 +433,8 @@ input CreateProtocolMapperInput {
   protocol: String!
   protocolMapper: String!
   config: Map
+  # Leave unset for a realm-wide mapper that applies to every client.
+  clientId: ID
 }
 
 input UpdateProtocolMapperInput {
@@ -435,6 +442,8 @@ input UpdateProtocolMapperInput {
   protocol: String
   protocolMapper: String
   config: Map
+  # Setting this to an empty string moves the mapper to realm level.
+  clientId: ID
 }
 
 # =============================================================================
@@ -929,6 +938,8 @@ type ProtocolMapper {
   protocol: String!
   protocolMapper: String!
   config: Map
+  # Empty for realm-wide mappers.
+  clientId: ID
 
   # Associated client (if any)
   client: Client

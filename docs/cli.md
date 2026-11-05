@@ -119,8 +119,8 @@ contexts:
     protocol: grpc
 ```
 
-Commands that use GraphQL (`role`, `group`, `realm`, `realm-key`, `client-scope`,
-`auth-flow`, `session revoke*`) are unaffected by this setting.
+Commands that use GraphQL (`role`, `group`, `realm`, `realm-key`, `auth-flow`,
+`session revoke*`) are unaffected by this setting.
 
 ## Authentication Commands (`ssoctl auth`)
 

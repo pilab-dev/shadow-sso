@@ -227,6 +227,45 @@ func UserAttributeMapperServiceClient(cfg *config.Context) (ssov1connect.UserAtt
 	return ssov1connect.NewUserAttributeMapperServiceClient(httpClient, cfg.ServerEndpoint, opts...), nil
 }
 
+// ProtocolMapperServiceClient returns a new ProtocolMapperService client.
+func ProtocolMapperServiceClient(cfg *config.Context) (ssov1connect.ProtocolMapperServiceClient, error) {
+	if cfg == nil || cfg.ServerEndpoint == "" {
+		return nil, fmt.Errorf("invalid context or server endpoint for ProtocolMapperService client")
+	}
+	if cfg.UserAuthToken == "" {
+		return nil, fmt.Errorf("user authentication token not found in current context. Please login using 'ssoctl auth login'")
+	}
+	httpClient := newHTTPClient(cfg)
+	opts := options(cfg)
+	return ssov1connect.NewProtocolMapperServiceClient(httpClient, cfg.ServerEndpoint, opts...), nil
+}
+
+// ClientScopeServiceClient returns a new ClientScopeService client.
+func ClientScopeServiceClient(cfg *config.Context) (ssov1connect.ClientScopeServiceClient, error) {
+	if cfg == nil || cfg.ServerEndpoint == "" {
+		return nil, fmt.Errorf("invalid context or server endpoint for ClientScopeService client")
+	}
+	if cfg.UserAuthToken == "" {
+		return nil, fmt.Errorf("user authentication token not found in current context. Please login using 'ssoctl auth login'")
+	}
+	httpClient := newHTTPClient(cfg)
+	opts := options(cfg)
+	return ssov1connect.NewClientScopeServiceClient(httpClient, cfg.ServerEndpoint, opts...), nil
+}
+
+// OIDCConfigurationServiceClient returns a new OIDCConfigurationService client.
+func OIDCConfigurationServiceClient(cfg *config.Context) (ssov1connect.OIDCConfigurationServiceClient, error) {
+	if cfg == nil || cfg.ServerEndpoint == "" {
+		return nil, fmt.Errorf("invalid context or server endpoint for OIDCConfigurationService client")
+	}
+	if cfg.UserAuthToken == "" {
+		return nil, fmt.Errorf("user authentication token not found in current context. Please login using 'ssoctl auth login'")
+	}
+	httpClient := newHTTPClient(cfg)
+	opts := options(cfg)
+	return ssov1connect.NewOIDCConfigurationServiceClient(httpClient, cfg.ServerEndpoint, opts...), nil
+}
+
 // authInterceptor is a simple client interceptor to add the auth token.
 type authInterceptor struct {
 	token string

@@ -83,6 +83,16 @@ func (f *fakeProtocolMapperRepository) ListClientProtocolMappers(_ context.Conte
 	return f.mappers, nil
 }
 
+func (f *fakeProtocolMapperRepository) ListRealmProtocolMappers(_ context.Context) ([]*domain.ProtocolMapper, error) {
+	realm := make([]*domain.ProtocolMapper, 0, len(f.mappers))
+	for _, m := range f.mappers {
+		if m.ClientID == "" {
+			realm = append(realm, m)
+		}
+	}
+	return realm, nil
+}
+
 type fakeTokenRepository struct{}
 
 func (f *fakeTokenRepository) StoreToken(context.Context, *domain.Token) error { return nil }
@@ -98,14 +108,14 @@ func (f *fakeTokenRepository) GetRefreshTokenInfo(context.Context, string) (*dom
 func (f *fakeTokenRepository) GetAccessTokenInfo(context.Context, string) (*domain.TokenInfo, error) {
 	return nil, nil
 }
-func (f *fakeTokenRepository) RevokeToken(context.Context, string) error    { return nil }
+func (f *fakeTokenRepository) RevokeToken(context.Context, string) error        { return nil }
 func (f *fakeTokenRepository) RevokeRefreshToken(context.Context, string) error { return nil }
 func (f *fakeTokenRepository) MarkRefreshTokenUsed(context.Context, string, string) error {
 	return nil
 }
-func (f *fakeTokenRepository) RevokeTokenFamily(context.Context, string) error      { return nil }
+func (f *fakeTokenRepository) RevokeTokenFamily(context.Context, string) error       { return nil }
 func (f *fakeTokenRepository) RevokeTokensBySessionID(context.Context, string) error { return nil }
-func (f *fakeTokenRepository) DeleteExpiredTokens(context.Context) error    { return nil }
+func (f *fakeTokenRepository) DeleteExpiredTokens(context.Context) error             { return nil }
 func (f *fakeTokenRepository) GetTokenInfo(context.Context, string) (*domain.Token, error) {
 	return nil, nil
 }
@@ -165,6 +175,9 @@ func (f *fakeRepoProvider) RealmKeysRepository(context.Context) domain.RealmKeys
 func (f *fakeRepoProvider) Ping(context.Context) error { return nil }
 func (f *fakeRepoProvider) ProtocolMapperRepository(context.Context) domain.ProtocolMapperRepository {
 	return f.protocolMapperRepo
+}
+func (f *fakeRepoProvider) ClientScopeRepository(context.Context) domain.ClientScopeRepository {
+	return nil
 }
 func (f *fakeRepoProvider) RealmSettingsRepository(context.Context) domain.RealmSettingsRepository {
 	return nil

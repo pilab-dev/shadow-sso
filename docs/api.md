@@ -31,6 +31,19 @@ default (Connect + protobuf), `connect.WithGRPC()` or `connect.WithGRPCWeb()`.
 -   **TokenService**: Per-user token metadata (`ListUserTokens`, `GetToken`), device/browser view (`ListUserDevices`) and targeted revocation (`RevokeToken`)
 -   **BrowserPolicyService**: Enterprise browser baseline (`GetBrowserPolicy`, `UpdateBrowserPolicy`, `CheckBrowser`)
 
+### 🧩 OIDC Configuration
+-   **ProtocolMapperService**: Keycloak-style protocol mappers, realm-wide or per client (`CreateProtocolMapper`, `GetProtocolMapper`, `ListProtocolMappers`, `UpdateProtocolMapper`, `DeleteProtocolMapper`)
+-   **ClientScopeService**: Keycloak-style client scopes (`CreateClientScope`, `GetClientScope`, `ListClientScopes`, `UpdateClientScope`, `DeleteClientScope`)
+-   **OIDCConfigurationService**: Runtime overrides for `/.well-known/openid-configuration` metadata (`GetOIDCConfiguration`, `UpdateOIDCConfiguration`)
+
+All three are admin-only (`token_mappers:manage`, `clients:*` and
+`oidc_config:*`) and are available over Connect, gRPC and gRPC-Web like the
+other services. A protocol mapper without `client_id` is realm-wide and applies
+to every client; `ListProtocolMappers` with `client_id` returns the effective
+set (client-specific plus realm-wide). `UpdateOIDCConfiguration` stores the
+lists in realm settings, so the discovery document reflects changes immediately
+without a restart; an empty list resets that field to the server default.
+
 ---
 
 ## AuthService

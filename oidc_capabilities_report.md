@@ -40,8 +40,8 @@ The list of supported response modes is directly configurable via `OpenIDProvide
 
 ## 6. Scopes and Claims
 
-*   **Supported Scopes:** The scopes offered by the server are configurable via `OpenIDProviderConfig.ClaimsConfig.SupportedScopes`.
-*   **Supported Claims:** The claims that can be returned in tokens or via the UserInfo endpoint are configurable via `OpenIDProviderConfig.ClaimsConfig.SupportedClaims`. The server also supports claim mappings via `OpenIDProviderConfig.ClaimsConfig.ClaimsMappings`.
+*   **Supported Scopes:** Defaults to `openid`, `profile`, `email` (the scopes the server enforces) and can be overridden via `OpenIDProviderConfig.ClaimsConfig.SupportedScopes` or `SSSO_OIDC_SCOPES_SUPPORTED`.
+*   **Supported Claims:** The claims that can be returned in tokens or via the UserInfo endpoint default to the list in `api.DefaultClaimsSupported` and can be overridden via `OpenIDProviderConfig.ClaimsConfig.SupportedClaims` or `SSSO_OIDC_CLAIMS_SUPPORTED`.
 *   **Claims Parameter Support:** The server's support for the `claims` request parameter is controlled by `OpenIDProviderConfig.ClaimsConfig.EnableClaimsParameter`.
 
 ## 7. Client Authentication
@@ -63,9 +63,10 @@ Methods supported for authenticating clients at the token endpoint are configura
 
 ## 10. Other Features
 
-*   **Request Parameter Support:** The OIDC discovery document indicates support for the `request` parameter (hardcoded to `true` in the handler, implying it's generally supported).
-*   **Request URI Parameter Support:** The OIDC discovery document indicates support for the `request_uri` parameter (hardcoded to `true` in the handler, implying it's generally supported).
+*   **Request Parameter Support:** Not supported. The discovery document reports `request_parameter_supported: false` because JWT request objects are not parsed.
+*   **Request URI Parameter Support:** Supported through PAR (RFC 9126) at `/oauth2/par`, which is advertised as `pushed_authorization_request_endpoint`.
 *   **Require Request URI Registration:** The server can be configured to require that `request_uri` values are pre-registered, via `OpenIDProviderConfig.SecurityConfig.RequireRequestURIRegistration`.
+*   **Logout capabilities:** `backchannel_logout_supported` and `backchannel_logout_session_supported` are advertised when the logout endpoint and a back-channel notifier are wired. Front-channel logout and mTLS-bound access tokens are not implemented and are not advertised.
 *   **Access Token Format:** The format of access tokens (e.g., "jwt" or "opaque") is configurable via `OpenIDProviderConfig.TokenConfig.AccessTokenFormat`.
 *   **Token Lifetimes:** TTLs for access tokens, refresh tokens, authorization codes, and ID tokens are all configurable.
 *   **Consent Behavior:** The server has settings for requiring and forcing user consent (`RequireConsent`, `ForceConsent`).

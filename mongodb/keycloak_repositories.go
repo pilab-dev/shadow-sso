@@ -433,8 +433,43 @@ func (r *ProtocolMapperRepository) ListProtocolMappers(ctx context.Context) ([]*
 	return mappers, nil
 }
 
+// realmLevelMapperFilter matches mappers that are not bound to a specific
+// client. It matches an absent field, an explicit null (what JSON/GraphQL
+// produces for a null clientId) and the empty string (what a zero-valued
+// string field stores).
+func realmLevelMapperFilter() bson.M {
+	return bson.M{"$or": bson.A{
+		bson.M{"client_id": bson.M{"$exists": false}},
+		bson.M{"client_id": nil},
+		bson.M{"client_id": ""},
+	}}
+}
+
 func (r *ProtocolMapperRepository) ListClientProtocolMappers(ctx context.Context, clientID string) ([]*domain.ProtocolMapper, error) {
-	cursor, err := r.mappers.Find(ctx, bson.M{"client_id": clientID})
+	// Effective mappers for a client are the client-specific ones plus the
+	// realm-wide ones, mirroring Keycloak's realm default mappers.
+	filter := bson.M{"$or": bson.A{
+		bson.M{"client_id": clientID},
+		bson.M{"client_id": bson.M{"$exists": false}},
+		bson.M{"client_id": nil},
+		bson.M{"client_id": ""},
+	}}
+	cursor, err := r.mappers.Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "name", Value: 1}}))
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var mappers []*domain.ProtocolMapper
+	if err := cursor.All(ctx, &mappers); err != nil {
+		return nil, err
+	}
+	return mappers, nil
+}
+
+func (r *ProtocolMapperRepository) ListRealmProtocolMappers(ctx context.Context) ([]*domain.ProtocolMapper, error) {
+	cursor, err := r.mappers.Find(ctx, realmLevelMapperFilter(),
+		options.Find().SetSort(bson.D{{Key: "name", Value: 1}}))
 	if err != nil {
 		return nil, err
 	}
@@ -451,9 +486,9 @@ const AuthFlowsCollection = "auth_flows"
 
 // AuthenticationFlowRepository implements domain.AuthenticationFlowRepository
 type AuthenticationFlowRepository struct {
-	db     *mongo.Database
-	flows  *mongo.Collection
-	execs  *mongo.Collection
+	db    *mongo.Database
+	flows *mongo.Collection
+	execs *mongo.Collection
 }
 
 // NewAuthenticationFlowRepository creates a new AuthenticationFlowRepository
@@ -631,6 +666,21 @@ func (r *ClientScopeRepository) GetClientScopeByID(ctx context.Context, id strin
 	return &scope, nil
 }
 
+func (r *ClientScopeRepository) ListClientScopes(ctx context.Context) ([]*domain.ClientScope, error) {
+	cursor, err := r.scopes.Find(ctx, bson.M{},
+		options.Find().SetSort(bson.D{{Key: "display_order", Value: 1}, {Key: "name", Value: 1}}))
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var scopes []*domain.ClientScope
+	if err := cursor.All(ctx, &scopes); err != nil {
+		return nil, err
+	}
+	return scopes, nil
+}
+
 func (r *ClientScopeRepository) UpdateClientScope(ctx context.Context, scope *domain.ClientScope) error {
 	result, err := r.scopes.ReplaceOne(ctx, bson.M{"_id": scope.ID}, scope)
 	if err != nil {
@@ -748,8 +798,8 @@ const RealmKeysCollection = "realm_keys"
 
 // RealmKeysRepository implements domain.RealmKeysRepository
 type RealmKeysRepository struct {
-	db    *mongo.Database
-	keys  *mongo.Collection
+	db   *mongo.Database
+	keys *mongo.Collection
 }
 
 // NewRealmKeysRepository creates a new RealmKeysRepository
@@ -830,6 +880,7 @@ func (r *RealmKeysRepository) UpdateRealmKeys(ctx context.Context, keys []*domai
 	_, err = r.keys.InsertMany(ctx, docs)
 	return err
 }
+
 // SeedDefaultRealmRoles ensures the given role names exist as realm role
 // documents. Existing roles are left untouched, making the seed idempotent.
 func SeedDefaultRealmRoles(ctx context.Context, roleRepo domain.RoleRepository, names ...string) error {

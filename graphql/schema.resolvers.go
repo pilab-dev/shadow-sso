@@ -1000,6 +1000,12 @@ func (r *mutationResolver) CreateProtocolMapper(ctx context.Context, input Creat
 		ProtocolMapper: input.ProtocolMapper,
 		Config:         input.Config,
 	}
+	// An unset clientId creates a realm-wide mapper that applies to every
+	// client; the token service resolves it together with client-specific
+	// mappers (see ListClientProtocolMappers).
+	if input.ClientID != nil {
+		mapper.ClientID = *input.ClientID
+	}
 
 	if err := r.ProtocolMapperRepo.CreateProtocolMapper(ctx, mapper); err != nil {
 		return nil, err
@@ -1025,6 +1031,10 @@ func (r *mutationResolver) UpdateProtocolMapper(ctx context.Context, id string, 
 	}
 	if input.Config != nil {
 		mapper.Config = input.Config
+	}
+	// An empty clientId moves the mapper to realm level.
+	if input.ClientID != nil {
+		mapper.ClientID = *input.ClientID
 	}
 
 	if err := r.ProtocolMapperRepo.UpdateProtocolMapper(ctx, mapper); err != nil {
@@ -1877,6 +1887,19 @@ func (r *queryResolver) TokenMappers(ctx context.Context) ([]domain.ProtocolMapp
 // ClientTokenMappers is the resolver for the clientTokenMappers field.
 func (r *queryResolver) ClientTokenMappers(ctx context.Context, clientID string) ([]domain.ProtocolMapper, error) {
 	mappers, err := r.ProtocolMapperRepo.ListClientProtocolMappers(ctx, clientID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]domain.ProtocolMapper, len(mappers))
+	for i, m := range mappers {
+		result[i] = *m
+	}
+	return result, nil
+}
+
+// RealmTokenMappers is the resolver for the realmTokenMappers field.
+func (r *queryResolver) RealmTokenMappers(ctx context.Context) ([]domain.ProtocolMapper, error) {
+	mappers, err := r.ProtocolMapperRepo.ListRealmProtocolMappers(ctx)
 	if err != nil {
 		return nil, err
 	}

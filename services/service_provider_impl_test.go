@@ -112,6 +112,10 @@ func setupMockRepoProviderForServiceGetters(mockRepoProvider *mock_services.Mock
 	mockRepoProvider.EXPECT().GroupRepository(gomock.Any()).Return(mock_domain.NewMockGroupRepository(ctrl)).AnyTimes()
 	mockRepoProvider.EXPECT().RoleRepository(gomock.Any()).Return(mock_domain.NewMockRoleRepository(ctrl)).AnyTimes()
 	mockRepoProvider.EXPECT().RealmSettingsRepository(gomock.Any()).Return(mock_domain.NewMockRealmSettingsRepository(ctrl)).AnyTimes()
+	mockRepoProvider.EXPECT().ProtocolMapperRepository(gomock.Any()).Return(mock_domain.NewMockProtocolMapperRepository(ctrl)).AnyTimes()
+	mockRepoProvider.EXPECT().ClientScopeRepository(gomock.Any()).Return(mock_domain.NewMockClientScopeRepository(ctrl)).AnyTimes()
+	mockRepoProvider.EXPECT().UserAttributeMapperRepository(gomock.Any()).Return(mock_domain.NewMockUserAttributeMapperRepository(ctrl)).AnyTimes()
+	mockRepoProvider.EXPECT().UserAttributeRepository(gomock.Any()).Return(mock_domain.NewMockUserAttributeRepository(ctrl)).AnyTimes()
 	// mockRepoProvider.EXPECT().ConfigurationRepository(gomock.Any()).Return(mock_domain.NewMockConfigurationRepository(ctrl)).AnyTimes() // Commented out for tests that need specific config repo
 }
 

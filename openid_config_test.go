@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -40,6 +41,8 @@ func setupMockRepoProvider(ctrl *gomock.Controller) *mock_services.MockRepositor
 	mockRepoProvider.EXPECT().RealmKeysRepository(gomock.Any()).Return(mock_domain.NewMockRealmKeysRepository(ctrl)).AnyTimes()
 	mockRepoProvider.EXPECT().UserAttributeRepository(gomock.Any()).Return(mock_domain.NewMockUserAttributeRepository(ctrl)).AnyTimes()
 	mockRepoProvider.EXPECT().UserAttributeMapperRepository(gomock.Any()).Return(mock_domain.NewMockUserAttributeMapperRepository(ctrl)).AnyTimes()
+	mockRepoProvider.EXPECT().ProtocolMapperRepository(gomock.Any()).Return(mock_domain.NewMockProtocolMapperRepository(ctrl)).AnyTimes()
+	mockRepoProvider.EXPECT().ClientScopeRepository(gomock.Any()).Return(mock_domain.NewMockClientScopeRepository(ctrl)).AnyTimes()
 	mockRealmSettings := mock_domain.NewMockRealmSettingsRepository(ctrl)
 	mockRealmSettings.EXPECT().GetRealmSettings(gomock.Any()).Return(&domain.RealmSettings{}, nil).AnyTimes()
 	mockRepoProvider.EXPECT().RealmSettingsRepository(gomock.Any()).Return(mockRealmSettings).AnyTimes()
@@ -72,6 +75,32 @@ func buildTestOpts(ctrl *gomock.Controller) ssso.SSOServerOptions {
 
 // /healthz and /readyz are served exclusively by the management server (separate port).
 // The main SSO router must not expose them so that probe traffic never hits the SSO listener.
+
+// TestNewSSOServer_OIDCAdminConnectServicesRegistered ensures the new admin
+// RPCs are mounted on the router. Unauthenticated requests must reach the auth
+// interceptor (401) rather than 404, which would mean the handler is missing.
+func TestNewSSOServer_OIDCAdminConnectServicesRegistered(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	router, err := ssso.NewSSOServer(context.Background(), buildTestOpts(ctrl))
+	require.NoError(t, err)
+
+	for _, path := range []string{
+		"/sso.v1.ProtocolMapperService/ListProtocolMappers",
+		"/sso.v1.ClientScopeService/ListClientScopes",
+		"/sso.v1.OIDCConfigurationService/GetOIDCConfiguration",
+	} {
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest(http.MethodPost, path, strings.NewReader("{}"))
+		req.Header.Set("Content-Type", "application/json")
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusUnauthorized, w.Code, "%s must be registered and require authentication", path)
+	}
+}
 
 func TestNewSSOServer_HealthzNotOnSSORouter(t *testing.T) {
 	gin.SetMode(gin.TestMode)

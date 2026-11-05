@@ -493,6 +493,21 @@ func (mr *MockProtocolMapperRepositoryMockRecorder) ListClientProtocolMappers(ct
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListClientProtocolMappers", reflect.TypeOf((*MockProtocolMapperRepository)(nil).ListClientProtocolMappers), ctx, clientID)
 }
 
+// ListRealmProtocolMappers mocks base method.
+func (m *MockProtocolMapperRepository) ListRealmProtocolMappers(ctx context.Context) ([]*domain.ProtocolMapper, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListRealmProtocolMappers", ctx)
+	ret0, _ := ret[0].([]*domain.ProtocolMapper)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListRealmProtocolMappers indicates an expected call of ListRealmProtocolMappers.
+func (mr *MockProtocolMapperRepositoryMockRecorder) ListRealmProtocolMappers(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRealmProtocolMappers", reflect.TypeOf((*MockProtocolMapperRepository)(nil).ListRealmProtocolMappers), ctx)
+}
+
 // ListProtocolMappers mocks base method.
 func (m *MockProtocolMapperRepository) ListProtocolMappers(ctx context.Context) ([]*domain.ProtocolMapper, error) {
 	m.ctrl.T.Helper()
@@ -741,6 +756,21 @@ func (m *MockClientScopeRepository) GetClientScopeByID(ctx context.Context, id s
 func (mr *MockClientScopeRepositoryMockRecorder) GetClientScopeByID(ctx, id any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetClientScopeByID", reflect.TypeOf((*MockClientScopeRepository)(nil).GetClientScopeByID), ctx, id)
+}
+
+// ListClientScopes mocks base method.
+func (m *MockClientScopeRepository) ListClientScopes(ctx context.Context) ([]*domain.ClientScope, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListClientScopes", ctx)
+	ret0, _ := ret[0].([]*domain.ClientScope)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListClientScopes indicates an expected call of ListClientScopes.
+func (mr *MockClientScopeRepositoryMockRecorder) ListClientScopes(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListClientScopes", reflect.TypeOf((*MockClientScopeRepository)(nil).ListClientScopes), ctx)
 }
 
 // UpdateClientScope mocks base method.

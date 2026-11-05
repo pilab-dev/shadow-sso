@@ -102,7 +102,9 @@ server is unreachable, completion silently falls back to file completion.
 | Realm | `realm show/update`, `realm-key list/update`, `mfa policy` |
 | Sessions | `session list/clear/revoke/revoke-all/logout-user` |
 | Auth flows | `auth-flow list/get/create/update/delete/set-executions` |
-| Client scopes | `client-scope create/delete` |
+| Client scopes | `client-scope create/get/list/update/delete` |
+| Protocol mappers | `protocol-mapper create/get/list/update/delete` |
+| OIDC discovery | `oidc-config get/update` |
 | Identity providers | `idp add/get/list/update/delete` |
 | Federation | `federation list/remove` |
 | Service accounts | `service-account create-key/list-keys/delete-key` |

@@ -126,6 +126,7 @@ type CreateProtocolMapperInput struct {
 	Protocol       string         `json:"protocol"`
 	ProtocolMapper string         `json:"protocolMapper"`
 	Config         map[string]any `json:"config,omitempty"`
+	ClientID       *string        `json:"clientId,omitempty"`
 }
 
 type CreateRoleInput struct {
@@ -282,6 +283,7 @@ type UpdateProtocolMapperInput struct {
 	Protocol       *string        `json:"protocol,omitempty"`
 	ProtocolMapper *string        `json:"protocolMapper,omitempty"`
 	Config         map[string]any `json:"config,omitempty"`
+	ClientID       *string        `json:"clientId,omitempty"`
 }
 
 type UpdateRealmInput struct {
@@ -410,7 +412,7 @@ func (e *SortDir) UnmarshalGQL(v any) error {
 }
 
 func (e SortDir) MarshalGQL(w io.Writer) {
-	fmt.Fprint(w, strconv.Quote(e.String()))
+	_, _ = fmt.Fprint(w, strconv.Quote(e.String()))
 }
 
 func (e *SortDir) UnmarshalJSON(b []byte) error {

@@ -29,6 +29,12 @@ type Config struct {
 	// OIDC specific configurations that might be part of OpenIDProviderConfig
 	NextJSLoginURL string `mapstructure:"nextjs_login_url"`
 
+	// Discovery metadata overrides. Empty values fall back to the built-in
+	// defaults in the api package, which describe what the server implements.
+	OIDCScopesSupported          []string `mapstructure:"oidc_scopes_supported"`
+	OIDCClaimsSupported          []string `mapstructure:"oidc_claims_supported"`
+	OIDCTokenEndpointAuthMethods []string `mapstructure:"oidc_token_endpoint_auth_methods"`
+
 	// Storage and DTS specific configurations
 	StorageBackend    StorageType   `mapstructure:"storage_backend"`
 	DTSClientAddress  string        `mapstructure:"dts_client_address"`
@@ -173,12 +179,17 @@ func (c *Config) ToOpenIDProviderConfig() *api.OpenIDProviderConfig {
 			PasswordHashingCost: 10,
 		},
 		TokenConfig: api.TokenConfig{
-			AccessTokenFormat:      "jwt",
-			SupportedResponseTypes: []string{"code"},
+			AccessTokenFormat:          "jwt",
+			SupportedResponseTypes:     []string{"code"},
+			SupportedTokenEndpointAuth: c.OIDCTokenEndpointAuthMethods,
 		},
 		PKCEConfig: api.PKCEConfig{
 			Enabled:          true,
 			SupportedMethods: []string{"S256"},
+		},
+		ClaimsConfig: api.ClaimsConfig{
+			SupportedScopes: c.OIDCScopesSupported,
+			SupportedClaims: c.OIDCClaimsSupported,
 		},
 	}
 
@@ -229,6 +240,9 @@ func LoadConfig() (config Config, err error) {
 	viper.SetDefault("key_rotation_interval", "24h")
 	viper.SetDefault("default_redirect_uri", "http://localhost:3000/login")
 	viper.SetDefault("token_cache_default_ttl", "1h")
+	viper.SetDefault("oidc_scopes_supported", api.DefaultScopesSupported)
+	viper.SetDefault("oidc_claims_supported", api.DefaultClaimsSupported)
+	viper.SetDefault("oidc_token_endpoint_auth_methods", api.DefaultTokenEndpointAuthMethods)
 	viper.SetDefault("cookie_signing_secret", "")
 	// signing_key_path has no default, should be provided or generated on first run.
 	// nextjs_login_url has no default, should be configured if UI flow is used.
@@ -299,6 +313,9 @@ func LoadConfig() (config Config, err error) {
 	viper.BindEnv("tracing_enabled")
 	viper.BindEnv("tracing_otlp_endpoint")
 	viper.BindEnv("allowed_origins")
+	viper.BindEnv("oidc_scopes_supported")
+	viper.BindEnv("oidc_claims_supported")
+	viper.BindEnv("oidc_token_endpoint_auth_methods")
 	viper.BindEnv("allow_insecure_defaults")
 	viper.BindEnv("identity_source")
 	viper.BindEnv("directory_addr")

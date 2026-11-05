@@ -38,11 +38,16 @@ type ProtocolMapper struct {
 
 | Mapper Type | Description | Config Options |
 |-----------|-------------|--------------|
-| `oidc-usermodel-attributemapper` | Map user attributes to claims | `claim.name`, `user.attribute`, `json.type` |
-| `oidc-usermodel-protocol-mapper` | Protocol-level user mapping | `claim.name`, `access.token.claim` |
-| `oidc-group-membership-mapper` | Map group membership | `claim.name`, `groups` |
-| `oidc-role-list-mapper` | Map user's roles | `claim.name`, `full.path` |
-| `saml-group-membership-mapper` | SAML group mapping | `claim.name` |
+| `oidc-usermodel-attribute-mapper` | Map a user attribute to a claim | `claim.name`, `user.attribute`, `multivalued` |
+| `oidc-usermodel-realm-role-mapper` | Map the user's realm roles | `claim.name`, `multivalued` |
+| `oidc-usermodel-client-role-mapper` | Map the user's client roles | `claim.name`, `multivalued` |
+| `oidc-group-membership-mapper` | Map group membership | `claim.name`, `multivalued` |
+| `oidc-hardcoded-claim-mapper` | Emit a constant claim | `claim.name`, `claim.value`, `multivalued` |
+
+Other Keycloak mapper types (`oidc-usermodel-property-mapper`,
+`oidc-audience-mapper`, `oidc-full-name-mapper`, …) are not implemented yet and
+are skipped silently. Mapper types are matched case-insensitively on their
+name, and non-`openid-connect` mappers are ignored.
 
 ### Config Examples
 
@@ -79,7 +84,10 @@ type ProtocolMapper struct {
 
 ### Realm Mappers
 
-Applied to all clients in the realm. Stored with `client_id: null`.
+Applied to all clients in the realm. Stored without a `client_id` (an explicit
+`null` or empty string is treated the same way). When a client defines a mapper
+with the same claim name, the client-specific mapper wins because it is applied
+after the realm-wide one.
 
 ```graphql
 # Create realm-level mapper
@@ -121,16 +129,43 @@ mutation {
 }
 ```
 
+## ConnectRPC API
+
+The canonical admin API is `sso.v1.ProtocolMapperService` (Connect, gRPC and
+gRPC-Web), backed by the same repository as the GraphQL API:
+
+| RPC | Purpose |
+|-----|---------|
+| `CreateProtocolMapper` | Create a client-specific or realm-wide mapper (`client_id` unset = realm-wide) |
+| `GetProtocolMapper` | Read one mapper |
+| `ListProtocolMappers` | List all; `client_id` returns the effective set (own + realm-wide); `realm_only` returns only realm-wide |
+| `UpdateProtocolMapper` | Partial update; `client_id: ""` moves to realm level, `clear_config` drops the config map |
+| `DeleteProtocolMapper` | Delete one mapper |
+
+CLI equivalents:
+
+```bash
+ssoctl protocol-mapper create --name email --mapper oidc-usermodel-attribute-mapper \
+  --mapper-config claim.name=email --mapper-config user.attribute=email --client-id my-client
+ssoctl protocol-mapper list --client-id my-client
+ssoctl protocol-mapper list --realm-only
+ssoctl protocol-mapper update <ID> --client-id ""
+ssoctl protocol-mapper delete <ID>
+```
+
 ## GraphQL API
 
 ### Queries
 
 ```graphql
-# Get all realm-level token mappers
+# Get every mapper (realm-wide and client-specific)
 tokenMappers: [ProtocolMapper!]!
 
-# Get token mappers for specific client
+# Get the mappers that apply to a client: its own + realm-wide ones
 clientTokenMappers(clientId: String!): [ProtocolMapper!]!
+
+# Get only the realm-wide mappers
+realmTokenMappers: [ProtocolMapper!]!
 ```
 
 ### Mutations
@@ -154,14 +189,15 @@ input CreateProtocolMapperInput {
     protocol: String!
     protocolMapper: String!
     config: Map
-    clientId: ID  # Optional - null for realm-level
+    clientId: ID  # Optional - omitted/null for realm-level
 }
 
 input UpdateProtocolMapperInput {
     name: String
     protocol: String
-    protocolMapper: String  
+    protocolMapper: String
     config: Map
+    clientId: ID  # Set to "" to move the mapper to realm level
 }
 ```
 

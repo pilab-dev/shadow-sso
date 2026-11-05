@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package sso.v1;
+
+option go_package = "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1;ssov1";
+
+// OIDCConfigurationService manages the runtime-overridable metadata published
+// in /.well-known/openid-configuration. Values not overridden fall back to the
+// server configuration and built-in defaults.
+service OIDCConfigurationService {
+  rpc GetOIDCConfiguration(GetOIDCConfigurationRequest) returns (GetOIDCConfigurationResponse);
+  rpc UpdateOIDCConfiguration(UpdateOIDCConfigurationRequest) returns (UpdateOIDCConfigurationResponse);
+}
+
+// OIDCConfiguration is the effective discovery metadata.
+message OIDCConfiguration {
+  string issuer = 1;
+  repeated string scopes_supported = 2;
+  repeated string claims_supported = 3;
+  repeated string token_endpoint_auth_methods_supported = 4;
+  repeated string response_types_supported = 5;
+  repeated string response_modes_supported = 6;
+}
+
+message GetOIDCConfigurationRequest {}
+
+message GetOIDCConfigurationResponse {
+  OIDCConfiguration configuration = 1;
+}
+
+// StringList wraps repeated strings so update fields can distinguish "not
+// provided" (nil) from "reset to defaults" (empty list).
+message StringList { repeated string values = 1; }
+
+message UpdateOIDCConfigurationRequest {
+  // An empty list resets the field to the server default.
+  optional StringList scopes_supported = 1;
+  optional StringList claims_supported = 2;
+  optional StringList token_endpoint_auth_methods_supported = 3;
+  optional StringList response_types_supported = 4;
+  optional StringList response_modes_supported = 5;
+}
+
+message UpdateOIDCConfigurationResponse {
+  OIDCConfiguration configuration = 1;
+}

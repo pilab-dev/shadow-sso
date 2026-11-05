@@ -69,6 +69,12 @@ const (
 	PermAuditRead = "audit:read"
 )
 
+// OIDC Discovery Configuration (Admin only)
+const (
+	PermOIDCConfigRead   = "oidc_config:read"
+	PermOIDCConfigManage = "oidc_config:manage"
+)
+
 // Browser Baseline Policy (Admin only)
 const (
 	PermBrowserPolicyRead   = "browser_policy:read"
@@ -129,6 +135,9 @@ var RoleToPermissionsMap = map[string][]string{
 
 		PermBrowserPolicyRead,
 		PermBrowserPolicyManage,
+
+		PermOIDCConfigRead,
+		PermOIDCConfigManage,
 	},
 }
 
@@ -205,4 +214,22 @@ var MethodPermissions = map[string]string{
 	"/sso.v1.BrowserPolicyService/GetBrowserPolicy":    PermBrowserPolicyRead,
 	"/sso.v1.BrowserPolicyService/CheckBrowser":        PermBrowserPolicyRead,
 	"/sso.v1.BrowserPolicyService/UpdateBrowserPolicy": PermBrowserPolicyManage,
+
+	// ProtocolMapperService (All admin)
+	"/sso.v1.ProtocolMapperService/CreateProtocolMapper": PermTokenMappersManage,
+	"/sso.v1.ProtocolMapperService/GetProtocolMapper":    PermTokenMappersManage,
+	"/sso.v1.ProtocolMapperService/ListProtocolMappers":  PermTokenMappersManage,
+	"/sso.v1.ProtocolMapperService/UpdateProtocolMapper": PermTokenMappersManage,
+	"/sso.v1.ProtocolMapperService/DeleteProtocolMapper": PermTokenMappersManage,
+
+	// ClientScopeService (All admin)
+	"/sso.v1.ClientScopeService/CreateClientScope": PermClientsCreate,
+	"/sso.v1.ClientScopeService/GetClientScope":    PermClientsRead,
+	"/sso.v1.ClientScopeService/ListClientScopes":  PermClientsRead,
+	"/sso.v1.ClientScopeService/UpdateClientScope": PermClientsUpdate,
+	"/sso.v1.ClientScopeService/DeleteClientScope": PermClientsDelete,
+
+	// OIDCConfigurationService (All admin)
+	"/sso.v1.OIDCConfigurationService/GetOIDCConfiguration":    PermOIDCConfigRead,
+	"/sso.v1.OIDCConfigurationService/UpdateOIDCConfiguration": PermOIDCConfigManage,
 }

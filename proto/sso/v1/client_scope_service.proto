@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+package sso.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+import "buf/validate/validate.proto";
+
+option go_package = "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1;ssov1";
+
+// ClientScopeService manages Keycloak-style client scopes.
+service ClientScopeService {
+  rpc CreateClientScope(CreateClientScopeRequest) returns (CreateClientScopeResponse);
+  rpc GetClientScope(GetClientScopeRequest) returns (GetClientScopeResponse);
+  rpc ListClientScopes(ListClientScopesRequest) returns (ListClientScopesResponse);
+  rpc UpdateClientScope(UpdateClientScopeRequest) returns (UpdateClientScopeResponse);
+  rpc DeleteClientScope(DeleteClientScopeRequest) returns (google.protobuf.Empty);
+}
+
+// ClientScope mirrors domain.ClientScope.
+message ClientScope {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  string protocol = 4;
+  int32 display_order = 5;
+  string consent_screen_text = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
+// --- CreateClientScope ---
+message CreateClientScopeRequest {
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+  string description = 2;
+  // Optional; defaults to "openid-connect".
+  string protocol = 3;
+  optional int32 display_order = 4;
+  string consent_screen_text = 5;
+}
+
+message CreateClientScopeResponse {
+  ClientScope client_scope = 1;
+}
+
+// --- GetClientScope ---
+message GetClientScopeRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message GetClientScopeResponse {
+  ClientScope client_scope = 1;
+}
+
+// --- ListClientScopes ---
+message ListClientScopesRequest {
+  string protocol = 1; // Optional filter
+  int32 page_size = 2 [(buf.validate.field).int32.lte = 100];
+  string page_token = 3;
+}
+
+message ListClientScopesResponse {
+  repeated ClientScope client_scopes = 1;
+  string next_page_token = 2;
+}
+
+// --- UpdateClientScope ---
+message UpdateClientScopeRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+
+  optional string name = 2;
+  optional string description = 3;
+  optional string protocol = 4;
+  optional int32 display_order = 5;
+  optional string consent_screen_text = 6;
+}
+
+message UpdateClientScopeResponse {
+  ClientScope client_scope = 1;
+}
+
+// --- DeleteClientScope ---
+message DeleteClientScopeRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}

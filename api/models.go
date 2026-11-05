@@ -30,48 +30,100 @@ type DeviceAuthResponse struct {
 	Interval                int    `json:"interval,omitempty"` // Minimum polling interval in seconds for the device
 }
 
+// Default discovery metadata. These describe what shadow-sso actually
+// implements today; keep them in sync with the token and claims code.
+var (
+	// DefaultScopesSupported lists the scopes the server understands and
+	// enforces. offline_access/address/phone are intentionally absent until
+	// they have semantics.
+	DefaultScopesSupported = []string{"openid", "profile", "email"}
+
+	// DefaultClaimsSupported lists claims that can appear in an ID token,
+	// access token or UserInfo response.
+	DefaultClaimsSupported = []string{
+		"sub", "iss", "aud", "exp", "iat", "nbf", "jti", "auth_time", "nonce", "sid",
+		"email", "email_verified", "name", "given_name", "family_name", "preferred_username",
+		"groups", "roles", "realm_access", "resource_access", "cnf",
+	}
+
+	// DefaultTokenEndpointAuthMethods are the client authentication methods
+	// implemented by the token endpoint. client_secret_basic is not parsed
+	// today, so it must not be advertised.
+	DefaultTokenEndpointAuthMethods = []string{"client_secret_post", "private_key_jwt"}
+
+	// DefaultResourceEndpointAuthMethods are the methods implemented by the
+	// introspection and revocation endpoints.
+	DefaultResourceEndpointAuthMethods = []string{"client_secret_post"}
+
+	// DPoPSigningAlgValuesSupported are the proof algorithms accepted by the
+	// DPoP verifier (RSA and EC JWKs, see internal/dpop).
+	DPoPSigningAlgValuesSupported = []string{
+		"RS256", "RS384", "RS512",
+		"PS256", "PS384", "PS512",
+		"ES256", "ES384", "ES512",
+	}
+
+	// DefaultClaimTypesSupported is the only claim type the server emits.
+	DefaultClaimTypesSupported = []string{"normal"}
+
+	// DefaultPromptValuesSupported are the prompt values honoured by the
+	// authorization endpoint.
+	DefaultPromptValuesSupported = []string{"none", "login", "select_account"}
+)
+
 // OpenIDConfiguration represents the OpenID Connect discovery document
 //
 //nolint:tagliatelle
 type OpenIDConfiguration struct {
-	Issuer                                    string   `json:"issuer"`
-	AuthorizationEndpoint                     string   `json:"authorization_endpoint"`
-	TokenEndpoint                             string   `json:"token_endpoint"`
-	DeviceAuthorizationEndpoint               *string  `json:"device_authorization_endpoint,omitempty"` // New field
-	EndSessionEndpoint                        *string  `json:"end_session_endpoint,omitempty"`
-	UserInfoEndpoint                          string   `json:"userinfo_endpoint"`
-	JwksURI                                   string   `json:"jwks_uri"`
-	RegistrationEndpoint                      *string  `json:"registration_endpoint,omitempty"`
-	ScopesSupported                           []string `json:"scopes_supported"`
-	ResponseTypesSupported                    []string `json:"response_types_supported"`
-	ResponseModesSupported                    []string `json:"response_modes_supported"`
-	GrantTypesSupported                       []string `json:"grant_types_supported"`
-	TokenEndpointAuthMethodsSupported         []string `json:"token_endpoint_auth_methods_supported"`
-	TokenEndpointAuthSigningAlgSupported      []string `json:"token_endpoint_auth_signing_alg_values_supported,omitempty"`
-	ServiceDocumentation                      *string  `json:"service_documentation,omitempty"`
-	UILocalesSupported                        []string `json:"ui_locales_supported,omitempty"`
-	OpPolicyURI                               *string  `json:"op_policy_uri,omitempty"`
-	OpTosURI                                  *string  `json:"op_tos_uri,omitempty"`
-	RevocationEndpoint                        *string  `json:"revocation_endpoint,omitempty"`
-	RevocationEndpointAuthMethodsSupported    []string `json:"revocation_endpoint_auth_methods_supported,omitempty"`
-	IntrospectionEndpoint                     *string  `json:"introspection_endpoint,omitempty"`
-	IntrospectionEndpointAuthMethodsSupported []string `json:"introspection_endpoint_auth_methods_supported,omitempty"`
-	CodeChallengeMethodsSupported             []string `json:"code_challenge_methods_supported,omitempty"`
-	SubjectTypesSupported                     []string `json:"subject_types_supported"`
-	IDTokenSigningAlgValuesSupported          []string `json:"id_token_signing_alg_values_supported"`
-	IDTokenEncryptionAlgValuesSupported       []string `json:"id_token_encryption_alg_values_supported,omitempty"`
-	IDTokenEncryptionEncValuesSupported       []string `json:"id_token_encryption_enc_values_supported,omitempty"`
-	UserinfoSigningAlgValuesSupported         []string `json:"userinfo_signing_alg_values_supported,omitempty"`
-	UserinfoEncryptionAlgValuesSupported      []string `json:"userinfo_encryption_alg_values_supported,omitempty"`
-	UserinfoEncryptionEncValuesSupported      []string `json:"userinfo_encryption_enc_values_supported,omitempty"`
-	RequestObjectSigningAlgValuesSupported    []string `json:"request_object_signing_alg_values_supported,omitempty"`
-	RequestObjectEncryptionAlgValuesSupported []string `json:"request_object_encryption_alg_values_supported,omitempty"`
-	RequestObjectEncryptionEncValuesSupported []string `json:"request_object_encryption_enc_values_supported,omitempty"`
-	ClaimsSupported                           []string `json:"claims_supported,omitempty"`
-	ClaimsParameterSupported                  bool     `json:"claims_parameter_supported"`
-	RequestParameterSupported                 bool     `json:"request_parameter_supported"`
-	RequestURIParameterSupported              bool     `json:"request_uri_parameter_supported"`
-	RequireRequestURIRegistration             bool     `json:"require_request_uri_registration"`
+	Issuer                                     string   `json:"issuer"`
+	AuthorizationEndpoint                      string   `json:"authorization_endpoint"`
+	TokenEndpoint                              string   `json:"token_endpoint"`
+	DeviceAuthorizationEndpoint                *string  `json:"device_authorization_endpoint,omitempty"` // New field
+	PushedAuthorizationRequestEndpoint         *string  `json:"pushed_authorization_request_endpoint,omitempty"`
+	RequirePushedAuthorizationRequests         bool     `json:"require_pushed_authorization_requests"`
+	EndSessionEndpoint                         *string  `json:"end_session_endpoint,omitempty"`
+	FrontchannelLogoutSupported                bool     `json:"frontchannel_logout_supported,omitempty"`
+	FrontchannelLogoutSessionSupported         bool     `json:"frontchannel_logout_session_supported,omitempty"`
+	BackchannelLogoutSupported                 bool     `json:"backchannel_logout_supported,omitempty"`
+	BackchannelLogoutSessionSupported          bool     `json:"backchannel_logout_session_supported,omitempty"`
+	UserInfoEndpoint                           string   `json:"userinfo_endpoint"`
+	JwksURI                                    string   `json:"jwks_uri"`
+	RegistrationEndpoint                       *string  `json:"registration_endpoint,omitempty"`
+	ScopesSupported                            []string `json:"scopes_supported"`
+	ResponseTypesSupported                     []string `json:"response_types_supported"`
+	ResponseModesSupported                     []string `json:"response_modes_supported"`
+	GrantTypesSupported                        []string `json:"grant_types_supported"`
+	TokenEndpointAuthMethodsSupported          []string `json:"token_endpoint_auth_methods_supported"`
+	TokenEndpointAuthSigningAlgSupported       []string `json:"token_endpoint_auth_signing_alg_values_supported,omitempty"`
+	ServiceDocumentation                       *string  `json:"service_documentation,omitempty"`
+	UILocalesSupported                         []string `json:"ui_locales_supported,omitempty"`
+	OpPolicyURI                                *string  `json:"op_policy_uri,omitempty"`
+	OpTosURI                                   *string  `json:"op_tos_uri,omitempty"`
+	RevocationEndpoint                         *string  `json:"revocation_endpoint,omitempty"`
+	RevocationEndpointAuthMethodsSupported     []string `json:"revocation_endpoint_auth_methods_supported,omitempty"`
+	IntrospectionEndpoint                      *string  `json:"introspection_endpoint,omitempty"`
+	IntrospectionEndpointAuthMethodsSupported  []string `json:"introspection_endpoint_auth_methods_supported,omitempty"`
+	CodeChallengeMethodsSupported              []string `json:"code_challenge_methods_supported,omitempty"`
+	SubjectTypesSupported                      []string `json:"subject_types_supported"`
+	IDTokenSigningAlgValuesSupported           []string `json:"id_token_signing_alg_values_supported"`
+	IDTokenEncryptionAlgValuesSupported        []string `json:"id_token_encryption_alg_values_supported,omitempty"`
+	IDTokenEncryptionEncValuesSupported        []string `json:"id_token_encryption_enc_values_supported,omitempty"`
+	UserinfoSigningAlgValuesSupported          []string `json:"userinfo_signing_alg_values_supported,omitempty"`
+	UserinfoEncryptionAlgValuesSupported       []string `json:"userinfo_encryption_alg_values_supported,omitempty"`
+	UserinfoEncryptionEncValuesSupported       []string `json:"userinfo_encryption_enc_values_supported,omitempty"`
+	RequestObjectSigningAlgValuesSupported     []string `json:"request_object_signing_alg_values_supported,omitempty"`
+	RequestObjectEncryptionAlgValuesSupported  []string `json:"request_object_encryption_alg_values_supported,omitempty"`
+	RequestObjectEncryptionEncValuesSupported  []string `json:"request_object_encryption_enc_values_supported,omitempty"`
+	ClaimsSupported                            []string `json:"claims_supported,omitempty"`
+	ClaimTypesSupported                        []string `json:"claim_types_supported,omitempty"`
+	ClaimsParameterSupported                   bool     `json:"claims_parameter_supported"`
+	RequestParameterSupported                  bool     `json:"request_parameter_supported"`
+	RequestURIParameterSupported               bool     `json:"request_uri_parameter_supported"`
+	RequireRequestURIRegistration              bool     `json:"require_request_uri_registration"`
+	PromptValuesSupported                      []string `json:"prompt_values_supported,omitempty"`
+	DPoPSigningAlgValuesSupported              []string `json:"dpop_signing_alg_values_supported,omitempty"`
+	AuthorizationResponseIssParameterSupported bool     `json:"authorization_response_iss_parameter_supported"`
+	TLSClientCertificateBoundAccessTokens      bool     `json:"tls_client_certificate_bound_access_tokens"`
 }
 
 type UserInfoAddress struct {

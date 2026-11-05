@@ -133,6 +133,7 @@ authenticationExecutions(flowId: ID!): [AuthenticationExecution!]!
 ```graphql
 tokenMappers: [ProtocolMapper!]!
 clientTokenMappers(clientId: String!): [ProtocolMapper!]!
+realmTokenMappers: [ProtocolMapper!]!
 ```
 
 ### Role Mappings

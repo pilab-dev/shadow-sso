@@ -253,6 +253,7 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		FederationService:     serviceProvider.FederationService(),
 		TokenService:          serviceProvider.TokenService(),
 		RealmKeysRepo:         repoProvider.RealmKeysRepository(context.Background()),
+		RealmSettingsRepo:     repoProvider.RealmSettingsRepository(context.Background()),
 		ClientRepo:            repoProvider.ClientRepository(context.Background()),
 		CookieSigningSecret:   opts.CookieSigningSecret,
 		TokenSigner:           tokenSigner,
@@ -496,6 +497,30 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 	browserPolicyPath, browserPolicyHandler := ssov1connect.NewBrowserPolicyServiceHandler(browserPolicyServer, interceptors)
 	router.Any(browserPolicyPath+"*action", gin.WrapH(browserPolicyHandler))
 
+	// Protocol Mapper Service — Keycloak-style claim mappers (realm and client).
+	protocolMapperServer := services.NewProtocolMapperServer(
+		repoProvider.ProtocolMapperRepository(connectCtx),
+		repoProvider.ClientRepository(connectCtx),
+	)
+	protocolMapperPath, protocolMapperHandler := ssov1connect.NewProtocolMapperServiceHandler(protocolMapperServer, interceptors)
+	router.Any(protocolMapperPath+"*action", gin.WrapH(protocolMapperHandler))
+
+	// Client Scope Service — Keycloak-style client scopes.
+	clientScopeServer := services.NewClientScopeServer(
+		repoProvider.ClientScopeRepository(connectCtx),
+	)
+	clientScopePath, clientScopeHandler := ssov1connect.NewClientScopeServiceHandler(clientScopeServer, interceptors)
+	router.Any(clientScopePath+"*action", gin.WrapH(clientScopeHandler))
+
+	// OIDC Configuration Service — runtime discovery metadata overrides.
+	oidcConfigServer := services.NewOIDCConfigurationServer(
+		repoProvider.RealmSettingsRepository(connectCtx),
+		opts.Config,
+		tokenSigner.HasRSASigner(),
+	)
+	oidcConfigPath, oidcConfigHandler := ssov1connect.NewOIDCConfigurationServiceHandler(oidcConfigServer, interceptors)
+	router.Any(oidcConfigPath+"*action", gin.WrapH(oidcConfigHandler))
+
 	// Emit TokenExpired audit events once each token crosses expires_at.
 	services.StartTokenExpirySweeper(repoProvider.TokenRepository(connectCtx))
 
@@ -612,6 +637,14 @@ func seedRealmSettingsFromConfig(repoProvider services.RepositoryProvider, cfg *
 		ResetPasswordAllowed: true,
 		AccessTokenLifespan:  accessTokenLifespan,
 		AccessCodeLifespan:   accessCodeLifespan,
+
+		// Discovery metadata baseline. OIDCConfigurationService can override
+		// these at runtime.
+		ScopesSupported:          append([]string{}, cfg.ClaimsConfig.SupportedScopes...),
+		ClaimsSupported:          append([]string{}, cfg.ClaimsConfig.SupportedClaims...),
+		TokenEndpointAuthMethods: append([]string{}, cfg.TokenConfig.SupportedTokenEndpointAuth...),
+		ResponseTypesSupported:   append([]string{}, cfg.TokenConfig.SupportedResponseTypes...),
+		ResponseModesSupported:   append([]string{}, cfg.TokenConfig.SupportedResponseModes...),
 	}
 
 	if _, err := repo.SeedRealmSettingsIfEmpty(ctx, settings); err != nil {

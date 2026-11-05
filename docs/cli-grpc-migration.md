@@ -14,6 +14,9 @@ response types come from `proto/sso/v1`, not stringly-typed GraphQL documents.
 | `session logout-user` | GraphQL `logoutUser` | `AuthService.ClearUserSessions` |
 | `client generate-secret` | GraphQL `generateClientSecret` | `ClientManagementService.GenerateClientSecret` |
 | `client generate-keys` | GraphQL `generateClientKeys` | `ClientManagementService.GenerateClientKeys` |
+| `client-scope create/get/list/update/delete` | GraphQL `createClientScope`/`deleteClientScope` | `ClientScopeService` |
+| `protocol-mapper create/get/list/update/delete` | — (new) | `ProtocolMapperService` |
+| `oidc-config get/update` | — (new) | `OIDCConfigurationService` |
 
 All of these use the ConnectRPC clients in `apps/sssoctl/cmd/client/client.go`.
 Protocol (Connect / gRPC) is orthogonal and selectable.
@@ -31,7 +34,6 @@ Protocol (Connect / gRPC) is orthogonal and selectable.
 | `role composite` | `createCompositeRole` |
 | `group list/get/create/update/delete` | `groups`, `group`, `createGroup`, `updateGroup`, `deleteGroup` |
 | `group members/add-member/remove-member` | `groupMembers`, `addUserToGroup`, `removeUserFromGroup` |
-| `client-scope create/delete` | `createClientScope`, `deleteClientScope` |
 | `auth-flow list/get/create/update/delete` | `authenticationFlows`, `authenticationFlow`, `create/update/deleteAuthenticationFlow` |
 | `auth-flow set-executions` | `authenticationExecutions`, `updateAuthenticationExecutions` |
 | `user execute-actions` | `executeActions` |
@@ -133,7 +135,7 @@ strings.
 1. **Realm + realm keys** — smallest surface, unlocks environment bootstrap.
 2. **Group** — CRUD and membership are self-contained.
 3. **Role** — depends on group/user IDs; largest mapping surface.
-4. **Client scopes** — small.
+4. **Client scopes** — done (`ClientScopeService`).
 5. **Auth flows** — most complex payloads (executions).
 6. **User execute-actions** — last, needs an action enum and semantics.
 

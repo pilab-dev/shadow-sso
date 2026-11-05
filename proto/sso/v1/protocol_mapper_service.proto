@@ -1,0 +1,109 @@
+syntax = "proto3";
+
+package sso.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+import "buf/validate/validate.proto";
+
+option go_package = "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1;ssov1";
+
+// ProtocolMapperService manages Keycloak-style protocol mappers. A mapper
+// without a client_id is realm-wide and applies to every client; a mapper with
+// a client_id only applies to that client.
+service ProtocolMapperService {
+  // Creates a new protocol mapper.
+  rpc CreateProtocolMapper(CreateProtocolMapperRequest) returns (CreateProtocolMapperResponse);
+  // Retrieves a protocol mapper by its ID.
+  rpc GetProtocolMapper(GetProtocolMapperRequest) returns (GetProtocolMapperResponse);
+  // Lists protocol mappers. With client_id set this returns the effective set
+  // for that client (client-specific plus realm-wide); with realm_only it
+  // returns only realm-wide mappers.
+  rpc ListProtocolMappers(ListProtocolMappersRequest) returns (ListProtocolMappersResponse);
+  // Updates an existing protocol mapper.
+  rpc UpdateProtocolMapper(UpdateProtocolMapperRequest) returns (UpdateProtocolMapperResponse);
+  // Deletes a protocol mapper by its ID.
+  rpc DeleteProtocolMapper(DeleteProtocolMapperRequest) returns (google.protobuf.Empty);
+}
+
+// ProtocolMapper mirrors domain.ProtocolMapper.
+message ProtocolMapper {
+  string id = 1;
+  string name = 2;
+  // Protocol the mapper applies to, e.g. "openid-connect".
+  string protocol = 3;
+  // Keycloak mapper type, e.g. "oidc-usermodel-attribute-mapper".
+  string protocol_mapper = 4;
+  // Mapper configuration, e.g. claim.name, claim.value, user.attribute.
+  // Values are stored as strings; boolean options use "true"/"false".
+  map<string, string> config = 5;
+  // Empty for realm-wide mappers.
+  string client_id = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+}
+
+// --- CreateProtocolMapper ---
+message CreateProtocolMapperRequest {
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+  // Optional; defaults to "openid-connect".
+  string protocol = 2;
+  string protocol_mapper = 3 [(buf.validate.field).string.min_len = 1];
+  map<string, string> config = 4;
+  // Optional; unset creates a realm-wide mapper.
+  optional string client_id = 5;
+}
+
+message CreateProtocolMapperResponse {
+  ProtocolMapper protocol_mapper = 1;
+}
+
+// --- GetProtocolMapper ---
+message GetProtocolMapperRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message GetProtocolMapperResponse {
+  ProtocolMapper protocol_mapper = 1;
+}
+
+// --- ListProtocolMappers ---
+message ListProtocolMappersRequest {
+  // Optional: return the effective mappers for this client.
+  string client_id = 1;
+  // Optional: return only realm-wide mappers. Mutually exclusive with
+  // client_id.
+  bool realm_only = 2;
+  int32 page_size = 3 [(buf.validate.field).int32.lte = 100];
+  string page_token = 4;
+}
+
+message ListProtocolMappersResponse {
+  repeated ProtocolMapper protocol_mappers = 1;
+  string next_page_token = 2;
+}
+
+// --- UpdateProtocolMapper ---
+message UpdateProtocolMapperRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+
+  optional string name = 2;
+  optional string protocol = 3;
+  optional string protocol_mapper = 4;
+  // Full replacement of the config map when non-empty.
+  map<string, string> config = 5;
+  // Set to "" to move the mapper to realm level; set to a client ID to bind it
+  // to that client.
+  optional string client_id = 6;
+  // Removes every config entry. Ignored when config is non-empty.
+  bool clear_config = 7;
+}
+
+message UpdateProtocolMapperResponse {
+  ProtocolMapper protocol_mapper = 1;
+}
+
+// --- DeleteProtocolMapper ---
+message DeleteProtocolMapperRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}

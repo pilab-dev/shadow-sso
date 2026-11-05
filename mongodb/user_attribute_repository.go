@@ -175,6 +175,8 @@ func (r *UserAttributeMapperRepository) GetMappersForClient(ctx context.Context,
 		"$or": []bson.M{
 			{"client_id": clientID},
 			{"client_id": bson.M{"$exists": false}},
+			{"client_id": nil},
+			{"client_id": ""},
 		},
 	})
 	if err != nil {

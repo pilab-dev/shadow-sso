@@ -9,14 +9,14 @@ import (
 
 // Role represents a Keycloak-style role
 type Role struct {
-	ID          string     `bson:"_id,omitempty" json:"id"`
-	Name        string     `bson:"name" json:"name"`
-	Description string     `bson:"description,omitempty" json:"description,omitempty"`
-	Composite   bool       `bson:"composite" json:"composite"`
-	ClientRole  bool       `bson:"client_role" json:"clientRole"`
-	ContainerID string     `bson:"container_id,omitempty" json:"containerId,omitempty"`
-	CreatedAt   time.Time  `bson:"created_at" json:"createdAt,omitempty"`
-	UpdatedAt   time.Time  `bson:"updated_at" json:"updatedAt,omitempty"`
+	ID          string    `bson:"_id,omitempty" json:"id"`
+	Name        string    `bson:"name" json:"name"`
+	Description string    `bson:"description,omitempty" json:"description,omitempty"`
+	Composite   bool      `bson:"composite" json:"composite"`
+	ClientRole  bool      `bson:"client_role" json:"clientRole"`
+	ContainerID string    `bson:"container_id,omitempty" json:"containerId,omitempty"`
+	CreatedAt   time.Time `bson:"created_at" json:"createdAt,omitempty"`
+	UpdatedAt   time.Time `bson:"updated_at" json:"updatedAt,omitempty"`
 
 	// For composite roles - references to child roles
 	ChildRoles []string `bson:"child_roles,omitempty" json:"childRoles,omitempty"`
@@ -38,15 +38,15 @@ type RoleRepository interface {
 
 // Group represents a Keycloak-style group
 type Group struct {
-	ID           string    `bson:"_id,omitempty" json:"id"`
-	Name         string    `bson:"name" json:"name"`
-	Path         string    `bson:"path" json:"path"`
-	ParentGroupID string   `bson:"parent_group_id,omitempty" json:"parentGroupId,omitempty"`
-	CreatedAt    time.Time `bson:"created_at" json:"createdAt"`
-	UpdatedAt    time.Time `bson:"updated_at" json:"updatedAt"`
+	ID            string    `bson:"_id,omitempty" json:"id"`
+	Name          string    `bson:"name" json:"name"`
+	Path          string    `bson:"path" json:"path"`
+	ParentGroupID string    `bson:"parent_group_id,omitempty" json:"parentGroupId,omitempty"`
+	CreatedAt     time.Time `bson:"created_at" json:"createdAt"`
+	UpdatedAt     time.Time `bson:"updated_at" json:"updatedAt"`
 
 	// Roles assigned to this group
-	RealmRoles []string            `bson:"realm_roles,omitempty" json:"realmRoles,omitempty"`
+	RealmRoles  []string            `bson:"realm_roles,omitempty" json:"realmRoles,omitempty"`
 	ClientRoles map[string][]string `bson:"client_roles,omitempty" json:"clientRoles,omitempty"`
 
 	// Keycloak-style custom attributes for this group
@@ -78,14 +78,14 @@ type GroupRepository interface {
 
 // ProtocolMapper represents a Keycloak-style protocol mapper
 type ProtocolMapper struct {
-	ID           string         `bson:"_id,omitempty" json:"id"`
-	Name         string         `bson:"name" json:"name"`
-	Protocol     string         `bson:"protocol" json:"protocol"` // "openid-connect", "saml", etc.
-	ProtocolMapper string       `bson:"protocol_mapper" json:"protocolMapper"`
-	Config       map[string]any `bson:"config,omitempty" json:"config,omitempty"`
-	ClientID     string         `bson:"client_id,omitempty" json:"clientId,omitempty"`
-	CreatedAt    time.Time      `bson:"created_at" json:"createdAt"`
-	UpdatedAt    time.Time      `bson:"updated_at" json:"updatedAt"`
+	ID             string         `bson:"_id,omitempty" json:"id"`
+	Name           string         `bson:"name" json:"name"`
+	Protocol       string         `bson:"protocol" json:"protocol"` // "openid-connect", "saml", etc.
+	ProtocolMapper string         `bson:"protocol_mapper" json:"protocolMapper"`
+	Config         map[string]any `bson:"config,omitempty" json:"config,omitempty"`
+	ClientID       string         `bson:"client_id,omitempty" json:"clientId,omitempty"`
+	CreatedAt      time.Time      `bson:"created_at" json:"createdAt"`
+	UpdatedAt      time.Time      `bson:"updated_at" json:"updatedAt"`
 }
 
 // ProtocolMapperRepository defines methods for protocol mapper persistence
@@ -95,19 +95,23 @@ type ProtocolMapperRepository interface {
 	UpdateProtocolMapper(ctx context.Context, mapper *ProtocolMapper) error
 	DeleteProtocolMapper(ctx context.Context, id string) error
 	ListProtocolMappers(ctx context.Context) ([]*ProtocolMapper, error)
+	// ListClientProtocolMappers returns the mappers that apply to a client:
+	// client-specific mappers plus realm-wide mappers (no client ID).
 	ListClientProtocolMappers(ctx context.Context, clientID string) ([]*ProtocolMapper, error)
+	// ListRealmProtocolMappers returns only mappers that apply to every client.
+	ListRealmProtocolMappers(ctx context.Context) ([]*ProtocolMapper, error)
 }
 
 // AuthenticationFlow represents a Keycloak-style authentication flow
 type AuthenticationFlow struct {
-	ID          string                  `bson:"_id,omitempty" json:"id"`
-	Alias       string                  `bson:"alias" json:"alias"`
-	DisplayName string                  `bson:"display_name" json:"displayName"`
-	Description string                  `bson:"description,omitempty" json:"description,omitempty"`
-	BuiltIn     bool                    `bson:"built_in" json:"builtIn"`
-	TopLevel    bool                    `bson:"top_level" json:"topLevel"`
-	CreatedAt   time.Time               `bson:"created_at" json:"createdAt"`
-	UpdatedAt   time.Time               `bson:"updated_at" json:"updatedAt"`
+	ID          string    `bson:"_id,omitempty" json:"id"`
+	Alias       string    `bson:"alias" json:"alias"`
+	DisplayName string    `bson:"display_name" json:"displayName"`
+	Description string    `bson:"description,omitempty" json:"description,omitempty"`
+	BuiltIn     bool      `bson:"built_in" json:"builtIn"`
+	TopLevel    bool      `bson:"top_level" json:"topLevel"`
+	CreatedAt   time.Time `bson:"created_at" json:"createdAt"`
+	UpdatedAt   time.Time `bson:"updated_at" json:"updatedAt"`
 }
 
 // AuthenticationExecution represents an execution within an authentication flow
@@ -136,38 +140,39 @@ type AuthenticationFlowRepository interface {
 
 // ClientScope represents a Keycloak-style client scope
 type ClientScope struct {
-	ID               string    `bson:"_id,omitempty" json:"id"`
-	Name             string    `bson:"name" json:"name"`
-	Description      string    `bson:"description,omitempty" json:"description,omitempty"`
-	Protocol         string    `bson:"protocol" json:"protocol"`
-	DisplayOrder     int       `bson:"display_order" json:"displayOrder"`
-	ConsentScreenText string   `bson:"consent_screen_text,omitempty" json:"consentScreenText,omitempty"`
-	CreatedAt        time.Time `bson:"created_at" json:"createdAt"`
+	ID                string    `bson:"_id,omitempty" json:"id"`
+	Name              string    `bson:"name" json:"name"`
+	Description       string    `bson:"description,omitempty" json:"description,omitempty"`
+	Protocol          string    `bson:"protocol" json:"protocol"`
+	DisplayOrder      int       `bson:"display_order" json:"displayOrder"`
+	ConsentScreenText string    `bson:"consent_screen_text,omitempty" json:"consentScreenText,omitempty"`
+	CreatedAt         time.Time `bson:"created_at" json:"createdAt"`
 }
 
 // ClientScopeRepository defines methods for client scope persistence
 type ClientScopeRepository interface {
 	CreateClientScope(ctx context.Context, scope *ClientScope) error
 	GetClientScopeByID(ctx context.Context, id string) (*ClientScope, error)
+	ListClientScopes(ctx context.Context) ([]*ClientScope, error)
 	UpdateClientScope(ctx context.Context, scope *ClientScope) error
 	DeleteClientScope(ctx context.Context, id string) error
 }
 
 // RealmSettings represents the realm configuration
 type RealmSettings struct {
-	ID                    string    `bson:"_id,omitempty" json:"id,omitempty"`
-	Realm                 string    `bson:"realm" json:"realm"`
-	DisplayName           string    `bson:"display_name" json:"displayName"`
-	Enabled               bool      `bson:"enabled" json:"enabled"`
-	RegistrationAllowed   bool      `bson:"registration_allowed" json:"registrationAllowed"`
-	LoginWithEmailAllowed bool      `bson:"login_with_email_allowed" json:"loginWithEmailAllowed"`
-	DuplicateEmailsAllowed bool     `bson:"duplicate_emails_allowed" json:"duplicateEmailsAllowed"`
-	ResetPasswordAllowed  bool      `bson:"reset_password_allowed" json:"resetPasswordAllowed"`
+	ID                     string `bson:"_id,omitempty" json:"id,omitempty"`
+	Realm                  string `bson:"realm" json:"realm"`
+	DisplayName            string `bson:"display_name" json:"displayName"`
+	Enabled                bool   `bson:"enabled" json:"enabled"`
+	RegistrationAllowed    bool   `bson:"registration_allowed" json:"registrationAllowed"`
+	LoginWithEmailAllowed  bool   `bson:"login_with_email_allowed" json:"loginWithEmailAllowed"`
+	DuplicateEmailsAllowed bool   `bson:"duplicate_emails_allowed" json:"duplicateEmailsAllowed"`
+	ResetPasswordAllowed   bool   `bson:"reset_password_allowed" json:"resetPasswordAllowed"`
 	// VerifyEmail makes newly self-registered users confirm their address (VERIFY_EMAIL required action).
-	VerifyEmail           bool      `bson:"verify_email" json:"verifyEmail"`
-	EditUsernameAllowed   bool      `bson:"edit_username_allowed" json:"editUsernameAllowed"`
-	BruteForceProtected   bool      `bson:"brute_force_protected" json:"bruteForceProtected"`
-	SSLRequired           string    `bson:"ssl_required" json:"sslRequired"`
+	VerifyEmail         bool   `bson:"verify_email" json:"verifyEmail"`
+	EditUsernameAllowed bool   `bson:"edit_username_allowed" json:"editUsernameAllowed"`
+	BruteForceProtected bool   `bson:"brute_force_protected" json:"bruteForceProtected"`
+	SSLRequired         string `bson:"ssl_required" json:"sslRequired"`
 
 	// RequireMFA forces every user in the realm to complete a second factor.
 	// Users without a usable factor are sent to the enrollment page at login.
@@ -178,12 +183,12 @@ type RealmSettings struct {
 	BrowserPolicy *BrowserPolicy `bson:"browser_policy,omitempty" json:"browserPolicy,omitempty"`
 
 	// Password policy
-	PasswordMinLength    int  `bson:"password_min_length,omitempty" json:"passwordMinLength,omitempty"`
-	PasswordMaxLength    int  `bson:"password_max_length,omitempty" json:"passwordMaxLength,omitempty"`
-	PasswordLowerCase    int  `bson:"password_lower_case,omitempty" json:"passwordLowerCase,omitempty"`
-	PasswordUpperCase    int  `bson:"password_upper_case,omitempty" json:"passwordUpperCase,omitempty"`
-	PasswordDigits       int  `bson:"password_digits,omitempty" json:"passwordDigits,omitempty"`
-	PasswordSpecialChars int  `bson:"password_special_chars,omitempty" json:"passwordSpecialChars,omitempty"`
+	PasswordMinLength    int `bson:"password_min_length,omitempty" json:"passwordMinLength,omitempty"`
+	PasswordMaxLength    int `bson:"password_max_length,omitempty" json:"passwordMaxLength,omitempty"`
+	PasswordLowerCase    int `bson:"password_lower_case,omitempty" json:"passwordLowerCase,omitempty"`
+	PasswordUpperCase    int `bson:"password_upper_case,omitempty" json:"passwordUpperCase,omitempty"`
+	PasswordDigits       int `bson:"password_digits,omitempty" json:"passwordDigits,omitempty"`
+	PasswordSpecialChars int `bson:"password_special_chars,omitempty" json:"passwordSpecialChars,omitempty"`
 
 	// Token settings
 	AccessTokenLifespan   int `bson:"access_token_lifespan,omitempty" json:"accessTokenLifespan,omitempty"`
@@ -191,6 +196,15 @@ type RealmSettings struct {
 	RefreshTokenLifespan  int `bson:"refresh_token_lifespan,omitempty" json:"refreshTokenLifespan,omitempty"`
 	SSOSessionIdleTimeout int `bson:"sso_session_idle_timeout,omitempty" json:"ssoSessionIdleTimeout,omitempty"`
 	SSOSessionMaxLifespan int `bson:"sso_session_max_lifespan,omitempty" json:"ssoSessionMaxLifespan,omitempty"`
+
+	// OIDC discovery metadata overrides. Empty lists fall back to the static
+	// provider configuration and built-in defaults. Managed through
+	// OIDCConfigurationService and applied live by the discovery endpoint.
+	ScopesSupported          []string `bson:"scopes_supported,omitempty" json:"scopesSupported,omitempty"`
+	ClaimsSupported          []string `bson:"claims_supported,omitempty" json:"claimsSupported,omitempty"`
+	TokenEndpointAuthMethods []string `bson:"token_endpoint_auth_methods_supported,omitempty" json:"tokenEndpointAuthMethodsSupported,omitempty"`
+	ResponseTypesSupported   []string `bson:"response_types_supported,omitempty" json:"responseTypesSupported,omitempty"`
+	ResponseModesSupported   []string `bson:"response_modes_supported,omitempty" json:"responseModesSupported,omitempty"`
 
 	CreatedAt time.Time `bson:"created_at" json:"createdAt"`
 	UpdatedAt time.Time `bson:"updated_at" json:"updatedAt"`

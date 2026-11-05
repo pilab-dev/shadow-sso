@@ -195,6 +195,34 @@ func (mr *MockRepositoryProviderMockRecorder) RealmKeysRepository(ctx any) *gomo
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RealmKeysRepository", reflect.TypeOf((*MockRepositoryProvider)(nil).RealmKeysRepository), ctx)
 }
 
+// ProtocolMapperRepository mocks base method.
+func (m *MockRepositoryProvider) ProtocolMapperRepository(ctx context.Context) domain.ProtocolMapperRepository {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ProtocolMapperRepository", ctx)
+	ret0, _ := ret[0].(domain.ProtocolMapperRepository)
+	return ret0
+}
+
+// ProtocolMapperRepository indicates an expected call of ProtocolMapperRepository.
+func (mr *MockRepositoryProviderMockRecorder) ProtocolMapperRepository(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ProtocolMapperRepository", reflect.TypeOf((*MockRepositoryProvider)(nil).ProtocolMapperRepository), ctx)
+}
+
+// ClientScopeRepository mocks base method.
+func (m *MockRepositoryProvider) ClientScopeRepository(ctx context.Context) domain.ClientScopeRepository {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ClientScopeRepository", ctx)
+	ret0, _ := ret[0].(domain.ClientScopeRepository)
+	return ret0
+}
+
+// ClientScopeRepository indicates an expected call of ClientScopeRepository.
+func (mr *MockRepositoryProviderMockRecorder) ClientScopeRepository(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClientScopeRepository", reflect.TypeOf((*MockRepositoryProvider)(nil).ClientScopeRepository), ctx)
+}
+
 // RealmSettingsRepository mocks base method.
 func (m *MockRepositoryProvider) RealmSettingsRepository(ctx context.Context) domain.RealmSettingsRepository {
 	m.ctrl.T.Helper()

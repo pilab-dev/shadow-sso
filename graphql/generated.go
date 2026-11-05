@@ -264,6 +264,7 @@ type ComplexityRoot struct {
 
 	ProtocolMapper struct {
 		Client         func(childComplexity int) int
+		ClientID       func(childComplexity int) int
 		Config         func(childComplexity int) int
 		ID             func(childComplexity int) int
 		Name           func(childComplexity int) int
@@ -292,6 +293,7 @@ type ComplexityRoot struct {
 		Realm                      func(childComplexity int) int
 		RealmKeys                  func(childComplexity int) int
 		RealmRoles                 func(childComplexity int) int
+		RealmTokenMappers          func(childComplexity int) int
 		Role                       func(childComplexity int, id string) int
 		RoleMappings               func(childComplexity int, userID string) int
 		Roles                      func(childComplexity int) int
@@ -633,6 +635,7 @@ type QueryResolver interface {
 	ClientRoleMappings(ctx context.Context, userID string, clientID string) ([]domain.Role, error)
 	TokenMappers(ctx context.Context) ([]domain.ProtocolMapper, error)
 	ClientTokenMappers(ctx context.Context, clientID string) ([]domain.ProtocolMapper, error)
+	RealmTokenMappers(ctx context.Context) ([]domain.ProtocolMapper, error)
 	UserGroups(ctx context.Context, userID string) ([]domain.Group, error)
 	UserSessions(ctx context.Context, userID string) ([]domain.Session, error)
 	ClientUserSessions(ctx context.Context, userID string, clientID string) ([]domain.Session, error)
@@ -2016,6 +2019,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ProtocolMapper.Client(childComplexity), true
+	case "ProtocolMapper.clientId":
+		if e.ComplexityRoot.ProtocolMapper.ClientID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ProtocolMapper.ClientID(childComplexity), true
 	case "ProtocolMapper.config":
 		if e.ComplexityRoot.ProtocolMapper.Config == nil {
 			break
@@ -2239,6 +2248,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Query.RealmRoles(childComplexity), true
+	case "Query.realmTokenMappers":
+		if e.ComplexityRoot.Query.RealmTokenMappers == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Query.RealmTokenMappers(childComplexity), true
 	case "Query.role":
 		if e.ComplexityRoot.Query.Role == nil {
 			break
@@ -3648,6 +3663,8 @@ func (ec *executionContext) childFields_ProtocolMapper(ctx context.Context, fiel
 		return ec.fieldContext_ProtocolMapper_protocolMapper(ctx, field)
 	case "config":
 		return ec.fieldContext_ProtocolMapper_config(ctx, field)
+	case "clientId":
+		return ec.fieldContext_ProtocolMapper_clientId(ctx, field)
 	case "client":
 		return ec.fieldContext_ProtocolMapper_client(ctx, field)
 	}
@@ -11056,6 +11073,29 @@ func (ec *executionContext) fieldContext_ProtocolMapper_config(_ context.Context
 	return graphql.NewScalarFieldContext("ProtocolMapper", field, false, false, "Map")
 }
 
+func (ec *executionContext) _ProtocolMapper_clientId(ctx context.Context, field graphql.CollectedField, obj *domain.ProtocolMapper) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ProtocolMapper_clientId(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ClientID, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalOID2string(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_ProtocolMapper_clientId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ProtocolMapper", field, false, false, "ID")
+}
+
 func (ec *executionContext) _ProtocolMapper_client(ctx context.Context, field graphql.CollectedField, obj *domain.ProtocolMapper) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -12100,6 +12140,38 @@ func (ec *executionContext) fieldContext_Query_clientTokenMappers(ctx context.Co
 	if fc.Args, err = ec.field_Query_clientTokenMappers_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_realmTokenMappers(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_realmTokenMappers(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Query().RealmTokenMappers(ctx)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []domain.ProtocolMapper) graphql.Marshaler {
+			return ec.marshalNProtocolMapper2ᚕgithubᚗcomᚋpilabᚑdevᚋshadowᚑssoᚋdomainᚐProtocolMapperᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_realmTokenMappers(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_ProtocolMapper(ctx, field)
+		},
 	}
 	return fc, nil
 }
@@ -17730,7 +17802,7 @@ func (ec *executionContext) unmarshalInputCreateProtocolMapperInput(ctx context.
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"name", "protocol", "protocolMapper", "config"}
+	fieldsInOrder := [...]string{"name", "protocol", "protocolMapper", "config", "clientId"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -17765,6 +17837,13 @@ func (ec *executionContext) unmarshalInputCreateProtocolMapperInput(ctx context.
 				return it, err
 			}
 			it.Config = data
+		case "clientId":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("clientId"))
+			data, err := ec.unmarshalOID2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ClientID = data
 		}
 	}
 	return it, nil
@@ -18654,7 +18733,7 @@ func (ec *executionContext) unmarshalInputUpdateProtocolMapperInput(ctx context.
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"name", "protocol", "protocolMapper", "config"}
+	fieldsInOrder := [...]string{"name", "protocol", "protocolMapper", "config", "clientId"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -18689,6 +18768,13 @@ func (ec *executionContext) unmarshalInputUpdateProtocolMapperInput(ctx context.
 				return it, err
 			}
 			it.Config = data
+		case "clientId":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("clientId"))
+			data, err := ec.unmarshalOID2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ClientID = data
 		}
 	}
 	return it, nil
@@ -20838,6 +20924,11 @@ func (ec *executionContext) _ProtocolMapper(ctx context.Context, sel ast.Selecti
 			if out.Values[i] == graphql.RequiredNull {
 				atomic.AddUint32(&out.Invalids, 1)
 			}
+		case "clientId":
+			out.Values[i] = ec._ProtocolMapper_clientId(ctx, field, obj)
+			if out.Values[i] == graphql.RequiredNull {
+				atomic.AddUint32(&out.Invalids, 1)
+			}
 		case "client":
 			out.ResolveConcurrently(ec.OperationContext, &deferred, i,
 				true, false,
@@ -21029,6 +21120,12 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 				true, true,
 				func(ctx context.Context) graphql.Marshaler {
 					return ec._Query_clientTokenMappers(ctx, field)
+				})
+		case "realmTokenMappers":
+			out.ResolveRootConcurrently(innerCtx, ec.OperationContext, i,
+				true, true,
+				func(ctx context.Context) graphql.Marshaler {
+					return ec._Query_realmTokenMappers(ctx, field)
 				})
 		case "userGroups":
 			out.ResolveRootConcurrently(innerCtx, ec.OperationContext, i,

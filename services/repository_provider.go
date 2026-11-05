@@ -39,6 +39,8 @@ type RepositoryProvider interface {
 	RoleRepository(ctx context.Context) domain.RoleRepository
 	RealmKeysRepository(ctx context.Context) domain.RealmKeysRepository
 	RealmSettingsRepository(ctx context.Context) domain.RealmSettingsRepository
+	ProtocolMapperRepository(ctx context.Context) domain.ProtocolMapperRepository
+	ClientScopeRepository(ctx context.Context) domain.ClientScopeRepository
 
 	// Audit repository (persisted audit events)
 	AuditLogRepository(ctx context.Context) domain.AuditLogRepository

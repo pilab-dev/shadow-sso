@@ -355,46 +355,6 @@ var groupRemoveMemberCmd = &cobra.Command{
 	},
 }
 
-// --- client scopes ---
-
-var clientScopeCmd = &cobra.Command{Use: "client-scope", Short: "Manage client scopes"}
-
-var clientScopeCreateCmd = &cobra.Command{
-	Use:   "create",
-	Short: "Create a client scope",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		name, _ := cmd.Flags().GetString("name")
-		if name == "" {
-			return requireInteractive("client scope creation", "--name")
-		}
-		input := map[string]any{"name": name}
-		if v, _ := cmd.Flags().GetString("description"); v != "" {
-			input["description"] = v
-		}
-		if v, _ := cmd.Flags().GetString("protocol"); v != "" {
-			input["protocol"] = v
-		}
-		if v, _ := cmd.Flags().GetString("consent-screen-text"); v != "" {
-			input["consentScreenText"] = v
-		}
-		if cmd.Flags().Changed("display-order") {
-			v, _ := cmd.Flags().GetInt("display-order")
-			input["displayOrder"] = v
-		}
-		return gqlRun(`mutation($input: CreateClientScopeInput!) { createClientScope(input: $input) { id name } }`,
-			map[string]any{"input": input})
-	},
-}
-
-var clientScopeDeleteCmd = &cobra.Command{
-	Use:   "delete [SCOPE_ID]",
-	Short: "Delete a client scope",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return gqlRun(`mutation($id: ID!) { deleteClientScope(id: $id) }`, map[string]any{"id": args[0]})
-	},
-}
-
 // --- auth flows ---
 
 var authFlowCmd = &cobra.Command{Use: "auth-flow", Short: "Manage authentication flows"}
@@ -577,14 +537,6 @@ func init() {
 	groupUpdateCmd.Flags().String("name", "", "New name")
 	groupUpdateCmd.Flags().String("path", "", "New path")
 	groupUpdateCmd.Flags().StringSlice("realm-role", nil, "Realm role ID (repeatable)")
-
-	rootCmd.AddCommand(clientScopeCmd)
-	clientScopeCmd.AddCommand(clientScopeCreateCmd, clientScopeDeleteCmd)
-	clientScopeCreateCmd.Flags().String("name", "", "Scope name")
-	clientScopeCreateCmd.Flags().String("description", "", "Description")
-	clientScopeCreateCmd.Flags().String("protocol", "", "Protocol (openid-connect)")
-	clientScopeCreateCmd.Flags().String("consent-screen-text", "", "Consent screen text")
-	clientScopeCreateCmd.Flags().Int("display-order", 0, "Display order")
 
 	rootCmd.AddCommand(authFlowCmd)
 	authFlowCmd.AddCommand(authFlowListCmd, authFlowGetCmd, authFlowCreateCmd, authFlowUpdateCmd, authFlowDeleteCmd, authFlowExecutionsCmd)
