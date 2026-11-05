@@ -1915,8 +1915,9 @@ func (oa *OAuth2API) OpenIDConfigurationHandler(c *gin.Context) {
 	}
 	if cfg.EnabledEndpoints.EndSession {
 		resp.EndSessionEndpoint = ToPtr(baseURL + "/oauth2/logout")
-		// Front-channel logout is not implemented; back-channel logout is
-		// dispatched whenever a notifier is wired.
+		resp.FrontchannelLogoutSupported = true
+		resp.FrontchannelLogoutSessionSupported = true
+		// Back-channel logout is dispatched whenever a notifier is wired.
 		if oa.backchannelNotifier != nil {
 			resp.BackchannelLogoutSupported = true
 			resp.BackchannelLogoutSessionSupported = true

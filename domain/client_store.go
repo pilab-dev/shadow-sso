@@ -69,33 +69,35 @@ type Client struct {
 	Secret string `bson:"client_secret,omitempty"             json:"secret,omitempty"`
 	// SecretEnc is the AES-GCM sealed plaintext secret, kept only for
 	// client_secret_jwt clients (HMAC needs the raw secret).
-	SecretEnc                   string     `bson:"client_secret_enc,omitempty"         json:"-"`
-	Type                        ClientType `bson:"client_type"                         json:"type,omitempty"`
-	Name                        string     `bson:"client_name"                         json:"name,omitempty"`
-	Description                 string     `bson:"description,omitempty"               json:"description,omitempty"`
-	RedirectURIs                []string   `bson:"redirect_uris"                       json:"redirect_ur_is,omitempty"`
-	PostLogoutURIs              []string   `bson:"post_logout_redirect_uris,omitempty" json:"post_logout_uris,omitempty"`
-	BackchannelLogoutURI        string     `bson:"backchannel_logout_uri,omitempty"    json:"backchannel_logout_uri,omitempty"`
-	AllowedScopes               []string   `bson:"allowed_scopes"                      json:"allowed_scopes,omitempty"`
-	AllowedAuthorizationDetails []string   `bson:"allowed_authorization_details"        json:"allowed_authorization_details,omitempty"`
-	AllowedGrantTypes           []string   `bson:"allowed_grant_types"                 json:"allowed_grant_types,omitempty"`
-	TokenEndpointAuth           string     `bson:"token_endpoint_auth_method"          json:"token_endpoint_auth,omitempty"`
-	JWKS                        *JWKS      `bson:"jwks,omitempty"                      json:"jwks,omitempty"`
-	JWKSUri                     string     `bson:"jwks_uri,omitempty"                  json:"jwks_uri,omitempty"`
-	Contacts                    []string   `bson:"contacts,omitempty"                  json:"contacts,omitempty"`
-	LogoURI                     string     `bson:"logo_uri,omitempty"                  json:"logo_uri,omitempty"`
-	PolicyURI                   string     `bson:"policy_uri,omitempty"                json:"policy_uri,omitempty"`
-	TermsURI                    string     `bson:"tos_uri,omitempty"                   json:"terms_uri,omitempty"`
-	RequireConsent              bool       `bson:"require_consent"                     json:"require_consent,omitempty"`
-	RequirePKCE                 bool       `bson:"require_pkce"                        json:"require_pkce,omitempty"`
-	UserinfoSignedResponseAlg   string     `bson:"userinfo_signed_response_alg,omitempty" json:"userinfo_signed_response_alg,omitempty"`
-	RequireSignedRequestObject  bool       `bson:"require_signed_request_object,omitempty" json:"require_signed_request_object,omitempty"`
-	RequirePAR                  bool       `bson:"require_par,omitempty"               json:"require_par,omitempty"`
-	CreatedAt                   time.Time  `bson:"created_at"                          json:"created_at,omitempty"`
-	UpdatedAt                   time.Time  `bson:"updated_at"                          json:"updated_at,omitempty"`
-	LastUsed                    time.Time  `bson:"last_used,omitempty"                 json:"last_used,omitempty"`
-	IsActive                    bool       `bson:"is_active"                           json:"is_active,omitempty"`
-	IsConfidential              bool       `bson:"is_confidential"                     json:"is_confidential,omitempty"`
+	SecretEnc                         string     `bson:"client_secret_enc,omitempty"         json:"-"`
+	Type                              ClientType `bson:"client_type"                         json:"type,omitempty"`
+	Name                              string     `bson:"client_name"                         json:"name,omitempty"`
+	Description                       string     `bson:"description,omitempty"               json:"description,omitempty"`
+	RedirectURIs                      []string   `bson:"redirect_uris"                       json:"redirect_ur_is,omitempty"`
+	PostLogoutURIs                    []string   `bson:"post_logout_redirect_uris,omitempty" json:"post_logout_uris,omitempty"`
+	FrontchannelLogoutURI             string     `bson:"frontchannel_logout_uri,omitempty" json:"frontchannel_logout_uri,omitempty"`
+	FrontchannelLogoutSessionRequired bool       `bson:"frontchannel_logout_session_required,omitempty" json:"frontchannel_logout_session_required,omitempty"`
+	BackchannelLogoutURI              string     `bson:"backchannel_logout_uri,omitempty"    json:"backchannel_logout_uri,omitempty"`
+	AllowedScopes                     []string   `bson:"allowed_scopes"                      json:"allowed_scopes,omitempty"`
+	AllowedAuthorizationDetails       []string   `bson:"allowed_authorization_details"        json:"allowed_authorization_details,omitempty"`
+	AllowedGrantTypes                 []string   `bson:"allowed_grant_types"                 json:"allowed_grant_types,omitempty"`
+	TokenEndpointAuth                 string     `bson:"token_endpoint_auth_method"          json:"token_endpoint_auth,omitempty"`
+	JWKS                              *JWKS      `bson:"jwks,omitempty"                      json:"jwks,omitempty"`
+	JWKSUri                           string     `bson:"jwks_uri,omitempty"                  json:"jwks_uri,omitempty"`
+	Contacts                          []string   `bson:"contacts,omitempty"                  json:"contacts,omitempty"`
+	LogoURI                           string     `bson:"logo_uri,omitempty"                  json:"logo_uri,omitempty"`
+	PolicyURI                         string     `bson:"policy_uri,omitempty"                json:"policy_uri,omitempty"`
+	TermsURI                          string     `bson:"tos_uri,omitempty"                   json:"terms_uri,omitempty"`
+	RequireConsent                    bool       `bson:"require_consent"                     json:"require_consent,omitempty"`
+	RequirePKCE                       bool       `bson:"require_pkce"                        json:"require_pkce,omitempty"`
+	UserinfoSignedResponseAlg         string     `bson:"userinfo_signed_response_alg,omitempty" json:"userinfo_signed_response_alg,omitempty"`
+	RequireSignedRequestObject        bool       `bson:"require_signed_request_object,omitempty" json:"require_signed_request_object,omitempty"`
+	RequirePAR                        bool       `bson:"require_par,omitempty"               json:"require_par,omitempty"`
+	CreatedAt                         time.Time  `bson:"created_at"                          json:"created_at,omitempty"`
+	UpdatedAt                         time.Time  `bson:"updated_at"                          json:"updated_at,omitempty"`
+	LastUsed                          time.Time  `bson:"last_used,omitempty"                 json:"last_used,omitempty"`
+	IsActive                          bool       `bson:"is_active"                           json:"is_active,omitempty"`
+	IsConfidential                    bool       `bson:"is_confidential"                     json:"is_confidential,omitempty"`
 
 	// ServiceAccountRoles defines the roles assigned to tokens issued via the
 	// client_credentials grant for this client. Empty means no roles.

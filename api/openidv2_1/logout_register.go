@@ -152,6 +152,8 @@ func (oa *OAuth2API) LogoutHandler(c *gin.Context) {
 		}
 	}
 
+	frontURL, hasFront := frontchannelLogoutURL(client, oa.config.Issuer, sid)
+
 	if postLogoutURI != "" {
 		redirectURI := postLogoutURI
 		if state := c.Query("state"); state != "" {
@@ -162,10 +164,18 @@ func (oa *OAuth2API) LogoutHandler(c *gin.Context) {
 				redirectURI = u.String()
 			}
 		}
+		if hasFront {
+			renderFrontchannelLogout(c, frontURL, redirectURI)
+			return
+		}
 		c.Redirect(http.StatusFound, redirectURI)
 		return
 	}
 
+	if hasFront {
+		renderFrontchannelLogout(c, frontURL, "")
+		return
+	}
 	c.Status(http.StatusOK)
 }
 

@@ -788,3 +788,40 @@ func TestDiscoveryAdvertisesLogoutRegistration(t *testing.T) {
 	require.Equal(t, "http://localhost:8080/oauth2/logout", doc["end_session_endpoint"])
 	require.Equal(t, "http://localhost:8080/oauth2/register", doc["registration_endpoint"])
 }
+
+func TestRPInitiatedLogout_FrontchannelIframe(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	metrics.InitCustomMetrics(nil)
+	log.Logger = zerolog.Nop()
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	api, mockClientRepo, mockSessionRepo, _, _ := newFullOIDCAPI(t, ctrl, defaultTestConfig())
+	router := newOIDCRouter(t, api)
+
+	const redirectURI = "https://rp.example.com/callback"
+	mockClientRepo.EXPECT().GetClient(gomock.Any(), "fc").Return(&domain.Client{
+		ID: "fc", PostLogoutURIs: []string{redirectURI},
+		FrontchannelLogoutURI: "https://rp.example.com/fc-logout", FrontchannelLogoutSessionRequired: true,
+	}, nil).AnyTimes()
+	mockSessionRepo.EXPECT().GetSessionByTokenID(gomock.Any(), "sid-1").Return(nil, domain.ErrSessionNotFound).AnyTimes()
+
+	hint := signTestIDTokenHint(t, map[string]interface{}{
+		"iss": "http://localhost:8080", "aud": "fc", "sub": "u", "sid": "sid-1",
+		"exp": time.Now().Add(time.Hour).Unix(),
+	})
+	req := httptest.NewRequest(http.MethodGet, "/oauth2/logout", nil)
+	q := req.URL.Query()
+	q.Set("id_token_hint", hint)
+	q.Set("post_logout_redirect_uri", redirectURI)
+	req.URL.RawQuery = q.Encode()
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+	require.Contains(t, body, "https://rp.example.com/fc-logout?iss=http%3A%2F%2Flocalhost%3A8080&amp;sid=sid-1")
+	require.Contains(t, body, `http-equiv="refresh"`)
+	require.Contains(t, body, redirectURI)
+	require.Contains(t, w.Header().Get("Content-Security-Policy"), "frame-src https://rp.example.com")
+}

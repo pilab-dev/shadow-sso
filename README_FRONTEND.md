@@ -123,6 +123,10 @@ ID tokens carry `amr` (RFC 8176: `pwd`, `otp`, `mfa`, `hwk`) and `acr` (`loa1` s
 
 `/oauth2/authorize` accepts `request=<JWT>`. The object must be signed (RS/PS 256/384/512, never `none`) with a key from the client's registered JWKS, carry `iss` = the client_id and `aud` = the issuer, and include `response_type`, `redirect_uri` etc.; only its signed values are used, unsigned query parameters do not fill gaps. Set `require_signed_request_object` on a client (gRPC `ClientManagement`) to refuse plain authorization requests (PAR remains allowed). `request_uri` still only resolves PAR-issued URIs; JWE-encrypted objects and remote `request_uri` fetching are not supported.
 
+### Front-channel logout
+
+Set `frontchannel_logout_uri` (and optionally `frontchannel_logout_session_required`, which appends `iss` and `sid`) on a client via gRPC `ClientManagement`; `backchannel_logout_uri` is settable there too. `/oauth2/logout` then renders a page that loads the client's URI in a hidden iframe and continues to `post_logout_redirect_uri` through a meta refresh. Only the client named in `id_token_hint` is notified; other clients sharing the SSO session are not (yet).
+
 ### Signed UserInfo
 
 Set `userinfo_signed_response_alg` on a client (gRPC `ClientManagement`) to receive UserInfo as an `application/jwt` response signed by the realm key (`iss` = issuer, `aud` = client_id). The value must match the algorithm of the active signing key, otherwise UserInfo answers `server_error`. Discovery lists `userinfo_signing_alg_values_supported`.

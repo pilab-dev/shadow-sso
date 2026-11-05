@@ -78,6 +78,9 @@ message ClientProto {
   string client_ldap_attribute_groups = 25;
   map<string, string> client_ldap_custom_claims_mapping = 26;
   bool require_par = 27; // RFC 9126: authorization requests must be pushed
+  string backchannel_logout_uri = 30;
+  string frontchannel_logout_uri = 31; // OIDC Front-Channel Logout 1.0
+  bool frontchannel_logout_session_required = 32;
   string userinfo_signed_response_alg = 29; // OIDC Core 5.3.2: when set, UserInfo returns a signed JWT
   bool require_signed_request_object = 28; // RFC 9101: authorization requests must carry a signed request object (or be pushed)
 }
@@ -113,6 +116,9 @@ message RegisterClientRequest {
   string client_ldap_attribute_groups = 20 [(buf.validate.field).string.max_len = 250];
   map<string, string> client_ldap_custom_claims_mapping = 21;
   bool require_par = 22;
+  string backchannel_logout_uri = 25;
+  string frontchannel_logout_uri = 26;
+  bool frontchannel_logout_session_required = 27;
   string userinfo_signed_response_alg = 24;
   bool require_signed_request_object = 23;
 }
@@ -173,6 +179,9 @@ message UpdateClientRequest {
   string client_ldap_attribute_groups = 19 [(buf.validate.field).string.max_len = 250];
   map<string, string> client_ldap_custom_claims_mapping = 20;
   bool require_par = 21;
+  string backchannel_logout_uri = 24;
+  string frontchannel_logout_uri = 25;
+  bool frontchannel_logout_session_required = 26;
   string userinfo_signed_response_alg = 23;
   bool require_signed_request_object = 22;
 }

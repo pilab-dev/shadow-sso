@@ -101,26 +101,29 @@ func toClientProto(c *domain.Client, includeSecret bool) *ssov1.ClientProto {
 		return nil
 	}
 	proto := &ssov1.ClientProto{
-		ClientId:                   c.ID,
-		ClientType:                 toClientTypeProto(c.Type),
-		ClientName:                 c.Name,
-		Description:                c.Description,
-		RedirectUris:               c.RedirectURIs,
-		PostLogoutRedirectUris:     c.PostLogoutURIs,
-		AllowedScopes:              c.AllowedScopes,
-		AllowedGrantTypes:          c.AllowedGrantTypes,
-		TokenEndpointAuthMethod:    c.TokenEndpointAuth,
-		JwksUri:                    c.JWKSUri,
-		Contacts:                   c.Contacts,
-		LogoUri:                    c.LogoURI,
-		PolicyUri:                  c.PolicyURI,
-		TermsUri:                   c.TermsURI,
-		RequireConsent:             c.RequireConsent,
-		RequirePkce:                c.RequirePKCE,
-		RequirePar:                 c.RequirePAR,
-		RequireSignedRequestObject: c.RequireSignedRequestObject,
-		UserinfoSignedResponseAlg:  c.UserinfoSignedResponseAlg,
-		IsActive:                   c.IsActive,
+		ClientId:                          c.ID,
+		ClientType:                        toClientTypeProto(c.Type),
+		ClientName:                        c.Name,
+		Description:                       c.Description,
+		RedirectUris:                      c.RedirectURIs,
+		PostLogoutRedirectUris:            c.PostLogoutURIs,
+		AllowedScopes:                     c.AllowedScopes,
+		AllowedGrantTypes:                 c.AllowedGrantTypes,
+		TokenEndpointAuthMethod:           c.TokenEndpointAuth,
+		JwksUri:                           c.JWKSUri,
+		Contacts:                          c.Contacts,
+		LogoUri:                           c.LogoURI,
+		PolicyUri:                         c.PolicyURI,
+		TermsUri:                          c.TermsURI,
+		RequireConsent:                    c.RequireConsent,
+		RequirePkce:                       c.RequirePKCE,
+		RequirePar:                        c.RequirePAR,
+		RequireSignedRequestObject:        c.RequireSignedRequestObject,
+		UserinfoSignedResponseAlg:         c.UserinfoSignedResponseAlg,
+		BackchannelLogoutUri:              c.BackchannelLogoutURI,
+		FrontchannelLogoutUri:             c.FrontchannelLogoutURI,
+		FrontchannelLogoutSessionRequired: c.FrontchannelLogoutSessionRequired,
+		IsActive:                          c.IsActive,
 
 		// LDAP Attribute Mapping Fields (assuming they exist on ssov1.ClientProto)
 		ClientLdapAttributeEmail:      c.ClientLDAPAttributeEmail,
@@ -176,17 +179,20 @@ func (s *ClientManagementServer) RegisterClient(ctx context.Context, req *connec
 		TokenEndpointAuth: req.Msg.TokenEndpointAuthMethod,
 		JWKSUri:           req.Msg.JwksUri,
 		// TODO: Map req.Msg.JwksContent to newClient.JWKS if provided in proto
-		Contacts:                   req.Msg.Contacts,
-		LogoURI:                    req.Msg.LogoUri,
-		PolicyURI:                  req.Msg.PolicyUri,
-		TermsURI:                   req.Msg.TermsUri,
-		RequireConsent:             req.Msg.RequireConsent,
-		RequirePAR:                 req.Msg.RequirePar,
-		RequireSignedRequestObject: req.Msg.RequireSignedRequestObject,
-		UserinfoSignedResponseAlg:  req.Msg.UserinfoSignedResponseAlg,
-		IsActive:                   true,
-		CreatedAt:                  time.Now().UTC(),
-		UpdatedAt:                  time.Now().UTC(),
+		Contacts:                          req.Msg.Contacts,
+		LogoURI:                           req.Msg.LogoUri,
+		PolicyURI:                         req.Msg.PolicyUri,
+		TermsURI:                          req.Msg.TermsUri,
+		RequireConsent:                    req.Msg.RequireConsent,
+		RequirePAR:                        req.Msg.RequirePar,
+		RequireSignedRequestObject:        req.Msg.RequireSignedRequestObject,
+		UserinfoSignedResponseAlg:         req.Msg.UserinfoSignedResponseAlg,
+		BackchannelLogoutURI:              req.Msg.BackchannelLogoutUri,
+		FrontchannelLogoutURI:             req.Msg.FrontchannelLogoutUri,
+		FrontchannelLogoutSessionRequired: req.Msg.FrontchannelLogoutSessionRequired,
+		IsActive:                          true,
+		CreatedAt:                         time.Now().UTC(),
+		UpdatedAt:                         time.Now().UTC(),
 
 		// Populate LDAP mapping fields from request (assuming fields exist on req.Msg or req.Msg.Client)
 		// Actual field names on req.Msg depend on protobuf definition.
@@ -332,6 +338,9 @@ func (s *ClientManagementServer) UpdateClient(ctx context.Context, req *connect.
 	dbClient.RequirePAR = req.Msg.RequirePar
 	dbClient.RequireSignedRequestObject = req.Msg.RequireSignedRequestObject
 	dbClient.UserinfoSignedResponseAlg = req.Msg.UserinfoSignedResponseAlg
+	dbClient.BackchannelLogoutURI = req.Msg.BackchannelLogoutUri
+	dbClient.FrontchannelLogoutURI = req.Msg.FrontchannelLogoutUri
+	dbClient.FrontchannelLogoutSessionRequired = req.Msg.FrontchannelLogoutSessionRequired
 	dbClient.IsActive = req.Msg.IsActive
 
 	// Update LDAP attribute mapping fields
