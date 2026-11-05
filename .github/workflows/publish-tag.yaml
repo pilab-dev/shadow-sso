@@ -36,7 +36,6 @@ jobs:
           tags: |
             ghcr.io/pilab-dev/shadow-sso-backend:${{ github.ref_name }}
             ghcr.io/pilab-dev/shadow-sso-backend:${{ github.sha }}
-            # Tag stable (non-prerelease) releases as latest; empty line is ignored
             ${{ !contains(github.ref_name, '-') && format('ghcr.io/pilab-dev/shadow-sso-backend:latest') || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
