@@ -1,0 +1,53 @@
+name: Bug Report
+description: Found something you weren't expecting? Report it here!
+labels: ["type/bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        NOTE: If your issue is a security concern, please report it privately
+        (see SECURITY.md) instead of opening a public issue.
+  - type: markdown
+    attributes:
+      value: |
+        1. Please speak English.
+        2. Search existing issues before opening a new one.
+        3. Make sure you are using the latest release.
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Clear description of the issue.
+    validations:
+      required: true
+  - type: input
+    id: module-version
+    attributes:
+      label: Module Version
+      description: shadow-sso version (or commit) you are using
+    validations:
+      required: true
+  - type: input
+    id: go-version
+    attributes:
+      label: Go Version
+  - type: input
+    id: os
+    attributes:
+      label: Operating System
+  - type: dropdown
+    id: reproducible
+    attributes:
+      label: Can you reproduce the bug?
+      options: ["Yes", "No"]
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce / minimal example
+      render: go
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs

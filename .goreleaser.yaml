@@ -1,0 +1,39 @@
+project_name: shadow-sso
+
+# Library module: no binaries to build.
+builds:
+  - skip: true
+
+archives:
+  - skip: true
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+  groups:
+    - title: Features
+      regexp: "^.*feat(\\([\\w-]+\\))?:.*$"
+      order: 0
+    - title: "Bug fixes"
+      regexp: "^.*fix(\\([\\w-]+\\))?:.*$"
+      order: 1
+    - title: "Maintenance"
+      regexp: "^.*chore(\\([\\w-]+\\))?:.*$"
+      order: 2
+    - title: "Refactor"
+      regexp: "^.*refactor(\\([\\w-]+\\))?:.*$"
+      order: 3
+    - title: Others
+      order: 999
+
+release:
+  github:
+    owner: pilab-dev
+    name: shadow-sso
+  draft: false
+  prerelease: auto
