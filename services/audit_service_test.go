@@ -3,6 +3,8 @@ package services
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -10,6 +12,7 @@ import (
 	"github.com/pilab-dev/shadow-sso/domain"
 	mock_domain "github.com/pilab-dev/shadow-sso/domain/mocks"
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
+	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -152,4 +155,47 @@ func TestAuditServer_ListAuditEvents_ResponseMapping(t *testing.T) {
 	assert.Equal(t, "t1", ev.Target)
 	assert.Equal(t, "details", ev.Details)
 	assert.True(t, ev.Success)
+}
+
+func TestAuditServer_FollowAuditEvents_StreamsAndDedupes(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	now := time.Now().UTC()
+	auditRepo := mock_domain.NewMockAuditLogRepository(ctrl)
+	auditRepo.EXPECT().
+		ListAfter(gomock.Any(), gomock.Any(), gomock.Any(), 10).
+		Return([]*domain.AuditLog{{
+			ID:        "a1",
+			Timestamp: now,
+			Service:   "AuthService",
+			Action:    "LoginComplete",
+			User:      "u1",
+			Success:   true,
+		}}, nil).
+		AnyTimes()
+
+	server := NewAuditServer(auditRepo)
+	path, handler := ssov1connect.NewAuditServiceHandler(server)
+	mux := http.NewServeMux()
+	mux.Handle(path, handler)
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	client := ssov1connect.NewAuditServiceClient(ts.Client(), ts.URL)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	stream, err := client.FollowAuditEvents(ctx, connect.NewRequest(&ssov1.FollowAuditEventsRequest{
+		From:            timestamppb.New(now.Add(-time.Minute)),
+		IncludeExisting: true,
+		PollIntervalMs:  250,
+		BatchSize:       10,
+	}))
+	require.NoError(t, err)
+	require.True(t, stream.Receive(), "expected one event")
+	assert.Equal(t, "a1", stream.Msg().GetId())
+	assert.Equal(t, "LoginComplete", stream.Msg().GetAction())
+	cancel()
+	stream.Close()
 }

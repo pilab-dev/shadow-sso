@@ -26,7 +26,7 @@ mv ssoctl /usr/local/bin/
 ### Using Go Install
 
 ```bash
-go install github.com/pilab-dev/shadow-sso/apps/ssoctl@latest
+go install github.com/pilab-dev/shadow-sso/apps/sssoctl@latest
 ```
 
 ### Docker Image
@@ -91,6 +91,36 @@ Contexts allow you to define and switch between different Shadow SSO server endp
    ssoctl config current-context
    # my-prod-sso
    ```
+
+### Wire Protocol
+
+Commands backed by proto services can speak three protocols. The server accepts
+all of them on the same port (Connect, gRPC and gRPC-Web):
+
+| Protocol | Flag value | Notes |
+|---|---|---|
+| Connect + JSON | `connect` (default) | HTTP/1.1, debuggable with curl |
+| Connect + protobuf | `connect-proto` | binary, still HTTP/1.1 |
+| gRPC | `grpc` | HTTP/2; plaintext endpoints use h2c |
+
+```bash
+ssoctl --protocol grpc user list
+ssoctl --protocol connect-proto client list
+SSOCTL_PROTOCOL=grpc ssoctl session list
+```
+
+Precedence: `--protocol` flag → `protocol:` in the current context → `SSOCTL_PROTOCOL` → `connect`.
+Per context, set it once in the config file:
+
+```yaml
+contexts:
+  my-prod-sso:
+    server_endpoint: https://sso.example.com
+    protocol: grpc
+```
+
+Commands that use GraphQL (`role`, `group`, `realm`, `realm-key`, `client-scope`,
+`auth-flow`, `session revoke*`) are unaffected by this setting.
 
 ## Authentication Commands (`ssoctl auth`)
 
@@ -539,26 +569,66 @@ Commands for managing service accounts and their keys. These typically require a
 Advanced session management for security monitoring and control.
 
 **1. List Sessions:**
-   Display active user sessions with metadata.
+   Display active user sessions with their device, IP and timestamps. The current
+   session is marked with `*`. Output formats: `table` (default), `json`, `yaml`.
    ```bash
-   ssoctl session list [--user-id <target_user_id>] [--include-expired]
-   # Active sessions with IP, User-Agent, creation time, expiry
+   ssoctl session list [--user-id <target_user_id>] [--output table|json|yaml]
    ```
 
-**2. Clear Sessions:**
-   Revoke specific or all user sessions for security.
+**2. Show the current session:**
    ```bash
-   # Clear specific session:
-   ssoctl session clear --session-id <session_id> [--user-id <target_user_id>]
+   ssoctl session current [--output table|json|yaml]
+   ```
 
-   # Clear all sessions for a user (admin):
-   ssoctl session clear --user-id <target_user_id>
+**3. Kick one device:**
+   Revoking a session also revokes the access and refresh tokens issued for it.
+   If the kicked session is the one used by `ssoctl`, the local token is cleared.
+   ```bash
+   ssoctl session kick <session_id> [--user-id <target_user_id>] [--force]
+   ```
 
-   # Clear all sessions for current user (including current session):
-   ssoctl session clear --all
+**4. Kick every device:**
+   ```bash
+   ssoctl session kick-all [--user-id <target_user_id>] [--force]
+   ```
 
-   # Clear all other sessions (keep current session active):
-   ssoctl session clear
+`session revoke`, `session revoke-all` and `session logout-user` are aliases of
+the ConnectRPC kick/kick-all path. `session clear` is a hidden alias of
+`kick-all`.
+
+## Device, Token and Traceability Commands
+
+See [traceability.md](./traceability.md) for the full guide.
+
+**1. Devices (browsers and agents):**
+   ```bash
+   ssoctl device list [--user-id <id|me>] [--all] [--json]
+   ssoctl device show <session_id>
+   ```
+
+**2. Tokens (metadata only; values are never shown):**
+   ```bash
+   ssoctl token list [--user-id <id|me>] [--all] [--type access_token|refresh_token]
+   ssoctl token list --session <session_id> --client <client_id>
+   ssoctl token get <jti>
+   ssoctl token revoke <jti> --reason "lost laptop"
+   ```
+
+**3. Follow audit events (`kubectl logs -f` style):**
+   ```bash
+   ssoctl audit follow [--since 15m] [--user <id>] [--action <action>] [--json]
+   ssoctl audit follow --since now          # only future events
+   ssoctl audit follow --interval-ms 5000   # slower polling
+   ```
+
+**4. Enterprise browser baseline:**
+   ```bash
+   ssoctl browser-policy show
+   ssoctl browser-policy check "<user-agent>"
+   ssoctl browser-policy set --enabled --enforcement warn --block-bots
+   ssoctl browser-policy set --enforcement block --min chrome=126 --min safari=17.5
+   ssoctl browser-policy set --exempt "MyCorpUpdater/"
+   ssoctl browser-policy reset
    ```
 
 ## Identity Provider Management (`ssoctl idp`)

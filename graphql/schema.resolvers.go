@@ -9,31 +9,36 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"time"
 
 	"connectrpc.com/connect"
 	"github.com/pilab-dev/shadow-sso/domain"
 	"github.com/pilab-dev/shadow-sso/internal/auth/rbac"
+	pkgauth "github.com/pilab-dev/shadow-sso/pkg/auth"
 )
 
 type Resolver struct {
-	UserRepo                 domain.UserRepository
-	UserAttributeRepo        domain.UserAttributeRepository
-	UserAttributeMapperRepo   domain.UserAttributeMapperRepository
-	ClientRepo               domain.ClientRepository
+	UserRepo                domain.UserRepository
+	UserAttributeRepo       domain.UserAttributeRepository
+	UserAttributeMapperRepo domain.UserAttributeMapperRepository
+	ClientRepo              domain.ClientRepository
 	SessionRepo             domain.SessionRepository
+	TokenRepo               domain.TokenRepository
 	IdPRepo                 domain.IdPRepository
 	GroupRepo               domain.GroupRepository
-	RoleRepo                 domain.RoleRepository
+	RoleRepo                domain.RoleRepository
 	ProtocolMapperRepo      domain.ProtocolMapperRepository
 	AuthFlowRepo            domain.AuthenticationFlowRepository
 	ClientScopeRepo         domain.ClientScopeRepository
 	RealmSettingsRepo       domain.RealmSettingsRepository
 	RealmKeysRepo           domain.RealmKeysRepository
-	EmailService           domain.EmailService
+	EmailService            domain.EmailService
+	// PublicBaseURL is the SSO's public origin (no trailing slash) used for links in emails.
+	PublicBaseURL         string
 	PasswordHasher        domain.PasswordHasher
-	AuditLogRepo           domain.AuditLogRepository
-	FederatedIdentityRepo  domain.UserFederatedIdentityRepository
+	AuditLogRepo          domain.AuditLogRepository
+	FederatedIdentityRepo domain.UserFederatedIdentityRepository
 }
 
 // Executions is the resolver for the executions field.
@@ -394,40 +399,55 @@ func (r *mutationResolver) DeleteUser(ctx context.Context, id string) (bool, err
 
 // SendVerificationEmail is the resolver for the sendVerificationEmail field.
 func (r *mutationResolver) SendVerificationEmail(ctx context.Context, userID string) (bool, error) {
+	if err := requireAdmin(ctx); err != nil {
+		return false, err
+	}
+	if r.EmailService == nil {
+		return false, errors.New("email delivery is not configured")
+	}
 	user, err := r.UserRepo.GetUserByID(ctx, userID)
 	if err != nil {
 		return false, err
 	}
-	// Generate verification token if not exists
-	if user.EmailVerificationToken == "" {
-		token := generateToken()
-		user.EmailVerificationToken = token
-		if err := r.UserRepo.StoreEmailVerificationToken(ctx, userID, token, time.Now().Add(24*time.Hour)); err != nil {
-			return false, err
-		}
+	// A fresh single-use token each time; only its digest is stored (see /verify-email).
+	token, digest, err := pkgauth.NewEmailToken()
+	if err != nil {
+		return false, err
 	}
-	verificationLink := "https://example.com/verify?token=" + user.EmailVerificationToken
-	err = r.EmailService.SendVerificationEmail(user.Email, user.FirstName, verificationLink)
-	return err == nil, err
+	if err := r.UserRepo.StoreEmailVerificationToken(ctx, userID, digest, time.Now().Add(24*time.Hour)); err != nil {
+		return false, err
+	}
+	link := r.PublicBaseURL + "/verify-email?token=" + url.QueryEscape(token)
+	if err := r.EmailService.SendVerificationEmail(user.Email, user.FirstName, link); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // SendPasswordResetEmail is the resolver for the sendPasswordResetEmail field.
 func (r *mutationResolver) SendPasswordResetEmail(ctx context.Context, userID string) (bool, error) {
+	if err := requireAdmin(ctx); err != nil {
+		return false, err
+	}
+	if r.EmailService == nil {
+		return false, errors.New("email delivery is not configured")
+	}
 	user, err := r.UserRepo.GetUserByID(ctx, userID)
 	if err != nil {
 		return false, err
 	}
-	// Generate password reset token if not exists
-	if user.PasswordResetToken == "" {
-		token := generateToken()
-		user.PasswordResetToken = token
-		if err := r.UserRepo.StorePasswordResetToken(ctx, userID, token, time.Now().Add(1*time.Hour)); err != nil {
-			return false, err
-		}
+	token, digest, err := pkgauth.NewEmailToken()
+	if err != nil {
+		return false, err
 	}
-	resetLink := "https://example.com/reset-password?token=" + user.PasswordResetToken
-	err = r.EmailService.SendPasswordResetEmail(user.Email, user.FirstName, resetLink)
-	return err == nil, err
+	if err := r.UserRepo.StorePasswordResetToken(ctx, userID, digest, time.Now().Add(1*time.Hour)); err != nil {
+		return false, err
+	}
+	link := r.PublicBaseURL + "/reset-password?token=" + url.QueryEscape(token)
+	if err := r.EmailService.SendPasswordResetEmail(user.Email, user.FirstName, link); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // ResetPassword is the resolver for the resetPassword field.
@@ -456,8 +476,26 @@ func (r *mutationResolver) ResetPassword(ctx context.Context, userID string, new
 
 // ExecuteActions is the resolver for the executeActions field.
 func (r *mutationResolver) ExecuteActions(ctx context.Context, userID string, actions []string) (bool, error) {
-	// Complex action execution - would need implementation
-	return false, nil
+	if err := requireAdmin(ctx); err != nil {
+		return false, err
+	}
+	for _, a := range actions {
+		if !domain.IsKnownRequiredAction(a) {
+			return false, fmt.Errorf("unknown required action %q", a)
+		}
+	}
+	user, err := r.UserRepo.GetUserByID(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	// The actions run at the user's next login, before any token is issued.
+	for _, a := range actions {
+		user.AddRequiredAction(a)
+	}
+	if err := r.UserRepo.UpdateUser(ctx, user); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // CreateClient is the resolver for the createClient field.
@@ -871,14 +909,48 @@ func (r *mutationResolver) RevokeAllSessions(ctx context.Context, userID string)
 		return false, err
 	}
 
-	_, err := r.SessionRepo.DeleteSessionsByUserID(ctx, userID)
-	return err == nil, err
+	sessions, err := r.SessionRepo.ListSessionsByUserID(ctx, userID, domain.SessionFilter{})
+	if err != nil {
+		return false, err
+	}
+	ids := make([]string, 0, len(sessions))
+	for _, s := range sessions {
+		ids = append(ids, s.ID)
+	}
+	if _, err := r.SessionRepo.DeleteSessionsByUserID(ctx, userID); err != nil {
+		return false, err
+	}
+	if r.TokenRepo != nil {
+		for _, id := range ids {
+			if err := r.TokenRepo.RevokeTokensBySessionID(ctx, id); err != nil {
+				return false, err
+			}
+		}
+	}
+	return true, nil
 }
 
 // LogoutUser is the resolver for the logoutUser field.
 func (r *mutationResolver) LogoutUser(ctx context.Context, userID string) (bool, error) {
-	_, err := r.SessionRepo.DeleteSessionsByUserID(ctx, userID)
-	return err == nil, err
+	sessions, err := r.SessionRepo.ListSessionsByUserID(ctx, userID, domain.SessionFilter{})
+	if err != nil {
+		return false, err
+	}
+	ids := make([]string, 0, len(sessions))
+	for _, s := range sessions {
+		ids = append(ids, s.ID)
+	}
+	if _, err := r.SessionRepo.DeleteSessionsByUserID(ctx, userID); err != nil {
+		return false, err
+	}
+	if r.TokenRepo != nil {
+		for _, id := range ids {
+			if err := r.TokenRepo.RevokeTokensBySessionID(ctx, id); err != nil {
+				return false, err
+			}
+		}
+	}
+	return true, nil
 }
 
 // UpdateRealm is the resolver for the updateRealm field.
@@ -1016,10 +1088,10 @@ func (r *mutationResolver) DeleteUserAttributesByUserID(ctx context.Context, use
 func (r *mutationResolver) CreateUserAttributeMapper(ctx context.Context, input CreateUserAttributeMapperInput) (*domain.UserAttributeMapper, error) {
 	mapper := &domain.UserAttributeMapper{
 		Name:           input.Name,
-		UserAttribute: input.UserAttribute,
+		UserAttribute:  input.UserAttribute,
 		TokenClaimName: input.TokenClaimName,
-		TokenType:     input.TokenType,
-		MultiValued:   input.MultiValued != nil && *input.MultiValued,
+		TokenType:      input.TokenType,
+		MultiValued:    input.MultiValued != nil && *input.MultiValued,
 	}
 	if input.Protocol != nil {
 		mapper.Protocol = *input.Protocol
@@ -1157,6 +1229,47 @@ func (r *mutationResolver) SetUserPassword(ctx context.Context, userID string, p
 		return false, err
 	}
 	user.PasswordHash = hashedPassword
+	if temporary {
+		// A temporary password must be replaced by the user at next login.
+		user.AddRequiredAction(domain.RequiredActionUpdatePassword)
+	} else {
+		user.RemoveRequiredAction(domain.RequiredActionUpdatePassword)
+	}
+	if err := r.UserRepo.UpdateUser(ctx, user); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// AddRequiredAction is the resolver for the addRequiredAction field.
+func (r *mutationResolver) AddRequiredAction(ctx context.Context, userID string, action string) (bool, error) {
+	if err := requireAdmin(ctx); err != nil {
+		return false, err
+	}
+	if !domain.IsKnownRequiredAction(action) {
+		return false, fmt.Errorf("unknown required action %q", action)
+	}
+	user, err := r.UserRepo.GetUserByID(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	user.AddRequiredAction(action)
+	if err := r.UserRepo.UpdateUser(ctx, user); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// RemoveRequiredAction is the resolver for the removeRequiredAction field.
+func (r *mutationResolver) RemoveRequiredAction(ctx context.Context, userID string, action string) (bool, error) {
+	if err := requireAdmin(ctx); err != nil {
+		return false, err
+	}
+	user, err := r.UserRepo.GetUserByID(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	user.RemoveRequiredAction(action)
 	if err := r.UserRepo.UpdateUser(ctx, user); err != nil {
 		return false, err
 	}
@@ -1293,7 +1406,7 @@ func (r *protocolMapperResolver) Client(ctx context.Context, obj *domain.Protoco
 }
 
 // Users is the resolver for the users field.
-func (r *queryResolver) Users(ctx context.Context, filter *UserFilter, first *int, after *int) (*UserConnection, error) {
+func (r *queryResolver) Users(ctx context.Context, filter *domain.UserFilter, first *int, after *int) (*UserConnection, error) {
 	if r.UserRepo == nil {
 		return &UserConnection{
 			Edges:      []UserEdge{},
@@ -1302,7 +1415,41 @@ func (r *queryResolver) Users(ctx context.Context, filter *UserFilter, first *in
 		}, nil
 	}
 
-	users, _, err := r.UserRepo.ListUsers(ctx, "", 100)
+	// after→skip; first→limit (default 20, cap 100, mirroring ListUsersPage).
+	skip := 0
+	if after != nil {
+		skip = *after
+	}
+	if skip < 0 {
+		skip = 0
+	}
+
+	limit := 20
+	if first != nil {
+		limit = *first
+	}
+	if limit < 1 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	var f domain.UserFilter
+	if filter != nil {
+		f = *filter
+	}
+
+	// SortDir enum is uppercase but userListSort matches lowercase "desc".
+	sort := domain.SortSpec{Field: f.SortBy}
+	switch f.SortDir {
+	case "ASC":
+		sort.Dir = "asc"
+	case "DESC":
+		sort.Dir = "desc"
+	}
+
+	users, total, err := r.UserRepo.ListUsersPage(ctx, f, sort, skip, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -1316,15 +1463,21 @@ func (r *queryResolver) Users(ctx context.Context, filter *UserFilter, first *in
 		}
 	}
 
-	totalCount, _ := r.UserRepo.CountUsers(ctx)
+	pageInfo := &PageInfo{
+		HasNextPage:     int64(skip+limit) < total,
+		HasPreviousPage: skip > 0,
+	}
+	if len(edges) > 0 {
+		start := edges[0].Cursor
+		end := edges[len(edges)-1].Cursor
+		pageInfo.StartCursor = &start
+		pageInfo.EndCursor = &end
+	}
 
 	return &UserConnection{
 		Edges:      edges,
-		TotalCount: int(totalCount),
-		PageInfo: &PageInfo{
-			HasNextPage:     false,
-			HasPreviousPage: false,
-		},
+		TotalCount: int(total),
+		PageInfo:   pageInfo,
 	}, nil
 }
 
@@ -1335,17 +1488,49 @@ func (r *queryResolver) User(ctx context.Context, id string) (*domain.User, erro
 
 // Clients is the resolver for the clients field.
 func (r *queryResolver) Clients(ctx context.Context, filter *domain.ClientFilter, first *int, after *int) (*ClientConnection, error) {
-	var clients []*domain.Client
-	var err error
-	if filter != nil {
-		clients, err = r.ClientRepo.ListClients(ctx, *filter)
-	} else {
-		clients, err = r.ClientRepo.ListClients(ctx, domain.ClientFilter{})
+	if r.ClientRepo == nil {
+		return &ClientConnection{
+			Edges:      []ClientEdge{},
+			TotalCount: 0,
+			PageInfo:   &PageInfo{},
+		}, nil
 	}
+
+	// after→skip; first→limit (default 20, cap 100, mirroring ListClientsPage).
+	skip := 0
+	if after != nil {
+		skip = *after
+	}
+	if skip < 0 {
+		skip = 0
+	}
+
+	limit := 20
+	if first != nil {
+		limit = *first
+	}
+	if limit < 1 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	var f domain.ClientFilter
+	if filter != nil {
+		f = *filter
+	}
+
+	// SortBy/SortDir live INSIDE ClientFilter (unlike Users' separate
+	// SortSpec) and mongo's buildClientSort matches SortDir case-insensitively
+	// (strings.ToLower == "desc"), so the uppercase "ASC"/"DESC" enum values
+	// pass through unchanged — no Users-style ASC→asc/DESC→desc switch.
+	clients, total, err := r.ClientRepo.ListClientsPage(ctx, f, skip, limit)
 	if err != nil {
 		return nil, err
 	}
 
+	// Convert to edges
 	edges := make([]ClientEdge, len(clients))
 	for i, c := range clients {
 		edges[i] = ClientEdge{
@@ -1354,13 +1539,21 @@ func (r *queryResolver) Clients(ctx context.Context, filter *domain.ClientFilter
 		}
 	}
 
+	pageInfo := &PageInfo{
+		HasNextPage:     int64(skip+limit) < total,
+		HasPreviousPage: skip > 0,
+	}
+	if len(edges) > 0 {
+		start := edges[0].Cursor
+		end := edges[len(edges)-1].Cursor
+		pageInfo.StartCursor = &start
+		pageInfo.EndCursor = &end
+	}
+
 	return &ClientConnection{
 		Edges:      edges,
-		TotalCount: len(clients),
-		PageInfo: &PageInfo{
-			HasNextPage:     false,
-			HasPreviousPage: false,
-		},
+		TotalCount: int(total),
+		PageInfo:   pageInfo,
 	}, nil
 }
 
@@ -1437,10 +1630,13 @@ func (r *queryResolver) Group(ctx context.Context, id string) (*domain.Group, er
 }
 
 // Sessions is the resolver for the sessions field.
-func (r *queryResolver) Sessions(ctx context.Context, userID *string, first *int, after *int) (*SessionConnection, error) {
+func (r *queryResolver) Sessions(ctx context.Context, userID *string, clientID *string, first *int, after *int) (*SessionConnection, error) {
 	var filter domain.SessionFilter
 	if userID != nil {
 		filter.UserID = *userID
+	}
+	if clientID != nil {
+		filter.ClientID = *clientID
 	}
 	sessions, err := r.SessionRepo.ListSessionsByUserID(ctx, filter.UserID, filter)
 	if err != nil {
@@ -1888,8 +2084,10 @@ func (r *sessionResolver) State(ctx context.Context, obj *domain.Session) (*stri
 
 // ClientID is the resolver for the clientId field.
 func (r *sessionResolver) ClientID(ctx context.Context, obj *domain.Session) (*string, error) {
-	// Session doesn't track client ID in domain model
-	return nil, nil
+	if obj.ClientID == "" {
+		return nil, nil
+	}
+	return &obj.ClientID, nil
 }
 
 // ClientName is the resolver for the clientName field.
@@ -2012,6 +2210,14 @@ func (r *userResolver) Sessions(ctx context.Context, obj *domain.User) ([]domain
 	return result, nil
 }
 
+// RequiredActions is the resolver for the requiredActions field.
+func (r *userResolver) RequiredActions(ctx context.Context, obj *domain.User) ([]string, error) {
+	if obj.RequiredActions == nil {
+		return []string{}, nil
+	}
+	return obj.RequiredActions, nil
+}
+
 // Totp is the resolver for the totp field.
 func (r *userResolver) Totp(ctx context.Context, obj *domain.User) (bool, error) {
 	return obj.IsTwoFactorEnabled, nil
@@ -2116,12 +2322,6 @@ func contains(slice []string, val string) bool {
 	return false
 }
 
-func generateToken() string {
-	b := make([]byte, 32)
-	rand.Read(b)
-	return hex.EncodeToString(b)
-}
-
 func generateRandomSecret() string {
 	b := make([]byte, 32)
 	rand.Read(b)
@@ -2132,12 +2332,47 @@ func ptrInt(i int) *int {
 	return &i
 }
 
+// The SDL filter inputs type sortDir as the SortDir enum while the domain
+// structs carry plain strings, so gqlgen routes sortDir through these
+// resolvers as an unmarshal bridge; the remaining input fields bind inline.
 type clientFilterResolver struct{ *Resolver }
 
-func (r *clientFilterResolver) ClientID(ctx context.Context, obj *domain.ClientFilter, data *string) error { return nil }
-func (r *clientFilterResolver) ClientName(ctx context.Context, obj *domain.ClientFilter, data *string) error { return nil }
-func (r *clientFilterResolver) Enabled(ctx context.Context, obj *domain.ClientFilter, data *bool) error { return nil }
+// SortDir is the resolver for the sortDir field.
+func (r *clientFilterResolver) SortDir(ctx context.Context, obj *domain.ClientFilter, data *SortDir) error {
+	if data != nil {
+		obj.SortDir = string(*data)
+	}
+	return nil
+}
 
 func (r *Resolver) ClientFilter() ClientFilterResolver {
 	return &clientFilterResolver{r}
+}
+
+type auditLogFilterResolver struct{ *Resolver }
+
+// SortDir is the resolver for the sortDir field.
+func (r *auditLogFilterResolver) SortDir(ctx context.Context, obj *domain.AuditLogFilter, data *SortDir) error {
+	if data != nil {
+		obj.SortDir = string(*data)
+	}
+	return nil
+}
+
+func (r *Resolver) AuditLogFilter() AuditLogFilterResolver {
+	return &auditLogFilterResolver{r}
+}
+
+type userFilterResolver struct{ *Resolver }
+
+// SortDir is the resolver for the sortDir field.
+func (r *userFilterResolver) SortDir(ctx context.Context, obj *domain.UserFilter, data *SortDir) error {
+	if data != nil {
+		obj.SortDir = string(*data)
+	}
+	return nil
+}
+
+func (r *Resolver) UserFilter() UserFilterResolver {
+	return &userFilterResolver{r}
 }

@@ -2,6 +2,9 @@ package services
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -357,3 +360,99 @@ func (s *ClientManagementServer) DeleteClient(ctx context.Context, req *connect.
 
 // Ensure ClientManagementServer implements the handler interface
 var _ ssov1connect.ClientManagementServiceHandler = (*ClientManagementServer)(nil)
+
+// GenerateClientSecret replaces the client's secret and returns the plaintext.
+// Only the hash is persisted; the plaintext cannot be retrieved again.
+func (s *ClientManagementServer) GenerateClientSecret(ctx context.Context, req *connect.Request[ssov1.GenerateClientSecretRequest]) (*connect.Response[ssov1.GenerateClientSecretResponse], error) {
+	ctx, span := telemetry.StartSpan(ctx, clientMgmtTracerName, "GenerateClientSecret", attribute.String("client.id", req.Msg.GetClientId()))
+	defer span.End()
+
+	client, err := s.clientRepo.GetClient(ctx, req.Msg.GetClientId())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("client not found"))
+	}
+
+	secret, err := randomHex(32)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to generate client secret"))
+	}
+	hashed, err := s.secretHasher.Hash(secret)
+	if err != nil {
+		telemetry.RecordSpanError(span, err, "failed to hash client secret")
+		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to process client secret"))
+	}
+
+	client.Secret = hashed
+	if err := s.clientRepo.UpdateClient(ctx, client); err != nil {
+		telemetry.RecordSpanError(span, err, "failed to store client secret")
+		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to store client secret"))
+	}
+
+	log.Ctx(ctx).Info().Str("clientID", client.ID).Msg("Client secret regenerated")
+	return connect.NewResponse(&ssov1.GenerateClientSecretResponse{
+		ClientId:     client.ID,
+		ClientSecret: secret,
+	}), nil
+}
+
+// GenerateClientKeys creates a new RSA keypair, stores the public JWKS on the
+// client and returns it as JSON.
+func (s *ClientManagementServer) GenerateClientKeys(ctx context.Context, req *connect.Request[ssov1.GenerateClientKeysRequest]) (*connect.Response[ssov1.GenerateClientKeysResponse], error) {
+	ctx, span := telemetry.StartSpan(ctx, clientMgmtTracerName, "GenerateClientKeys", attribute.String("client.id", req.Msg.GetClientId()))
+	defer span.End()
+
+	keyType := strings.ToUpper(strings.TrimSpace(req.Msg.GetKeyType()))
+	if keyType != "" && keyType != "RSA" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("only RSA keys are supported"))
+	}
+
+	client, err := s.clientRepo.GetClient(ctx, req.Msg.GetClientId())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("client not found"))
+	}
+
+	bits := int(req.Msg.GetKeyBits())
+	if bits <= 0 {
+		bits = 2048
+	}
+
+	generator := domain.NewClientKeyGenerator()
+	key, err := generator.GenerateRSAKey(bits)
+	if err != nil {
+		telemetry.RecordSpanError(span, err, "failed to generate client key")
+		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to generate client key"))
+	}
+
+	suffix, err := randomHex(4)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to generate key id"))
+	}
+	kid := client.ID + "-" + suffix
+
+	jwks := generator.GenerateJWKS(key, kid)
+	client.JWKS = jwks
+	if err := s.clientRepo.UpdateClient(ctx, client); err != nil {
+		telemetry.RecordSpanError(span, err, "failed to store client keys")
+		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to store client keys"))
+	}
+
+	raw, err := json.Marshal(jwks)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to encode JWKS"))
+	}
+
+	log.Ctx(ctx).Info().Str("clientID", client.ID).Str("kid", kid).Msg("Client keys generated")
+	return connect.NewResponse(&ssov1.GenerateClientKeysResponse{
+		ClientId: client.ID,
+		KeyId:    kid,
+		JwksJson: string(raw),
+	}), nil
+}
+
+func randomHex(n int) (string, error) {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}

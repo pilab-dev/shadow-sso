@@ -1,0 +1,43 @@
+{{template "base_start" .}}
+{{template "account_nav" .}}
+<h2 class="page-title">Linked accounts</h2>
+<p class="page-subtitle">External identities you can sign in with.</p>
+
+{{if .Flash}}
+<div class="alert alert-success" role="status">
+    <span class="alert-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="9 12 11 14 15 10"/></svg>
+    </span>
+    <span>{{.Flash}}</span>
+</div>
+{{end}}
+{{if .Error}}
+<div class="alert alert-error" role="alert">
+    <span class="alert-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    </span>
+    <span>{{.Error}}</span>
+</div>
+{{end}}
+
+{{if not .Available}}
+<p class="page-subtitle">Not available.</p>
+{{else if not .Identities}}
+<p class="page-subtitle">No linked accounts.</p>
+{{else}}
+{{range .Identities}}
+<div style="border:1px solid var(--border);border-radius:var(--radius-md);padding:12px;margin-bottom:10px;">
+    <div style="font-weight:600;text-transform:capitalize;">{{.Provider}}</div>
+    <div style="font-size:0.8125rem;color:var(--text-muted);">{{.Email}}</div>
+    {{if $.CanUnlink}}
+    <form method="POST" action="/account/linked/unlink" style="margin-top:8px;">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+        <input type="hidden" name="provider" value="{{.Provider}}">
+        <input type="hidden" name="provider_user_id" value="{{.ProviderUserID}}">
+        <button type="submit" class="btn btn-secondary">Remove</button>
+    </form>
+    {{end}}
+</div>
+{{end}}
+{{end}}
+{{template "base_end" .}}

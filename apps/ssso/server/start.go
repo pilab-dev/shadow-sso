@@ -19,6 +19,8 @@ import (
 	pkgcrypto "github.com/pilab-dev/shadow-sso/pkg/crypto"
 	"github.com/pilab-dev/shadow-sso/services"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 )
 
 // HTTP server timeouts for the main externally-facing OAuth2/OIDC server.
@@ -218,7 +220,7 @@ func StartServer(ctx context.Context, cfg config.Config, repoProvider services.R
 
 	srv := &http.Server{
 		Addr:              listener.Addr().String(), // Store actual listening address
-		Handler:           router,
+		Handler:           newH2CHandler(router),
 		ReadHeaderTimeout: httpReadHeaderTimeout,
 		ReadTimeout:       httpReadTimeout,
 		WriteTimeout:      httpWriteTimeout,
@@ -235,4 +237,12 @@ func StartServer(ctx context.Context, cfg config.Config, repoProvider services.R
 	}()
 
 	return srv, nil
+}
+
+// newH2CHandler lets native gRPC clients reach the connect-go handlers on a
+// plaintext listener. The handlers already implement Connect, gRPC and
+// gRPC-Web; only the HTTP/2 transport (h2c) has to be enabled. Over TLS, net/http
+// negotiates HTTP/2 through ALPN and this wrapper is a pass-through.
+func newH2CHandler(h http.Handler) http.Handler {
+	return h2c.NewHandler(h, &http2.Server{})
 }

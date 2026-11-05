@@ -1,0 +1,41 @@
+{{template "base_start" .}}
+{{template "account_nav" .}}
+<h2 class="page-title">Device activity</h2>
+<p class="page-subtitle">Applications signed in to your account.</p>
+
+{{if .Flash}}
+<div class="alert alert-success" role="status">
+    <span class="alert-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="9 12 11 14 15 10"/></svg>
+    </span>
+    <span>{{.Flash}}</span>
+</div>
+{{end}}
+{{if .Error}}
+<div class="alert alert-error" role="alert">
+    <span class="alert-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    </span>
+    <span>{{.Error}}</span>
+</div>
+{{end}}
+
+{{if not .Available}}
+<p class="page-subtitle">Session information is not available.</p>
+{{else if not .Sessions}}
+<p class="page-subtitle">No active sessions.</p>
+{{else}}
+{{range .Sessions}}
+<div style="border:1px solid var(--border);border-radius:var(--radius-md);padding:12px;margin-bottom:10px;">
+    <div style="font-weight:600;">{{if .ClientID}}{{.ClientID}}{{else}}Unknown application{{end}}</div>
+    <div style="font-size:0.8125rem;color:var(--text-muted);">{{.IPAddress}} · {{.UserAgent}}</div>
+    <div style="font-size:0.8125rem;color:var(--text-subtle);">Last active {{.LastUsedAt.Format "2006-01-02 15:04 MST"}}</div>
+    <form method="POST" action="/account/sessions/revoke" style="margin-top:8px;">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+        <input type="hidden" name="session_id" value="{{.ID}}">
+        <button type="submit" class="btn btn-secondary">Sign out</button>
+    </form>
+</div>
+{{end}}
+{{end}}
+{{template "base_end" .}}

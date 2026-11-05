@@ -2,6 +2,7 @@ package dtsclient
 
 import (
 	"context"
+	"errors"
 	"log"
 	"time"
 
@@ -257,6 +258,22 @@ func (r *dtsTokenRepository) GetTokenInfo(ctx context.Context, tokenValue string
 	// Assuming it's asking for refresh token primarily for this DTS adapter.
 	log.Printf("GetTokenInfo called for token %s. Assuming refresh token for DTS context.", tokenValue)
 	return r.GetRefreshToken(ctx, tokenValue)
+}
+
+// MarkRefreshTokenUsed is not supported by the DTS token repository: DTS stores
+// refresh tokens opaquely and does not track rotation chains.
+func (r *dtsTokenRepository) MarkRefreshTokenUsed(_ context.Context, _, _ string) error {
+	return errors.New("dts token repository: MarkRefreshTokenUsed is not supported")
+}
+
+// RevokeTokenFamily is not supported by the DTS token repository.
+func (r *dtsTokenRepository) RevokeTokenFamily(_ context.Context, _ string) error {
+	return errors.New("dts token repository: RevokeTokenFamily is not supported")
+}
+
+// RevokeTokensBySessionID is not supported by the DTS token repository.
+func (r *dtsTokenRepository) RevokeTokensBySessionID(_ context.Context, _ string) error {
+	return errors.New("dts token repository: RevokeTokensBySessionID is not supported")
 }
 
 func min(a, b int) int {

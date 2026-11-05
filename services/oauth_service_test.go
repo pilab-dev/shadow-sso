@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/pilab-dev/shadow-sso/api"
 	"github.com/pilab-dev/shadow-sso/domain"
 	mock_domain "github.com/pilab-dev/shadow-sso/domain/mocks"
@@ -147,7 +148,9 @@ func TestOAuthService_Login_Success(t *testing.T) {
 	}
 
 	mockUserRepo.EXPECT().GetUserByEmail(ctx, username).Return(user, nil)
+	mockSessionRepo.EXPECT().ListSessionsByUserID(gomock.Any(), user.ID, gomock.Any()).Return(nil, nil)
 	mockSessionRepo.EXPECT().StoreSession(ctx, gomock.Any()).Return(nil)
+	mockSessionRepo.EXPECT().StoreSessionEvent(gomock.Any(), gomock.Any()).Return(nil)
 	mockTokenServiceInterface.EXPECT().GenerateTokenPair(ctx, "oauth-service-login-client", user.ID, "openid profile email", time.Hour, gomock.Any()).Return(&api.TokenResponse{
 		AccessToken:  "access-token",
 		RefreshToken: "refresh-token",
@@ -189,7 +192,7 @@ func TestOAuthService_Login_UserNotFound(t *testing.T) {
 	username := "test@example.com"
 	password := "password123"
 
-	mockUserRepo.EXPECT().GetUserByEmail(ctx, username).Return(nil, errors.New("user not found"))
+	mockUserRepo.EXPECT().GetUserByEmail(ctx, username).Return(nil, domain.ErrUserNotFound)
 
 	_, err := oauthService.Login(ctx, username, password, "")
 
@@ -270,7 +273,7 @@ func TestOAuthService_GetUserSessions(t *testing.T) {
 		{ID: "session-2", UserID: userID},
 	}
 
-	mockSessionRepo.EXPECT().ListSessionsByUserID(ctx, userID, domain.SessionFilter{}).Return(sessions, nil)
+	mockSessionRepo.EXPECT().ListSessionsByUserID(ctx, userID, gomock.Any()).Return(sessions, nil)
 
 	result, err := oauthService.GetUserSessions(ctx, userID)
 
@@ -317,17 +320,119 @@ func TestOAuthService_RefreshToken_Success(t *testing.T) {
 
 	mockTokenRepo.EXPECT().GetRefreshTokenInfo(ctx, refreshTokenValue).Return(tokenInfo, nil)
 	mockTokenRepo.EXPECT().RevokeRefreshToken(ctx, refreshTokenValue).Return(nil)
-	mockTokenServiceInterface.EXPECT().GenerateTokenPair(ctx, clientID, tokenInfo.UserID, tokenInfo.Scope, time.Hour, "").Return(&api.TokenResponse{
-		AccessToken:  "new-access-token",
-		RefreshToken: "new-refresh-token",
-		TokenType:    "Bearer",
-		ExpiresIn:    3600,
-	}, nil)
+	mockTokenRepo.EXPECT().MarkRefreshTokenUsed(ctx, refreshTokenValue, "").Return(nil)
+	mockTokenServiceInterface.EXPECT().
+		GenerateTokenPairWithSession(ctx, clientID, tokenInfo.UserID, tokenInfo.Scope, time.Hour, "", "family-123", "token-id").
+		Return(&api.TokenResponse{
+			AccessToken:  "new-access-token",
+			RefreshToken: "new-refresh-token",
+			TokenType:    "Bearer",
+			ExpiresIn:    3600,
+		}, nil)
 
 	resp, err := oauthService.RefreshToken(ctx, refreshTokenValue, clientID)
 
 	require.NoError(t, err)
 	assert.NotEmpty(t, resp.AccessToken)
+}
+
+func TestOAuthService_RefreshToken_ReplayRevokesFamilyAndSession(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
+	mockAuthCodeRepo := mock_domain.NewMockAuthorizationCodeRepository(ctrl)
+	mockDeviceAuthRepo := mock_domain.NewMockDeviceAuthorizationRepository(ctrl)
+	mockClientRepo := mock_domain.NewMockClientRepository(ctrl)
+	mockSessionRepo := mock_domain.NewMockSessionRepository(ctrl)
+	mockTokenServiceInterface := mock_domain.NewMockTokenServiceInterface(ctrl)
+
+	oauthService := services.NewOAuthService(
+		mockTokenRepo,
+		mockAuthCodeRepo,
+		mockDeviceAuthRepo,
+		mockClientRepo,
+		mockUserRepo,
+		mockSessionRepo,
+		mockTokenServiceInterface,
+		"test-issuer",
+	)
+
+	ctx := context.Background()
+	usedAt := time.Now().Add(-time.Minute)
+	tokenInfo := &domain.TokenInfo{
+		ID:                 "token-id",
+		ClientID:           "client-id",
+		UserID:             "user-id",
+		Scope:              "openid",
+		ExpiresAt:          time.Now().Add(time.Hour),
+		IsRevoked:          true,
+		UsedAt:             &usedAt,
+		RefreshTokenFamily: "family-123",
+		SessionID:          "session-1",
+	}
+	sess := &domain.Session{ID: "session-1", UserID: "user-id", ExpiresAt: time.Now().Add(time.Hour)}
+
+	mockTokenRepo.EXPECT().GetRefreshTokenInfo(ctx, "replayed").Return(tokenInfo, nil)
+	mockTokenRepo.EXPECT().RevokeTokenFamily(ctx, "family-123").Return(nil)
+	mockSessionRepo.EXPECT().GetSessionByID(ctx, "session-1").Return(sess, nil)
+	mockSessionRepo.EXPECT().UpdateSession(ctx, gomock.Any()).Return(nil)
+	mockTokenRepo.EXPECT().RevokeTokensBySessionID(ctx, "session-1").Return(nil)
+	// No new token pair may be issued.
+
+	_, err := oauthService.RefreshToken(ctx, "replayed", "client-id")
+
+	require.Error(t, err)
+	var oauthErr *domain.OAuth2Error
+	require.ErrorAs(t, err, &oauthErr)
+	assert.Equal(t, domain.InvalidGrant, oauthErr.Code)
+}
+
+func TestOAuthService_RefreshToken_RejectsRevokedSession(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
+	mockAuthCodeRepo := mock_domain.NewMockAuthorizationCodeRepository(ctrl)
+	mockDeviceAuthRepo := mock_domain.NewMockDeviceAuthorizationRepository(ctrl)
+	mockClientRepo := mock_domain.NewMockClientRepository(ctrl)
+	mockSessionRepo := mock_domain.NewMockSessionRepository(ctrl)
+	mockTokenServiceInterface := mock_domain.NewMockTokenServiceInterface(ctrl)
+
+	oauthService := services.NewOAuthService(
+		mockTokenRepo,
+		mockAuthCodeRepo,
+		mockDeviceAuthRepo,
+		mockClientRepo,
+		mockUserRepo,
+		mockSessionRepo,
+		mockTokenServiceInterface,
+		"test-issuer",
+	)
+
+	ctx := context.Background()
+	tokenInfo := &domain.TokenInfo{
+		ID:                 "token-id",
+		ClientID:           "client-id",
+		UserID:             "user-id",
+		Scope:              "openid",
+		ExpiresAt:          time.Now().Add(time.Hour),
+		RefreshTokenFamily: "family-123",
+		SessionID:          "session-1",
+	}
+	kicked := &domain.Session{ID: "session-1", IsRevoked: true, ExpiresAt: time.Now().Add(time.Hour)}
+
+	mockTokenRepo.EXPECT().GetRefreshTokenInfo(ctx, "refresh").Return(tokenInfo, nil)
+	mockSessionRepo.EXPECT().GetSessionByID(ctx, "session-1").Return(kicked, nil)
+
+	_, err := oauthService.RefreshToken(ctx, "refresh", "client-id")
+
+	require.Error(t, err)
+	var oauthErr *domain.OAuth2Error
+	require.ErrorAs(t, err, &oauthErr)
+	assert.Equal(t, domain.InvalidGrant, oauthErr.Code)
 }
 
 func TestOAuthService_RefreshToken_InvalidToken(t *testing.T) {
@@ -638,7 +743,9 @@ func TestOAuthService_DirectGrant_Success(t *testing.T) {
 
 	mockClientRepo.EXPECT().ValidateClient(ctx, clientID, clientSecret).Return(client, nil)
 	mockUserRepo.EXPECT().GetUserByEmail(ctx, username).Return(user, nil)
+	mockSessionRepo.EXPECT().ListSessionsByUserID(gomock.Any(), user.ID, gomock.Any()).Return(nil, nil)
 	mockSessionRepo.EXPECT().StoreSession(ctx, gomock.Any()).Return(nil)
+	mockSessionRepo.EXPECT().StoreSessionEvent(gomock.Any(), gomock.Any()).Return(nil)
 	mockTokenServiceInterface.EXPECT().GenerateTokenPair(ctx, clientID, user.ID, "openid", gomock.Any(), gomock.Any()).Return(&api.TokenResponse{
 		AccessToken:  "jwt-access-token",
 		TokenType:    "Bearer",
@@ -740,11 +847,172 @@ func TestOAuthService_ClientCredentials_Success(t *testing.T) {
 		ExpiresAt:  time.Now().Add(time.Hour),
 	}, nil)
 
-	resp, err := oauthService.ClientCredentials(ctx, clientID, clientSecret, "openid")
+	resp, err := oauthService.ClientCredentials(ctx, clientID, clientSecret, "openid", nil)
 
 	require.NoError(t, err)
 	assert.NotNil(t, resp)
 	assert.NotEmpty(t, resp.AccessToken)
+}
+
+func TestOAuthService_ClientCredentials_AudienceSubjectAndGroups(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
+	mockAuthCodeRepo := mock_domain.NewMockAuthorizationCodeRepository(ctrl)
+	mockDeviceAuthRepo := mock_domain.NewMockDeviceAuthorizationRepository(ctrl)
+	mockClientRepo := mock_domain.NewMockClientRepository(ctrl)
+	mockSessionRepo := mock_domain.NewMockSessionRepository(ctrl)
+	mockTokenServiceInterface := mock_domain.NewMockTokenServiceInterface(ctrl)
+
+	oauthService := services.NewOAuthService(
+		mockTokenRepo,
+		mockAuthCodeRepo,
+		mockDeviceAuthRepo,
+		mockClientRepo,
+		mockUserRepo,
+		mockSessionRepo,
+		mockTokenServiceInterface,
+		"test-issuer",
+	)
+
+	ctx := context.Background()
+	const (
+		clientID     = "sa-1234@pilab.iam.sso.dev"
+		clientSecret = "secret"
+	)
+
+	client := &domain.Client{
+		ID:                  clientID,
+		Secret:              clientSecret,
+		AllowedGrantTypes:   []string{"client_credentials"},
+		AllowedScopes:       []string{"openid"},
+		AllowedAudiences:    []string{"kubernetes"},
+		ServiceAccountRoles: []string{"k8s-view"},
+	}
+
+	mockClientRepo.EXPECT().ValidateClient(ctx, clientID, clientSecret).Return(client, nil)
+	mockTokenServiceInterface.EXPECT().
+		CreateToken(gomock.Any(), gomock.Any(), nil).
+		DoAndReturn(func(_ context.Context, opts domain.CreateTokenOptions, _ jwt.Claims) (*domain.Token, error) {
+			assert.Equal(t, clientID, opts.Subject, "client_credentials tokens need a non-empty sub")
+			assert.Empty(t, opts.UserID)
+			assert.Equal(t, []string{"kubernetes"}, opts.Audience)
+			assert.Equal(t, []string{"k8s-view"}, opts.Roles)
+			assert.Equal(t, []string{"k8s-view"}, opts.Groups, "groups fall back to roles when not set")
+			return &domain.Token{
+				ID:         "token-id",
+				TokenValue: "access-token-value",
+				TokenType:  "access_token",
+				ClientID:   clientID,
+				ExpiresAt:  time.Now().Add(time.Hour),
+			}, nil
+		})
+
+	resp, err := oauthService.ClientCredentials(ctx, clientID, clientSecret, "openid", []string{"kubernetes"})
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, "access-token-value", resp.AccessToken)
+}
+
+func TestOAuthService_ClientCredentials_AudienceNotAllowed(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
+	mockAuthCodeRepo := mock_domain.NewMockAuthorizationCodeRepository(ctrl)
+	mockDeviceAuthRepo := mock_domain.NewMockDeviceAuthorizationRepository(ctrl)
+	mockClientRepo := mock_domain.NewMockClientRepository(ctrl)
+	mockSessionRepo := mock_domain.NewMockSessionRepository(ctrl)
+	mockTokenServiceInterface := mock_domain.NewMockTokenServiceInterface(ctrl)
+
+	oauthService := services.NewOAuthService(
+		mockTokenRepo,
+		mockAuthCodeRepo,
+		mockDeviceAuthRepo,
+		mockClientRepo,
+		mockUserRepo,
+		mockSessionRepo,
+		mockTokenServiceInterface,
+		"test-issuer",
+	)
+
+	ctx := context.Background()
+	const (
+		clientID     = "client-id"
+		clientSecret = "secret"
+	)
+
+	// No AllowedAudiences: the client may only mint tokens for itself.
+	client := &domain.Client{
+		ID:                clientID,
+		Secret:            clientSecret,
+		AllowedGrantTypes: []string{"client_credentials"},
+		AllowedScopes:     []string{"openid"},
+	}
+
+	mockClientRepo.EXPECT().ValidateClient(ctx, clientID, clientSecret).Return(client, nil)
+	// CreateToken must not be called.
+
+	resp, err := oauthService.ClientCredentials(ctx, clientID, clientSecret, "openid", []string{"kubernetes"})
+
+	require.Error(t, err)
+	assert.Nil(t, resp)
+
+	var oauthErr *domain.OAuth2Error
+	require.ErrorAs(t, err, &oauthErr)
+	assert.Equal(t, domain.InvalidTarget, oauthErr.Code)
+}
+
+func TestOAuthService_IssueClientCredentialsForClient_SkipsSecretValidation(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
+	mockAuthCodeRepo := mock_domain.NewMockAuthorizationCodeRepository(ctrl)
+	mockDeviceAuthRepo := mock_domain.NewMockDeviceAuthorizationRepository(ctrl)
+	mockClientRepo := mock_domain.NewMockClientRepository(ctrl)
+	mockSessionRepo := mock_domain.NewMockSessionRepository(ctrl)
+	mockTokenServiceInterface := mock_domain.NewMockTokenServiceInterface(ctrl)
+
+	oauthService := services.NewOAuthService(
+		mockTokenRepo,
+		mockAuthCodeRepo,
+		mockDeviceAuthRepo,
+		mockClientRepo,
+		mockUserRepo,
+		mockSessionRepo,
+		mockTokenServiceInterface,
+		"test-issuer",
+	)
+
+	ctx := context.Background()
+	client := &domain.Client{
+		ID:                "sa-private-key-jwt@pilab.iam.sso.dev",
+		AllowedGrantTypes: []string{"client_credentials"},
+		AllowedScopes:     []string{"openid"},
+		AllowedAudiences:  []string{"kubernetes"},
+	}
+
+	// No ValidateClient expectation: the client was authenticated with a
+	// private_key_jwt assertion and has no secret to re-validate.
+	mockTokenServiceInterface.EXPECT().CreateToken(gomock.Any(), gomock.Any(), nil).Return(&domain.Token{
+		ID:         "token-id",
+		TokenValue: "access-token-value",
+		TokenType:  "access_token",
+		ClientID:   client.ID,
+		ExpiresAt:  time.Now().Add(time.Hour),
+	}, nil)
+
+	resp, err := oauthService.IssueClientCredentialsForClient(ctx, client, "openid", []string{"kubernetes"})
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, "access-token-value", resp.AccessToken)
 }
 
 func TestOAuthService_PasswordGrant_Success(t *testing.T) {
@@ -1221,6 +1489,9 @@ func TestOAuthService_GenerateAuthCode_Success(t *testing.T) {
 	}
 
 	mockClientRepo.EXPECT().GetClient(gomock.Any(), clientID).Return(client, nil)
+	mockSessionRepo.EXPECT().ListSessionsByUserID(gomock.Any(), userID, gomock.Any()).Return(nil, nil)
+	mockSessionRepo.EXPECT().StoreSession(gomock.Any(), gomock.Any()).Return(nil)
+	mockSessionRepo.EXPECT().StoreSessionEvent(gomock.Any(), gomock.Any()).Return(nil)
 	mockAuthCodeRepo.EXPECT().SaveAuthCode(gomock.Any(), gomock.Any()).Return(nil)
 
 	code, err := oauthService.GenerateAuthCode(ctx, clientID, userID, redirectURI, scope, "", "", "", time.Now())
@@ -1671,11 +1942,11 @@ func TestOAuthService_TokenExchange_ScopeIntersection(t *testing.T) {
 	clientID := "client-id"
 
 	tests := []struct {
-		name            string
-		requestedScope  string
-		grantedScope    string
-		expectedScope   string
-		expectError     bool
+		name           string
+		requestedScope string
+		grantedScope   string
+		expectedScope  string
+		expectError    bool
 	}{
 		{
 			name:           "requested is subset of granted",

@@ -2,6 +2,7 @@ package services
 
 import (
 	"github.com/pilab-dev/shadow-sso/domain"
+	"github.com/pilab-dev/shadow-sso/port"
 )
 
 // ServiceProvider defines an interface for accessing all service types.
@@ -22,6 +23,8 @@ type ServiceProvider interface {
 	MFAService() MFAService
 	PushMFAService() PushMFAService
 	PushNotificationService() domain.PushNotificationService
+	// Pluggable MFA provider registry (passkeys, WebAuthn, YubiKey, ...)
+	MFARegistry() port.MFARegistry
 
 	// Two-Factor Authentication Service
 	TwoFactorService() TwoFactorService

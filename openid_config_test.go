@@ -28,6 +28,7 @@ func setupMockRepoProvider(ctrl *gomock.Controller) *mock_services.MockRepositor
 	mockRepoProvider.EXPECT().TokenRepository(gomock.Any()).Return(mock_domain.NewMockTokenRepository(ctrl)).AnyTimes()
 	mockRepoProvider.EXPECT().AuthorizationCodeRepository(gomock.Any()).Return(mock_domain.NewMockAuthorizationCodeRepository(ctrl)).AnyTimes()
 	mockRepoProvider.EXPECT().DeviceAuthorizationRepository(gomock.Any()).Return(mock_domain.NewMockDeviceAuthorizationRepository(ctrl)).AnyTimes()
+	// NewSSOServer idempotently bootstraps the built-in "sssoctl" client; report it as already present.
 	mockClientRepo := mock_domain.NewMockClientRepository(ctrl)
 	mockClientRepo.EXPECT().GetClient(gomock.Any(), "sssoctl").Return(&domain.Client{ID: "sssoctl"}, nil).AnyTimes()
 	mockRepoProvider.EXPECT().ClientRepository(gomock.Any()).Return(mockClientRepo).AnyTimes()

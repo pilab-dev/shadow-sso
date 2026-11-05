@@ -11,8 +11,11 @@
    <a href="https://github.com/pilab-dev/shadow-sso/blob/main/LICENSE">
       <img src="https://img.shields.io/github/license/pilab-dev/shadow-sso" alt="License">
    </a>
-   <img src="https://github.com/pilab-dev/shadow-sso/workflows/Build, Test and Coverage/badge.svg" alt="Pipeline Status" title="Pipeline Status">
-   <img src="https://codecov.io/github/pilab-dev/shadow-sso/branch/v1/graph/badge.svg?token=KWTJG0ADS0" alt="Coverage" title="Covrage"/>
+   <a href="https://github.com/pilab-dev/shadow-sso/actions/workflows/ci.yml">
+      <img src="https://github.com/pilab-dev/shadow-sso/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+   <a href="https://goreportcard.com/report/github.com/pilab-dev/shadow-sso">
+      <img src="https://goreportcard.com/badge/github.com/pilab-dev/shadow-sso" alt="Go Report Card"></a>
+   <img src="https://codecov.io/github/pilab-dev/shadow-sso/branch/v1/graph/badge.svg?token=KWTJG0ADS0" alt="Coverage" title="Coverage"/>
 </p>
 
 
@@ -98,7 +101,7 @@ go get github.com/pilab-dev/shadow-sso
 To install the server application and CLI tool:
 ```bash
 go install github.com/pilab-dev/shadow-sso/apps/ssso@latest
-go install github.com/pilab-dev/shadow-sso/apps/ssoctl@latest
+go install github.com/pilab-dev/shadow-sso/apps/sssoctl@latest
 ```
 This will install `ssso` (the server) and `ssoctl` (the CLI) to your `$GOPATH/bin` directory.
 
@@ -330,7 +333,7 @@ mongo_db_name: shadow_sso_db
 
 ###  CLI Tool (`ssoctl`)
 
-The `ssoctl` CLI tool helps manage your Shadow SSO instance. It's located in `apps/ssoctl`.
+The `ssoctl` CLI tool helps manage your Shadow SSO instance. It's located in `apps/sssoctl`.
 
 1.  **Configuration:**
     `ssoctl` manages its configuration, including server endpoints and authentication tokens, in a file typically located at `$HOME/.ssoctl/config.yaml`.
@@ -555,6 +558,16 @@ Shadow SSO supports modern OIDC authentication flows with separate frontend UI i
 - **Offline Support**: Recovery codes for offline authentication scenarios
 
 For detailed frontend integration instructions, see `README_FRONTEND.md`.
+
+### 🖱️ One Tap & Silent Login SDK
+
+The official JavaScript/TypeScript helper for silent login and the One Tap
+corner card lives in
+[`pilab-cloud/shadow-sso`](https://github.com/pilab-cloud/shadow-sso)
+(`@pilab/shadow-sso` on npm). It drives the server's
+`/oauth2/silent-authorize` endpoint (including `mode=session`) and validates
+the `sso-silent-result` postMessage and `state`, so browser clients should use
+that package instead of hand-rolling the iframe bridge.
 
 ## 🧩 Repository Interfaces
 

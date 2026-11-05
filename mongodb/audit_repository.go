@@ -2,6 +2,7 @@ package mongodb
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/pilab-dev/shadow-sso/domain"
@@ -12,6 +13,15 @@ import (
 )
 
 const AuditEventsCollection = "audit_events"
+
+// auditSortFields maps the sort keys accepted by AuditLogFilter.SortBy to the
+// underlying MongoDB field names. Only these keys are honored; buildSort
+// silently falls back to the default newest-first ordering for anything else.
+var auditSortFields = map[string]string{
+	"created_at": "timestamp",
+	"action":     "action",
+	"actor":      "user",
+}
 
 // AuditRepository implements domain.AuditLogRepository backed by MongoDB.
 type AuditRepository struct {
@@ -41,6 +51,10 @@ func (r *AuditRepository) createIndexes(ctx context.Context) error {
 		{
 			Keys: bson.D{{Key: "action", Value: 1}, {Key: "timestamp", Value: -1}},
 		},
+		{
+			// Global followers sort by timestamp with no user/action filter.
+			Keys: bson.D{{Key: "timestamp", Value: 1}},
+		},
 	}
 	_, err := r.audit.Indexes().CreateMany(ctx, indexModels)
 	return err
@@ -69,7 +83,7 @@ func (r *AuditRepository) List(ctx context.Context, filter domain.AuditLogFilter
 	}
 
 	findOpts := options.Find().
-		SetSort(bson.D{{Key: "timestamp", Value: -1}}).
+		SetSort(r.buildSort(filter)).
 		SetSkip(int64(offset)).
 		SetLimit(int64(limit))
 
@@ -86,8 +100,60 @@ func (r *AuditRepository) List(ctx context.Context, filter domain.AuditLogFilter
 	return events, nil
 }
 
+// buildSort translates AuditLogFilter.SortBy/SortDir into a MongoDB sort
+// document. Only the allowlisted keys in auditSortFields are honored; an
+// empty or unknown SortBy falls back to timestamp desc (newest-first) so
+// existing callers keep their ordering. SortDir accepts "asc"/"desc" and
+// defaults to asc for known fields.
+func (r *AuditRepository) buildSort(filter domain.AuditLogFilter) bson.D {
+	field, ok := auditSortFields[filter.SortBy]
+	if !ok {
+		return bson.D{{Key: "timestamp", Value: -1}}
+	}
+	dir := 1
+	if strings.ToLower(filter.SortDir) == "desc" {
+		dir = -1
+	}
+	return bson.D{{Key: field, Value: dir}}
+}
+
 func (r *AuditRepository) Count(ctx context.Context, filter domain.AuditLogFilter) (int64, error) {
 	return r.audit.CountDocuments(ctx, r.buildFilter(filter))
+}
+
+// ListAfter returns events at or after `after` ordered oldest-first. The
+// inclusive bound is intentional: the follower de-duplicates by event ID, and
+// an inclusive cursor cannot drop an event whose timestamp ties the cursor.
+func (r *AuditRepository) ListAfter(ctx context.Context, filter domain.AuditLogFilter, after time.Time, limit int) ([]*domain.AuditLog, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 200
+	}
+	query := r.buildFilter(filter)
+	bound := after
+	if filter.From != nil && filter.From.After(bound) {
+		bound = *filter.From
+	}
+	if ts, ok := query["timestamp"].(bson.M); ok {
+		ts["$gte"] = bound
+	} else {
+		query["timestamp"] = bson.M{"$gte": bound}
+	}
+
+	findOpts := options.Find().
+		SetSort(bson.D{{Key: "timestamp", Value: 1}}).
+		SetLimit(int64(limit))
+
+	cursor, err := r.audit.Find(ctx, query, findOpts)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var events []*domain.AuditLog
+	if err := cursor.All(ctx, &events); err != nil {
+		return nil, err
+	}
+	return events, nil
 }
 
 func (r *AuditRepository) buildFilter(filter domain.AuditLogFilter) bson.M {

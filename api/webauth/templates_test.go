@@ -47,15 +47,15 @@ func TestLoginTemplate(t *testing.T) {
 
 	// Test data - use PascalCase for login template, lowercase for base template
 	data := map[string]interface{}{
-		"BrandName":  "Test Org",
-		"BrandLogo":  "https://example.com/logo.png",
-		"BrandColor": "#007bff",
+		"BrandName":   "Test Org",
+		"BrandLogo":   "https://example.com/logo.png",
+		"BrandColor":  "#007bff",
 		"brand_name":  "Test Org",
 		"brand_logo":  "https://example.com/logo.png",
 		"brand_color": "#007bff",
-		"FlowID":     "test-flow-123",
-		"CSRFToken":  "test-csrf-token",
-		"Error":      "Invalid credentials",
+		"FlowID":      "test-flow-123",
+		"CSRFToken":   "test-csrf-token",
+		"Error":       "Invalid credentials",
 		"Providers": []map[string]string{
 			{"Name": "google"},
 			{"Name": "github"},
@@ -95,16 +95,16 @@ func TestConsentTemplate(t *testing.T) {
 
 	// Test data - use PascalCase for consent template, lowercase for base template
 	data := map[string]interface{}{
-		"BrandName":        "Test Org",
-		"BrandLogo":        "https://example.com/logo.png",
-		"BrandColor":       "#007bff",
-		"brand_name":       "Test Org",
-		"brand_logo":       "https://example.com/logo.png",
-		"brand_color":      "#007bff",
-		"FlowID":           "test-flow-123",
-		"CSRFToken":        "test-csrf-token",
-		"ClientName":       "My App",
-		"ClientLogo":       "https://example.com/app-logo.png",
+		"BrandName":         "Test Org",
+		"BrandLogo":         "https://example.com/logo.png",
+		"BrandColor":        "#007bff",
+		"brand_name":        "Test Org",
+		"brand_logo":        "https://example.com/logo.png",
+		"brand_color":       "#007bff",
+		"FlowID":            "test-flow-123",
+		"CSRFToken":         "test-csrf-token",
+		"ClientName":        "My App",
+		"ClientLogo":        "https://example.com/app-logo.png",
 		"ClientDescription": "A sample application",
 		"Scopes": []map[string]string{
 			{"Description": "Read your profile"},
@@ -149,15 +149,15 @@ func TestMFATemplate(t *testing.T) {
 
 	// Test data - use PascalCase for MFA template, lowercase for base template
 	data := map[string]interface{}{
-		"BrandName":  "Test Org",
-		"BrandLogo":  "https://example.com/logo.png",
-		"BrandColor": "#007bff",
+		"BrandName":   "Test Org",
+		"BrandLogo":   "https://example.com/logo.png",
+		"BrandColor":  "#007bff",
 		"brand_name":  "Test Org",
 		"brand_logo":  "https://example.com/logo.png",
 		"brand_color": "#007bff",
-		"FlowID":     "test-flow-123",
-		"CSRFToken":  "test-csrf-token",
-		"Error":      "Invalid code",
+		"FlowID":      "test-flow-123",
+		"CSRFToken":   "test-csrf-token",
+		"Error":       "Invalid code",
 	}
 
 	var buf bytes.Buffer
@@ -196,16 +196,16 @@ func TestErrorTemplate(t *testing.T) {
 
 	// Test data - use PascalCase for error template, lowercase for base template
 	data := map[string]interface{}{
-		"BrandName":  "Test Org",
-		"BrandLogo":  "https://example.com/logo.png",
-		"BrandColor": "#007bff",
+		"BrandName":   "Test Org",
+		"BrandLogo":   "https://example.com/logo.png",
+		"BrandColor":  "#007bff",
 		"brand_name":  "Test Org",
 		"brand_logo":  "https://example.com/logo.png",
 		"brand_color": "#007bff",
-		"Message":    "Access Denied",
-		"Detail":     "You don't have permission to access this resource.",
-		"LoginURL":   "/login",
-		"RequestID":  "req-123-abc",
+		"Message":     "Access Denied",
+		"Detail":      "You don't have permission to access this resource.",
+		"LoginURL":    "/login",
+		"RequestID":   "req-123-abc",
 	}
 
 	var buf bytes.Buffer

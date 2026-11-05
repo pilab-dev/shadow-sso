@@ -22,9 +22,15 @@ const (
 
 // ClientFilter defines filtering options for listing clients
 type ClientFilter struct {
-	Type     ClientType
-	IsActive bool
-	Search   string
+	Type         ClientType
+	IsActive     bool
+	Search       string
+	ClientID     string
+	ClientName   string
+	Enabled      *bool
+	PublicClient *bool
+	SortBy       string
+	SortDir      string
 }
 
 // ClientRepository defines the interface for client storage and retrieval
@@ -44,6 +50,11 @@ type ClientRepository interface {
 	// ListClients returns all clients, with optional filtering
 	ListClients(ctx context.Context, filter ClientFilter) ([]*Client, error)
 
+	// ListClientsPage returns a filtered, sorted page of clients starting at
+	// skip with at most limit rows, plus the total number of clients matching
+	// the filter.
+	ListClientsPage(ctx context.Context, filter ClientFilter, skip, limit int) ([]*Client, int64, error)
+
 	// ValidateClient validates client credentials
 	ValidateClient(ctx context.Context, clientID, clientSecret string) (*Client, error)
 }
@@ -60,7 +71,8 @@ type Client struct {
 	RedirectURIs      []string   `bson:"redirect_uris"                       json:"redirect_ur_is,omitempty"`
 	PostLogoutURIs    []string   `bson:"post_logout_redirect_uris,omitempty" json:"post_logout_uris,omitempty"`
 	BackchannelLogoutURI string   `bson:"backchannel_logout_uri,omitempty"    json:"backchannel_logout_uri,omitempty"`
-	AllowedScopes     []string   `bson:"allowed_scopes"                      json:"allowed_scopes,omitempty"`
+	AllowedScopes              []string `bson:"allowed_scopes"                      json:"allowed_scopes,omitempty"`
+	AllowedAuthorizationDetails []string `bson:"allowed_authorization_details"        json:"allowed_authorization_details,omitempty"`
 	AllowedGrantTypes []string   `bson:"allowed_grant_types"                 json:"allowed_grant_types,omitempty"`
 	TokenEndpointAuth string     `bson:"token_endpoint_auth_method"          json:"token_endpoint_auth,omitempty"`
 	JWKS              *JWKS      `bson:"jwks,omitempty"                      json:"jwks,omitempty"`
@@ -80,6 +92,19 @@ type Client struct {
 	// ServiceAccountRoles defines the roles assigned to tokens issued via the
 	// client_credentials grant for this client. Empty means no roles.
 	ServiceAccountRoles []string `bson:"service_account_roles,omitempty"      json:"service_account_roles,omitempty"`
+
+	// ServiceAccountGroups defines the `groups` claim emitted on tokens issued
+	// via the client_credentials grant. Kubernetes consumes this claim (via
+	// --oidc-groups-claim) to map RBAC bindings. When empty, ServiceAccountRoles
+	// is used so a single role list can drive both claims.
+	ServiceAccountGroups []string `bson:"service_account_groups,omitempty"     json:"service_account_groups,omitempty"`
+
+	// AllowedAudiences lists the `aud` values this client may request with the
+	// RFC 8707 audience/resource parameters. The client's own ID is always
+	// allowed. Empty means this client may only mint tokens for itself, which
+	// keeps a service account from requesting an audience (e.g. "kubernetes")
+	// it was not provisioned for.
+	AllowedAudiences []string `bson:"allowed_audiences,omitempty"           json:"allowed_audiences,omitempty"`
 
 	// SigningKeyID optionally points at a dedicated RealmKey.ID used to sign
 	// tokens issued for this client. Empty means "use the realm-default

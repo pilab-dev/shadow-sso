@@ -34,7 +34,7 @@ type accountTestEnv struct {
 	sessionStore *oidcflow.InMemoryUserSessionStore
 }
 
-func setupAccountTest(t *testing.T) *accountTestEnv {
+func setupAccountsTest(t *testing.T) *accountTestEnv {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	ctrl := gomock.NewController(t)
@@ -104,7 +104,7 @@ func accountPickerFlow() *domain.LoginFlowState {
 }
 
 func TestLoginPage_ShowsAccountChooser(t *testing.T) {
-	env := setupAccountTest(t)
+	env := setupAccountsTest(t)
 	defer env.ctrl.Finish()
 
 	env.flowStore.EXPECT().GetFlow(gomock.Any(), "flow-1").Return(accountPickerFlow(), nil)
@@ -153,7 +153,7 @@ func TestLoginPage_ShowsAccountChooser(t *testing.T) {
 }
 
 func TestLoginPage_FormForcesCredentialForm(t *testing.T) {
-	env := setupAccountTest(t)
+	env := setupAccountsTest(t)
 	defer env.ctrl.Finish()
 
 	env.flowStore.EXPECT().GetFlow(gomock.Any(), "flow-1").Return(accountPickerFlow(), nil)
@@ -179,10 +179,15 @@ func TestLoginPage_FormForcesCredentialForm(t *testing.T) {
 }
 
 func TestSelectAccount_CurrentOPSessionCompletesFlow(t *testing.T) {
-	env := setupAccountTest(t)
+	env := setupAccountsTest(t)
 	defer env.ctrl.Finish()
 
 	env.flowStore.EXPECT().GetFlow(gomock.Any(), "flow-1").Return(accountPickerFlow(), nil)
+	env.userRepo.EXPECT().GetUserByID(gomock.Any(), "user-1").Return(&domain.User{
+		ID:     "user-1",
+		Email:  "user@example.com",
+		Status: domain.UserStatusActive,
+	}, nil)
 	env.flowStore.EXPECT().UpdateFlow(gomock.Any(), "flow-1", gomock.Any()).DoAndReturn(
 		func(_ context.Context, _ string, state *domain.LoginFlowState) error {
 			require.Equal(t, "user-1", state.UserID)
@@ -214,10 +219,15 @@ func TestSelectAccount_CurrentOPSessionCompletesFlow(t *testing.T) {
 }
 
 func TestSelectAccount_SwitchesToAnotherSignedInAccount(t *testing.T) {
-	env := setupAccountTest(t)
+	env := setupAccountsTest(t)
 	defer env.ctrl.Finish()
 
 	env.flowStore.EXPECT().GetFlow(gomock.Any(), "flow-1").Return(accountPickerFlow(), nil)
+	env.userRepo.EXPECT().GetUserByID(gomock.Any(), "user-2").Return(&domain.User{
+		ID:     "user-2",
+		Email:  "user@example.com",
+		Status: domain.UserStatusActive,
+	}, nil)
 	env.flowStore.EXPECT().UpdateFlow(gomock.Any(), "flow-1", gomock.Any()).DoAndReturn(
 		func(_ context.Context, _ string, state *domain.LoginFlowState) error {
 			require.Equal(t, "user-2", state.UserID)
@@ -268,7 +278,7 @@ func TestSelectAccount_SwitchesToAnotherSignedInAccount(t *testing.T) {
 }
 
 func TestSelectAccount_RequiresPasswordForOtherAccount(t *testing.T) {
-	env := setupAccountTest(t)
+	env := setupAccountsTest(t)
 	defer env.ctrl.Finish()
 
 	env.flowStore.EXPECT().GetFlow(gomock.Any(), "flow-1").Return(accountPickerFlow(), nil)
@@ -292,7 +302,7 @@ func TestSelectAccount_RequiresPasswordForOtherAccount(t *testing.T) {
 }
 
 func TestSelectAccount_PromptLoginAlwaysRequiresPassword(t *testing.T) {
-	env := setupAccountTest(t)
+	env := setupAccountsTest(t)
 	defer env.ctrl.Finish()
 
 	flow := accountPickerFlow()
@@ -320,7 +330,7 @@ func TestSelectAccount_PromptLoginAlwaysRequiresPassword(t *testing.T) {
 }
 
 func TestLoginSubmit_MergesAccountHistory(t *testing.T) {
-	env := setupAccountTest(t)
+	env := setupAccountsTest(t)
 	defer env.ctrl.Finish()
 
 	env.flowStore.EXPECT().GetFlow(gomock.Any(), "flow-1").Return(accountPickerFlow(), nil)

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
 	"github.com/pilab-dev/shadow-sso/graphql"
 	"github.com/pilab-dev/shadow-sso/internal/audit"
+	"github.com/pilab-dev/shadow-sso/internal/browserpolicy"
 	"github.com/pilab-dev/shadow-sso/internal/notifications"
 	"github.com/pilab-dev/shadow-sso/internal/oidcflow"
 	"github.com/pilab-dev/shadow-sso/internal/oidclogout"
@@ -266,13 +268,17 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 
 	// Setup Gin server
 	router := gin.New()
-	router.Use(gin.Recovery())
 	router.Use(middleware.ZerologLogger())
 
 	// Apply extra middlewares (CORS, request ID, tracing, etc.)
 	for _, m := range opts.ExtraMiddlewares {
 		router.Use(m)
 	}
+
+	// Enterprise browser baseline. It only inspects interactive login paths,
+	// so API and token endpoints keep working for non-browser clients.
+	browserPolicyProvider := browserpolicy.NewProvider(repoProvider.RealmSettingsRepository(context.Background()))
+	router.Use(browserPolicyProvider.Middleware())
 
 	if err := webauth.LoadTemplates(router); err != nil {
 		return nil, fmt.Errorf("failed to load webauth templates: %w", err)
@@ -307,6 +313,32 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		authFlowRepo = mongoRp.AuthenticationFlowRepository(context.Background())
 	}
 
+	webauthEmailService := newConfiguredEmailService(opts.AppConfig)
+	// Only hand the mail provider to the web UI when it can actually send; otherwise flows that
+	// depend on email (forgot password, VERIFY_EMAIL) are reported as unavailable instead of
+	// failing silently or trapping users on a page that can never complete.
+	var webauthMailer domain.EmailService
+	if opts.AppConfig != nil && emailServiceConfigured(opts.AppConfig) {
+		webauthMailer = webauthEmailService
+	}
+	webauthMFAService := domain.NewMFAService(
+		repoProvider.UserRepository(context.Background()),
+		webauthEmailService,
+		nil,
+	)
+
+	// Passkeys need a relying party derived from the public issuer URL; without a valid one the
+	// feature simply stays off.
+	rpName := brandOrgName
+	if rpName == "" {
+		rpName = "Shadow SSO"
+	}
+	passkeyRP, rpErr := webauth.NewWebAuthn(opts.Config.Issuer, rpName)
+	if rpErr != nil {
+		log.Warn().Err(rpErr).Msg("passkeys disabled: could not configure WebAuthn relying party")
+		passkeyRP = nil
+	}
+
 	webauthAPI := webauth.New(&webauth.Options{
 		UserRepo:          repoProvider.UserRepository(context.Background()),
 		PasswordHasher:    passwordHasher,
@@ -322,23 +354,22 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		AuthFlowRepo:      authFlowRepo,
 		RealmSettingsRepo: repoProvider.RealmSettingsRepository(context.Background()),
 		DeviceAuthRepo:    repoProvider.DeviceAuthorizationRepository(context.Background()),
-		MFAService:        serviceProvider.MFAService(),
+		MFAService:        webauthMFAService,
+		EmailService:      webauthMailer,
+		PublicBaseURL:     opts.Config.Issuer,
+		SessionRepo:       repoProvider.SessionRepository(context.Background()),
+		WebAuthn:          passkeyRP,
 	})
 
-	router.GET("/", webauthAPI.LandingPageHandler)
-	router.GET("/login", webauthAPI.LoginPageHandler)
-	router.POST("/login", webauthAPI.LoginSubmitHandler)
-	router.POST("/login/select", webauthAPI.SelectAccountHandler)
-	router.GET("/login/:provider", webauthAPI.SocialLoginHandler)
-	router.GET("/consent", webauthAPI.ConsentPageHandler)
-	router.POST("/consent", webauthAPI.ConsentSubmitHandler)
-	router.GET("/oauth2/device/verify", webauthAPI.DeviceVerificationPageHandler)
-	router.POST("/oauth2/device/verify", webauthAPI.DeviceVerificationSubmitHandler)
-	router.POST("/mfa", webauthAPI.MFASubmitHandler)
-	router.GET("/mfa/enroll", webauthAPI.MFAEnrollPageHandler)
-	router.POST("/mfa/enroll", webauthAPI.MFAEnrollSubmitHandler)
-	router.POST("/mfa/enroll/complete", webauthAPI.MFAEnrollCompleteHandler)
-	router.GET("/api/session", webauthAPI.SessionHandler)
+	// Styled recovery for panics.
+	router.Use(gin.CustomRecovery(func(c *gin.Context, recovered any) {
+		log.Error().Any("panic", recovered).Msg("panic recovered")
+		webauthAPI.InternalServerErrorHandler(c)
+	}))
+
+	// WebAuth portal routes (login, registration, account console, MFA, ...).
+	// These are product/portal routes, not OIDC protocol endpoints.
+	webauthAPI.RegisterRoutes(router)
 	// ---------- Connect-RPC handlers ----------
 	connectCtx, connectSpan := telemetry.StartSpan(ctx, "shadow-sso", "NewSSOServer.connectrpc")
 	defer connectSpan.End()
@@ -352,7 +383,7 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 	}
 
 	interceptors := connect.WithInterceptors(
-		otelConnectInterceptor, authInterceptor, authzInterceptor)
+		otelConnectInterceptor, middleware.RequestInfoInterceptor(), authInterceptor, authzInterceptor)
 
 	// Auth Service — used by frontend login
 	authServer := services.NewAuthServer(
@@ -364,6 +395,11 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		serviceProvider.OAuthService(),
 		serviceProvider.ClientService(),
 		services.WithAuthRealmSettings(opts.RepositoryProvider.RealmSettingsRepository(ctx)),
+		services.WithAuthTokenRepository(opts.RepositoryProvider.TokenRepository(connectCtx)),
+		services.WithAuthBrowserPolicy(browserPolicyProvider),
+		services.WithAuthGeoResolver(serviceProvider.GeoResolver()),
+		services.WithAuthSessionNotifier(serviceProvider.SessionNotifier()),
+		services.WithIdentity(serviceProvider.IdentityService()),
 	)
 	authPath, authHandler := ssov1connect.NewAuthServiceHandler(authServer, interceptors)
 	router.Any(authPath+"*action", gin.WrapH(authHandler))
@@ -444,6 +480,25 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 	auditPath, auditHandler := ssov1connect.NewAuditServiceHandler(auditServer, interceptors)
 	router.Any(auditPath+"*action", gin.WrapH(auditHandler))
 
+	// Token Service — token/device traceability and targeted revocation
+	tokenAdminServer := services.NewTokenAdminServer(
+		repoProvider.TokenRepository(connectCtx),
+		repoProvider.SessionRepository(connectCtx),
+	)
+	tokenPath, tokenHandler := ssov1connect.NewTokenServiceHandler(tokenAdminServer, interceptors)
+	router.Any(tokenPath+"*action", gin.WrapH(tokenHandler))
+
+	// Browser Policy Service — enterprise browser baseline
+	browserPolicyServer := services.NewBrowserPolicyServer(
+		repoProvider.RealmSettingsRepository(connectCtx),
+		browserPolicyProvider,
+	)
+	browserPolicyPath, browserPolicyHandler := ssov1connect.NewBrowserPolicyServiceHandler(browserPolicyServer, interceptors)
+	router.Any(browserPolicyPath+"*action", gin.WrapH(browserPolicyHandler))
+
+	// Emit TokenExpired audit events once each token crosses expires_at.
+	services.StartTokenExpirySweeper(repoProvider.TokenRepository(connectCtx))
+
 	connectSpan.End()
 	log.Info().Msg("Connect-RPC handlers registered successfully")
 	// ---------- End Connect-RPC handlers ----------
@@ -476,15 +531,11 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		clientScopeRepo := mongoRp.ClientScopeRepository(gqlCtx)
 		realmSettingsRepo := mongoRp.RealmSettingsRepository(gqlCtx)
 
+		// Nil unless a Resend key and from-address are configured, so the admin mutations report
+		// "email delivery is not configured" instead of failing deep inside the provider.
 		var emailService domain.EmailService
-		if opts.AppConfig != nil {
-			emailService = notifications.NewResendEmailService(
-				opts.AppConfig.ResendAPIKey,
-				opts.AppConfig.FromEmail,
-				opts.AppConfig.NextPublicBaseURL,
-			)
-		} else {
-			emailService = notifications.NewResendEmailService("", "", "")
+		if opts.AppConfig != nil && emailServiceConfigured(opts.AppConfig) {
+			emailService = newConfiguredEmailService(opts.AppConfig)
 		}
 
 		resolver := &graphql.Resolver{
@@ -493,6 +544,7 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 			UserAttributeMapperRepo: userAttrMapperRepo,
 			ClientRepo:              clientRepo,
 			SessionRepo:             sessionRepo,
+			TokenRepo:               repoProvider.TokenRepository(gqlCtx),
 			IdPRepo:                 idpRepo,
 			GroupRepo:               groupRepo,
 			RoleRepo:                roleRepo,
@@ -502,6 +554,7 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 			RealmSettingsRepo:       realmSettingsRepo,
 			RealmKeysRepo:           realmKeysRepo,
 			EmailService:            emailService,
+			PublicBaseURL:           strings.TrimRight(opts.Config.Issuer, "/"),
 			PasswordHasher:          passwordHasher,
 			AuditLogRepo:            auditRepo,
 			FederatedIdentityRepo:   fedIDRepo,
@@ -516,6 +569,10 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		router.POST("/graphql", gin.WrapH(graphqlHandler))
 		router.GET("/sandbox", gin.WrapH(graphql.SandboxHandler("/graphql")))
 	}
+
+	// Styled fallbacks for unmatched routes and methods.
+	router.NoRoute(webauthAPI.NotFoundHandler)
+	router.NoMethod(webauthAPI.MethodNotAllowedHandler)
 
 	return router, nil
 }
@@ -546,13 +603,15 @@ func seedRealmSettingsFromConfig(repoProvider services.RepositoryProvider, cfg *
 	}
 
 	settings := &domain.RealmSettings{
-		Realm:               "master",
-		DisplayName:         "Shadow SSO",
-		Enabled:             true,
-		BruteForceProtected: true,
-		SSLRequired:         "external",
-		AccessTokenLifespan: accessTokenLifespan,
-		AccessCodeLifespan:  accessCodeLifespan,
+		Realm:                "master",
+		DisplayName:          "Shadow SSO",
+		Enabled:              true,
+		BruteForceProtected:  true,
+		SSLRequired:          "external",
+		RegistrationAllowed:  true,
+		ResetPasswordAllowed: true,
+		AccessTokenLifespan:  accessTokenLifespan,
+		AccessCodeLifespan:   accessCodeLifespan,
 	}
 
 	if _, err := repo.SeedRealmSettingsIfEmpty(ctx, settings); err != nil {
@@ -672,4 +731,38 @@ func IsEndpointEnabled(c *api.OpenIDProviderConfig, endpoint string) bool {
 	default:
 		return false
 	}
+}
+
+// emailServiceConfigured reports whether any outbound mail transport is
+// configured (SMTP/PiMail takes precedence over Resend).
+func emailServiceConfigured(cfg *config.Config) bool {
+	if cfg == nil {
+		return false
+	}
+	if cfg.SMTPHost != "" && cfg.FromEmail != "" {
+		return true
+	}
+	return cfg.ResendAPIKey != "" && cfg.FromEmail != ""
+}
+
+// newConfiguredEmailService builds the configured email transport. SMTP is
+// used when SMTPHost is set (point it at PiMail's SMTP listener); otherwise
+// Resend is used.
+func newConfiguredEmailService(cfg *config.Config) domain.EmailService {
+	if cfg == nil {
+		return notifications.NewResendEmailService("", "", "")
+	}
+	if cfg.SMTPHost != "" {
+		port := cfg.SMTPPort
+		if port == "" {
+			port = "587"
+		}
+		return notifications.NewSMTPEmailService(
+			cfg.SMTPHost, port, cfg.SMTPUsername, cfg.SMTPPassword,
+			cfg.FromEmail, cfg.NextPublicBaseURL,
+		)
+	}
+	return notifications.NewResendEmailService(
+		cfg.ResendAPIKey, cfg.FromEmail, cfg.NextPublicBaseURL,
+	)
 }

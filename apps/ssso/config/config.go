@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/pilab-dev/shadow-sso/api"
+	"github.com/pilab-dev/shadow-sso/internal/identity"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/viper"
 )
@@ -43,6 +44,14 @@ type Config struct {
 	ResendAPIKey      string `mapstructure:"resend_api_key"`
 	FromEmail         string `mapstructure:"from_email"`
 	NextPublicBaseURL string `mapstructure:"next_public_base_url"`
+
+	// SMTP / PiMail submission configuration. When SMTPHost is set the SMTP
+	// service is used instead of Resend. Point it at PiMail's SMTP listener to
+	// route SSO mail through PiMail.
+	SMTPHost     string `mapstructure:"smtp_host"`
+	SMTPPort     string `mapstructure:"smtp_port"`
+	SMTPUsername string `mapstructure:"smtp_username"`
+	SMTPPassword string `mapstructure:"smtp_password"`
 
 	// Push notification service configuration
 	FirebaseProjectID       string `mapstructure:"firebase_project_id"`
@@ -81,8 +90,16 @@ type Config struct {
 	BootstrapToken string `mapstructure:"bootstrap_token"`
 
 	// Rate limiting
-	RateLimitMaxAttempts     int           `mapstructure:"rate_limit_max_attempts"`
+	RateLimitMaxAttempts int `mapstructure:"rate_limit_max_attempts"`
+
+	// GeoIP database for session location/risk (MaxMind GeoLite2/GeoIP2 .mmdb)
+	GeoIPDatabasePath        string        `mapstructure:"geoip_database_path"`
+	GeoIPASNDatabasePath     string        `mapstructure:"geoip_asn_database_path"`
 	RateLimitLockoutDuration time.Duration `mapstructure:"rate_limit_lockout_duration"`
+
+	// SessionStrictValidation rejects access tokens whose session has been
+	// revoked or has expired, instead of only relying on token expiry.
+	SessionStrictValidation bool `mapstructure:"session_strict_validation"`
 
 	// CORS configuration
 	AllowedOrigins []string `mapstructure:"allowed_origins"`
@@ -92,6 +109,23 @@ type Config struct {
 	// start when critical secrets are missing/invalid. Intended for local
 	// development only — never set this in production.
 	AllowInsecureDefaults bool `mapstructure:"allow_insecure_defaults"`
+
+	// IdentitySource says where user identity comes from: "local" (MongoDB,
+	// the default for standalone use) or "pirectory" (PiRectory, which owns
+	// the password, the attributes and the groups). See
+	// docs/architecture/16-shadow-sso-identity-source.md in the PiRectory
+	// repository.
+	IdentitySource string `mapstructure:"identity_source"`
+
+	// PiRectory directory settings, used when IdentitySource is "pirectory".
+	// The certificate must carry the `shadowsso` service identity, which is
+	// also the name its ActorContext header is signed with.
+	DirectoryAddr         string        `mapstructure:"directory_addr"`
+	DirectoryCAFile       string        `mapstructure:"directory_ca_file"`
+	DirectoryCertFile     string        `mapstructure:"directory_cert_file"`
+	DirectoryKeyFile      string        `mapstructure:"directory_key_file"`
+	DirectoryActorKeyFile string        `mapstructure:"directory_actor_key_file"`
+	DirectoryTimeout      time.Duration `mapstructure:"directory_timeout"`
 }
 
 // StorageType defines the type of storage backend to use.
@@ -240,6 +274,13 @@ func LoadConfig() (config Config, err error) {
 	// SSSO_ALLOWED_ORIGINS is explicitly set. Local dev sets "*" via .env.dev.
 	viper.SetDefault("allowed_origins", []string{})
 	viper.SetDefault("allow_insecure_defaults", false)
+	viper.SetDefault("identity_source", identity.SourceLocal)
+	viper.SetDefault("directory_addr", "")
+	viper.SetDefault("directory_ca_file", "")
+	viper.SetDefault("directory_cert_file", "")
+	viper.SetDefault("directory_key_file", "")
+	viper.SetDefault("directory_actor_key_file", "")
+	viper.SetDefault("directory_timeout", "5s")
 
 	// Explicitly bind env vars so viper.Unmarshal picks them up
 	_ = viper.BindEnv("mgmt_http_addr")
@@ -259,6 +300,13 @@ func LoadConfig() (config Config, err error) {
 	viper.BindEnv("tracing_otlp_endpoint")
 	viper.BindEnv("allowed_origins")
 	viper.BindEnv("allow_insecure_defaults")
+	viper.BindEnv("identity_source")
+	viper.BindEnv("directory_addr")
+	viper.BindEnv("directory_ca_file")
+	viper.BindEnv("directory_cert_file")
+	viper.BindEnv("directory_key_file")
+	viper.BindEnv("directory_actor_key_file")
+	viper.BindEnv("directory_timeout")
 
 	if errRead := viper.ReadInConfig(); errRead != nil {
 		if _, ok := errRead.(viper.ConfigFileNotFoundError); ok {
@@ -299,6 +347,12 @@ func LoadConfig() (config Config, err error) {
 		log.Warn().Msg("No SSSO_COOKIE_SIGNING_SECRET set — auto-generated ephemeral secret for dev session (SSSO_ALLOW_INSECURE_DEFAULTS=true)")
 	}
 
+	if !config.AllowInsecureDefaults {
+		if err := rejectWeakSecrets(config); err != nil {
+			return Config{}, err
+		}
+	}
+
 	// Viper doesn't automatically convert string to custom types like StorageType
 	// when unmarshalling from environment variables that were not in the config file.
 	// We need to handle StorageBackend specifically if it comes from env var directly.
@@ -330,4 +384,30 @@ func LoadConfig() (config Config, err error) {
 	// The current setup with AutomaticEnv and Unmarshal should work if env vars are SSSO_DTS_CONNECT_TIMEOUT=5s
 
 	return
+}
+
+// knownWeakSecrets are example/default values shipped in compose files, Helm values and docs.
+var knownWeakSecrets = map[string]struct{}{
+	"admin123":                         {},
+	"changeme":                         {},
+	"changemeStrongPassword123!":       {},
+	"dev-encryption-key-32-chars-long": {},
+	"test-encryption-key-32bytes!!!!!": {},
+}
+
+// rejectWeakSecrets fails startup when a credential still holds a well-known default value.
+// SSSO_ALLOW_INSECURE_DEFAULTS=true (local development only) bypasses the check.
+func rejectWeakSecrets(c Config) error {
+	checks := map[string]string{
+		"initial_admin_password":      c.InitialAdminPassword,
+		"initial_admin_client_secret": c.InitialAdminClientSecret,
+		"config_encryption_key":       c.ConfigEncryptionKey,
+		"cookie_signing_secret":       c.CookieSigningSecret,
+	}
+	for name, v := range checks {
+		if _, weak := knownWeakSecrets[v]; weak {
+			return fmt.Errorf("FATAL: %s is set to a well-known default value; choose a strong secret (or set SSSO_ALLOW_INSECURE_DEFAULTS=true for local development only)", name)
+		}
+	}
+	return nil
 }

@@ -20,6 +20,23 @@ const (
 	UserStatusPending UserStatus = "PENDING_ACTIVATION"
 )
 
+// The identity sources a User record can come from.
+const (
+	// SourceLocal is MongoDB: the record holds the identity, the SSO state
+	// and the password hash. It is the default for standalone ShadowSSO.
+	SourceLocal = "local"
+	// SourceDirectory is an external directory that owns the password and the
+	// attributes; PiRectory is the first one, and names itself `pirectory`.
+	// Such a record holds only SSO-owned state, keyed by DirectoryID.
+	SourceDirectory = "pirectory"
+)
+
+// IsDirectory reports whether the user's identity is owned by an external
+// directory, in which case ShadowSSO must not store or change its password.
+func (u *User) IsDirectory() bool {
+	return u != nil && u.Source != "" && u.Source != SourceLocal
+}
+
 // MfaMethodType defines the type of MFA method.
 type MfaMethodType string
 
@@ -28,18 +45,23 @@ const (
 	MfaMethodTypeSMS      MfaMethodType = "SMS"
 	MfaMethodTypeEmail    MfaMethodType = "EMAIL"
 	MfaMethodTypeWebAuthn MfaMethodType = "WEBAUTHN"
+	MfaMethodTypeYubico   MfaMethodType = "YUBICO"
 	MfaMethodTypePush     MfaMethodType = "PUSH"
 	MfaMethodTypeNone     MfaMethodType = "NONE"
 )
 
 // MfaMethod represents an MFA method for a user.
 type MfaMethod struct {
-	ID        string        `bson:"id" json:"id"`
-	Type      MfaMethodType `bson:"type" json:"type"`
-	Secret    string        `bson:"secret,omitempty" json:"-"`
-	Verified  bool          `bson:"verified" json:"verified"`
-	CreatedAt time.Time     `bson:"created_at" json:"created_at"`
-	Name      string        `bson:"name,omitempty" json:"name"`
+	ID           string        `bson:"id" json:"id"`
+	Type         MfaMethodType `bson:"type" json:"type"`
+	Secret       string        `bson:"secret,omitempty" json:"-"`
+	Verified     bool          `bson:"verified" json:"verified"`
+	CreatedAt    time.Time     `bson:"created_at" json:"created_at"`
+	Name         string        `bson:"name,omitempty" json:"name"`
+	// WebAuthn/passkey specific fields (stored in Secret as well for the
+	// full credential record; these are convenience projections).
+	CredentialID string `bson:"credential_id,omitempty" json:"credential_id,omitempty"`
+	Counter      int32  `bson:"counter,omitempty" json:"counter,omitempty"`
 }
 
 // WebAuthnDevice represents a registered WebAuthn device.
@@ -51,6 +73,9 @@ type WebAuthnDevice struct {
 	Counter      int32     `bson:"counter" json:"counter"`
 	CreatedAt    time.Time `bson:"created_at" json:"created_at"`
 	Transports   []string  `bson:"transports,omitempty" json:"transports"`
+	// CredentialJSON is the serialized go-webauthn Credential (public key, flags, sign counter).
+	// It is authoritative for verification; the flat fields above are kept for display/legacy use.
+	CredentialJSON string `bson:"credential_json,omitempty" json:"-"`
 }
 
 // PushMFAChallenge represents an active push MFA challenge
@@ -66,10 +91,24 @@ type PushMFAChallenge struct {
 
 // User represents a user in the system.
 type User struct {
-	ID                  string              `bson:"_id,omitempty" json:"id,omitempty"`
-	Email               string              `bson:"email,unique" json:"email"`
-	PasswordHash        string              `bson:"password_hash" json:"-"`
-	Status              UserStatus          `bson:"status" json:"status"`
+	ID           string     `bson:"_id,omitempty" json:"id,omitempty"`
+	Email        string     `bson:"email,unique" json:"email"`
+	PasswordHash string     `bson:"password_hash" json:"-"`
+	Status       UserStatus `bson:"status" json:"status"`
+	// Source is where the identity record comes from; empty means local.
+	// SourceDirectory identities keep no password here: PiRectory owns it.
+	Source string `bson:"source,omitempty" json:"source,omitempty"`
+	// DirectoryID is the directory object id (the objectGUID) of a
+	// SourceDirectory identity. It is the OIDC subject and the key this
+	// record's SSO-owned state is stored under.
+	DirectoryID string `bson:"directory_id,omitempty" json:"directory_id,omitempty"`
+	// Groups are the directory groups the identity belongs to, by name.
+	Groups []string `bson:"groups,omitempty" json:"groups,omitempty"`
+	// Attributes are the directory attributes projected for claims, keyed by
+	// attribute name.
+	Attributes map[string][]string `bson:"attributes,omitempty" json:"attributes,omitempty"`
+	// USN is the directory update sequence the projection was read at.
+	USN                 int64               `bson:"usn,omitempty" json:"usn,omitempty"`
 	FirstName           string              `bson:"first_name,omitempty" json:"first_name,omitempty"`
 	LastName            string              `bson:"last_name,omitempty" json:"last_name,omitempty"`
 	Roles               []string            `bson:"roles,omitempty" json:"roles,omitempty"`
@@ -126,8 +165,68 @@ type User struct {
 	PasswordResetToken          string     `bson:"password_reset_token,omitempty" json:"-"`
 	PasswordResetTokenExpiresAt *time.Time `bson:"password_reset_token_expires_at,omitempty" json:"-"`
 
+	// RequiredActions are steps the user must complete at next login, before any
+	// authorization code is issued (Keycloak "required actions").
+	RequiredActions []string `bson:"required_actions,omitempty" json:"required_actions,omitempty"`
+
 	// Login OTP fields
 	LoginOtp           string     `bson:"login_otp,omitempty" json:"-"`
 	LoginOtpExpiresAt  *time.Time `bson:"login_otp_expires_at,omitempty" json:"-"`
 	LoginOtpMethodType string     `bson:"login_otp_method_type,omitempty" json:"-"`
+}
+
+// Required action aliases.
+const (
+	RequiredActionUpdatePassword = "UPDATE_PASSWORD"
+	RequiredActionConfigureTOTP  = "CONFIGURE_TOTP"
+	RequiredActionVerifyEmail    = "VERIFY_EMAIL"
+	RequiredActionUpdateProfile  = "UPDATE_PROFILE"
+	RequiredActionTerms          = "TERMS_AND_CONDITIONS"
+)
+
+// KnownRequiredActions lists every alias in evaluation order.
+var KnownRequiredActions = []string{
+	RequiredActionUpdatePassword,
+	RequiredActionConfigureTOTP,
+	RequiredActionVerifyEmail,
+	RequiredActionUpdateProfile,
+	RequiredActionTerms,
+}
+
+// IsKnownRequiredAction reports whether alias is a recognised required action.
+func IsKnownRequiredAction(alias string) bool {
+	for _, a := range KnownRequiredActions {
+		if a == alias {
+			return true
+		}
+	}
+	return false
+}
+
+// HasRequiredAction reports whether the user has the given action pending.
+func (u *User) HasRequiredAction(alias string) bool {
+	for _, a := range u.RequiredActions {
+		if a == alias {
+			return true
+		}
+	}
+	return false
+}
+
+// AddRequiredAction adds alias if not already present.
+func (u *User) AddRequiredAction(alias string) {
+	if !u.HasRequiredAction(alias) {
+		u.RequiredActions = append(u.RequiredActions, alias)
+	}
+}
+
+// RemoveRequiredAction removes alias if present.
+func (u *User) RemoveRequiredAction(alias string) {
+	out := u.RequiredActions[:0:0]
+	for _, a := range u.RequiredActions {
+		if a != alias {
+			out = append(out, a)
+		}
+	}
+	u.RequiredActions = out
 }

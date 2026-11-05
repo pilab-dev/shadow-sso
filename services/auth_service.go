@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"encoding/hex"
 	"errors"
 	goerrors "errors"
@@ -16,17 +17,24 @@ import (
 	"github.com/google/uuid"
 	"github.com/pilab-dev/shadow-sso/client"
 	"github.com/pilab-dev/shadow-sso/domain"
+	"github.com/pilab-dev/shadow-sso/port"
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
 	"github.com/pilab-dev/shadow-sso/internal/audit"
 	"github.com/pilab-dev/shadow-sso/internal/auth/rbac"
 	"github.com/pilab-dev/shadow-sso/internal/auth/totp" // For TOTP validation
+	"github.com/pilab-dev/shadow-sso/internal/browserinfo"
+	"github.com/pilab-dev/shadow-sso/internal/browserpolicy"
+	"github.com/pilab-dev/shadow-sso/internal/geo"
+	"github.com/pilab-dev/shadow-sso/internal/identity"
 	"github.com/pilab-dev/shadow-sso/internal/metrics"
+	"github.com/pilab-dev/shadow-sso/internal/reqinfo"
 	"github.com/pilab-dev/shadow-sso/internal/telemetry"
 	// "github.com/pilab-dev/shadow-sso/middleware" // No longer needed here
 	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	oteltrace "go.opentelemetry.io/otel/trace"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb" // For mapping time to proto
 )
@@ -92,12 +100,17 @@ type AuthServer struct {
 	userRepo                                     domain.UserRepository
 	sessionRepo                                  domain.SessionRepository
 	tokenService                                 domain.TokenServiceInterface
-	passwordHasher                               domain.PasswordHasher
 	flowStore                                    domain.FlowStore
 	oauthService                                 domain.OAuthServiceInterface
 	clientService                                client.ClientServiceInterface
+	identity                                     identity.Verifier
 	twoFactorSessions                            *twoFactorSessionStore
 	realmSettingsRepo                            domain.RealmSettingsRepository
+	tokenRepo                                    domain.TokenRepository
+	browserPolicy                                *browserpolicy.Provider
+	geoResolver                                  geo.Resolver
+	sessionNotifier                              domain.SessionNotifier
+	mfaRegistry                                  port.MFARegistry
 }
 
 // authServerOption configures optional AuthServer dependencies.
@@ -107,6 +120,44 @@ type authServerOption func(*AuthServer)
 // the realm-wide MFA enforcement policy.
 func WithAuthRealmSettings(repo domain.RealmSettingsRepository) authServerOption {
 	return func(s *AuthServer) { s.realmSettingsRepo = repo }
+}
+
+// WithAuthMFARegistry injects the pluggable MFA provider registry.
+func WithAuthMFARegistry(reg port.MFARegistry) authServerOption {
+	return func(s *AuthServer) { s.mfaRegistry = reg }
+}
+
+// WithAuthTokenRepository injects the token repository so session revocation
+// also revokes the tokens issued for the session (`sid` claim).
+func WithAuthTokenRepository(repo domain.TokenRepository) authServerOption {
+	return func(s *AuthServer) { s.tokenRepo = repo }
+}
+
+// WithAuthBrowserPolicy injects the enterprise browser-baseline policy so the
+// RPC login path rejects outdated browsers as well as the web login page.
+func WithAuthBrowserPolicy(provider *browserpolicy.Provider) authServerOption {
+	return func(s *AuthServer) { s.browserPolicy = provider }
+}
+
+// WithAuthGeoResolver injects the GeoIP resolver used for session location/risk.
+func WithAuthGeoResolver(r geo.Resolver) authServerOption {
+	return func(s *AuthServer) { s.geoResolver = r }
+}
+
+// WithAuthSessionNotifier injects the notifier used for session risk alerts.
+func WithAuthSessionNotifier(n domain.SessionNotifier) authServerOption {
+	return func(s *AuthServer) { s.sessionNotifier = n }
+}
+
+// WithIdentity injects the identity seam. Without it AuthServer builds the
+// local one from the user repository and password hasher it was given, which
+// is the default for standalone ShadowSSO.
+func WithIdentity(v identity.Verifier) authServerOption {
+	return func(s *AuthServer) {
+		if v != nil {
+			s.identity = v
+		}
+	}
 }
 
 // NewAuthServer creates a new AuthServer.
@@ -124,7 +175,6 @@ func NewAuthServer(
 		userRepo:          userRepo,
 		sessionRepo:       sessionRepo,
 		tokenService:      tokenService,
-		passwordHasher:    passwordHasher,
 		flowStore:         flowStore,
 		oauthService:      oauthService,
 		clientService:     clientService,
@@ -132,6 +182,12 @@ func NewAuthServer(
 	}
 	for _, opt := range opts {
 		opt(s)
+	}
+	if s.geoResolver == nil {
+		s.geoResolver = geo.NoopResolver{}
+	}
+	if s.identity == nil {
+		s.identity = identity.New(identity.NewLocalSource(userRepo, passwordHasher), nil)
 	}
 	return s
 }
@@ -169,55 +225,27 @@ func (s *AuthServer) Login(ctx context.Context, req *connect.Request[ssov1.Login
 	ctx, span := telemetry.StartSpan(ctx, authTracerName, "Login", attribute.String("user.email", req.Msg.Email))
 	defer span.End()
 
+	if s.browserPolicy != nil {
+		if err := s.browserPolicy.CheckConnect(ctx, req.Header()); err != nil {
+			telemetry.RecordSpanError(span, err, "browser policy rejected login")
+			return nil, err
+		}
+	}
+
 	logger := log.Ctx(ctx)
 	logger.Debug().Str("email", req.Msg.Email).Msg("Login attempt")
 	var userID string // For audit logging, even if user object is not fetched
 
-	user, err := s.userRepo.GetUserByEmail(ctx, req.Msg.Email)
+	// Resolve, account state and the password check are one seam: the
+	// configured identity source (MongoDB by default, PiRectory when the
+	// deployment points at a directory).
+	user, err := s.identity.Verify(ctx, req.Msg.Email, req.Msg.Password)
+	if user != nil {
+		userID = user.ID // User found, set userID for audit
+		span.SetAttributes(attribute.String("user.id", userID))
+	}
 	if err != nil {
-		logger.Warn().Err(err).Str("email", req.Msg.Email).Msg("Login: User not found")
-		telemetry.RecordSpanError(span, err, "user not found")
-		span.SetStatus(codes.Error, "user not found")
-		audit.Log("AuthService", "Login", req.Msg.Email, "", "User not found or DB error", false, err)
-		if metrics.LoginFailureTotal != nil {
-			metrics.LoginFailureTotal.Inc()
-		}
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid email or password"))
-	}
-	userID = user.ID // User found, set userID for audit
-	span.SetAttributes(attribute.String("user.id", userID))
-
-	if user.Status == domain.UserStatusLocked {
-		logger.Warn().Str("userID", userID).Msg("Login: Account locked")
-		telemetry.RecordSpanError(span, errors.New("account locked"), "account locked")
-		span.SetStatus(codes.Error, "account locked")
-		audit.Log("AuthService", "Login", userID, userID, "Account locked", false, errors.New("account locked"))
-		if metrics.LoginFailureTotal != nil {
-			metrics.LoginFailureTotal.Inc()
-		}
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("account is locked"))
-	}
-	if user.Status == domain.UserStatusPending {
-		logger.Warn().Str("userID", userID).Msg("Login: Account pending activation")
-		telemetry.RecordSpanError(span, errors.New("account pending activation"), "account pending activation")
-		span.SetStatus(codes.Error, "account pending activation")
-		audit.Log("AuthService", "Login", userID, userID, "Account pending activation", false, errors.New("account pending activation"))
-		if metrics.LoginFailureTotal != nil {
-			metrics.LoginFailureTotal.Inc()
-		}
-		return nil, connect.NewError(connect.CodePermissionDenied, errors.New("account pending activation"))
-	}
-
-	if err := s.passwordHasher.Verify(user.PasswordHash, req.Msg.Password); err != nil {
-		logger.Warn().Str("userID", userID).Msg("Login: Incorrect password")
-		telemetry.RecordSpanError(span, err, "incorrect password")
-		span.SetStatus(codes.Error, "incorrect password")
-		audit.Log("AuthService", "Login", userID, userID, "Incorrect password", false, err)
-		if metrics.LoginFailureTotal != nil {
-			metrics.LoginFailureTotal.Inc()
-		}
-		// TODO: Increment failed login attempts for user in userRepo.UpdateUser
-		return nil, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid email or password"))
+		return nil, loginFailure(ctx, span, userID, req.Msg.Email, err)
 	}
 
 	// --- 2FA Check ---
@@ -260,6 +288,46 @@ func (s *AuthServer) Login(ctx context.Context, req *connect.Request[ssov1.Login
 	return s.completeLogin(ctx, user)
 }
 
+// loginFailure turns an identity failure into the answer Login has always
+// given, with the audit record, span status and metric that go with it. The
+// client is never told which of the login and the password was wrong.
+func loginFailure(ctx context.Context, span oteltrace.Span, userID, login string, err error) error {
+	logger := log.Ctx(ctx)
+	record := func(detail string) {
+		logger.Warn().Err(err).Str("email", login).Str("userID", userID).Msg("Login: " + detail)
+		telemetry.RecordSpanError(span, err, detail)
+		span.SetStatus(codes.Error, detail)
+		user, target := login, userID
+		if userID != "" {
+			user = userID
+		}
+		audit.Log("AuthService", "Login", user, target, detail, false, err)
+		if metrics.LoginFailureTotal != nil {
+			metrics.LoginFailureTotal.Inc()
+		}
+	}
+	switch {
+	case errors.Is(err, identity.ErrNotFound):
+		record("User not found or DB error")
+		return connect.NewError(connect.CodeUnauthenticated, errors.New("invalid email or password"))
+	case errors.Is(err, identity.ErrPending):
+		record("Account pending activation")
+		return connect.NewError(connect.CodePermissionDenied, errors.New("account pending activation"))
+	case errors.Is(err, identity.ErrLocked):
+		record("Account locked")
+		return connect.NewError(connect.CodePermissionDenied, errors.New("account is locked"))
+	case errors.Is(err, identity.ErrExpired):
+		record("Password expired")
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New("password has expired"))
+	case errors.Is(err, identity.ErrUnavailable):
+		record("Identity source unavailable")
+		return connect.NewError(connect.CodeUnavailable, errors.New("identity source unavailable"))
+	default:
+		record("Incorrect password")
+		return connect.NewError(connect.CodeUnauthenticated, errors.New("invalid email or password"))
+	}
+}
+
 // realmRequiresMFA reports the realm-wide MFA enforcement policy.
 func (s *AuthServer) realmRequiresMFA(ctx context.Context) bool {
 	if s.realmSettingsRepo == nil {
@@ -296,18 +364,26 @@ func (s *AuthServer) completeLogin(ctx context.Context, user *domain.User) (*con
 	// Create and store session. The session ID doubles as the `sid` claim on
 	// the issued tokens (see GenerateTokenPair above) so RP-initiated/
 	// back-channel logout can correlate and revoke it later.
+	info := reqinfo.FromContext(ctx)
 	session := &domain.Session{
 		ID:           sessionID,
 		UserID:       user.ID,
+		ClientID:     clientID,
 		TokenID:      sessionID,
 		RefreshToken: tokenPair.RefreshToken,
-		// TODO: Populate IPAddress, UserAgent from ctx/request if available and desired
-		ExpiresAt: time.Now().Add(30 * 24 * time.Hour), // Example: Long session expiry, e.g., 30 days
-		IsRevoked: false,
+		UserAgent:    info.UserAgent,
+		IPAddress:    info.IP,
+		ExpiresAt:    time.Now().Add(30 * 24 * time.Hour), // Example: Long session expiry, e.g., 30 days
+		CreatedAt:    time.Now(),
+		LastUsedAt:   time.Now(),
+		IsRevoked:    false,
 	}
+	enrichSession(ctx, session, s.geoResolver, s.sessionRepo, s.sessionNotifier)
 	if err := s.sessionRepo.StoreSession(ctx, session); err != nil {
 		logger.Error().Err(err).Str("userID", user.ID).Msg("completeLogin: Failed to store session")
 		// Decide if this should be a fatal error for login. For now, log and continue.
+	} else {
+		recordSessionCreated(ctx, s.sessionRepo, session, "user")
 	}
 
 	// Update LastLoginAt for user
@@ -344,7 +420,8 @@ func (s *AuthServer) completeLogin(ctx context.Context, user *domain.User) (*con
 		userInfoProto.LastLoginAt = timestamppb.New(*user.LastLoginAt)
 	}
 
-	audit.Log("AuthService", "LoginComplete", user.ID, user.ID, "Login successful, tokens and session created", true, nil)
+	audit.Log("AuthService", "LoginComplete", user.ID, user.ID,
+		"Login successful, tokens and session created; client="+clientID+" session="+sessionID+" "+info.Details(), true, nil)
 	return connect.NewResponse(&ssov1.LoginResponse{
 		AccessToken:           tokenPair.AccessToken,
 		TokenType:             tokenPair.TokenType,
@@ -361,6 +438,13 @@ func (s *AuthServer) completeLogin(ctx context.Context, user *domain.User) (*con
 func (s *AuthServer) Verify2FA(ctx context.Context, req *connect.Request[ssov1.Verify2FARequest]) (*connect.Response[ssov1.LoginResponse], error) {
 	ctx, span := telemetry.StartSpan(ctx, authTracerName, "Verify2FA", attribute.String("user.id", req.Msg.UserId))
 	defer span.End()
+
+	if s.browserPolicy != nil {
+		if err := s.browserPolicy.CheckConnect(ctx, req.Header()); err != nil {
+			telemetry.RecordSpanError(span, err, "browser policy rejected 2FA login")
+			return nil, err
+		}
+	}
 
 	logger := log.Ctx(ctx)
 	logger.Debug().Str("userID", req.Msg.UserId).Msg("Verify2FA attempt")
@@ -481,6 +565,11 @@ func (s *AuthServer) Logout(ctx context.Context, req *connect.Request[ssov1.Logo
 		} else {
 			logger.Info().Str("sessionID", session.ID).Str("userID", actingUserID).Msg("Logout: Session marked as revoked")
 			audit.Log("AuthService", "Logout", actingUserID, session.ID, "Session marked as revoked successfully", true, nil)
+			if s.tokenRepo != nil {
+				if errRevoke := s.tokenRepo.RevokeTokensBySessionID(ctx, session.ID); errRevoke != nil {
+					logger.Warn().Err(errRevoke).Str("sessionID", session.ID).Msg("Logout: Failed to revoke session tokens")
+				}
+			}
 		}
 	}
 
@@ -535,7 +624,6 @@ func (s *AuthServer) ListUserSessions(ctx context.Context, req *connect.Request[
 	}
 	span.SetAttributes(attribute.String("target_user_id", targetUserID))
 
-	// TODO: Populate domain.SessionFilter from request if ListUserSessionsRequest has filter fields
 	dbSessions, err := s.sessionRepo.ListSessionsByUserID(ctx, targetUserID, domain.SessionFilter{})
 	if err != nil {
 		logger.Error().Err(err).Str("targetUserID", targetUserID).Msg("ListUserSessions: Failed to list sessions")
@@ -547,9 +635,12 @@ func (s *AuthServer) ListUserSessions(ctx context.Context, req *connect.Request[
 
 	protoSessions := make([]*ssov1.SessionInfo, 0, len(dbSessions))
 	for _, ds := range dbSessions {
-		// Check if this session's TokenID matches the calling token's JTI (ID)
-		isCurrentSession := ds.TokenID == authedToken.ID
-		protoSessions = append(protoSessions, &ssov1.SessionInfo{
+		// The caller's access token carries the session ID as `sid`. Fall back to
+		// TokenID comparison for sessions created before the sid claim existed.
+		isCurrentSession := (authedToken.SessionID != "" && ds.ID == authedToken.SessionID) ||
+			(authedToken.ID != "" && ds.TokenID == authedToken.ID)
+		parsed := browserinfo.Parse(ds.UserAgent)
+		session := &ssov1.SessionInfo{
 			Id:               ds.ID,
 			UserId:           ds.UserID,
 			UserAgent:        ds.UserAgent,
@@ -557,7 +648,16 @@ func (s *AuthServer) ListUserSessions(ctx context.Context, req *connect.Request[
 			CreatedAt:        timestamppb.New(ds.CreatedAt),
 			ExpiresAt:        timestamppb.New(ds.ExpiresAt),
 			IsCurrentSession: isCurrentSession,
-		})
+			IsRevoked:        ds.IsRevoked,
+			Browser:          parsed.Browser,
+			BrowserVersion:   parsed.Version,
+			Os:               parsed.OS,
+			DeviceType:       parsed.DeviceType,
+		}
+		if !ds.LastUsedAt.IsZero() {
+			session.LastUsedAt = timestamppb.New(ds.LastUsedAt)
+		}
+		protoSessions = append(protoSessions, session)
 	}
 	return connect.NewResponse(&ssov1.ListUserSessionsResponse{Sessions: protoSessions}), nil
 }
@@ -602,6 +702,14 @@ func (s *AuthServer) ClearUserSessions(ctx context.Context, req *connect.Request
 					telemetry.RecordSpanError(span, errUpdate, "failed to revoke specific session")
 					// Continue to try others, or return partial error?
 				}
+				// Kicking a device must also kill its tokens.
+				if s.tokenRepo != nil {
+					if errRevoke := s.tokenRepo.RevokeTokensBySessionID(ctx, sessionID); errRevoke != nil {
+						logger.Warn().Err(errRevoke).Str("sessionID", sessionID).Msg("ClearUserSessions: Failed to revoke session tokens")
+					}
+				}
+				audit.Log("AuthService", "SessionKicked", targetUserID, sessionID,
+					"session revoked by admin/self request", true, nil)
 			} else if errGet != nil {
 				logger.Warn().Err(errGet).Str("sessionID", sessionID).Msg("ClearUserSessions: Failed to get session to revoke or session does not belong to user.")
 			}
@@ -618,12 +726,28 @@ func (s *AuthServer) ClearUserSessions(ctx context.Context, req *connect.Request
 			// This logic needs to be very clear. Let's assume if SessionIds is empty, it's all for that user.
 			// If service needs to protect current session, it has to get JTI from context token.
 		}
+		sessions, listErr := s.sessionRepo.ListSessionsByUserID(ctx, targetUserID, domain.SessionFilter{})
+		if listErr != nil {
+			logger.Warn().Err(listErr).Str("targetUserID", targetUserID).Msg("ClearUserSessions: Failed to list sessions before deleting; tokens may not be revoked")
+		}
 		_, err := s.sessionRepo.DeleteSessionsByUserID(ctx, targetUserID, exceptSessionID) // If exceptSessionID is empty, all are deleted for user.
 		if err != nil {
 			logger.Error().Err(err).Str("targetUserID", targetUserID).Msg("ClearUserSessions: Failed to delete sessions by user ID")
 			telemetry.RecordSpanError(span, err, "failed to delete sessions by user ID")
 			span.SetStatus(codes.Error, "failed to delete sessions")
 			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("could not clear sessions: %w", err))
+		}
+		if s.tokenRepo != nil {
+			for _, sess := range sessions {
+				if sess.ID == exceptSessionID {
+					continue
+				}
+				if errRevoke := s.tokenRepo.RevokeTokensBySessionID(ctx, sess.ID); errRevoke != nil {
+					logger.Warn().Err(errRevoke).Str("sessionID", sess.ID).Msg("ClearUserSessions: Failed to revoke session tokens")
+				}
+				audit.Log("AuthService", "SessionKicked", targetUserID, sess.ID,
+					"all sessions revoked by admin/self request", true, nil)
+			}
 		}
 	}
 
@@ -853,9 +977,51 @@ func (s *AuthServer) DenyConsent(ctx context.Context, req *connect.Request[ssov1
 	return connect.NewResponse(response), nil
 }
 
-// DISABLED: WebAuthn login requires go-webauthn/webauthn library for proper cryptographic challenge verification.
 func (s *AuthServer) CompleteWebAuthnLogin(ctx context.Context, req *connect.Request[ssov1.VerifyWebAuthnAuthenticationRequest]) (*connect.Response[ssov1.VerifyWebAuthnAuthenticationResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("WebAuthn login is not yet implemented - requires go-webauthn/webauthn library integration"))
+	if s.mfaRegistry == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("WebAuthn login is not yet implemented - requires go-webauthn/webauthn library integration"))
+	}
+	provider, ok := s.mfaRegistry.Get(domain.MfaMethodTypeWebAuthn)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("webauthn provider not registered"))
+	}
+
+	authResp := req.Msg.GetAuthenticationResponse()
+	body := map[string]any{
+		"id":   authResp.GetId(),
+		"rawId": authResp.GetRawId(),
+		"type": "public-key",
+		"response": map[string]any{
+			"clientDataJSON":     authResp.GetResponse().GetClientDataJson(),
+			"authenticatorData":  authResp.GetResponse().GetAuthenticatorAssertionResponse().GetAuthenticatorData(),
+			"signature":         authResp.GetResponse().GetAuthenticatorAssertionResponse().GetSignature(),
+			"userHandle":        authResp.GetResponse().GetAuthenticatorAssertionResponse().GetUserHandle(),
+		},
+		"authenticatorAttachment": authResp.GetAuthenticatorAttachment(),
+	}
+	b, _ := json.Marshal(body)
+
+	user, err := provider.VerifyChallenge(ctx, nil, nil, req.Msg.GetChallengeKey(), &domain.MFAVerification{Response: b})
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, fmt.Errorf("webauthn verification failed: %w", err))
+	}
+
+	loginResp, err := s.completeLogin(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+
+	out := &ssov1.VerifyWebAuthnAuthenticationResponse{
+		Verified:     true,
+		UserId:       user.ID,
+		AccessToken:  loginResp.Msg.AccessToken,
+		RefreshToken: loginResp.Msg.RefreshToken,
+		IdToken:      loginResp.Msg.IdToken,
+		TokenType:    loginResp.Msg.TokenType,
+		ExpiresIn:    loginResp.Msg.ExpiresIn,
+		UserInfo:     loginResp.Msg.UserInfo,
+	}
+	return connect.NewResponse(out), nil
 }
 
 // Ensure AuthServer implements ssov1connect.AuthServiceHandler

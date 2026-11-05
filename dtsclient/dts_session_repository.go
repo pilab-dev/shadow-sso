@@ -63,6 +63,8 @@ func protoUserSessionToDomainSession(protoUS *ssov1.UserSession) *domain.Session
 		UserAgent: protoUS.UserAgent,
 		IPAddress: protoUS.IpAddress,
 		IsRevoked: false, // If retrieved from DTS, it's considered not revoked
+		// ClientID: // Documented limitation: ssov1.UserSession carries NO client_id field,
+		// so a DTS-backed session can never be attributed to a client. Left empty.
 		// UpdatedAt: // Not in ssov1.UserSession, could use AuthenticatedAt or leave as zero
 		// TokenID: // Not in ssov1.UserSession
 		// ACR/AMR could be mapped if domain.Session is extended
@@ -192,6 +194,17 @@ func (r *dtsSessionRepository) ListSessionsByUserID(ctx context.Context, userID 
 func (r *dtsSessionRepository) DeleteSessionsByUserID(ctx context.Context, userID string, exceptSessionID ...string) (int64, error) {
 	log.Printf("DeleteSessionsByUserID is not supported by DTS-backed SessionRepository. UserID: %s", userID)
 	return 0, status.Error(codes.Unimplemented, "DeleteSessionsByUserID is not implemented for DTS session store")
+}
+
+// StoreSessionEvent is not supported by DTS: reporting success here would
+// silently drop the audit trail.
+func (r *dtsSessionRepository) StoreSessionEvent(ctx context.Context, event *domain.SessionEvent) error {
+	return status.Error(codes.Unimplemented, "StoreSessionEvent is not implemented for DTS session store")
+}
+
+// ListSessionEvents is not supported by DTS.
+func (r *dtsSessionRepository) ListSessionEvents(ctx context.Context, sessionID string, first int) ([]*domain.SessionEvent, error) {
+	return nil, status.Error(codes.Unimplemented, "ListSessionEvents is not implemented for DTS session store")
 }
 
 // Ensure dtsSessionRepository implements domain.SessionRepository

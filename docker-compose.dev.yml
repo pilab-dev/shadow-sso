@@ -40,6 +40,7 @@ services:
       - SSSO_ISSUER_URL=http://localhost:8080
       - SSSO_LOG_LEVEL=debug
       - SSSO_JSON_LOG=false
+      - SSSO_ALLOW_INSECURE_DEFAULTS=true
       - SSSO_INITIAL_ADMIN_ENABLED=true
       - SSSO_INITIAL_ADMIN_EMAIL=admin@localhost
       - SSSO_INITIAL_ADMIN_PASSWORD=admin123

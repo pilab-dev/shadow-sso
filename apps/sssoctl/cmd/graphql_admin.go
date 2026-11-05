@@ -521,32 +521,8 @@ var realmKeyUpdateCmd = &cobra.Command{
 
 // --- sessions ---
 
-var sessionRevokeCmd = &cobra.Command{
-	Use:   "revoke [SESSION_ID]",
-	Short: "Revoke one session",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return gqlRun(`mutation($id: ID!) { revokeSession(sessionId: $id) }`, map[string]any{"id": args[0]})
-	},
-}
-
-var sessionRevokeAllCmd = &cobra.Command{
-	Use:   "revoke-all [USER_ID]",
-	Short: "Revoke every session for a user",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return gqlRun(`mutation($userId: ID!) { revokeAllSessions(userId: $userId) }`, map[string]any{"userId": args[0]})
-	},
-}
-
-var sessionLogoutUserCmd = &cobra.Command{
-	Use:   "logout-user [USER_ID]",
-	Short: "Log a user out everywhere",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return gqlRun(`mutation($userId: ID!) { logoutUser(userId: $userId) }`, map[string]any{"userId": args[0]})
-	},
-}
+// Session revoke/revoke-all/logout-user moved to gRPC (AuthService.ClearUserSessions).
+// See apps/sssoctl/cmd/session.go.
 
 // --- user GraphQL extras ---
 
@@ -561,36 +537,6 @@ var userExecuteActionsCmd = &cobra.Command{
 		}
 		return gqlRun(`mutation($userId: ID!, $actions: [String!]!) { executeActions(userId: $userId, actions: $actions) }`,
 			map[string]any{"userId": args[0], "actions": actions})
-	},
-}
-
-var clientGenerateSecretCmd = &cobra.Command{
-	Use:   "generate-secret [CLIENT_ID]",
-	Short: "Generate and return a new client secret",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return gqlRun(`mutation($clientId: ID!) { generateClientSecret(clientId: $clientId) }`,
-			map[string]any{"clientId": args[0]})
-	},
-}
-
-var clientGenerateKeysCmd = &cobra.Command{
-	Use:   "generate-keys [CLIENT_ID]",
-	Short: "Generate client keys (RSA/EC)",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		keyType, _ := cmd.Flags().GetString("key-type")
-		keyBits, _ := cmd.Flags().GetInt("key-bits")
-		vars := map[string]any{"clientId": args[0]}
-		if keyType != "" {
-			vars["keyType"] = keyType
-		}
-		if keyBits > 0 {
-			vars["keyBits"] = keyBits
-		}
-		return gqlRun(`mutation($clientId: ID!, $keyType: String, $keyBits: Int) {
-			generateClientKeys(clientId: $clientId, keyType: $keyType, keyBits: $keyBits)
-		}`, vars)
 	},
 }
 
@@ -654,8 +600,6 @@ func init() {
 	rootCmd.AddCommand(realmKeyCmd)
 	realmKeyCmd.AddCommand(realmKeyListCmd, realmKeyUpdateCmd)
 	realmKeyUpdateCmd.Flags().String("keys-json", "", "JSON array of keys")
-
-	sessionCmd.AddCommand(sessionRevokeCmd, sessionRevokeAllCmd, sessionLogoutUserCmd)
 
 	userCmd.AddCommand(userExecuteActionsCmd)
 	userExecuteActionsCmd.Flags().StringSlice("action", nil, "Required action (repeatable)")

@@ -232,6 +232,103 @@ func (r *UserRepository) ListUsers(ctx context.Context, pageToken string, pageSi
 	return users, nextPageToken, nil
 }
 
+// ListUsersPage returns a filtered, sorted page of users starting at skip
+// with at most limit rows, plus the total number of users matching the filter.
+func (r *UserRepository) ListUsersPage(ctx context.Context, filter domain.UserFilter, sort domain.SortSpec, skip, limit int) ([]*domain.User, int64, error) {
+	if limit <= 0 {
+		limit = 20 // Default page size
+	}
+	if limit > 100 { // Max page size
+		limit = 100
+	}
+
+	bsonFilter := buildUserFilter(filter)
+
+	total, err := r.users.CountDocuments(ctx, bsonFilter)
+	if err != nil {
+		log.Error().Err(err).Msg("Error counting users for paginated listing from MongoDB")
+		return nil, 0, fmt.Errorf("failed to count users: %w", err)
+	}
+
+	findOptions := options.Find()
+	findOptions.SetSkip(int64(skip))
+	findOptions.SetLimit(int64(limit))
+	findOptions.SetSort(userListSort(sort))
+
+	cursor, err := r.users.Find(ctx, bsonFilter, findOptions)
+	if err != nil {
+		log.Error().Err(err).Msg("Error listing users from MongoDB")
+		return nil, 0, err
+	}
+	defer cursor.Close(ctx)
+
+	var users []*domain.User
+	if err = cursor.All(ctx, &users); err != nil {
+		log.Error().Err(err).Msg("Error decoding listed users from MongoDB")
+		return nil, 0, err
+	}
+
+	return users, total, nil
+}
+
+// buildUserFilter converts a domain.UserFilter into a bson.M query.
+// Nil filter fields are omitted; Search becomes a case-insensitive $or
+// regex across username, email, first_name and last_name.
+func buildUserFilter(filter domain.UserFilter) bson.M {
+	f := bson.M{}
+
+	if filter.Search != nil {
+		pattern := bson.M{"$regex": *filter.Search, "$options": "i"}
+		f["$or"] = []bson.M{
+			{"username": pattern},
+			{"email": pattern},
+			{"first_name": pattern},
+			{"last_name": pattern},
+		}
+	}
+	if filter.Email != nil {
+		f["email"] = *filter.Email
+	}
+	if filter.Username != nil {
+		f["username"] = *filter.Username
+	}
+	if filter.FirstName != nil {
+		f["first_name"] = *filter.FirstName
+	}
+	if filter.LastName != nil {
+		f["last_name"] = *filter.LastName
+	}
+	if filter.Enabled != nil {
+		f["enabled"] = *filter.Enabled
+	}
+	if filter.EmailVerified != nil {
+		f["is_email_verified"] = *filter.EmailVerified
+	}
+
+	return f
+}
+
+// userListSort converts a domain.SortSpec into a bson.D sort document.
+// Only username, email and createdAt are allowlisted (createdAt maps to
+// the stored created_at field); any other field silently falls back to
+// the default created_at: -1 ordering.
+func userListSort(sort domain.SortSpec) bson.D {
+	key, ok := map[string]string{
+		"username":  "username",
+		"email":     "email",
+		"createdAt": "created_at",
+	}[sort.Field]
+	if !ok {
+		return bson.D{{Key: "created_at", Value: -1}}
+	}
+
+	dir := 1 // asc default
+	if sort.Dir == "desc" {
+		dir = -1
+	}
+	return bson.D{{Key: key, Value: dir}}
+}
+
 // StorePhoneVerificationOtp stores a phone verification OTP for a user
 func (r *UserRepository) StorePhoneVerificationOtp(ctx context.Context, userID, otp string, expiresAt time.Time) error {
 	filter := bson.M{"_id": userID}

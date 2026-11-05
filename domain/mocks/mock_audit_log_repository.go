@@ -12,6 +12,7 @@ package mock_domain
 import (
 	context "context"
 	reflect "reflect"
+	time "time"
 
 	domain "github.com/pilab-dev/shadow-sso/domain"
 	gomock "go.uber.org/mock/gomock"
@@ -83,4 +84,19 @@ func (m *MockAuditLogRepository) List(ctx context.Context, filter domain.AuditLo
 func (mr *MockAuditLogRepositoryMockRecorder) List(ctx, filter, limit, offset any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockAuditLogRepository)(nil).List), ctx, filter, limit, offset)
+}
+
+// ListAfter mocks base method.
+func (m *MockAuditLogRepository) ListAfter(ctx context.Context, filter domain.AuditLogFilter, after time.Time, limit int) ([]*domain.AuditLog, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListAfter", ctx, filter, after, limit)
+	ret0, _ := ret[0].([]*domain.AuditLog)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListAfter indicates an expected call of ListAfter.
+func (mr *MockAuditLogRepositoryMockRecorder) ListAfter(ctx, filter, after, limit any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListAfter", reflect.TypeOf((*MockAuditLogRepository)(nil).ListAfter), ctx, filter, after, limit)
 }

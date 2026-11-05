@@ -15,6 +15,11 @@ This file provides an overview of all documentation available for Shadow SSO.
 |----------|------------|
 | [docs/federation.md](./federation.md) | Identity provider federation (Google, Facebook, Apple, GitHub) |
 | [docs/service_accounts_usage.md](./service_accounts_usage.md) | Service account keys and JWT authentication |
+| [docs/client_credentials_audience_groups.md](./client_credentials_audience_groups.md) | Audience, subject and groups on client_credentials tokens (Kubernetes OIDC) |
+| [docs/credential-helper-and-k8s-oidc.md](./credential-helper-and-k8s-oidc.md) | Credential helper design and temporary privilege escalation |
+| [docs/client-sdk-architecture.md](./client-sdk-architecture.md) | Client SDK design (`client/ssox`) for apps and services |
+| [docs/session-management-architecture.md](./session-management-architecture.md) | Client session management, device tracking and token theft prevention |
+| [docs/traceability.md](./traceability.md) | Live audit streaming, per-user tokens/devices and the enterprise browser baseline |
 | [docs/user_attributes.md](./user_attributes.md) | Custom user attributes and token claim mappers |
 
 ## Security & Keys
@@ -31,6 +36,14 @@ This file provides an overview of all documentation available for Shadow SSO.
 |----------|------------|
 | [docs/graphql.md](./graphql.md) | GraphQL API for administration |
 | [docs/cli.md](./cli.md) | ssoctl CLI tool usage |
+| [docs/cli-grpc-migration.md](./cli-grpc-migration.md) | Moving ssoctl off GraphQL onto typed ConnectRPC services |
+
+## Releases
+
+| Document | Description |
+|----------|------------|
+| [docs/releases/v1.2.0.md](./releases/v1.2.0.md) | v1.2.0 — traceability stream, token/device views, browser baseline |
+| [docs/releases/v1.1.0.md](./releases/v1.1.0.md) | v1.1.0 — client_credentials for Kubernetes OIDC |
 
 ## Configuration & Setup
 

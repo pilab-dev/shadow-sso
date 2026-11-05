@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/pilab-dev/shadow-sso/internal/dpop"
 	"github.com/pilab-dev/shadow-sso/services"
 	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/otel"
@@ -72,6 +74,21 @@ func UserAuthMiddleware(tokenService services.TokenService) gin.HandlerFunc {
 		}
 
 		span.End()
+
+		// DPoP (Phase 4): enforce sender-constraint when the token is bound.
+		if token.CnfJKT != "" {
+			proof := strings.TrimSpace(c.GetHeader("DPoP"))
+			if proof == "" {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid_dpop_proof", "error_description": "DPoP proof required"})
+				return
+			}
+			htu := requestURL(c.Request)
+			jkt, err := dpop.VerifyProofOnce(proof, c.Request.Method, htu, dpop.AccessTokenHash(jwtToken), time.Now())
+			if err != nil || jkt != token.CnfJKT {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid_dpop_proof", "error_description": "invalid DPoP proof"})
+				return
+			}
+		}
 
 		c.Set(AuthUserIDKey, token.UserID)
 		c.Set("scope", token.Scope)

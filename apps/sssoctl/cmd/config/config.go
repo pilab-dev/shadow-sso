@@ -21,7 +21,16 @@ type Context struct {
 	Name           string `mapstructure:"name"              yaml:"name"`
 	ServerEndpoint string `mapstructure:"server_endpoint"    yaml:"server_endpoint"`
 	UserAuthToken  string `mapstructure:"user_auth_token,omitempty" yaml:"user_auth_token,omitempty"` // Token obtained via 'auth login'
+	// Protocol selects the RPC protocol for proto-based commands:
+	// "connect" (Connect + JSON, default), "connect-proto" (Connect + binary)
+	// or "grpc" (gRPC over HTTP/2, h2c for plaintext endpoints).
+	Protocol string `mapstructure:"protocol,omitempty" yaml:"protocol,omitempty"`
 }
+
+// ProtocolOverride is set from the global --protocol flag and takes precedence
+// over the per-context setting. Cobra parses flags before commands run, so this
+// is populated by the time any client is constructed.
+var ProtocolOverride string
 
 // CLIConfig holds the overall CLI configuration
 type CLIConfig struct {

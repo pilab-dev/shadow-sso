@@ -15,6 +15,7 @@ resolver:
   filename: "graphql/schema.resolvers.go"
   package: graphql
   type: Resolver
+  preserve_resolver: true
 
 autobind:
   - "github.com/pilab-dev/shadow-sso/domain"
@@ -28,6 +29,8 @@ models:
     model: github.com/pilab-dev/shadow-sso/domain.Group
   Session:
     model: github.com/pilab-dev/shadow-sso/domain.Session
+  SessionEvent:
+    model: github.com/pilab-dev/shadow-sso/domain.SessionEvent
   ClientScope:
     model: github.com/pilab-dev/shadow-sso/domain.ClientScope
   ProtocolMapper:

@@ -4,14 +4,22 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/pilab-dev/shadow-sso/api"
 	"github.com/pilab-dev/shadow-sso/apps/ssso/config"
 	"github.com/pilab-dev/shadow-sso/cache"
+	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/pilab-dev/shadow-sso/domain"
+	"github.com/pilab-dev/shadow-sso/internal/geo"
+	"github.com/pilab-dev/shadow-sso/port"
+	"github.com/pilab-dev/shadow-sso/internal/identity"
+	"github.com/pilab-dev/shadow-sso/internal/mfa"
+	"github.com/pilab-dev/shadow-sso/mongodb"
 	"github.com/pilab-dev/shadow-sso/internal/notifications"
 	"github.com/pilab-dev/shadow-sso/internal/oidcflow"
 	pkgauth "github.com/pilab-dev/shadow-sso/pkg/auth"
+	"github.com/rs/zerolog/log"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -27,6 +35,7 @@ type DefaultServiceProvider struct {
 
 	oauthService      OAuthService
 	tokenService      TokenService
+	geoResolver       geo.Resolver
 	pkceService       PKCEService
 	jwksService       JWKSService
 	clientService     ClientService
@@ -34,6 +43,7 @@ type DefaultServiceProvider struct {
 	userService       UserService
 	twoFactorService  TwoFactorService
 	passwordHasher    domain.PasswordHasher
+	identityService   *identity.Service
 
 	smsService   domain.SMSService
 	emailService domain.EmailService
@@ -44,6 +54,7 @@ type DefaultServiceProvider struct {
 	phoneVerificationService PhoneVerificationService
 	mfaService               MFAService
 	pushMFAService           PushMFAService
+	mfaRegistry              port.MFARegistry
 
 	idpManagementService    IDPManagementService
 	clientManagementService ClientManagementService
@@ -99,16 +110,58 @@ func NewDefaultServiceProvider(opts DefaultServiceProviderOptions) (*DefaultServ
 		userSessionStore:     userSessionStore,
 		passwordHasher:       pkgauth.NewBcryptPasswordHasher(bcrypt.DefaultCost),
 		configurationService: configurationService,
+		geoResolver:          geo.NoopResolver{},
+	}
+	if opts.AppConfig != nil && opts.AppConfig.GeoIPDatabasePath != "" {
+		if r, err := geo.NewMaxMindResolverWithASN(opts.AppConfig.GeoIPDatabasePath, opts.AppConfig.GeoIPASNDatabasePath); err == nil {
+			p.geoResolver = r
+		} else {
+			log.Warn().Err(err).Msg("GeoIP resolver init failed; session location will be empty")
+		}
 	}
 
 	p.smsService = p.initializeSMSService(configurationService)
 	p.emailService = p.initializeEmailService(configurationService)
 	p.pushService = p.initializePushService(configurationService)
 
+	identityService, err := newIdentityService(opts.AppConfig, opts.RepositoryProvider, p.passwordHasher)
+	if err != nil {
+		return nil, fmt.Errorf("identity source: %w", err)
+	}
+	p.identityService = identityService
+
 	return p, nil
 }
 
+// IdentityService is the seam every login path authenticates through: the
+// configured identity source merged with the SSO-owned state. Local
+// (MongoDB) by default, PiRectory when identity_source says so.
+func (p *DefaultServiceProvider) IdentityService() *identity.Service {
+	return p.identityService
+}
+
 var initCtx = context.Background()
+
+// Close releases resources owned by the provider, such as the GeoIP database.
+func (p *DefaultServiceProvider) Close() error {
+	if c, ok := p.geoResolver.(io.Closer); ok {
+		return c.Close()
+	}
+	return nil
+}
+
+// SessionNotifier returns a notifier for session risk alerts.
+func (p *DefaultServiceProvider) SessionNotifier() domain.SessionNotifier {
+	return NewSessionNotifier(p.pushService)
+}
+
+// GeoResolver returns the configured GeoIP resolver (noop by default).
+func (p *DefaultServiceProvider) GeoResolver() geo.Resolver {
+	if p.geoResolver == nil {
+		return geo.NoopResolver{}
+	}
+	return p.geoResolver
+}
 
 func (p *DefaultServiceProvider) OAuthService() OAuthService {
 	if p.oauthService == nil {
@@ -122,6 +175,9 @@ func (p *DefaultServiceProvider) OAuthService() OAuthService {
 			p.TokenService(),
 			p.config.Issuer,
 			WithRealmSettings(p.repoProvider.RealmSettingsRepository(initCtx)),
+			WithOAuthGeoResolver(p.geoResolver),
+			WithOAuthSessionNotifier(NewSessionNotifier(p.pushService)),
+			withIdentity(p.identityService),
 		)
 	}
 	return p.oauthService
@@ -144,6 +200,12 @@ func (p *DefaultServiceProvider) TokenService() TokenService {
 			p.repoProvider.GroupRepository(initCtx),
 			p.repoProvider.RoleRepository(initCtx),
 		)
+		if ts, ok := p.tokenService.(*defaultTokenService); ok {
+			ts.SetSessionRepository(p.repoProvider.SessionRepository(initCtx))
+			// Off by default for high-throughput deployments; enable with
+			// SSSO_SESSION_STRICT_VALIDATION=true to make revocation immediate.
+			ts.SetStrictSessionValidation(p.appConfig != nil && p.appConfig.SessionStrictValidation)
+		}
 	}
 	return p.tokenService
 }
@@ -227,6 +289,28 @@ func (p *DefaultServiceProvider) PhoneVerificationService() PhoneVerificationSer
 		)
 	}
 	return p.phoneVerificationService
+}
+
+func (p *DefaultServiceProvider) MFARegistry() port.MFARegistry {
+	if p.mfaRegistry == nil {
+		store := mfa.NewInMemoryChallengeStore()
+		dir := mongodb.NewMongoMFADirectory(p.repoProvider.UserRepository(initCtx))
+		wcfg := mfa.WebAuthnConfig{
+			RPID:             "localhost",
+			RPName:           "Shadow SSO",
+			RPOrigins:        []string{"http://localhost:8080"},
+			UserVerification:  protocol.VerificationRequired,
+		}
+		ycfg := mfa.YubicoConfig{}
+		reg, err := mfa.BuildDefaultRegistry(store, dir, wcfg, ycfg, p.smsService, p.emailService, p.PushMFAService())
+		if err != nil {
+			// Fall back to empty registry rather than panicking; providers can be
+			// registered later by the host.
+			reg = mfa.NewMFARegistry()
+		}
+		p.mfaRegistry = reg
+	}
+	return p.mfaRegistry
 }
 
 func (p *DefaultServiceProvider) MFAService() MFAService {

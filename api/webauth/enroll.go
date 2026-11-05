@@ -232,7 +232,8 @@ func (wa *WebAuth) MFAEnrollCompleteHandler(c *gin.Context) {
 		return
 	}
 
-	wa.completeMFA(c, flowState, user)
+	flowState.MFAEnrollmentVerified = false
+	wa.finishLogin(c, ctx, flowState.FlowID, flowState, user)
 }
 
 // loadMFACeremonyFlow loads and validates a flow that has already passed the

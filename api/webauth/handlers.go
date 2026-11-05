@@ -1,6 +1,7 @@
 package webauth
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -16,7 +17,7 @@ import (
 func (wa *WebAuth) LandingPageHandler(c *gin.Context) {
 	c.HTML(http.StatusOK, "landing.html", gin.H{
 		"BrandLogo":  wa.config.BrandLogoURL,
-		"BrandName":  wa.config.BrandOrganizationName,
+		"BrandName":  wa.brandName(c),
 		"BrandColor": wa.config.BrandPrimaryColor,
 	})
 }
@@ -43,7 +44,7 @@ func (wa *WebAuth) renderTemplate(c *gin.Context, templateName string, data gin.
 	}
 	data["CSRFToken"] = csrfToken
 	data["BrandLogo"] = wa.config.BrandLogoURL
-	data["BrandName"] = wa.config.BrandOrganizationName
+	data["BrandName"] = wa.brandName(c)
 	data["BrandColor"] = wa.config.BrandPrimaryColor
 
 	if _, ok := data["PageTitle"]; !ok {
@@ -85,6 +86,15 @@ func (wa *WebAuth) ConsentPageHandler(c *gin.Context) {
 		return
 	}
 
+	if !flowState.Authenticated() {
+		log.Warn().Str("flow_id", flowID).Msg("consent: flow is not fully authenticated")
+		c.HTML(http.StatusBadRequest, "error.html", gin.H{
+			"PageTitle": "Error",
+			"Message":   "Please sign in before continuing.",
+		})
+		return
+	}
+
 	client, err := wa.clientService.GetClient(ctx, flowState.ClientID)
 	if err != nil {
 		log.Error().Err(err).Str("client_id", flowState.ClientID).Msg("consent: failed to load client")
@@ -97,15 +107,24 @@ func (wa *WebAuth) ConsentPageHandler(c *gin.Context) {
 
 	scopes := strings.Split(flowState.Scope, " ")
 
+	// RAR (RFC 9396): surface requested authorization details on the consent screen.
+	var authDetails []map[string]any
+	if flowState.OriginalOIDCParams != nil {
+		if raw := flowState.OriginalOIDCParams["authorization_details"]; raw != "" {
+			_ = json.Unmarshal([]byte(raw), &authDetails)
+		}
+	}
+
 	wa.renderTemplate(c, "consent.html", gin.H{
-		"PageTitle":         "Authorization Required",
-		"FlowID":            flowID,
-		"ClientID":          flowState.ClientID,
-		"ClientName":        client.Name,
-		"ClientLogo":        client.LogoURI,
-		"ClientDescription": "",
-		"Scopes":            scopes,
-		"RedirectURI":       flowState.RedirectURI,
+		"PageTitle":            "Authorization Required",
+		"FlowID":               flowID,
+		"ClientID":             flowState.ClientID,
+		"ClientName":           client.Name,
+		"ClientLogo":           client.LogoURI,
+		"ClientDescription":    "",
+		"Scopes":               scopes,
+		"RedirectURI":          flowState.RedirectURI,
+		"AuthorizationDetails": authDetails,
 	})
 }
 
@@ -147,6 +166,15 @@ func (wa *WebAuth) ConsentSubmitHandler(c *gin.Context) {
 		c.HTML(http.StatusBadRequest, "error.html", gin.H{
 			"PageTitle": "Error",
 			"Message":   "Consent request has expired. Please try again.",
+		})
+		return
+	}
+
+	if !flowState.Authenticated() {
+		log.Warn().Str("flow_id", flowID).Msg("consent: flow is not fully authenticated")
+		c.HTML(http.StatusBadRequest, "error.html", gin.H{
+			"PageTitle": "Error",
+			"Message":   "Please sign in before continuing.",
 		})
 		return
 	}

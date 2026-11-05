@@ -7,6 +7,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/pilab-dev/shadow-sso/domain"
 	"github.com/pilab-dev/shadow-sso/internal/federation"
+	"github.com/pilab-dev/shadow-sso/internal/geo"
+	"github.com/pilab-dev/shadow-sso/internal/reqinfo"
 )
 
 type defaultFederationService struct {
@@ -107,10 +109,14 @@ func (s *defaultFederationService) completeFederationLogin(ctx context.Context, 
 	session := &domain.Session{
 		ID:           sessionID,
 		UserID:       user.ID,
+		ClientID:     "sso-default-client",
 		TokenID:      sessionID,
 		RefreshToken: tokenPair.RefreshToken,
+		UserAgent:    reqinfo.FromContext(ctx).UserAgent,
+		IPAddress:    reqinfo.FromContext(ctx).IP,
 		ExpiresAt:    time.Now().Add(30 * 24 * time.Hour),
 	}
+	enrichSession(ctx, session, geo.NoopResolver{}, s.sessionRepo, nil)
 	_ = s.sessionRepo.StoreSession(ctx, session)
 
 	now := time.Now()

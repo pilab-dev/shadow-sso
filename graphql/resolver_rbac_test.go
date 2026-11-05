@@ -260,7 +260,14 @@ func TestRevokeAllSessions_AdminAllowed(t *testing.T) {
 	defer ctrl.Finish()
 
 	sessionRepo := r.SessionRepo.(*mock_domain.MockSessionRepository)
+	sessionRepo.EXPECT().ListSessionsByUserID(gomock.Any(), "u1", gomock.Any()).
+		Return([]*domain.Session{{ID: "s1"}, {ID: "s2"}}, nil)
 	sessionRepo.EXPECT().DeleteSessionsByUserID(gomock.Any(), "u1").Return(int64(3), nil)
+	if r.TokenRepo != nil {
+		tokenRepo := r.TokenRepo.(*mock_domain.MockTokenRepository)
+		tokenRepo.EXPECT().RevokeTokensBySessionID(gomock.Any(), "s1").Return(nil)
+		tokenRepo.EXPECT().RevokeTokensBySessionID(gomock.Any(), "s2").Return(nil)
+	}
 
 	ok, err := r.Mutation().RevokeAllSessions(adminCtx(), "u1")
 	if err != nil {

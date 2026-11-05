@@ -2,6 +2,12 @@
 
 This document outlines the comprehensive gRPC API services provided by Shadow SSO, covering authentication, user management, MFA, and administrative operations.
 
+The services are generated with connect-go and served on the main HTTP port.
+The same handlers accept the **Connect** protocol (JSON or protobuf), native
+**gRPC** over HTTP/2 (h2c on plaintext listeners, enabled via `h2c.NewHandler`),
+and **gRPC-Web**. Choose the protocol at the client: `connect.WithProtoJSON()`,
+default (Connect + protobuf), `connect.WithGRPC()` or `connect.WithGRPCWeb()`.
+
 ## Services Overview
 
 ### 🔐 Core Authentication Services
@@ -19,6 +25,11 @@ This document outlines the comprehensive gRPC API services provided by Shadow SS
 -   **PhoneVerificationService**: SMS-based phone number verification
 -   **MFAService**: Email-based multi-factor authentication
 -   **PushMFAService**: Firebase-powered push notification MFA
+
+### 🔎 Traceability and Policy
+-   **AuditService**: Persisted audit events (`ListAuditEvents`) and live tailing (`FollowAuditEvents`, server stream)
+-   **TokenService**: Per-user token metadata (`ListUserTokens`, `GetToken`), device/browser view (`ListUserDevices`) and targeted revocation (`RevokeToken`)
+-   **BrowserPolicyService**: Enterprise browser baseline (`GetBrowserPolicy`, `UpdateBrowserPolicy`, `CheckBrowser`)
 
 ---
 
@@ -496,6 +507,39 @@ Remove identity provider.
 - MFA operations include rate limiting
 - Audit logging on all security-relevant actions
 - Token expiration and automatic cleanup
+
+---
+
+## Traceability Services
+
+### AuditService
+
+| Method | Type | Description |
+|---|---|---|
+| `ListAuditEvents` | unary | Filter persisted events by user/action/time with pagination |
+| `FollowAuditEvents` | server stream | Replay a window (`from` + `include_existing`) then tail the audit store |
+
+`FollowAuditEvents` polls the persisted store (default 1s, configurable via
+`poll_interval_ms`) so it also sees events written by other replicas.
+
+### TokenService
+
+| Method | Description |
+|---|---|
+| `ListUserTokens` | Token metadata for a user (`me` or admin target); no token values |
+| `GetToken` | One token by JTI |
+| `ListUserDevices` | Sessions enriched with browser/OS/device and token counts |
+| `RevokeToken` | Revoke one token by JTI, with an audit reason |
+
+### BrowserPolicyService
+
+| Method | Description |
+|---|---|
+| `GetBrowserPolicy` | Current realm policy plus built-in defaults |
+| `UpdateBrowserPolicy` | Replace or reset the policy; `warn` mode audits without blocking |
+| `CheckBrowser` | Evaluate a User-Agent without changing state |
+
+See [traceability.md](./traceability.md) for policy semantics and the CLI.
 
 ---
 

@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -17,7 +18,10 @@ import (
 	"github.com/pilab-dev/shadow-sso/api"
 	"github.com/pilab-dev/shadow-sso/cache"
 	"github.com/pilab-dev/shadow-sso/domain"
+	"github.com/pilab-dev/shadow-sso/internal/audit"
+	"github.com/pilab-dev/shadow-sso/internal/dpop"
 	"github.com/pilab-dev/shadow-sso/internal/metrics"
+	"github.com/pilab-dev/shadow-sso/internal/reqinfo"
 	"github.com/pilab-dev/shadow-sso/internal/telemetry"
 	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/otel/attribute"
@@ -25,6 +29,19 @@ import (
 )
 
 var errMissingKidSAValidation = errors.New("missing kid header, not a service account token, try other validation")
+
+const (
+	// sessionLivenessTTL bounds how stale a cached session-liveness answer may
+	// be. Revocation therefore takes at most this long to affect validation.
+	sessionLivenessTTL = 30 * time.Second
+	// sessionLivenessMaxEntries bounds the in-process liveness cache.
+	sessionLivenessMaxEntries = 10_000
+)
+
+type sessionLivenessEntry struct {
+	active  bool
+	expires time.Time
+}
 
 const tokenTracerName = "token-service"
 
@@ -39,7 +56,7 @@ type defaultTokenService struct {
 	// Added for SA token validation
 	pubKeyRepo domain.PublicKeyRepository
 	saRepo     domain.ServiceAccountRepository
-	userRepo  domain.UserRepository // New dependency
+	userRepo   domain.UserRepository // New dependency
 
 	// For user attribute mappers (optional - nil checks when not configured)
 	userAttrMapperRepo domain.UserAttributeMapperRepository
@@ -51,6 +68,12 @@ type defaultTokenService struct {
 	// For Keycloak-style role & group claims (optional - nil checks when not configured)
 	groupRepo domain.GroupRepository
 	roleRepo  domain.RoleRepository
+
+	// Session-aware access-token validation (Phase 1 strict mode).
+	sessionRepo             domain.SessionRepository
+	strictSessionValidation bool
+	sessionLivenessMu       sync.Mutex
+	sessionLivenessCache    map[string]sessionLivenessEntry
 }
 
 // newDefaultTokenService creates a new TokenService instance (internal constructor).
@@ -99,17 +122,17 @@ func NewTokenService(
 	roleRepo domain.RoleRepository,
 ) *defaultTokenService {
 	return &defaultTokenService{
-		repo:       repo,
-		cache:      tokenCache,
-		issuer:     issuer,
-		signer:     signer,
-		pubKeyRepo: pubKeyRepo,
-		saRepo:     saRepo,
-		userRepo:  userRepo,
+		repo:               repo,
+		cache:              tokenCache,
+		issuer:             issuer,
+		signer:             signer,
+		pubKeyRepo:         pubKeyRepo,
+		saRepo:             saRepo,
+		userRepo:           userRepo,
 		userAttrMapperRepo: userAttrMapperRepo,
-		userAttrRepo: userAttrRepo,
-		groupRepo:  groupRepo,
-		roleRepo:   roleRepo,
+		userAttrRepo:       userAttrRepo,
+		groupRepo:          groupRepo,
+		roleRepo:           roleRepo,
 	}
 }
 
@@ -123,6 +146,7 @@ func toCacheEntry(t *domain.Token) *cache.TokenEntry { // Ensure cache pkg is im
 		Roles: t.Roles, // Add Roles
 		// Issuer and other fields not in TokenEntry are omitted
 		SessionID: t.SessionID,
+		CnfJKT:    t.CnfJKT,
 	}
 }
 
@@ -141,6 +165,7 @@ func fromCacheEntry(entry *cache.TokenEntry, tokenValue string) *domain.Token { 
 		IsRevoked:  entry.IsRevoked,
 		Roles:      entry.Roles,
 		SessionID:  entry.SessionID,
+		CnfJKT:     entry.CnfJKT,
 		TokenValue: tokenValue, // Pass tokenValue if needed for context
 		// TokenType, CreatedAt, LastUsedAt, Issuer would need to be set if required by caller
 	}
@@ -174,13 +199,44 @@ func (s *defaultTokenService) CreateToken(ctx context.Context, opts domain.Creat
 
 	expiresAt := time.Now().Add(opts.ExpireIn)
 
+	// DPoP binding (Phase 4): if a proof is present in the request context,
+	// bind the issued token to its key. An explicit opts.CnfJKT takes precedence.
+	cnfJKT := opts.CnfJKT
+	reqInfo := reqinfo.FromContext(ctx)
+	if cnfJKT == "" && reqInfo.DPoPProof != "" {
+		method := reqInfo.Method
+		if method == "" {
+			method = "POST"
+		}
+		jkt, err := dpop.VerifyProofOnce(reqInfo.DPoPProof, method, reqInfo.DPoPHTU, "", time.Now())
+		if err != nil {
+			telemetry.RecordSpanError(span, err, "invalid DPoP proof")
+			span.SetStatus(codes.Error, "invalid DPoP proof")
+			return nil, fmt.Errorf("invalid DPoP proof: %w", err)
+		}
+		cnfJKT = jkt
+	}
+
+	// sub defaults to the user ID. client_credentials tokens have no end user,
+	// so callers pass an explicit Subject (the client/service account identity)
+	// to keep `sub` non-empty — required by consumers such as kube-apiserver.
+	subject := opts.Subject
+	if subject == "" {
+		subject = opts.UserID
+	}
+	// aud defaults to the requesting client, which is the historical behaviour.
+	audience := opts.Audience
+	if len(audience) == 0 {
+		audience = []string{opts.ClientID}
+	}
+
 	// ? This is a default claim object, it can be used for both access and refresh tokens.
 	// ? Later it should be changed to a specific one for access_token, and id_token
 	// Access token claims
 	tokenClaimsMap := jwt.MapClaims{
 		"iss": s.issuer,
-		"sub": opts.UserID,
-		"aud": jwt.ClaimStrings{opts.ClientID},
+		"sub": subject,
+		"aud": jwt.ClaimStrings(audience),
 		"exp": jwt.NewNumericDate(expiresAt).Unix(),
 		"iat": jwt.NewNumericDate(time.Now()).Unix(),
 		"nbf": jwt.NewNumericDate(time.Now()).Unix(),
@@ -209,6 +265,16 @@ func (s *defaultTokenService) CreateToken(ctx context.Context, opts domain.Creat
 	if opts.SessionID != "" {
 		tokenClaimsMap["sid"] = opts.SessionID
 	}
+	if cnfJKT != "" {
+		tokenClaimsMap["cnf"] = map[string]string{"jkt": cnfJKT}
+	}
+
+	// groups is a flat array consumed by Kubernetes OIDC (--oidc-groups-claim).
+	// It is separate from the role claims above so RBAC bindings can be managed
+	// independently of application roles.
+	if len(opts.Groups) > 0 {
+		tokenClaimsMap["groups"] = opts.Groups
+	}
 
 	// Apply token attribute mappers for access tokens
 	if opts.TokenType == api.TokenTypeAccessToken {
@@ -220,10 +286,10 @@ func (s *defaultTokenService) CreateToken(ctx context.Context, opts domain.Creat
 
 	signedToken, err := s.signer.Sign(tokenClaimsMap, s.resolveSigningKeyID(opts.SigningKeyID, opts.ClientID))
 	if err != nil {
-			telemetry.RecordSpanError(span, err, "failed to sign token")
-			span.SetStatus(codes.Error, "failed to sign token")
-			return nil, err
-		}
+		telemetry.RecordSpanError(span, err, "failed to sign token")
+		span.SetStatus(codes.Error, "failed to sign token")
+		return nil, err
+	}
 
 	// Store token in repository
 	token := &domain.Token{ // Changed to domain.Token
@@ -238,12 +304,18 @@ func (s *defaultTokenService) CreateToken(ctx context.Context, opts domain.Creat
 		LastUsedAt: time.Now(),
 		Roles:      userRoles, // Store roles in the token struct
 		SessionID:  opts.SessionID,
+		CnfJKT:     cnfJKT,
+		Audience:   audience,
+		Subject:    subject,
+		Groups:     opts.Groups,
+		Family:     opts.Family,
+		ParentJTI:  opts.ParentJTI,
 	}
-		if err := s.repo.StoreToken(ctx, token); err != nil {
-			telemetry.RecordSpanError(span, err, "failed to store token")
-			span.SetStatus(codes.Error, "failed to store token")
-			return nil, err
-		}
+	if err := s.repo.StoreToken(ctx, token); err != nil {
+		telemetry.RecordSpanError(span, err, "failed to store token")
+		span.SetStatus(codes.Error, "failed to store token")
+		return nil, err
+	}
 
 	if opts.TokenType == api.TokenTypeAccessToken {
 		// Store token in cache
@@ -254,6 +326,20 @@ func (s *defaultTokenService) CreateToken(ctx context.Context, opts domain.Creat
 	if metrics.TokensCreatedTotal != nil {
 		metrics.TokensCreatedTotal.Inc()
 	}
+
+	action := "TokenIssued"
+	if opts.ParentJTI != "" {
+		action = "TokenRefreshed"
+	}
+	info := reqinfo.FromContext(ctx)
+	details := fmt.Sprintf("type=%s client=%s session=%s family=%s parent=%s expires=%s",
+		opts.TokenType, opts.ClientID, opts.SessionID, opts.Family, opts.ParentJTI,
+		expiresAt.UTC().Format(time.RFC3339))
+	if d := info.Details(); d != "" {
+		details += " " + d
+	}
+	audit.Log("TokenService", action, opts.UserID, opts.TokenID, details, true, nil)
+
 	return token, nil
 }
 
@@ -354,10 +440,18 @@ func (s *defaultTokenService) BuildToken(token *domain.Token) error { // Changed
 	// ? This is a default claim object, it can be used for both access and refresh tokens.
 	// ? Later it should be changed to a specific one for access_token, and id_token
 	// Access token claims
+	subject := token.Subject
+	if subject == "" {
+		subject = token.UserID
+	}
+	audience := token.Audience
+	if len(audience) == 0 {
+		audience = []string{token.ClientID}
+	}
 	tokenMapClaims := jwt.MapClaims{
 		"iss": s.issuer,
-		"sub": token.UserID,
-		"aud": jwt.ClaimStrings{token.ClientID},
+		"sub": subject,
+		"aud": jwt.ClaimStrings(audience),
 		"exp": jwt.NewNumericDate(token.ExpiresAt).Unix(),
 		"iat": jwt.NewNumericDate(token.CreatedAt).Unix(),
 		"nbf": jwt.NewNumericDate(token.CreatedAt).Unix(),
@@ -375,6 +469,9 @@ func (s *defaultTokenService) BuildToken(token *domain.Token) error { // Changed
 	// Or, more realistically, BuildToken is primarily for re-signing an existing ssso.Token, which should have roles.
 	if len(token.Roles) > 0 {
 		tokenMapClaims["roles"] = token.Roles
+	}
+	if len(token.Groups) > 0 {
+		tokenMapClaims["groups"] = token.Groups
 	}
 	// If UserID is present and token.Roles is empty, one might fetch roles here if context was available.
 	// else if token.UserID != "" && s.userRepo != nil { /* fetch roles - needs context */ }
@@ -470,6 +567,20 @@ func (s *defaultTokenService) BuildToken(token *domain.Token) error { // Changed
 func (s *defaultTokenService) GenerateTokenPair(ctx context.Context,
 	clientID, userID, scope string, tokenTTL time.Duration, sessionID string,
 ) (*api.TokenResponse, error) {
+	return s.GenerateTokenPairWithSession(ctx, clientID, userID, scope, tokenTTL, sessionID, "", "")
+}
+
+// GenerateTokenPairWithSession issues an access/refresh/ID token triple bound to
+// a session and a refresh-token family. When family is empty a new family is
+// started (initial login); on rotation the caller passes the existing family and
+// the JTI of the token being replaced.
+func (s *defaultTokenService) GenerateTokenPairWithSession(ctx context.Context,
+	clientID, userID, scope string, tokenTTL time.Duration, sessionID, family, parentJTI string,
+) (*api.TokenResponse, error) {
+	if family == "" {
+		family = uuid.NewString()
+	}
+
 	ctx, span := telemetry.StartSpan(ctx, tokenTracerName, "GenerateTokenPair",
 		attribute.String("user.id", userID),
 		attribute.String("oauth.client_id", clientID),
@@ -490,12 +601,12 @@ func (s *defaultTokenService) GenerateTokenPair(ctx context.Context,
 		SessionID:    sessionID,
 	}, nil) // claims can be nil, CreateToken will make its own MapClaims
 	if err != nil {
-			telemetry.RecordSpanError(span, err, "failed to create access token")
-			span.SetStatus(codes.Error, "failed to create access token")
-			return nil, fmt.Errorf("failed to create access token: %w", err)
-		}
+		telemetry.RecordSpanError(span, err, "failed to create access token")
+		span.SetStatus(codes.Error, "failed to create access token")
+		return nil, fmt.Errorf("failed to create access token: %w", err)
+	}
 
-		// Generate refresh token
+	// Generate refresh token
 	refreshTokenID := uuid.NewString()
 	refreshTokenTTL := tokenTTL * 24 // Example: Refresh token lives 24x longer
 	refreshToken, err := s.CreateToken(ctx, domain.CreateTokenOptions{
@@ -507,12 +618,14 @@ func (s *defaultTokenService) GenerateTokenPair(ctx context.Context,
 		ExpireIn:     refreshTokenTTL,
 		SigningKeyID: "", // Use default key
 		SessionID:    sessionID,
+		Family:       family,
+		ParentJTI:    parentJTI,
 	}, nil)
 	if err != nil {
-			telemetry.RecordSpanError(span, err, "failed to create refresh token")
-			span.SetStatus(codes.Error, "failed to create refresh token")
-			return nil, fmt.Errorf("failed to create refresh token: %w", err)
-		}
+		telemetry.RecordSpanError(span, err, "failed to create refresh token")
+		span.SetStatus(codes.Error, "failed to create refresh token")
+		return nil, fmt.Errorf("failed to create refresh token: %w", err)
+	}
 
 	// CreateToken already handles storing in repo and caching for access tokens.
 	// The metrics.TokensCreatedTotal.Inc() is also called within CreateToken.
@@ -645,13 +758,19 @@ func (s *defaultTokenService) ValidateAccessToken(ctx context.Context, tokenValu
 
 func (s *defaultTokenService) validateUserToken(ctx context.Context, tokenValue string) (*domain.Token, error) {
 	if s.signer.HasRSASigner() {
-		if token, err := s.validateRS256Token(tokenValue); err == nil {
+		if token, err := s.validateRS256Token(ctx, tokenValue); err == nil {
 			return token, nil
 		}
 	}
 
 	if entry, cacheErr := s.cache.Get(ctx, tokenValue); cacheErr == nil && entry != nil {
 		if !entry.IsRevoked && time.Now().Before(entry.ExpiresAt) {
+			if entry.SessionID != "" && s.strictSessionValidation && s.sessionRepo != nil {
+				if !s.sessionActive(ctx, entry.SessionID) {
+					_ = s.cache.Delete(ctx, tokenValue)
+					return nil, domain.ErrTokenExpiredOrRevoked
+				}
+			}
 			userToken := fromCacheEntry(entry, tokenValue)
 			userToken.Issuer = s.issuer
 			return userToken, nil
@@ -667,17 +786,69 @@ func (s *defaultTokenService) validateUserToken(ctx context.Context, tokenValue 
 	if userTokenDB.IsRevoked || time.Now().After(userTokenDB.ExpiresAt) {
 		return nil, domain.ErrTokenExpiredOrRevoked
 	}
+	if userTokenDB.SessionID != "" && s.strictSessionValidation && s.sessionRepo != nil {
+		if !s.sessionActive(ctx, userTokenDB.SessionID) {
+			return nil, domain.ErrTokenExpiredOrRevoked
+		}
+	}
 	if userTokenDB.Issuer == "" {
 		userTokenDB.Issuer = s.issuer
 	}
 
-		if cacheSetErr := s.cache.Set(ctx, toCacheEntry(userTokenDB)); cacheSetErr != nil {
-			log.Ctx(ctx).Warn().Err(cacheSetErr).Msg("failed to cache user token")
-		}
+	if cacheSetErr := s.cache.Set(ctx, toCacheEntry(userTokenDB)); cacheSetErr != nil {
+		log.Ctx(ctx).Warn().Err(cacheSetErr).Msg("failed to cache user token")
+	}
 	return userTokenDB, nil
 }
 
-func (s *defaultTokenService) validateRS256Token(tokenValue string) (*domain.Token, error) {
+// sessionActive reports whether the session behind sid is still live, using a
+// short-lived in-process cache to avoid a DB round trip on every request.
+func (s *defaultTokenService) sessionActive(ctx context.Context, sid string) bool {
+	now := time.Now()
+	s.sessionLivenessMu.Lock()
+	if s.sessionLivenessCache == nil {
+		s.sessionLivenessCache = make(map[string]sessionLivenessEntry)
+	}
+	if e, ok := s.sessionLivenessCache[sid]; ok && now.Before(e.expires) {
+		s.sessionLivenessMu.Unlock()
+		return e.active
+	}
+	s.sessionLivenessMu.Unlock()
+
+	active := false
+	if sess, err := s.sessionRepo.GetSessionByID(ctx, sid); err == nil && sess != nil {
+		if !sess.IsRevoked && now.Before(sess.ExpiresAt) {
+			active = true
+		}
+	}
+
+	s.cacheSessionLiveness(sid, active, now)
+	return active
+}
+
+// cacheSessionLiveness stores a liveness result, keeping the cache bounded by
+// pruning expired entries (and, if still saturated, dropping the whole cache)
+// so a long-lived process cannot grow it without limit.
+func (s *defaultTokenService) cacheSessionLiveness(sid string, active bool, now time.Time) {
+	s.sessionLivenessMu.Lock()
+	defer s.sessionLivenessMu.Unlock()
+	if s.sessionLivenessCache == nil {
+		s.sessionLivenessCache = make(map[string]sessionLivenessEntry)
+	}
+	if len(s.sessionLivenessCache) >= sessionLivenessMaxEntries {
+		for k, e := range s.sessionLivenessCache {
+			if !now.Before(e.expires) {
+				delete(s.sessionLivenessCache, k)
+			}
+		}
+		if len(s.sessionLivenessCache) >= sessionLivenessMaxEntries {
+			s.sessionLivenessCache = make(map[string]sessionLivenessEntry)
+		}
+	}
+	s.sessionLivenessCache[sid] = sessionLivenessEntry{active: active, expires: now.Add(sessionLivenessTTL)}
+}
+
+func (s *defaultTokenService) validateRS256Token(ctx context.Context, tokenValue string) (*domain.Token, error) {
 	pubKey := s.signer.GetRSAPublicKey()
 	if pubKey == nil {
 		return nil, errors.New("no RSA public key available for validation")
@@ -726,6 +897,13 @@ func (s *defaultTokenService) validateRS256Token(tokenValue string) (*domain.Tok
 
 	jtiClaim, _ := (*claims)["jti"].(string)
 	issuerClaim, _ := (*claims)["iss"].(string)
+	sidClaim, _ := (*claims)["sid"].(string)
+	cnfJKT := ""
+	if cnf, ok := (*claims)["cnf"].(map[string]interface{}); ok {
+		if v, ok := cnf["jkt"].(string); ok {
+			cnfJKT = v
+		}
+	}
 	var tokenScope string
 	if scope, ok := (*claims)["scope"].(string); ok {
 		tokenScope = scope
@@ -744,6 +922,12 @@ func (s *defaultTokenService) validateRS256Token(tokenValue string) (*domain.Tok
 		issuerClaim = s.issuer
 	}
 
+	if sidClaim != "" && s.strictSessionValidation && s.sessionRepo != nil {
+		if !s.sessionActive(ctx, sidClaim) {
+			return nil, domain.ErrTokenExpiredOrRevoked
+		}
+	}
+
 	return &domain.Token{
 		ID:         jtiClaim,
 		TokenType:  "access_token",
@@ -755,12 +939,21 @@ func (s *defaultTokenService) validateRS256Token(tokenValue string) (*domain.Tok
 		IsRevoked:  false,
 		Issuer:     issuerClaim,
 		Roles:      roles,
+		SessionID:  sidClaim,
+		CnfJKT:     cnfJKT,
 	}, nil
 }
 
 func (s *defaultTokenService) RevokeToken(ctx context.Context, token string) error {
 	_, span := telemetry.StartSpan(ctx, tokenTracerName, "RevokeToken")
 	defer span.End()
+
+	user, jti := tokenAuditSubject(token)
+	info := reqinfo.FromContext(ctx)
+	details := "access token revoked"
+	if d := info.Details(); d != "" {
+		details += "; " + d
+	}
 
 	if err := s.cache.Delete(ctx, token); err != nil {
 		log.Ctx(ctx).Warn().Err(err).Msg("failed to delete token from cache")
@@ -769,9 +962,28 @@ func (s *defaultTokenService) RevokeToken(ctx context.Context, token string) err
 	if err := s.repo.RevokeToken(ctx, token); err != nil {
 		telemetry.RecordSpanError(span, err, "failed to revoke token")
 		span.SetStatus(codes.Error, "failed to revoke token")
+		audit.Log("TokenService", "TokenRevokeFailed", user, jti, details, false, err)
 		return err
 	}
+	audit.Log("TokenService", "TokenRevoked", user, jti, details, true, nil)
 	return nil
+}
+
+// tokenAuditSubject extracts non-sensitive claims for an audit event. It does
+// not verify the signature: the token was already presented to a trusted
+// endpoint, and audit events must never contain the token itself.
+func tokenAuditSubject(tokenValue string) (userID, jti string) {
+	claims := jwt.MapClaims{}
+	if _, _, err := jwt.NewParser().ParseUnverified(tokenValue, claims); err != nil {
+		return "", ""
+	}
+	if sub, ok := claims["sub"].(string); ok {
+		userID = sub
+	}
+	if id, ok := claims["jti"].(string); ok {
+		jti = id
+	}
+	return userID, jti
 }
 
 // GetRefreshTokenInfo retrieves metadata about a refresh token. Returns the token info if found,
@@ -1407,4 +1619,15 @@ func splitCSV(s string) []string {
 
 func (s *defaultTokenService) GenerateTokenPairWithFamily(ctx context.Context, clientID, userID, scope string, tokenTTL time.Duration, family string, nonce string, authTime time.Time) (*api.TokenResponse, error) {
 	return nil, errors.New("not implemented: GenerateTokenPairWithFamily requires JWKS setup, see skipped tests")
+}
+
+// SetSessionRepository wires the session store used for strict access-token
+// validation (Phase 1).
+func (s *defaultTokenService) SetSessionRepository(repo domain.SessionRepository) {
+	s.sessionRepo = repo
+}
+
+// SetStrictSessionValidation toggles strict session-aware access-token validation.
+func (s *defaultTokenService) SetStrictSessionValidation(enabled bool) {
+	s.strictSessionValidation = enabled
 }

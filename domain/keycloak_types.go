@@ -163,6 +163,8 @@ type RealmSettings struct {
 	LoginWithEmailAllowed bool      `bson:"login_with_email_allowed" json:"loginWithEmailAllowed"`
 	DuplicateEmailsAllowed bool     `bson:"duplicate_emails_allowed" json:"duplicateEmailsAllowed"`
 	ResetPasswordAllowed  bool      `bson:"reset_password_allowed" json:"resetPasswordAllowed"`
+	// VerifyEmail makes newly self-registered users confirm their address (VERIFY_EMAIL required action).
+	VerifyEmail           bool      `bson:"verify_email" json:"verifyEmail"`
 	EditUsernameAllowed   bool      `bson:"edit_username_allowed" json:"editUsernameAllowed"`
 	BruteForceProtected   bool      `bson:"brute_force_protected" json:"bruteForceProtected"`
 	SSLRequired           string    `bson:"ssl_required" json:"sslRequired"`
@@ -170,6 +172,10 @@ type RealmSettings struct {
 	// RequireMFA forces every user in the realm to complete a second factor.
 	// Users without a usable factor are sent to the enrollment page at login.
 	RequireMFA bool `bson:"require_mfa,omitempty" json:"requireMFA,omitempty"`
+
+	// BrowserPolicy restricts interactive logins to patched browser versions.
+	// Nil or disabled means no restriction.
+	BrowserPolicy *BrowserPolicy `bson:"browser_policy,omitempty" json:"browserPolicy,omitempty"`
 
 	// Password policy
 	PasswordMinLength    int  `bson:"password_min_length,omitempty" json:"passwordMinLength,omitempty"`
@@ -180,8 +186,11 @@ type RealmSettings struct {
 	PasswordSpecialChars int  `bson:"password_special_chars,omitempty" json:"passwordSpecialChars,omitempty"`
 
 	// Token settings
-	AccessTokenLifespan int `bson:"access_token_lifespan,omitempty" json:"accessTokenLifespan,omitempty"`
-	AccessCodeLifespan  int `bson:"access_code_lifespan,omitempty" json:"accessCodeLifespan,omitempty"`
+	AccessTokenLifespan   int `bson:"access_token_lifespan,omitempty" json:"accessTokenLifespan,omitempty"`
+	AccessCodeLifespan    int `bson:"access_code_lifespan,omitempty" json:"accessCodeLifespan,omitempty"`
+	RefreshTokenLifespan  int `bson:"refresh_token_lifespan,omitempty" json:"refreshTokenLifespan,omitempty"`
+	SSOSessionIdleTimeout int `bson:"sso_session_idle_timeout,omitempty" json:"ssoSessionIdleTimeout,omitempty"`
+	SSOSessionMaxLifespan int `bson:"sso_session_max_lifespan,omitempty" json:"ssoSessionMaxLifespan,omitempty"`
 
 	CreatedAt time.Time `bson:"created_at" json:"createdAt"`
 	UpdatedAt time.Time `bson:"updated_at" json:"updatedAt"`
@@ -191,6 +200,33 @@ type RealmSettings struct {
 type RealmSettingsRepository interface {
 	GetRealmSettings(ctx context.Context) (*RealmSettings, error)
 	UpdateRealmSettings(ctx context.Context, settings *RealmSettings) error
+}
+
+// Browser policy enforcement modes.
+const (
+	BrowserPolicyEnforcementBlock = "block"
+	BrowserPolicyEnforcementWarn  = "warn"
+)
+
+// BrowserPolicy is an enterprise control that refuses interactive logins from
+// browsers older than the configured minimum versions. Machine clients (curl,
+// ssoctl, SDKs) are not browsers and remain usable unless BlockUnknown is set.
+type BrowserPolicy struct {
+	Enabled bool `bson:"enabled" json:"enabled"`
+	// Enforcement is "block" (default) or "warn". In warn mode a violating
+	// login is allowed but the attempt is audited.
+	Enforcement string `bson:"enforcement" json:"enforcement"`
+	// BlockUnknown rejects agents that cannot be identified as a browser.
+	BlockUnknown bool `bson:"block_unknown" json:"blockUnknown"`
+	// BlockBots rejects crawlers, link previewers and headless browsers.
+	BlockBots bool `bson:"block_bots" json:"blockBots"`
+	// MinVersions maps a browser family (chrome, edge, firefox, safari, opera,
+	// samsung) to its minimum allowed version, e.g. "120" or "17.2".
+	MinVersions map[string]string `bson:"min_versions" json:"minVersions"`
+	// ExemptUserAgents is a list of case-insensitive substrings that bypass the
+	// policy (service accounts, health checks, CI clients).
+	ExemptUserAgents []string  `bson:"exempt_user_agents" json:"exemptUserAgents"`
+	UpdatedAt        time.Time `bson:"updated_at" json:"updatedAt"`
 }
 
 // RealmKeyStatus describes a signing key's position in its rotation lifecycle.

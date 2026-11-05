@@ -14,6 +14,8 @@ import (
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
 	"github.com/pilab-dev/shadow-sso/internal/federation"
+	"github.com/pilab-dev/shadow-sso/internal/geo"
+	"github.com/pilab-dev/shadow-sso/internal/reqinfo"
 	// "github.com/pilab-dev/shadow-sso/middleware" // No longer needed here
 	"github.com/rs/zerolog/log"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -334,10 +336,14 @@ func (s *FederationServer) completeLoginAndRespond(ctx context.Context, user *do
 	session := &domain.Session{
 		ID:           sessionID,
 		UserID:       user.ID,
+		ClientID:     clientID,
 		TokenID:      sessionID,
 		RefreshToken: tokenPair.RefreshToken,
+		UserAgent:    reqinfo.FromContext(ctx).UserAgent,
+		IPAddress:    reqinfo.FromContext(ctx).IP,
 		ExpiresAt:    time.Now().Add(30 * 24 * time.Hour), // Long session for refresh token
 	}
+	enrichSession(ctx, session, geo.NoopResolver{}, s.sessionRepo, nil)
 	if err := s.sessionRepo.StoreSession(ctx, session); err != nil {
 		log.Error().Err(err).Str("userID", user.ID).Msg("Failed to store session in federated login")
 		// Non-fatal for login response itself, but an issue.

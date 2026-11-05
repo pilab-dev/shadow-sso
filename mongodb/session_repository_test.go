@@ -10,15 +10,15 @@ import (
 	"github.com/pilab-dev/shadow-sso/domain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
-	// "go.mongodb.org/mongo-driver/v2/bson" // For direct BSON if needed
 
 	"github.com/pilab-dev/shadow-sso/mongodb"
 )
 
 // Helper function to setup DB for SessionRepository tests
-func setupSessionRepoTest(t *testing.T) (domain.SessionRepository, func(), error) {
+func setupSessionRepoTest(t *testing.T) (domain.SessionRepository, *mongo.Database, func(), error) {
 	mongoURI := os.Getenv("MONGO_TEST_URI") // Using MONGO_TEST_URI
 	if mongoURI == "" {
 		mongoURI = "mongodb://localhost:27017"
@@ -31,18 +31,18 @@ func setupSessionRepoTest(t *testing.T) (domain.SessionRepository, func(), error
 	// Direct client connection for test isolation
 	client, err := mongo.Connect(options.Client().ApplyURI(mongoURI).SetConnectTimeout(10 * time.Second))
 	if err != nil {
-		return nil, func() {}, fmt.Errorf("mongo.Connect failed for session repo test: %w", err)
+		return nil, nil, func() {}, fmt.Errorf("mongo.Connect failed for session repo test: %w", err)
 	}
 	if errPing := client.Ping(ctx, nil); errPing != nil {
 		client.Disconnect(ctx)
-		return nil, func() {}, fmt.Errorf("mongo.Ping failed for session repo test: %w", errPing)
+		return nil, nil, func() {}, fmt.Errorf("mongo.Ping failed for session repo test: %w", errPing)
 	}
 	db := client.Database(dbName)
 
 	sessionRepo, err := mongodb.NewSessionRepositoryMongo(ctx, db) // Creates collection and indexes
 	if err != nil {
 		client.Disconnect(ctx)
-		return nil, func() {}, fmt.Errorf("NewSessionRepositoryMongo failed: %w", err)
+		return nil, nil, func() {}, fmt.Errorf("NewSessionRepositoryMongo failed: %w", err)
 	}
 
 	cleanupFunc := func() {
@@ -54,7 +54,7 @@ func setupSessionRepoTest(t *testing.T) (domain.SessionRepository, func(), error
 			t.Logf("Warning: failed to disconnect test client during cleanup: %v", errDisconnect)
 		}
 	}
-	return sessionRepo, cleanupFunc, nil
+	return sessionRepo, db, cleanupFunc, nil
 }
 
 func TestSessionRepositoryMongo_Integration(t *testing.T) {
@@ -62,7 +62,7 @@ func TestSessionRepositoryMongo_Integration(t *testing.T) {
 		t.Skip("Skipping MongoDB integration test: MONGO_TEST_URI not set")
 	}
 
-	repo, cleanup, err := setupSessionRepoTest(t)
+	repo, db, cleanup, err := setupSessionRepoTest(t)
 	require.NoError(t, err, "Failed to setup SessionRepository test")
 	defer cleanup()
 
@@ -185,6 +185,85 @@ func TestSessionRepositoryMongo_Integration(t *testing.T) {
 		if len(sessionsUser1IP) == 1 {
 			assert.Equal(t, session1.ID, sessionsUser1IP[0].ID)
 		}
+	})
+
+	t.Run("ListSessionsByUserID_ClientIDFilter", func(t *testing.T) {
+		// domain.Session has no ClientID field yet, so insert raw documents with
+		// client_id directly to exercise the client_id filter path.
+		clientDocs := []bson.M{
+			{"_id": "sess-cid-a1", "user_id": "cid-user-1", "client_id": "clientA", "token_id": "jti-cid-a1", "created_at": now, "expires_at": now.Add(1 * time.Hour), "is_revoked": false},
+			{"_id": "sess-cid-a2", "user_id": "cid-user-2", "client_id": "clientA", "token_id": "jti-cid-a2", "created_at": now, "expires_at": now.Add(1 * time.Hour), "is_revoked": false},
+			{"_id": "sess-cid-b1", "user_id": "cid-user-1", "client_id": "clientB", "token_id": "jti-cid-b1", "created_at": now, "expires_at": now.Add(1 * time.Hour), "is_revoked": false},
+		}
+		collection := db.Collection(mongodb.UserSessionsCollection)
+		for _, doc := range clientDocs {
+			_, err := collection.InsertOne(ctx, doc)
+			require.NoError(t, err, "InsertOne for client filter fixture should succeed")
+		}
+
+		t.Run("ClientIDNarrowsWithinUser", func(t *testing.T) {
+			// Given user cid-user-1 has sessions for clientA and clientB
+			// When listing by user with a ClientID filter
+			sessions, err := repo.ListSessionsByUserID(ctx, "cid-user-1", domain.SessionFilter{ClientID: "clientA"})
+			require.NoError(t, err)
+			// Then only the clientA session for that user is returned
+			assert.Len(t, sessions, 1, "Should be 1 session for user with ClientID filter")
+			if len(sessions) == 1 {
+				assert.Equal(t, "sess-cid-a1", sessions[0].ID)
+			}
+		})
+
+		t.Run("EmptyUserIDWithClientIDReturnsAllUsers", func(t *testing.T) {
+			// Given clientA sessions exist for two different users
+			// When listing with empty user and a ClientID filter
+			sessions, err := repo.ListSessionsByUserID(ctx, "", domain.SessionFilter{ClientID: "clientA"})
+			require.NoError(t, err)
+			// Then all clientA sessions across users are returned (user_id key omitted, not ""-filtered)
+			assert.Len(t, sessions, 2, "Should return sessions for all users of clientA")
+		})
+
+		t.Run("UserIDInFilterWithClientID", func(t *testing.T) {
+			// Given user cid-user-1 has sessions for clientA and clientB
+			// When listing via filter.UserID plus a ClientID filter
+			sessions, err := repo.ListSessionsByUserID(ctx, "", domain.SessionFilter{UserID: "cid-user-1", ClientID: "clientA"})
+			require.NoError(t, err)
+			// Then only that user's clientA session is returned
+			assert.Len(t, sessions, 1, "Should be 1 session for filter.UserID + ClientID")
+			if len(sessions) == 1 {
+				assert.Equal(t, "sess-cid-a1", sessions[0].ID)
+			}
+		})
+	})
+
+	t.Run("ListSessionsByUserID_ClientIDRoundTrip", func(t *testing.T) {
+		// A session persisted via StoreSession now carries client_id (the
+		// domain.Session.ClientID field), so the client_id filter matches real
+		// stored docs — not just raw-doc fixtures like the item-5 subtests.
+		roundTrip := &domain.Session{
+			UserID:    "rt-user-1",
+			ClientID:  "roundtrip-client",
+			TokenID:   "jti-roundtrip-1",
+			UserAgent: "Mozilla/5.0 RoundTrip",
+			IPAddress: "10.0.0.1",
+			ExpiresAt: now.Add(1 * time.Hour),
+			IsRevoked: false,
+		}
+		err := repo.StoreSession(ctx, roundTrip)
+		require.NoError(t, err, "StoreSession with ClientID should succeed")
+		require.NotEmpty(t, roundTrip.ID, "roundTrip ID should be populated")
+
+		// List by ClientID only (empty user) — proves StoreSession persisted
+		// client_id on the document and the filter matches it.
+		sessions, err := repo.ListSessionsByUserID(ctx, "", domain.SessionFilter{ClientID: "roundtrip-client"})
+		require.NoError(t, err)
+		require.Len(t, sessions, 1, "Should return exactly the round-trip session")
+		assert.Equal(t, roundTrip.ID, sessions[0].ID)
+		assert.Equal(t, "roundtrip-client", sessions[0].ClientID)
+
+		// A different client_id filter matches nothing.
+		none, err := repo.ListSessionsByUserID(ctx, "", domain.SessionFilter{ClientID: "other-client"})
+		require.NoError(t, err)
+		assert.Empty(t, none, "No session should match the other client")
 	})
 
 	t.Run("DeleteSessionsByUserID", func(t *testing.T) {

@@ -25,10 +25,12 @@ type AuditLog struct {
 // AuditLogFilter restricts audit event listing to a user, an action and/or a
 // time window. Zero-valued fields are ignored.
 type AuditLogFilter struct {
-	User   string
-	Action string
-	From   *time.Time
-	To     *time.Time
+	User    string
+	Action  string
+	From    *time.Time
+	To      *time.Time
+	SortBy  string
+	SortDir string
 }
 
 // AuditLogRepository defines persistence for audit events. The interface is
@@ -37,5 +39,10 @@ type AuditLogFilter struct {
 type AuditLogRepository interface {
 	Insert(ctx context.Context, event *AuditLog) error
 	List(ctx context.Context, filter AuditLogFilter, limit, offset int) ([]*AuditLog, error)
+	// ListAfter returns events at or after `after` ordered oldest-first. It backs
+	// the live follower, which needs a forward cursor rather than the
+	// newest-first ordering of List; callers de-duplicate overlapping events by
+	// ID because `after` is inclusive to avoid losing same-timestamp events.
+	ListAfter(ctx context.Context, filter AuditLogFilter, after time.Time, limit int) ([]*AuditLog, error)
 	Count(ctx context.Context, filter AuditLogFilter) (int64, error)
 }

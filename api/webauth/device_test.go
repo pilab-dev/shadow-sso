@@ -21,7 +21,7 @@ import (
 
 const (
 	deviceTestSSOCookieSecret = "test-secret-32-bytes-long-for-hmac-sha256!!"
-	testCSRFToken       = "test-csrf-token"
+	testCSRFToken             = "test-csrf-token"
 )
 
 // setupDeviceTest wires the device verification routes with gomock-backed deps.

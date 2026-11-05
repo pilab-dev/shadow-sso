@@ -11,17 +11,20 @@ import (
 	"fmt"
 	"html/template" // Added for HTML rendering
 	"net/http"
+	"encoding/json"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	sssoapi "github.com/pilab-dev/shadow-sso/api"
 
 	"github.com/google/uuid"
 	"github.com/pilab-dev/shadow-sso/api/webauth"
 	"github.com/pilab-dev/shadow-sso/domain"           // Corrected: Single import of domain
 	"github.com/pilab-dev/shadow-sso/internal/metrics" // For custom metrics
+	"github.com/pilab-dev/shadow-sso/internal/reqinfo"
 	"github.com/pilab-dev/shadow-sso/internal/ssosession"
 
 	// Removed duplicate domain import
@@ -149,6 +152,7 @@ func (oa *OAuth2API) RegisterRoutes(e *gin.Engine) {
 	e.HEAD("/oauth2/silent-authorize", oa.SilentAuthorizeHandler)
 	e.OPTIONS("/oauth2/silent-authorize", oa.SilentAuthorizeHandler)
 	e.POST("/oauth2/device_authorization", oa.DeviceAuthorizationHandler)
+	e.POST("/oauth2/par", oa.PushedAuthorizationRequestHandler)
 	e.GET("/oauth2/userinfo", oa.UserInfoHandler)
 	e.POST("/oauth2/userinfo", oa.UserInfoHandler)
 	e.POST("/oauth2/revoke", oa.RevokeHandler)
@@ -358,7 +362,10 @@ func (oa *OAuth2API) DeviceAuthorizationHandler(c *gin.Context) {
 //
 //nolint:funlen,gocognit // Funlen might still be triggered but gocognit should be lower.
 func (oa *OAuth2API) AuthorizeHandler(c *gin.Context) {
-	ctx := c.Request.Context()
+	info := reqinfo.FromHTTP(c.Request)
+	info.DPoPProof = strings.TrimSpace(c.GetHeader("DPoP"))
+	info.DPoPHTU = requestURL(c.Request)
+	ctx := reqinfo.WithContext(c.Request.Context(), info)
 
 	// ── flow_id redirect from login form ────────────────────────────────
 	// When the login form (webauth) successfully authenticates a user, it
@@ -440,8 +447,17 @@ func (oa *OAuth2API) AuthorizeHandler(c *gin.Context) {
 func (oa *OAuth2API) handleFlowAuthorize(c *gin.Context, authReqData *authorizeRequestData, flowState *domain.LoginFlowState) {
 	// If the user was authenticated by the login form, user ID is stored on the flow state.
 	// The webauth login handler populates this regardless of MFA status.
-	if flowState.UserID != "" {
+	// A user ID alone is not enough: MFA and required actions must have completed.
+	if flowState.Authenticated() {
 		oa.completeAuthorizeAfterAuth(c, authReqData, flowState)
+		return
+	}
+	if action := flowState.PendingAction(); action != "" {
+		c.Redirect(http.StatusFound, "/required-action?flow_id="+url.QueryEscape(flowState.FlowID))
+		return
+	}
+	if flowState.Pending == domain.FlowPendingMFA {
+		c.Redirect(http.StatusFound, "/login?flow_id="+url.QueryEscape(flowState.FlowID))
 		return
 	}
 
@@ -497,7 +513,7 @@ func (oa *OAuth2API) completeAuthorizeAfterAuth(c *gin.Context, authReqData *aut
 	oa.persistCodeChallenge(ctx, authCode, authReqData.codeChallenge)
 
 	_ = oa.flowStore.DeleteFlow(ctx, flowState.FlowID)
-	oa.redirectToClient(c, authReqData.redirectURI, authCode, authReqData.state)
+	oa.redirectToClient(c, authReqData.redirectURI, authCode, authReqData.state, authReqData.responseMode)
 }
 
 // persistCodeChallenge stores the PKCE code challenge for a freshly generated
@@ -525,6 +541,8 @@ type authorizeRequestData struct {
 	prompt              string
 	codeChallenge       string
 	codeChallengeMethod string
+	authorizationDetails string // RAR (RFC 9396) JSON array, passed through
+	responseMode         string // response_mode (query, fragment, form_post, jwt)
 	// originalParams map[string]string // If needed by sub-functions
 }
 
@@ -538,8 +556,90 @@ func (oa *OAuth2API) parseAndValidateAuthorizeParams(c *gin.Context) (*authorize
 		state:               c.Query("state"),
 		nonce:               c.Query("nonce"),
 		prompt:              c.Query("prompt"),
-		codeChallenge:       c.Query("code_challenge"),
-		codeChallengeMethod: c.Query("code_challenge_method"),
+		codeChallenge:        c.Query("code_challenge"),
+		codeChallengeMethod:  c.Query("code_challenge_method"),
+		authorizationDetails: c.Query("authorization_details"),
+		responseMode:         c.Query("response_mode"),
+	}
+
+	// RFC 9126: a pushed authorization request carries a request_uri instead
+	// of the parameters inline. Resolve it into the same data struct.
+	if ru := c.Query("request_uri"); ru != "" {
+		params, ok := LookupPAR(ru)
+		if !ok {
+			err := domain.NewInvalidRequest("unknown or expired request_uri")
+			oa.sendHTMLError(c, http.StatusBadRequest, err)
+			return nil, err
+		}
+		if v := params["client_id"]; v != "" {
+			data.clientID = v
+		}
+		if v := params["redirect_uri"]; v != "" {
+			data.redirectURI = v
+		}
+		if v := params["response_type"]; v != "" {
+			data.responseType = v
+		}
+		if v := params["scope"]; v != "" {
+			data.scopeQuery = v
+		}
+		if v := params["state"]; v != "" {
+			data.state = v
+		}
+		if v := params["nonce"]; v != "" {
+			data.nonce = v
+		}
+		if v := params["prompt"]; v != "" {
+			data.prompt = v
+		}
+		if v := params["code_challenge"]; v != "" {
+			data.codeChallenge = v
+		}
+		if v := params["code_challenge_method"]; v != "" {
+			data.codeChallengeMethod = v
+		}
+		if v := params["authorization_details"]; v != "" {
+			data.authorizationDetails = v
+		}
+		if v := params["response_mode"]; v != "" {
+			data.responseMode = v
+		}
+	}
+
+	// RAR (RFC 9396): validate authorization_details JSON when present.
+	if data.authorizationDetails != "" {
+		var details []map[string]any
+		if err := json.Unmarshal([]byte(data.authorizationDetails), &details); err != nil {
+			err2 := domain.NewInvalidRequest("invalid authorization_details JSON")
+			oa.sendHTMLError(c, http.StatusBadRequest, err2)
+			return nil, err2
+		}
+		for _, d := range details {
+			t, _ := d["type"].(string)
+			if t == "" {
+				err2 := domain.NewInvalidRequest("authorization_details entry missing type")
+				oa.sendHTMLError(c, http.StatusBadRequest, err2)
+				return nil, err2
+			}
+		}
+		// Client-allowed type validation (if client service available).
+		if oa.clientService != nil {
+			client, err := oa.clientService.GetClient(c.Request.Context(), data.clientID)
+			if err == nil && len(client.AllowedAuthorizationDetails) > 0 {
+				allowed := make(map[string]bool)
+				for _, t := range client.AllowedAuthorizationDetails {
+					allowed[t] = true
+				}
+				for _, d := range details {
+					t, _ := d["type"].(string)
+					if !allowed[t] {
+						err2 := domain.NewInvalidRequest("authorization_details type not allowed for this client")
+						oa.sendHTMLError(c, http.StatusBadRequest, err2)
+						return nil, err2
+					}
+				}
+			}
+		}
 	}
 
 	if data.clientID == "" || data.redirectURI == "" || data.responseType == "" {
@@ -700,7 +800,7 @@ func (oa *OAuth2API) tryHandleWithExistingSession(c *gin.Context, data *authoriz
 			return true, errGen // Error occurred, but considered "handled" in terms of flow decision
 		}
 		oa.persistCodeChallenge(ctx, authCode, data.codeChallenge)
-		oa.redirectToClient(c, data.redirectURI, authCode, data.state)
+		oa.redirectToClient(c, data.redirectURI, authCode, data.state, data.responseMode)
 		return true, nil // Handled successfully
 	}
 
@@ -785,11 +885,42 @@ func (oa *OAuth2API) sendHTMLError(c *gin.Context, statusCode int, errDetails *d
 }
 
 // redirectToClient is a helper to redirect back to the client's redirect_uri.
-func (oa *OAuth2API) redirectToClient(c *gin.Context, baseRedirectURI, code, state string) {
+func (oa *OAuth2API) redirectToClient(c *gin.Context, baseRedirectURI, code, state, responseMode string) {
 	parsedRedirectURI, err := url.Parse(baseRedirectURI)
 	if err != nil {
 		log.Error().Err(err).Str("redirect_uri", baseRedirectURI).Msg("Failed to parse base redirect URI")
 		oa.sendHTMLError(c, http.StatusInternalServerError, domain.NewServerError("internal error constructing redirect"))
+		return
+	}
+
+	// JARM: response_mode=jwt returns the authorization response as a signed JWT.
+	if responseMode == "jwt" && oa.tokenSigner != nil && oa.tokenSigner.HasRSASigner() {
+		claims := jwt.MapClaims{
+			"iss":  oa.config.Issuer,
+			"aud":  "", // client id unknown here; left blank
+			"exp":  time.Now().Add(5 * time.Minute).Unix(),
+			"iat":  time.Now().Unix(),
+			"code": code,
+		}
+		if state != "" {
+			claims["state"] = state
+		}
+		tok, err := oa.tokenSigner.Sign(claims, oa.tokenSigner.RealmDefaultKeyID())
+		if err == nil {
+			params := url.Values{}
+			params.Set("response", tok)
+			parsedRedirectURI.RawQuery = params.Encode()
+			c.Redirect(http.StatusFound, parsedRedirectURI.String())
+			return
+		}
+		// Do not silently downgrade an explicitly requested JWT response mode.
+		log.Error().Err(err).Msg("JARM signing failed")
+		oa.redirectWithOAuthError(c, baseRedirectURI, state, "server_error", "failed to sign authorization response")
+		return
+	}
+	if responseMode == "jwt" {
+		// JARM requested but no signing key is available.
+		oa.redirectWithOAuthError(c, baseRedirectURI, state, "server_error", "JWT response mode unavailable")
 		return
 	}
 
@@ -886,6 +1017,17 @@ func (oa *OAuth2API) extractOriginalOIDCParams(c *gin.Context) map[string]string
 	for key, values := range c.Request.URL.Query() {
 		if len(values) > 0 {
 			params[key] = values[0] // Take the first value for simplicity
+		}
+	}
+	// PAR: resolve request_uri into the stored flow params so the login flow
+	// carries the full authorization request.
+	if ru := c.Query("request_uri"); ru != "" {
+		if p, ok := LookupPAR(ru); ok {
+			for k, v := range p {
+				if _, exists := params[k]; !exists {
+					params[k] = v
+				}
+			}
 		}
 	}
 	return params
@@ -1068,7 +1210,11 @@ func (oa *OAuth2API) FederatedCallbackHandler(c *gin.Context) {
 				)
 				if errGen == nil {
 					oa.persistCodeChallenge(c.Request.Context(), authCode, flowState.CodeChallenge)
-					oa.redirectToClient(c, flowState.RedirectURI, authCode, flowState.State)
+					rm := ""
+					if flowState.OriginalOIDCParams != nil {
+						rm = flowState.OriginalOIDCParams["response_mode"]
+					}
+					oa.redirectToClient(c, flowState.RedirectURI, authCode, flowState.State, rm)
 					return
 				}
 			}
@@ -1195,7 +1341,10 @@ func (oa *OAuth2API) TokenHandler(c *gin.Context) {
 	clientAssertionType := c.PostForm("client_assertion_type")
 	grantType := c.PostForm("grant_type")
 
-	ctx := c.Request.Context()
+	info := reqinfo.FromHTTP(c.Request)
+	info.DPoPProof = strings.TrimSpace(c.GetHeader("DPoP"))
+	info.DPoPHTU = requestURL(c.Request)
+	ctx := reqinfo.WithContext(c.Request.Context(), info)
 	var cli *domain.Client
 	var err error
 
@@ -1764,7 +1913,7 @@ func (oa *OAuth2API) ClientCredentialsHandler(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	token, err := oa.service.ClientCredentials(ctx, clientID, clientSecret, scope)
+	token, err := oa.service.ClientCredentials(ctx, clientID, clientSecret, scope, requestedAudiences(c))
 	if err != nil {
 		log.Error().Err(err).Msg("client credentials grant failed")
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -1817,16 +1966,38 @@ func (oa *OAuth2API) handlePasswordGrant(c *gin.Context, cli *domain.Client) (*s
 func (oa *OAuth2API) handleClientCredentialsGrant(c *gin.Context, cli *domain.Client) (*sssoapi.TokenResponse, error) {
 	scope := c.PostForm("scope")
 
-	// Use the original plaintext secret from the request, not the hash stored
-	// on cli.Secret — ClientCredentials validates credentials again internally.
-	clientSecret := c.PostForm("client_secret")
-	if clientSecret == "" {
-		_, clientSecret, _ = c.Request.BasicAuth()
-	}
-
 	ctx := c.Request.Context()
 
-	return oa.service.ClientCredentials(ctx, cli.ID, clientSecret, scope)
+	// cli was already authenticated by TokenHandler, via client_secret or a
+	// private_key_jwt client assertion. Re-validating here would fail for the
+	// assertion path, which carries no secret at all.
+	return oa.service.IssueClientCredentialsForClient(ctx, cli, scope, requestedAudiences(c))
+}
+
+// requestURL reconstructs the absolute URL a request was made to, used for the
+// DPoP htu check. Only http/https are accepted from X-Forwarded-Proto so a
+// client cannot inject an arbitrary scheme through a header.
+func requestURL(r *http.Request) string {
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	if v := r.Header.Get("X-Forwarded-Proto"); v != "" {
+		if p := strings.ToLower(strings.TrimSpace(strings.Split(v, ",")[0])); p == "http" || p == "https" {
+			scheme = p
+		}
+	}
+	return scheme + "://" + r.Host + r.URL.RequestURI()
+}
+
+// requestedAudiences collects RFC 8707 resource indicators from the token
+// request. Both `audience` (used by most real-world clients) and `resource`
+// (the RFC name) are accepted, and repeated values are honoured.
+func requestedAudiences(c *gin.Context) []string {
+	out := make([]string, 0, 2)
+	out = append(out, c.PostFormArray("audience")...)
+	out = append(out, c.PostFormArray("resource")...)
+	return out
 }
 
 func (oa *OAuth2API) handleRefreshTokenGrant(c *gin.Context, cli *domain.Client) (*sssoapi.TokenResponse, error) {
