@@ -1590,3 +1590,27 @@ func TestFederatedCallbackHandler_GServiceError(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "callback_processing_failed", resp["error"])
 }
+
+func TestTokenHandler_ConfidentialClientWithAuthNone_StillRequiresCredentials(t *testing.T) {
+	router, ctrl, _, _, _, mockClientStore, _, _, _, _, _, _, _ := setupTokenHandlerTest(t)
+	defer ctrl.Finish()
+
+	clientID := "confidential-auth-none"
+	cli := &domain.Client{ID: clientID, IsConfidential: true, TokenEndpointAuth: string(domain.ClientAuthMethodNone), AllowedGrantTypes: []string{"authorization_code"}}
+	mockClientStore.EXPECT().GetClient(gomock.Any(), clientID).AnyTimes().Return(cli, nil)
+
+	data := url.Values{}
+	data.Set("grant_type", "authorization_code")
+	data.Set("client_id", clientID)
+	data.Set("code", "some-code")
+	data.Set("redirect_uri", "https://rp.example.com/cb")
+
+	req, _ := http.NewRequest(http.MethodPost, "/oauth2/token", strings.NewReader(data.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d. Body: %s", w.Code, w.Body.String())
+	}
+}

@@ -1400,7 +1400,8 @@ func (oa *OAuth2API) TokenHandler(c *gin.Context) {
 		return
 	}
 
-	if !isDeviceCodeGrant && cli.IsConfidential && cli.TokenEndpointAuth != string(domain.ClientAuthMethodNone) && clientSecret == "" && clientAssertion == "" {
+	if !isDeviceCodeGrant && cli.IsConfidential && clientSecret == "" && clientAssertion == "" &&
+		!(cli.TokenEndpointAuth == string(domain.ClientAuthMethodTLSClientAuth) && c.Request.Header.Get("X-SSL-Client-Cert") != "") {
 		log.Ctx(ctx).Error().Str("client_id", clientID).Msg("Client is confidential but no credentials provided")
 		c.JSON(http.StatusUnauthorized, domain.NewInvalidClient("Client secret required for confidential client"))
 		return
