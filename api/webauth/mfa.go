@@ -90,14 +90,32 @@ func (wa *WebAuth) MFASubmitHandler(c *gin.Context) {
 	}
 
 	otp := c.PostForm("otp")
-	valid, err := totp.ValidateTOTPCode(user.TwoFactorSecret, otp)
-	if err != nil {
-		log.Error().Err(err).Str("flow_id", flowID).Msg("mfa: TOTP validation error")
-		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
-			"PageTitle": "Error",
-			"Message":   "Failed to verify the code. Please try again.",
-		})
-		return
+	var valid bool
+	if user.IsTwoFactorEnabled && user.TwoFactorMethod == "EMAIL" && wa.mfaService != nil {
+		v, e := wa.mfaService.VerifyMFAChallenge(ctx, user.ID, otp, 0)
+		valid = v
+		if e != nil {
+			log.Error().Err(e).Str("flow_id", flowID).Msg("mfa: email MFA validation error")
+			c.HTML(http.StatusInternalServerError, "error.html", gin.H{
+				"PageTitle": "Error",
+				"Message":   "Failed to verify the code. Please try again.",
+			})
+			return
+		}
+		if !v {
+			err = nil
+		}
+	} else {
+		v, e := totp.ValidateTOTPCode(user.TwoFactorSecret, otp)
+		valid = v
+		if e != nil {
+			log.Error().Err(e).Str("flow_id", flowID).Msg("mfa: TOTP validation error")
+			c.HTML(http.StatusInternalServerError, "error.html", gin.H{
+				"PageTitle": "Error",
+				"Message":   "Failed to verify the code. Please try again.",
+			})
+			return
+		}
 	}
 	if !valid {
 		wa.rateLimiter.RecordFailure(rateLimitKey)
