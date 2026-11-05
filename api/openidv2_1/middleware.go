@@ -44,7 +44,6 @@ func UserAuthMiddleware(tokenService services.TokenService) gin.HandlerFunc {
 		}
 
 		jwtToken, err := extractJWTFromHeader(authHeader)
-		log.Warn().Ctx(ctx).Msg("Token is not introspected. With a zero-trust architecture, we should introspect the token.")
 
 		if err != nil {
 			span.RecordError(fmt.Errorf("invalid authorization header: %w", err))

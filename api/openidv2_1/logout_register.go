@@ -2,7 +2,9 @@ package openidv2_1
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/subtle"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"net/url"
@@ -51,7 +53,15 @@ func (oa *OAuth2API) LogoutHandler(c *gin.Context) {
 		}
 	}
 
-	clientID, _ := claims["aud"].(string)
+	var clientID string
+	switch aud := claims["aud"].(type) {
+	case string:
+		clientID = aud
+	case []any:
+		if len(aud) > 0 {
+			clientID, _ = aud[0].(string)
+		}
+	}
 	if clientID == "" {
 		c.JSON(http.StatusBadRequest, domain.NewInvalidRequest("id_token_hint is missing the aud claim"))
 		return
@@ -186,6 +196,17 @@ func (oa *OAuth2API) RegisterHandler(c *gin.Context) {
 		return
 	}
 
+	if len(req.RedirectURIs) == 0 {
+		c.JSON(http.StatusBadRequest, domain.NewInvalidRequest("redirect_uris is required"))
+		return
+	}
+	for _, uri := range append(append([]string{}, req.RedirectURIs...), req.PostLogoutURIs...) {
+		if !validRegistrationURI(uri) {
+			c.JSON(http.StatusBadRequest, domain.NewInvalidRequest("invalid redirect uri: "+uri))
+			return
+		}
+	}
+
 	clientType := domain.ClientTypeConfidential
 	if req.ClientType == "public" {
 		clientType = domain.ClientTypePublic
@@ -194,6 +215,7 @@ func (oa *OAuth2API) RegisterHandler(c *gin.Context) {
 	newClient := &domain.Client{
 		ID:                   uuid.NewString(),
 		Type:                 clientType,
+		IsConfidential:       clientType == domain.ClientTypeConfidential,
 		Name:                 req.ClientName,
 		RedirectURIs:         req.RedirectURIs,
 		PostLogoutURIs:       req.PostLogoutURIs,
@@ -205,7 +227,12 @@ func (oa *OAuth2API) RegisterHandler(c *gin.Context) {
 	}
 
 	if clientType == domain.ClientTypeConfidential {
-		newClient.Secret = uuid.New().String()
+		secret := make([]byte, 32)
+		if _, err := rand.Read(secret); err != nil {
+			c.JSON(http.StatusInternalServerError, domain.NewServerError("failed to register client"))
+			return
+		}
+		newClient.Secret = base64.RawURLEncoding.EncodeToString(secret)
 		if newClient.TokenEndpointAuth == "" {
 			newClient.TokenEndpointAuth = "client_secret_basic"
 		}
@@ -251,4 +278,20 @@ func containsString(list []string, target string) bool {
 		}
 	}
 	return false
+}
+
+// validRegistrationURI accepts absolute URIs without a fragment, rejecting
+// wildcards and dangerous schemes (RFC 6749 §3.1.2).
+func validRegistrationURI(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Fragment != "" || strings.Contains(raw, "*") {
+		return false
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "javascript", "data", "vbscript", "file":
+		return false
+	case "http", "https":
+		return u.Host != ""
+	}
+	return true
 }

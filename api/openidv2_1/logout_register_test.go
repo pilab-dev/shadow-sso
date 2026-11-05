@@ -683,6 +683,30 @@ func TestRegisterClient_WithInitialAccessToken(t *testing.T) {
 	require.NotEmpty(t, resp["client_secret"], "confidential client must receive a plaintext client_secret")
 }
 
+func TestRegisterClient_RejectsUnsafeRedirectURI(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	metrics.InitCustomMetrics(nil)
+	log.Logger = zerolog.Nop()
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	api, mockClientRepo, _, _, _ := newFullOIDCAPI(t, ctrl, defaultTestConfig())
+	router := newOIDCRouter(t, api)
+
+	mockClientRepo.EXPECT().CreateClient(gomock.Any(), gomock.Any()).Times(0)
+
+	body := `{"client_name":"DCR Client","client_type":"confidential","redirect_uris":["javascript:alert(1)"],"token_endpoint_auth_method":"client_secret_basic"}`
+	req := httptest.NewRequest(http.MethodPost, "/oauth2/register", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer initial-access-token-123")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
 // TestRegisterClient_NoToken asserts acceptance criterion (e): register without
 // an initial access token → 401.
 func TestRegisterClient_NoToken(t *testing.T) {

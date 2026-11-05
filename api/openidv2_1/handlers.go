@@ -518,7 +518,7 @@ func (oa *OAuth2API) completeAuthorizeAfterAuth(c *gin.Context, authReqData *aut
 	oa.persistCodeChallenge(ctx, authCode, authReqData.codeChallenge)
 
 	_ = oa.flowStore.DeleteFlow(ctx, flowState.FlowID)
-	oa.redirectToClient(c, authReqData.redirectURI, authCode, authReqData.state, authReqData.responseMode)
+	oa.redirectToClient(c, authReqData.clientID, authReqData.redirectURI, authCode, authReqData.state, authReqData.responseMode)
 }
 
 // persistCodeChallenge stores the PKCE code challenge for a freshly generated
@@ -803,7 +803,7 @@ func (oa *OAuth2API) tryHandleWithExistingSession(c *gin.Context, data *authoriz
 			return true, errGen // Error occurred, but considered "handled" in terms of flow decision
 		}
 		oa.persistCodeChallenge(ctx, authCode, data.codeChallenge)
-		oa.redirectToClient(c, data.redirectURI, authCode, data.state, data.responseMode)
+		oa.redirectToClient(c, data.clientID, data.redirectURI, authCode, data.state, data.responseMode)
 		return true, nil // Handled successfully
 	}
 
@@ -888,7 +888,7 @@ func (oa *OAuth2API) sendHTMLError(c *gin.Context, statusCode int, errDetails *d
 }
 
 // redirectToClient is a helper to redirect back to the client's redirect_uri.
-func (oa *OAuth2API) redirectToClient(c *gin.Context, baseRedirectURI, code, state, responseMode string) {
+func (oa *OAuth2API) redirectToClient(c *gin.Context, clientID, baseRedirectURI, code, state, responseMode string) {
 	parsedRedirectURI, err := url.Parse(baseRedirectURI)
 	if err != nil {
 		log.Error().Err(err).Str("redirect_uri", baseRedirectURI).Msg("Failed to parse base redirect URI")
@@ -900,7 +900,7 @@ func (oa *OAuth2API) redirectToClient(c *gin.Context, baseRedirectURI, code, sta
 	if responseMode == "jwt" && oa.tokenSigner != nil && oa.tokenSigner.HasRSASigner() {
 		claims := jwt.MapClaims{
 			"iss":  oa.config.Issuer,
-			"aud":  "", // client id unknown here; left blank
+			"aud":  clientID,
 			"exp":  time.Now().Add(5 * time.Minute).Unix(),
 			"iat":  time.Now().Unix(),
 			"code": code,
@@ -932,11 +932,36 @@ func (oa *OAuth2API) redirectToClient(c *gin.Context, baseRedirectURI, code, sta
 	if state != "" {
 		params.Set("state", state)
 	}
+	if oa.config != nil && oa.config.Issuer != "" {
+		params.Set("iss", oa.config.Issuer)
+	}
 
-	// OIDC spec recommends params in query for "code" response_type
-	parsedRedirectURI.RawQuery = params.Encode()
-	c.Redirect(http.StatusFound, parsedRedirectURI.String())
+	switch responseMode {
+	case "fragment":
+		parsedRedirectURI.Fragment = params.Encode()
+		parsedRedirectURI.RawFragment = ""
+	case "form_post":
+		c.Header("Cache-Control", "no-store")
+		c.Header("Content-Type", "text/html; charset=utf-8")
+		c.Status(http.StatusOK)
+		_ = formPostTemplate.Execute(c.Writer, gin.H{"Action": baseRedirectURI, "Params": params})
+	default:
+		parsedRedirectURI.RawQuery = params.Encode()
+		c.Redirect(http.StatusFound, parsedRedirectURI.String())
+		return
+	}
+	if responseMode == "fragment" {
+		c.Redirect(http.StatusFound, parsedRedirectURI.String())
+	}
 }
+
+var formPostTemplate = template.Must(template.New("form_post").Parse(`<!DOCTYPE html>
+<html><head><title>Submit</title></head>
+<body onload="document.forms[0].submit()">
+<form method="post" action="{{.Action}}">
+{{range $k, $v := .Params}}{{range $v}}<input type="hidden" name="{{$k}}" value="{{.}}"/>
+{{end}}{{end}}<noscript><button type="submit">Continue</button></noscript>
+</form></body></html>`))
 
 // redirectWithOAuthError sends an OAuth 2.0 error response to the client's
 // redirect_uri. It is used for prompt=none failures that must not show a UI.
@@ -1240,7 +1265,7 @@ func (oa *OAuth2API) FederatedCallbackHandler(c *gin.Context) {
 					if flowState.OriginalOIDCParams != nil {
 						rm = flowState.OriginalOIDCParams["response_mode"]
 					}
-					oa.redirectToClient(c, flowState.RedirectURI, authCode, flowState.State, rm)
+					oa.redirectToClient(c, flowState.ClientID, flowState.RedirectURI, authCode, flowState.State, rm)
 					return
 				}
 			}
