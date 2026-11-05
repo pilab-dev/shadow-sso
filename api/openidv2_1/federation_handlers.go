@@ -101,8 +101,7 @@ func (fapi *FederationAPI) CallbackHandler(c *gin.Context) {
 		return
 	}
 
-	var code, queryState, idToken, userFormParam string
-	_ = userFormParam
+	var code, queryState, idToken string
 
 	// Apple sends data via POST with application/x-www-form-urlencoded
 	if c.Request.Method == http.MethodPost && providerName == "apple" {
@@ -114,8 +113,9 @@ func (fapi *FederationAPI) CallbackHandler(c *gin.Context) {
 
 		code = c.Request.PostFormValue("code")
 		queryState = c.Request.PostFormValue("state")
-		idToken = c.Request.PostFormValue("id_token")   // Apple might send ID token here
-		userFormParam = c.Request.PostFormValue("user") // Apple sends user JSON string here on first auth if name/email scopes requested
+		idToken = c.Request.PostFormValue("id_token") // Apple might send ID token here
+		// Apple sends a `user` JSON string on first auth when name/email scopes
+		// are requested; it is currently not persisted (see grpcReq.User below).
 	} else { // GET for most other providers
 		code = c.Query("code")
 		queryState = c.Query("state")

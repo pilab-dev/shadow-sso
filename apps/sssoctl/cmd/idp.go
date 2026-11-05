@@ -89,7 +89,6 @@ var idpAddCmd = &cobra.Command{
 				return errors.New("--oidc-issuer-url and --oidc-client-id are required for OIDC type")
 			}
 		} else if strings.EqualFold(typeStr, "SAML") {
-			idpTypeProto = ssov1.IdPTypeProto_IDP_TYPE_SAML
 			// SAML specific checks would go here
 			return errors.New("SAML IdP type is not fully supported yet") // Placeholder
 		} else if strings.EqualFold(typeStr, "LDAP") {

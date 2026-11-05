@@ -2,7 +2,7 @@ package mongodb
 
 import (
 	"context"
-	"crypto/dsa"
+	"crypto/dsa" //nolint:staticcheck // DSA is supported for legacy directory interoperability.
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
