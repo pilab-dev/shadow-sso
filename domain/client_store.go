@@ -71,7 +71,8 @@ type Client struct {
 	RedirectURIs      []string   `bson:"redirect_uris"                       json:"redirect_ur_is,omitempty"`
 	PostLogoutURIs    []string   `bson:"post_logout_redirect_uris,omitempty" json:"post_logout_uris,omitempty"`
 	BackchannelLogoutURI string   `bson:"backchannel_logout_uri,omitempty"    json:"backchannel_logout_uri,omitempty"`
-	AllowedScopes     []string   `bson:"allowed_scopes"                      json:"allowed_scopes,omitempty"`
+	AllowedScopes              []string `bson:"allowed_scopes"                      json:"allowed_scopes,omitempty"`
+	AllowedAuthorizationDetails []string `bson:"allowed_authorization_details"        json:"allowed_authorization_details,omitempty"`
 	AllowedGrantTypes []string   `bson:"allowed_grant_types"                 json:"allowed_grant_types,omitempty"`
 	TokenEndpointAuth string     `bson:"token_endpoint_auth_method"          json:"token_endpoint_auth,omitempty"`
 	JWKS              *JWKS      `bson:"jwks,omitempty"                      json:"jwks,omitempty"`

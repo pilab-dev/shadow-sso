@@ -615,10 +615,29 @@ func (oa *OAuth2API) parseAndValidateAuthorizeParams(c *gin.Context) (*authorize
 			return nil, err2
 		}
 		for _, d := range details {
-			if t, _ := d["type"].(string); t == "" {
+			t, _ := d["type"].(string)
+			if t == "" {
 				err2 := domain.NewInvalidRequest("authorization_details entry missing type")
 				oa.sendHTMLError(c, http.StatusBadRequest, err2)
 				return nil, err2
+			}
+		}
+		// Client-allowed type validation (if client service available).
+		if oa.clientService != nil {
+			client, err := oa.clientService.GetClient(c.Request.Context(), data.clientID)
+			if err == nil && len(client.AllowedAuthorizationDetails) > 0 {
+				allowed := make(map[string]bool)
+				for _, t := range client.AllowedAuthorizationDetails {
+					allowed[t] = true
+				}
+				for _, d := range details {
+					t, _ := d["type"].(string)
+					if !allowed[t] {
+						err2 := domain.NewInvalidRequest("authorization_details type not allowed for this client")
+						oa.sendHTMLError(c, http.StatusBadRequest, err2)
+						return nil, err2
+					}
+				}
 			}
 		}
 	}
