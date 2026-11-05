@@ -800,6 +800,9 @@ func (s *AuthServer) GetConsentInfo(ctx context.Context, req *connect.Request[ss
 		case "email":
 			description = "Access your email address"
 			required = false
+		case "offline_access":
+			description = "Keep access to your data while you are not using the application"
+			required = false
 		default:
 			description = fmt.Sprintf("Access to %s scope", scope)
 			required = false

@@ -113,6 +113,10 @@ type Config struct {
 	// revoked or has expired, instead of only relying on token expiry.
 	SessionStrictValidation bool `mapstructure:"session_strict_validation"`
 
+	// OfflineRefreshTokenTTL is the lifetime of refresh tokens issued with the
+	// offline_access scope.
+	OfflineRefreshTokenTTL time.Duration `mapstructure:"offline_refresh_token_ttl"`
+
 	// CORS configuration
 	AllowedOrigins []string `mapstructure:"allowed_origins"`
 
@@ -292,6 +296,7 @@ func LoadConfig() (config Config, err error) {
 	viper.SetDefault("brand_primary_color", "")
 	viper.SetDefault("rate_limit_max_attempts", 5)
 	viper.SetDefault("rate_limit_lockout_duration", "15m")
+	viper.SetDefault("offline_refresh_token_ttl", "2160h")
 	// Fail closed by default: no cross-origin requests are allowed unless
 	// SSSO_ALLOWED_ORIGINS is explicitly set. Local dev sets "*" via .env.dev.
 	viper.SetDefault("allowed_origins", []string{})

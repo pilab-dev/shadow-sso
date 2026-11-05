@@ -204,6 +204,9 @@ func (p *DefaultServiceProvider) TokenService() TokenService {
 			ts.SetSessionRepository(p.repoProvider.SessionRepository(initCtx))
 			// Off by default for high-throughput deployments; enable with
 			// SSSO_SESSION_STRICT_VALIDATION=true to make revocation immediate.
+			if p.appConfig != nil {
+				ts.SetOfflineRefreshTTL(p.appConfig.OfflineRefreshTokenTTL)
+			}
 			ts.SetStrictSessionValidation(p.appConfig != nil && p.appConfig.SessionStrictValidation)
 		}
 	}
