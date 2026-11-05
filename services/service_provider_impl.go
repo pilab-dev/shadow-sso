@@ -302,7 +302,7 @@ func (p *DefaultServiceProvider) MFARegistry() port.MFARegistry {
 			UserVerification:  protocol.VerificationRequired,
 		}
 		ycfg := mfa.YubicoConfig{}
-		reg, err := mfa.BuildDefaultRegistry(store, dir, wcfg, ycfg, p.smsService, p.PushMFAService())
+		reg, err := mfa.BuildDefaultRegistry(store, dir, wcfg, ycfg, p.smsService, p.emailService, p.PushMFAService())
 		if err != nil {
 			// Fall back to empty registry rather than panicking; providers can be
 			// registered later by the host.
