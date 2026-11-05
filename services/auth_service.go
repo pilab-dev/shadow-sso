@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"encoding/hex"
 	"errors"
 	goerrors "errors"
@@ -16,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/pilab-dev/shadow-sso/client"
 	"github.com/pilab-dev/shadow-sso/domain"
+	"github.com/pilab-dev/shadow-sso/port"
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
 	"github.com/pilab-dev/shadow-sso/internal/audit"
@@ -106,6 +108,7 @@ type AuthServer struct {
 	browserPolicy                                *browserpolicy.Provider
 	geoResolver                                  geo.Resolver
 	sessionNotifier                              domain.SessionNotifier
+	mfaRegistry                                  port.MFARegistry
 }
 
 // authServerOption configures optional AuthServer dependencies.
@@ -115,6 +118,11 @@ type authServerOption func(*AuthServer)
 // the realm-wide MFA enforcement policy.
 func WithAuthRealmSettings(repo domain.RealmSettingsRepository) authServerOption {
 	return func(s *AuthServer) { s.realmSettingsRepo = repo }
+}
+
+// WithAuthMFARegistry injects the pluggable MFA provider registry.
+func WithAuthMFARegistry(reg port.MFARegistry) authServerOption {
+	return func(s *AuthServer) { s.mfaRegistry = reg }
 }
 
 // WithAuthTokenRepository injects the token repository so session revocation
@@ -949,9 +957,51 @@ func (s *AuthServer) DenyConsent(ctx context.Context, req *connect.Request[ssov1
 	return connect.NewResponse(response), nil
 }
 
-// DISABLED: WebAuthn login requires go-webauthn/webauthn library for proper cryptographic challenge verification.
 func (s *AuthServer) CompleteWebAuthnLogin(ctx context.Context, req *connect.Request[ssov1.VerifyWebAuthnAuthenticationRequest]) (*connect.Response[ssov1.VerifyWebAuthnAuthenticationResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("WebAuthn login is not yet implemented - requires go-webauthn/webauthn library integration"))
+	if s.mfaRegistry == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("WebAuthn login is not yet implemented - requires go-webauthn/webauthn library integration"))
+	}
+	provider, ok := s.mfaRegistry.Get(domain.MfaMethodTypeWebAuthn)
+	if !ok {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("webauthn provider not registered"))
+	}
+
+	authResp := req.Msg.GetAuthenticationResponse()
+	body := map[string]any{
+		"id":   authResp.GetId(),
+		"rawId": authResp.GetRawId(),
+		"type": "public-key",
+		"response": map[string]any{
+			"clientDataJSON":     authResp.GetResponse().GetClientDataJson(),
+			"authenticatorData":  authResp.GetResponse().GetAuthenticatorAssertionResponse().GetAuthenticatorData(),
+			"signature":         authResp.GetResponse().GetAuthenticatorAssertionResponse().GetSignature(),
+			"userHandle":        authResp.GetResponse().GetAuthenticatorAssertionResponse().GetUserHandle(),
+		},
+		"authenticatorAttachment": authResp.GetAuthenticatorAttachment(),
+	}
+	b, _ := json.Marshal(body)
+
+	user, err := provider.VerifyChallenge(ctx, nil, nil, req.Msg.GetChallengeKey(), &domain.MFAVerification{Response: b})
+	if err != nil {
+		return nil, connect.NewError(connect.CodeUnauthenticated, fmt.Errorf("webauthn verification failed: %w", err))
+	}
+
+	loginResp, err := s.completeLogin(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+
+	out := &ssov1.VerifyWebAuthnAuthenticationResponse{
+		Verified:     true,
+		UserId:       user.ID,
+		AccessToken:  loginResp.Msg.AccessToken,
+		RefreshToken: loginResp.Msg.RefreshToken,
+		IdToken:      loginResp.Msg.IdToken,
+		TokenType:    loginResp.Msg.TokenType,
+		ExpiresIn:    loginResp.Msg.ExpiresIn,
+		UserInfo:     loginResp.Msg.UserInfo,
+	}
+	return connect.NewResponse(out), nil
 }
 
 // Ensure AuthServer implements ssov1connect.AuthServiceHandler

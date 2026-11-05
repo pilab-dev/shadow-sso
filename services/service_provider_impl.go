@@ -9,8 +9,12 @@ import (
 	"github.com/pilab-dev/shadow-sso/api"
 	"github.com/pilab-dev/shadow-sso/apps/ssso/config"
 	"github.com/pilab-dev/shadow-sso/cache"
+	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/pilab-dev/shadow-sso/domain"
 	"github.com/pilab-dev/shadow-sso/internal/geo"
+	"github.com/pilab-dev/shadow-sso/port"
+	"github.com/pilab-dev/shadow-sso/internal/mfa"
+	"github.com/pilab-dev/shadow-sso/mongodb"
 	"github.com/pilab-dev/shadow-sso/internal/notifications"
 	"github.com/pilab-dev/shadow-sso/internal/oidcflow"
 	pkgauth "github.com/pilab-dev/shadow-sso/pkg/auth"
@@ -48,6 +52,7 @@ type DefaultServiceProvider struct {
 	phoneVerificationService PhoneVerificationService
 	mfaService               MFAService
 	pushMFAService           PushMFAService
+	mfaRegistry              port.MFARegistry
 
 	idpManagementService    IDPManagementService
 	clientManagementService ClientManagementService
@@ -268,6 +273,28 @@ func (p *DefaultServiceProvider) PhoneVerificationService() PhoneVerificationSer
 		)
 	}
 	return p.phoneVerificationService
+}
+
+func (p *DefaultServiceProvider) MFARegistry() port.MFARegistry {
+	if p.mfaRegistry == nil {
+		store := mfa.NewInMemoryChallengeStore()
+		dir := mongodb.NewMongoMFADirectory(p.repoProvider.UserRepository(initCtx))
+		wcfg := mfa.WebAuthnConfig{
+			RPID:             "localhost",
+			RPName:           "Shadow SSO",
+			RPOrigins:        []string{"http://localhost:8080"},
+			UserVerification:  protocol.VerificationRequired,
+		}
+		ycfg := mfa.YubicoConfig{}
+		reg, err := mfa.BuildDefaultRegistry(store, dir, wcfg, ycfg, p.smsService, p.PushMFAService())
+		if err != nil {
+			// Fall back to empty registry rather than panicking; providers can be
+			// registered later by the host.
+			reg = mfa.NewMFARegistry()
+		}
+		p.mfaRegistry = reg
+	}
+	return p.mfaRegistry
 }
 
 func (p *DefaultServiceProvider) MFAService() MFAService {

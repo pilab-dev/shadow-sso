@@ -86,6 +86,9 @@ func (wa *WebAuth) VerifyEmailHandler(c *gin.Context) {
 	user.IsEmailVerified = true
 	user.EmailVerificationToken, user.EmailVerificationTokenExpiresAt = "", nil
 	user.RemoveRequiredAction(domain.RequiredActionVerifyEmail)
+	if user.Status == domain.UserStatusPending {
+		user.Status = domain.UserStatusActive
+	}
 	if err := wa.userRepo.UpdateUser(ctx, user); err != nil {
 		log.Error().Err(err).Str("user_id", user.ID).Msg("verify email: persist failed")
 		wa.renderInternalError(c, "Could not verify your email. Please try again.")

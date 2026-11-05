@@ -58,7 +58,7 @@
 </p>
 {{end}}
 
-<a href="/forgot-password" class="link link-center">Forgot your password?</a>
+{{if .ResetPasswordAvailable}}<a href="/forgot-password" class="link link-center">Forgot your password?</a>{{end}}
 {{if .RegistrationAllowed}}<a href="/register" class="link link-center">Create an account</a>{{end}}
 
 {{if .PasskeysEnabled}}

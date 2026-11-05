@@ -171,6 +171,8 @@ func TestRegister_CreatesUserWithoutAdminRoleAndRequiresEmailVerification(t *tes
 	e.hasher.EXPECT().Hash("Sup3rSecret!").Return("hash", nil)
 	var created *domain.User
 	e.users.EXPECT().CreateUser(gomock.Any(), gomock.Any()).DoAndReturn(func(_ any, u *domain.User) error { created = u; return nil })
+	e.users.EXPECT().StoreEmailVerificationToken(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	e.mail.EXPECT().SendVerificationEmail(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
 	w := e.do(raPost("/register", url.Values{"email": {"new@b.c"}, "first_name": {"N"}, "password": {"Sup3rSecret!"}, "confirm_password": {"Sup3rSecret!"}}))
 
@@ -183,7 +185,7 @@ func TestRegister_CreatesUserWithoutAdminRoleAndRequiresEmailVerification(t *tes
 
 func TestRegister_RejectsDuplicateAndBadInput(t *testing.T) {
 	e := setupLoginScreensTest(t, true, &domain.RealmSettings{RegistrationAllowed: true})
-	e.users.EXPECT().GetUserByEmail(gomock.Any(), "dup@b.c").Return(&domain.User{ID: "x"}, nil)
+	e.users.EXPECT().GetUserByEmail(gomock.Any(), "dup@b.c").Return(&domain.User{ID: "x", PasswordHash: "hash"}, nil)
 	w := e.do(raPost("/register", url.Values{"email": {"dup@b.c"}, "password": {"Sup3rSecret!"}, "confirm_password": {"Sup3rSecret!"}}))
 	assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
 	assert.Contains(t, w.Body.String(), "already exists")

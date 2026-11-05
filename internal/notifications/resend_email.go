@@ -33,6 +33,11 @@ func NewResendEmailService(apiKey, fromEmail, baseURL string) *ResendEmailServic
 }
 
 // SendVerificationEmail sends a verification email
+// IsConfigured reports whether the service has the credentials needed to send mail.
+func (s *ResendEmailService) IsConfigured() bool {
+	return s != nil && s.client != nil && s.fromEmail != ""
+}
+
 func (s *ResendEmailService) SendVerificationEmail(to, name, verificationLink string) error {
 	if s.client == nil {
 		return fmt.Errorf("Resend service not properly configured")

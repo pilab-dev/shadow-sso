@@ -268,7 +268,6 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 
 	// Setup Gin server
 	router := gin.New()
-	router.Use(gin.Recovery())
 	router.Use(middleware.ZerologLogger())
 
 	// Apply extra middlewares (CORS, request ID, tracing, etc.)
@@ -370,6 +369,12 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		SessionRepo:       repoProvider.SessionRepository(context.Background()),
 		WebAuthn:          passkeyRP,
 	})
+
+	// Styled recovery for panics.
+	router.Use(gin.CustomRecovery(func(c *gin.Context, recovered any) {
+		log.Error().Any("panic", recovered).Msg("panic recovered")
+		webauthAPI.InternalServerErrorHandler(c)
+	}))
 
 	router.GET("/", webauthAPI.LandingPageHandler)
 	router.GET("/login", webauthAPI.LoginPageHandler)
@@ -618,6 +623,10 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		router.GET("/sandbox", gin.WrapH(graphql.SandboxHandler("/graphql")))
 	}
 
+	// Styled fallbacks for unmatched routes and methods.
+	router.NoRoute(webauthAPI.NotFoundHandler)
+	router.NoMethod(webauthAPI.MethodNotAllowedHandler)
+
 	return router, nil
 }
 
@@ -647,13 +656,15 @@ func seedRealmSettingsFromConfig(repoProvider services.RepositoryProvider, cfg *
 	}
 
 	settings := &domain.RealmSettings{
-		Realm:               "master",
-		DisplayName:         "Shadow SSO",
-		Enabled:             true,
-		BruteForceProtected: true,
-		SSLRequired:         "external",
-		AccessTokenLifespan: accessTokenLifespan,
-		AccessCodeLifespan:  accessCodeLifespan,
+		Realm:                "master",
+		DisplayName:          "Shadow SSO",
+		Enabled:              true,
+		BruteForceProtected:  true,
+		SSLRequired:          "external",
+		RegistrationAllowed:  true,
+		ResetPasswordAllowed: true,
+		AccessTokenLifespan:  accessTokenLifespan,
+		AccessCodeLifespan:   accessCodeLifespan,
 	}
 
 	if _, err := repo.SeedRealmSettingsIfEmpty(ctx, settings); err != nil {
