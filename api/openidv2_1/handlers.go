@@ -982,6 +982,9 @@ func (oa *OAuth2API) redirectWithOAuthError(c *gin.Context, baseRedirectURI, sta
 	if state != "" {
 		params.Set("state", state)
 	}
+	if oa.config != nil && oa.config.Issuer != "" {
+		params.Set("iss", oa.config.Issuer) // RFC 9207
+	}
 
 	parsedRedirectURI.RawQuery = params.Encode()
 	c.Redirect(http.StatusFound, parsedRedirectURI.String())
@@ -1911,8 +1914,8 @@ func (oa *OAuth2API) OpenIDConfigurationHandler(c *gin.Context) {
 	resp.RequireRequestURIRegistration = cfg.SecurityConfig.RequireRequestURIRegistration
 	resp.PromptValuesSupported = append([]string{}, sssoapi.DefaultPromptValuesSupported...)
 	resp.DPoPSigningAlgValuesSupported = append([]string{}, sssoapi.DPoPSigningAlgValuesSupported...)
-	// iss is only added to success responses, not error responses, so RFC 9207 support is not advertised.
-	resp.AuthorizationResponseIssParameterSupported = false
+	// iss is added to both success and error redirects (RFC 9207).
+	resp.AuthorizationResponseIssParameterSupported = cfg.Issuer != ""
 	resp.AuthorizationDetailsTypesSupported = oa.authorizationDetailsTypes(c.Request.Context())
 	// Access tokens are bearer JWTs; mTLS-bound tokens are not implemented.
 	resp.TLSClientCertificateBoundAccessTokens = false

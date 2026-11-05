@@ -1,6 +1,6 @@
 {
   "authorization_endpoint": "https://sso.example.com/oauth2/authorize",
-  "authorization_response_iss_parameter_supported": false,
+  "authorization_response_iss_parameter_supported": true,
   "authorization_signing_alg_values_supported": [
     "RS256"
   ],

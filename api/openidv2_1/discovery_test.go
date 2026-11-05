@@ -140,7 +140,7 @@ func TestOpenIDConfiguration_IsTruthful(t *testing.T) {
 
 	require.Equal(t, []any{"public"}, doc["subject_types_supported"], "pairwise is not implemented")
 	require.Equal(t, false, doc["request_parameter_supported"], "request objects are not parsed")
-	require.Equal(t, false, doc["authorization_response_iss_parameter_supported"])
+	require.Equal(t, true, doc["authorization_response_iss_parameter_supported"], "iss is sent on success and error redirects")
 	require.Equal(t, false, doc["tls_client_certificate_bound_access_tokens"])
 	require.Contains(t, doc["scopes_supported"], "openid")
 	require.Contains(t, doc["claims_supported"], "email")

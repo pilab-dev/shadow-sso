@@ -205,6 +205,9 @@ func (wa *WebAuth) ConsentSubmitHandler(c *gin.Context) {
 		if flowState.State != "" {
 			params.Set("state", flowState.State)
 		}
+		if wa.publicBaseURL != "" {
+			params.Set("iss", wa.publicBaseURL) // RFC 9207
+		}
 		parsedURI.RawQuery = params.Encode()
 		c.Redirect(http.StatusFound, parsedURI.String())
 		return
