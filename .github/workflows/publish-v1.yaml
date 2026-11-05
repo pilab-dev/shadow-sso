@@ -20,7 +20,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26.0' # Ensure this matches go.mod
+          go-version: '1.26' # Ensure this matches go.mod
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
