@@ -26,6 +26,12 @@ type Config struct {
 	TokenCacheDefaultTTL time.Duration `mapstructure:"token_cache_default_ttl"`
 	DefaultRedirectURI   string        `mapstructure:"default_redirect_uri"`
 
+	// PARStoreBackend selects where pushed authorization requests (RFC 9126) live:
+	// "memory" (default, single node), "valkey" (multi-node) or "mongodb" (persistent).
+	PARStoreBackend string `mapstructure:"par_store_backend"`
+	// ValkeyURL is a redis:// or rediss:// URL, required when par_store_backend is "valkey".
+	ValkeyURL string `mapstructure:"valkey_url"`
+
 	// OIDC specific configurations that might be part of OpenIDProviderConfig
 	NextJSLoginURL string `mapstructure:"nextjs_login_url"`
 
@@ -244,6 +250,8 @@ func LoadConfig() (config Config, err error) {
 	viper.SetDefault("oidc_claims_supported", api.DefaultClaimsSupported)
 	viper.SetDefault("oidc_token_endpoint_auth_methods", api.DefaultTokenEndpointAuthMethods)
 	viper.SetDefault("cookie_signing_secret", "")
+	viper.SetDefault("par_store_backend", "memory")
+	viper.SetDefault("valkey_url", "")
 	// signing_key_path has no default, should be provided or generated on first run.
 	// nextjs_login_url has no default, should be configured if UI flow is used.
 

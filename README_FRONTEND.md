@@ -101,6 +101,8 @@ Short-lived protocol state is stored behind small adapter interfaces so the back
 
 PAR entries are bound to the pushing client, single use, and expire after 60 seconds.
 
+Select the PAR backend with `par_store_backend` (`SSSO_PAR_STORE_BACKEND`): `memory` (default), `valkey` (also set `valkey_url`, e.g. `redis://host:6379/0`) or `mongodb`.
+
 ## Rich Authorization Requests (RFC 9396)
 
 Clients may send `authorization_details` (a JSON array of objects, each with a `type`) on `/oauth2/authorize` or

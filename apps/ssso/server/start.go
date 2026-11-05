@@ -7,17 +7,20 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	ssso "github.com/pilab-dev/shadow-sso"
 	"github.com/pilab-dev/shadow-sso/apps/ssso/config"
 	"github.com/pilab-dev/shadow-sso/cache"
+	"github.com/pilab-dev/shadow-sso/cache/parstore"
 	"github.com/pilab-dev/shadow-sso/domain"
 	"github.com/pilab-dev/shadow-sso/internal/telemetry"
 	"github.com/pilab-dev/shadow-sso/mongodb"
 	pkgcrypto "github.com/pilab-dev/shadow-sso/pkg/crypto"
 	"github.com/pilab-dev/shadow-sso/services"
+	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -158,6 +161,29 @@ func seedRealmDefaultKey(ctx context.Context, cfg config.Config, repo domain.Rea
 	})
 }
 
+// newPARStore builds the configured pushed-authorization-request store. A nil
+// result selects the in-process ttlcache store.
+func newPARStore(ctx context.Context, cfg config.Config, repoProvider services.RepositoryProvider) (domain.PARStore, error) {
+	switch strings.ToLower(cfg.PARStoreBackend) {
+	case "", "memory":
+		return nil, nil
+	case "valkey", "redis":
+		redisOpts, err := redis.ParseURL(cfg.ValkeyURL)
+		if err != nil {
+			return nil, fmt.Errorf("par_store_backend=valkey needs a valid valkey_url: %w", err)
+		}
+		return parstore.NewRedis(redis.NewClient(redisOpts), "sso"), nil
+	case "mongodb", "mongo":
+		mongoRp, ok := repoProvider.(*mongodb.MongoRepositoryProvider)
+		if !ok {
+			return nil, fmt.Errorf("par_store_backend=mongodb requires the mongodb storage backend")
+		}
+		return mongoRp.PARStore(ctx)
+	default:
+		return nil, fmt.Errorf("unknown par_store_backend %q (use memory, valkey or mongodb)", cfg.PARStoreBackend)
+	}
+}
+
 // StartServer initializes and starts the SSO HTTP server.
 // It handles TokenSigner initialization, SSOServerOptions creation,
 // and returns a running *http.Server.
@@ -181,6 +207,11 @@ func StartServer(ctx context.Context, cfg config.Config, repoProvider services.R
 	// Get encryption key for configuration service
 	encryptionKey := cfg.ConfigEncryptionKey
 
+	parStore, err := newPARStore(ctx, cfg, repoProvider)
+	if err != nil {
+		return nil, err
+	}
+
 	// Create SSOServerOptions
 	opts := ssso.SSOServerOptions{
 		Config:             oidcConfig,
@@ -193,6 +224,7 @@ func StartServer(ctx context.Context, cfg config.Config, repoProvider services.R
 			}
 			return cache.NewMemoryTokenStore(oidcConfig.AccessTokenTTL)
 		}(),
+		PARStore:            parStore,
 		PkceRepository:      nil, // Let NewSSOServer default to in-memory
 		FlowStore:           nil, // Let NewSSOServer default to in-memory
 		UserSessionStore:    nil, // Let NewSSOServer default to in-memory

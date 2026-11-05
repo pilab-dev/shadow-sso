@@ -10,6 +10,7 @@ require (
 	connectrpc.com/otelconnect v0.8.0
 	firebase.google.com/go/v4 v4.22.0
 	github.com/99designs/gqlgen v0.17.98
+	github.com/alicebob/miniredis/v2 v2.40.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/fxamacker/cbor/v2 v2.9.4
 	github.com/gin-gonic/gin v1.12.0
@@ -141,6 +142,7 @@ require (
 	github.com/xdg-go/stringprep v1.0.4 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
+	github.com/yuin/gopher-lua v1.1.1 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.70.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.70.0 // indirect

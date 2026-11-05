@@ -436,3 +436,8 @@ func (p *MongoRepositoryProvider) AuditLogRepository(ctx context.Context) domain
 	}
 	return p.auditLogRepo
 }
+
+// PARStore returns the MongoDB-backed pushed authorization request store.
+func (p *MongoRepositoryProvider) PARStore(ctx context.Context) (domain.PARStore, error) {
+	return NewPARStore(ctx, p.db)
+}
