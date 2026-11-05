@@ -52,7 +52,7 @@ var (
 	// DefaultTokenEndpointAuthMethods are the client authentication methods
 	// implemented by the token endpoint. client_secret_basic is not parsed
 	// today, so it must not be advertised.
-	DefaultTokenEndpointAuthMethods = []string{"client_secret_post", "private_key_jwt"}
+	DefaultTokenEndpointAuthMethods = []string{"client_secret_basic", "client_secret_post", "private_key_jwt"}
 
 	// DefaultResourceEndpointAuthMethods are the methods implemented by the
 	// introspection and revocation endpoints.

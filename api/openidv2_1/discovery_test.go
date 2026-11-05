@@ -145,8 +145,8 @@ func TestOpenIDConfiguration_IsTruthful(t *testing.T) {
 	require.Contains(t, doc["scopes_supported"], "openid")
 	require.Contains(t, doc["claims_supported"], "email")
 	require.NotEmpty(t, doc["token_endpoint_auth_methods_supported"])
-	require.NotContains(t, doc["token_endpoint_auth_methods_supported"], "client_secret_basic",
-		"basic auth is not parsed at the token endpoint")
+	require.Contains(t, doc["token_endpoint_auth_methods_supported"], "client_secret_basic",
+		"basic auth is parsed at the token, PAR, introspection and revocation endpoints")
 	require.NotContains(t, doc, "userinfo_signing_alg_values_supported",
 		"UserInfo responses are plain JSON")
 	require.NotContains(t, doc, "request_object_signing_alg_values_supported",
