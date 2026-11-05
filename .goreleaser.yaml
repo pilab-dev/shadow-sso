@@ -1,10 +1,14 @@
+version: 2
 project_name: shadow-sso
+
+before:
+  hooks:
+    - go mod tidy
+    - go vet ./...
+    - go test ./...
 
 # Library module: no binaries to build.
 builds:
-  - skip: true
-
-archives:
   - skip: true
 
 changelog:
@@ -32,6 +36,7 @@ changelog:
       order: 999
 
 release:
+  name_template: "{{.ProjectName}} {{.Version}}"
   github:
     owner: pilab-dev
     name: shadow-sso
