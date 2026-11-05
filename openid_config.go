@@ -105,6 +105,7 @@ type SSOServerOptions struct {
 	TokenCache          cache.TokenStore
 	PkceRepository      domain.PkceRepository
 	FlowStore           domain.FlowStore
+	PARStore            domain.PARStore // nil = in-process ttlcache; use parstore.NewRedis (Valkey) or mongodb.NewPARStore for multi-node/persistent
 	UserSessionStore    domain.UserSessionStore
 	EncryptionKey       string            // For configuration service encryption
 	CookieSigningSecret string            // Secret for signing SSO session cookies
@@ -247,6 +248,7 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		PkceService:           serviceProvider.PKCEService(),
 		Config:                opts.Config,
 		FlowStore:             serviceProvider.FlowStore(),
+		PARStore:              opts.PARStore,
 		UserSessionStore:      serviceProvider.UserSessionStore(),
 		UserRepo:              repoProvider.UserRepository(context.Background()),
 		PasswordHasher:        passwordHasher,

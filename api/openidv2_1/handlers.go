@@ -20,6 +20,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	sssoapi "github.com/pilab-dev/shadow-sso/api"
+	"github.com/pilab-dev/shadow-sso/cache/parstore"
 	"github.com/pilab-dev/shadow-sso/internal/dpop"
 
 	"github.com/google/uuid"
@@ -51,6 +52,7 @@ type OAuth2API struct {
 	pkceService         services.PKCEService
 	config              *sssoapi.OpenIDProviderConfig
 	flowStore           domain.FlowStore
+	parStore            domain.PARStore
 	userSessionStore    domain.UserSessionStore
 	userRepo            domain.UserRepository
 	passwordHasher      domain.PasswordHasher
@@ -79,6 +81,7 @@ type BackchannelLogoutNotifier interface {
 }
 
 type OAuth2APIOptions struct {
+	PARStore              domain.PARStore // defaults to an in-process ttlcache store
 	OAuthService          services.OAuthService
 	JSKSService           services.JWKSService
 	ClientService         services.ClientService
@@ -119,6 +122,10 @@ func NewOAuth2API(
 		log.Debug().Msg("NextJSLoginURL is not configured; server-rendered /login flow does not require it.")
 	}
 	authRateLimit := webauth.DefaultConfig()
+	parStore := opts.PARStore
+	if parStore == nil {
+		parStore = parstore.NewMemory()
+	}
 	return &OAuth2API{
 		service:             opts.OAuthService,
 		jwksService:         opts.JSKSService,
@@ -126,6 +133,7 @@ func NewOAuth2API(
 		pkceService:         opts.PkceService,
 		config:              opts.Config,
 		flowStore:           opts.FlowStore,
+		parStore:            parStore,
 		userSessionStore:    opts.UserSessionStore,
 		userRepo:            opts.UserRepo,
 		passwordHasher:      opts.PasswordHasher,
@@ -570,8 +578,8 @@ func (oa *OAuth2API) parseAndValidateAuthorizeParams(c *gin.Context) (*authorize
 	// RFC 9126: a pushed authorization request carries a request_uri instead
 	// of the parameters inline. Resolve it into the same data struct.
 	if ru := c.Query("request_uri"); ru != "" {
-		params, ok := ConsumePAR(ru, data.clientID)
-		if !ok {
+		params, perr := oa.parStore.Consume(c.Request.Context(), ru, data.clientID)
+		if perr != nil {
 			err := domain.NewInvalidRequest("unknown or expired request_uri")
 			oa.sendHTMLError(c, http.StatusBadRequest, err)
 			return nil, err

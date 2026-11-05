@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -13,45 +12,9 @@ import (
 )
 
 const (
-	parTTL        = 60 * time.Second
-	parMaxBody    = 64 << 10
-	parMaxEntries = 10000
+	parTTL     = 60 * time.Second
+	parMaxBody = 64 << 10
 )
-
-type parEntry struct {
-	params    map[string]string
-	clientID  string
-	expiresAt time.Time
-}
-
-// parStore holds pushed authorization requests keyed by request_uri.
-// It is process-local; multi-replica deployments need a shared store.
-type parStore struct {
-	mu   sync.Mutex
-	data map[string]parEntry
-}
-
-var defaultPARStore = &parStore{data: make(map[string]parEntry)}
-
-func (s *parStore) sweepLocked(now time.Time) {
-	for k, e := range s.data {
-		if now.After(e.expiresAt) {
-			delete(s.data, k)
-		}
-	}
-}
-
-func (s *parStore) put(uri, clientID string, params map[string]string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	now := time.Now()
-	s.sweepLocked(now)
-	if len(s.data) >= parMaxEntries {
-		return false
-	}
-	s.data[uri] = parEntry{params: params, clientID: clientID, expiresAt: now.Add(parTTL)}
-	return true
-}
 
 // PushedAuthorizationRequestHandler implements RFC 9126 (PAR).
 func (oa *OAuth2API) PushedAuthorizationRequestHandler(c *gin.Context) {
@@ -109,8 +72,9 @@ func (oa *OAuth2API) PushedAuthorizationRequestHandler(c *gin.Context) {
 	buf := make([]byte, 32)
 	_, _ = rand.Read(buf)
 	uri := "urn:ietf:params:oauth:request_uri:" + hex.EncodeToString(buf)
-	if !defaultPARStore.put(uri, clientID, params) {
-		c.JSON(http.StatusServiceUnavailable, domain.NewServerError("too many pending pushed requests"))
+	if err := oa.parStore.Put(ctx, uri, clientID, params, parTTL); err != nil {
+		log.Ctx(ctx).Error().Err(err).Msg("PAR: failed to store pushed request")
+		c.JSON(http.StatusServiceUnavailable, domain.NewServerError("could not store pushed request"))
 		return
 	}
 
@@ -118,45 +82,4 @@ func (oa *OAuth2API) PushedAuthorizationRequestHandler(c *gin.Context) {
 		"request_uri": uri,
 		"expires_in":  int(parTTL.Seconds()),
 	})
-}
-
-// LookupPAR returns stored params for a request_uri without consuming it.
-func LookupPAR(uri string) (map[string]string, bool) {
-	defaultPARStore.mu.Lock()
-	defer defaultPARStore.mu.Unlock()
-	e, ok := defaultPARStore.data[uri]
-	if !ok || time.Now().After(e.expiresAt) {
-		delete(defaultPARStore.data, uri)
-		return nil, false
-	}
-	return copyParams(e.params), true
-}
-
-// ConsumePAR atomically resolves and removes a request_uri (single use).
-// It fails when the request was pushed by a different client than clientID;
-// an empty clientID skips that binding check.
-func ConsumePAR(uri, clientID string) (map[string]string, bool) {
-	defaultPARStore.mu.Lock()
-	defer defaultPARStore.mu.Unlock()
-	e, ok := defaultPARStore.data[uri]
-	if !ok {
-		return nil, false
-	}
-	if time.Now().After(e.expiresAt) {
-		delete(defaultPARStore.data, uri)
-		return nil, false
-	}
-	if clientID != "" && clientID != e.clientID {
-		return nil, false
-	}
-	delete(defaultPARStore.data, uri)
-	return copyParams(e.params), true
-}
-
-func copyParams(in map[string]string) map[string]string {
-	out := make(map[string]string, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
 }
