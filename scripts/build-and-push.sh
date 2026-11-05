@@ -5,6 +5,8 @@
 
 set -euo pipefail
 
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -45,7 +47,7 @@ check_prerequisites() {
     fi
     
     # Check if logged into GHCR
-    if ! docker info 2>/dev/null | grep -q "ghcr.io"; then
+    if ! grep -q "ghcr.io" ~/.docker/config.json 2>/dev/null; then
         log_warn "Not logged into GHCR. Run: docker login ghcr.io -u USERNAME -p TOKEN"
     fi
     

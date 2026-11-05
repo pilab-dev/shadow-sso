@@ -2,9 +2,11 @@
 # Build, push, and deploy script for Shadow SSO
 # Usage: ./scripts/build-and-deploy.sh [version-tag] [environment]
 # Example: ./scripts/build-and-deploy.sh v1.2.3 production
-#          ./scripts/build-and-deploy.sh latest staging
+# Defaults: tag = current git short SHA, environment = production, NAMESPACE env = shadow-sso
 
 set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 # Colors for output
 RED='\033[0;31m'
@@ -16,11 +18,11 @@ NC='\033[0m' # No Color
 # Configuration
 REGISTRY="ghcr.io"
 REPOSITORY="pilab-dev/shadow-sso-backend"
-DEFAULT_TAG="latest"
+DEFAULT_TAG="$(git rev-parse --short HEAD)"
 ENVIRONMENT="${2:-production}"
 HELM_CHART_PATH="helm/ssso-backend"
 HELM_RELEASE_NAME="ssso-backend"
-NAMESPACE="${NAMESPACE:-default}"
+NAMESPACE="${NAMESPACE:-shadow-sso}"
 
 # Parse arguments
 VERSION_TAG="${1:-${DEFAULT_TAG}}"
@@ -73,23 +75,16 @@ build_image() {
     log_success "Image built and pushed: ${FULL_IMAGE}"
 }
 
-update_helm_values() {
+select_values_file() {
     local values_file="${HELM_CHART_PATH}/values-${ENVIRONMENT}.yaml"
-    
+
     if [[ ! -f "${values_file}" ]]; then
         log_warn "Environment values file not found: ${values_file}"
         log_info "Using default values.yaml"
         values_file="${HELM_CHART_PATH}/values.yaml"
     fi
-    
-    log_info "Updating Helm values with image tag: ${VERSION_TAG}"
-    
-    # Create a temporary values file with the new image tag
-    local temp_values
-    temp_values=$(mktemp /tmp/ssso-values.XXXXXX) || { log_error "Failed to create temp file"; exit 1; }
-    sed "s|tag: \".*\"|tag: \"${VERSION_TAG}\"|" "${values_file}" > "${temp_values}"
-    
-    echo "${temp_values}"
+
+    echo "${values_file}"
 }
 
 deploy_with_helm() {
@@ -104,6 +99,8 @@ deploy_with_helm() {
         --namespace "${NAMESPACE}" \
         --create-namespace \
         --values "${values_file}" \
+        --set "image.tag=${VERSION_TAG}" \
+        --atomic \
         --wait \
         --timeout 5m
     
@@ -141,13 +138,10 @@ main() {
     build_image
     
     local values_file
-    values_file=$(update_helm_values)
+    values_file=$(select_values_file)
     
     deploy_with_helm "${values_file}"
     verify_deployment
-    
-    # Cleanup temp file
-    [[ -f "${values_file}" ]] && rm -f "${values_file}"
     
     echo
     echo "============================================"

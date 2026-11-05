@@ -137,7 +137,7 @@ func TestLoginSubmit_FlowlessHappyPath(t *testing.T) {
 // TestLoginPage_FlowlessInvalidReturnTo: GET /login?return_to=<evil> falls back
 // to the existing 400 error page and sets no flow/return_to cookies.
 func TestLoginPage_FlowlessInvalidReturnTo(t *testing.T) {
-	evils := []string{"//evil.com", "https://evil.com", "/../etc", `\evil`}
+	evils := []string{"//evil.com", "https://evil.com", "/../etc", `\evil`, "/\t/evil.com", "/\n/evil.com"}
 	for _, evil := range evils {
 		t.Run(evil, func(t *testing.T) {
 			// Given
@@ -164,7 +164,7 @@ func TestLoginPage_FlowlessInvalidReturnTo(t *testing.T) {
 // sso_return_to cookie value (would be an open redirect) redirects to "/"
 // instead of the evil destination.
 func TestLoginSubmit_FlowlessInvalidReturnToCookie(t *testing.T) {
-	evils := []string{"//evil.com", "https://evil.com", "/../etc", `\evil`}
+	evils := []string{"//evil.com", "https://evil.com", "/../etc", `\evil`, "/\t/evil.com", "/\n/evil.com"}
 	for _, evil := range evils {
 		t.Run(evil, func(t *testing.T) {
 			// Given

@@ -1,4 +1,8 @@
 {{template "base_start" .}}
+{{if .Done}}
+<h2 class="page-title">{{.Title}}</h2>
+<p class="page-subtitle">{{.Message}}</p>
+{{else}}
 <h2 class="page-title">Activate Device</h2>
 <p class="page-subtitle">Approve this request to sign in on your device</p>
 
@@ -12,6 +16,13 @@
         {{end}}
     </span>
     <span>{{.Message}}</span>
+</div>
+{{end}}
+
+{{if .AccountLabel}}
+<div class="info-box">
+    <p class="info-box-title">Signed in as</p>
+    <p style="font-size:0.9375rem;color:var(--text);">{{.AccountLabel}} <a href="{{.SwitchURL}}">Switch account</a></p>
 </div>
 {{end}}
 
@@ -57,4 +68,5 @@
 </form>
 
 <p class="page-subtitle" style="margin-top:16px;">The code expires shortly after it is shown on your device.</p>
+{{end}}
 {{template "base_end" .}}

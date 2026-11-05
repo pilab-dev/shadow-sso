@@ -5,6 +5,8 @@
 
 set -euo pipefail
 
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -35,6 +37,11 @@ VALUES_FILE="${HELM_CHART_PATH}/values-${ENVIRONMENT}.yaml"
 check_prerequisites() {
     log_info "Checking prerequisites..."
     
+    if [[ ! -d "${HELM_CHART_PATH}" ]]; then
+        log_error "Helm chart not found: ${HELM_CHART_PATH}"
+        exit 1
+    fi
+
     for cmd in helm kubectl; do
         if ! command -v "$cmd" &> /dev/null; then
             log_error "$cmd is not installed or not in PATH"
@@ -70,6 +77,7 @@ deploy() {
         --create-namespace \
         --values "${VALUES_FILE}" \
         --set "image.tag=${VERSION_TAG}" \
+        --atomic \
         --wait \
         --timeout 5m
     

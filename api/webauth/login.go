@@ -2,6 +2,7 @@ package webauth
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"net/http"
 	"net/url"
@@ -102,6 +103,12 @@ func (wa *WebAuth) renderLoginStart(c *gin.Context, flowID string, providers []*
 // It validates the flow, loads social providers, and renders the login form.
 func (wa *WebAuth) LoginPageHandler(c *gin.Context) {
 	flowID := GetFlowIDFromCookie(c.Request)
+
+	// switch_account=1 forces a fresh synthetic flow so a stale flow cookie
+	// cannot hijack the account chooser (used by the device verification page).
+	if flowID != "" && c.Query("switch_account") == "1" && validReturnTo(c.Query("return_to")) {
+		flowID = ""
+	}
 
 	if flowID == "" {
 		// Flow-less login: when no sso_oidc_flow_id cookie exists but a
@@ -700,5 +707,5 @@ func validateCSRFTokenForm(c *gin.Context) bool {
 	if formVal == "" {
 		return false
 	}
-	return cookieVal == formVal
+	return subtle.ConstantTimeCompare([]byte(cookieVal), []byte(formVal)) == 1
 }
