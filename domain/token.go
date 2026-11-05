@@ -22,6 +22,8 @@ type TokenInfo struct {
 	SessionID          string     `bson:"session_id,omitempty" json:"session_id,omitempty"` // `sid` claim: the session this token belongs to
 	UsedAt             *time.Time `bson:"used_at,omitempty" json:"used_at,omitempty"`       // Set when a refresh token was rotated; a second use is replay
 	CnfJKT             string     `bson:"cnf_jkt,omitempty" json:"cnf_jkt,omitempty"`       // DPoP binding thumbprint
+	// AuthorizationDetails is the RFC 9396 authorization_details JSON array granted to the token.
+	AuthorizationDetails string `bson:"authorization_details,omitempty" json:"authorization_details,omitempty"`
 }
 
 // Token represents an OAuth token, also used for synthetic service account tokens.
@@ -64,4 +66,6 @@ type Token struct {
 	TokenHash string `bson:"token_hash,omitempty" json:"token_hash,omitempty"`
 	// CnfJKT is the JWK thumbprint the token is bound to (DPoP, Phase 4).
 	CnfJKT string `bson:"cnf_jkt,omitempty" json:"cnf_jkt,omitempty"`
+	// AuthorizationDetails is the RFC 9396 authorization_details JSON array granted to the token.
+	AuthorizationDetails string `bson:"authorization_details,omitempty" json:"authorization_details,omitempty"`
 }

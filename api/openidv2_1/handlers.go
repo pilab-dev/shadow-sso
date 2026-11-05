@@ -7,7 +7,6 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	goerrors "errors" // Standard Go errors package
 	"fmt"
 	"html/template" // Added for HTML rendering
@@ -53,6 +52,7 @@ type OAuth2API struct {
 	config              *sssoapi.OpenIDProviderConfig
 	flowStore           domain.FlowStore
 	parStore            domain.PARStore
+	rarTypesCache       rarTypesCache
 	userSessionStore    domain.UserSessionStore
 	userRepo            domain.UserRepository
 	passwordHasher      domain.PasswordHasher
@@ -507,7 +507,7 @@ func (oa *OAuth2API) completeAuthorizeAfterAuth(c *gin.Context, authReqData *aut
 
 	// No consent required — generate auth code directly.
 	authCode, err := oa.service.GenerateAuthCode(
-		ctx,
+		domain.ContextWithAuthorizationDetails(ctx, authReqData.authorizationDetails),
 		authReqData.clientID,
 		flowState.UserID,
 		authReqData.redirectURI,
@@ -621,35 +621,29 @@ func (oa *OAuth2API) parseAndValidateAuthorizeParams(c *gin.Context) (*authorize
 
 	// RAR (RFC 9396): validate authorization_details JSON when present.
 	if data.authorizationDetails != "" {
-		var details []map[string]any
-		if err := json.Unmarshal([]byte(data.authorizationDetails), &details); err != nil {
-			err2 := domain.NewInvalidRequest("invalid authorization_details JSON")
+		_, types, err := domain.ParseAuthorizationDetails(data.authorizationDetails)
+		if err != nil {
+			err2 := domain.NewInvalidRequest("invalid authorization_details: " + err.Error())
 			oa.sendHTMLError(c, http.StatusBadRequest, err2)
 			return nil, err2
 		}
-		for _, d := range details {
-			t, _ := d["type"].(string)
-			if t == "" {
-				err2 := domain.NewInvalidRequest("authorization_details entry missing type")
+		// A client may only request types it has been explicitly allowed to use.
+		if oa.clientService != nil {
+			client, err := oa.clientService.GetClient(c.Request.Context(), data.clientID)
+			if err != nil {
+				err2 := domain.NewInvalidRequest("unknown client")
 				oa.sendHTMLError(c, http.StatusBadRequest, err2)
 				return nil, err2
 			}
-		}
-		// Client-allowed type validation (if client service available).
-		if oa.clientService != nil {
-			client, err := oa.clientService.GetClient(c.Request.Context(), data.clientID)
-			if err == nil && len(client.AllowedAuthorizationDetails) > 0 {
-				allowed := make(map[string]bool)
-				for _, t := range client.AllowedAuthorizationDetails {
-					allowed[t] = true
-				}
-				for _, d := range details {
-					t, _ := d["type"].(string)
-					if !allowed[t] {
-						err2 := domain.NewInvalidRequest("authorization_details type not allowed for this client")
-						oa.sendHTMLError(c, http.StatusBadRequest, err2)
-						return nil, err2
-					}
+			allowed := make(map[string]bool, len(client.AllowedAuthorizationDetails))
+			for _, t := range client.AllowedAuthorizationDetails {
+				allowed[t] = true
+			}
+			for _, t := range types {
+				if !allowed[t] {
+					err2 := domain.NewInvalidRequest("authorization_details type not allowed for this client")
+					oa.sendHTMLError(c, http.StatusBadRequest, err2)
+					return nil, err2
 				}
 			}
 		}
@@ -1257,7 +1251,7 @@ func (oa *OAuth2API) FederatedCallbackHandler(c *gin.Context) {
 				}
 
 				authCode, errGen := oa.service.GenerateAuthCode(
-					c.Request.Context(),
+					domain.ContextWithAuthorizationDetails(c.Request.Context(), flowState.OriginalOIDCParams["authorization_details"]),
 					flowState.ClientID,
 					result.UserInfo.ID,
 					flowState.RedirectURI,
@@ -1910,8 +1904,9 @@ func (oa *OAuth2API) OpenIDConfigurationHandler(c *gin.Context) {
 	resp.RequireRequestURIRegistration = cfg.SecurityConfig.RequireRequestURIRegistration
 	resp.PromptValuesSupported = append([]string{}, sssoapi.DefaultPromptValuesSupported...)
 	resp.DPoPSigningAlgValuesSupported = append([]string{}, sssoapi.DPoPSigningAlgValuesSupported...)
-	// The authorization endpoint does not add the RFC 9207 iss parameter.
+	// iss is only added to success responses, not error responses, so RFC 9207 support is not advertised.
 	resp.AuthorizationResponseIssParameterSupported = false
+	resp.AuthorizationDetailsTypesSupported = oa.authorizationDetailsTypes(c.Request.Context())
 	// Access tokens are bearer JWTs; mTLS-bound tokens are not implemented.
 	resp.TLSClientCertificateBoundAccessTokens = false
 
@@ -2409,7 +2404,7 @@ func (oa *OAuth2API) AuthenticateUserHandler(c *gin.Context) {
 
 	// No consent required, proceed with authorization code generation
 	authCode, err := oa.service.GenerateAuthCode(
-		ctx,
+		domain.ContextWithAuthorizationDetails(ctx, flowState.OriginalOIDCParams["authorization_details"]),
 		flowState.ClientID,
 		user.ID, // Pass the authenticated UserID
 		flowState.RedirectURI,

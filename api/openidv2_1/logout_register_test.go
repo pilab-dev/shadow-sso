@@ -147,7 +147,11 @@ func TestBaselineDiscoveryOmitsLogoutRegistration(t *testing.T) {
 			DeviceAuthorization: true,
 		},
 	}
-	api, _ := newOIDCAPI(t, ctrl, cfg)
+	api, repo := newOIDCAPI(t, ctrl, cfg)
+	repo.EXPECT().ListClients(gomock.Any(), gomock.Any()).Return([]*domain.Client{
+		{ID: "a", AllowedAuthorizationDetails: []string{"payment", "account"}},
+		{ID: "b", AllowedAuthorizationDetails: []string{"payment"}},
+	}, nil)
 	router := newOIDCRouter(t, api)
 
 	req := httptest.NewRequest(http.MethodGet, "/.well-known/openid-configuration", nil)
@@ -161,6 +165,7 @@ func TestBaselineDiscoveryOmitsLogoutRegistration(t *testing.T) {
 	_, hasRegistration := doc["registration_endpoint"]
 	require.False(t, hasEndSession, "baseline: end_session_endpoint must not be advertised yet")
 	require.False(t, hasRegistration, "baseline: registration_endpoint must not be advertised yet")
+	require.Equal(t, []interface{}{"account", "payment"}, doc["authorization_details_types_supported"])
 }
 
 // ---------------------------------------------------------------------------
@@ -768,7 +773,8 @@ func TestDiscoveryAdvertisesLogoutRegistration(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	api, _, _, _, _ := newFullOIDCAPI(t, ctrl, defaultTestConfig())
+	api, repo, _, _, _ := newFullOIDCAPI(t, ctrl, defaultTestConfig())
+	repo.EXPECT().ListClients(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 	router := newOIDCRouter(t, api)
 
 	req := httptest.NewRequest(http.MethodGet, "/.well-known/openid-configuration", nil)

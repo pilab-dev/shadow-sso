@@ -42,11 +42,12 @@ func domainTokenToProtoRefreshToken(token *domain.Token) *ssov1.RefreshToken {
 	// For now, assuming they are not directly available or are part of a generic field not mapped.
 	// Roles could be part of claims.
 	return &ssov1.RefreshToken{
-		Token:     token.TokenValue,
-		ClientId:  token.ClientID,
-		UserId:    token.UserID,
-		Scope:     token.Scope,
-		ExpiresAt: timestamppb.New(token.ExpiresAt),
+		Token:                token.TokenValue,
+		ClientId:             token.ClientID,
+		UserId:               token.UserID,
+		Scope:                token.Scope,
+		ExpiresAt:            timestamppb.New(token.ExpiresAt),
+		AuthorizationDetails: token.AuthorizationDetails,
 		// SessionId: // Needs mapping if available in domain.Token
 		// Claims:    // Needs mapping if available in domain.Token
 	}
@@ -60,13 +61,14 @@ func protoRefreshTokenToDomainToken(protoRT *ssov1.RefreshToken) *domain.Token {
 	// IsRevoked is true if not found / deleted from DTS. If found, it's not revoked.
 	return &domain.Token{
 		// ID: // Not directly stored/retrieved unless token value is used as ID
-		TokenValue: protoRT.Token,
-		TokenType:  domain.TokenTypeRefreshToken,
-		ClientID:   protoRT.ClientId,
-		UserID:     protoRT.UserId,
-		Scope:      protoRT.Scope,
-		ExpiresAt:  protoRT.ExpiresAt.AsTime(),
-		IsRevoked:  false, // If we get it from DTS, it's not revoked
+		TokenValue:           protoRT.Token,
+		TokenType:            domain.TokenTypeRefreshToken,
+		ClientID:             protoRT.ClientId,
+		UserID:               protoRT.UserId,
+		Scope:                protoRT.Scope,
+		ExpiresAt:            protoRT.ExpiresAt.AsTime(),
+		IsRevoked:            false, // If we get it from DTS, it's not revoked
+		AuthorizationDetails: protoRT.AuthorizationDetails,
 		// CreatedAt, LastUsedAt, Issuer, Roles need to be sourced differently if required
 	}
 }
@@ -78,12 +80,13 @@ func protoRefreshTokenToDomainTokenInfo(protoRT *ssov1.RefreshToken) *domain.Tok
 	// IssuedAt, Roles not directly in ssov1.RefreshToken
 	return &domain.TokenInfo{
 		// ID: // Not directly stored/retrieved
-		TokenType: domain.TokenTypeRefreshToken,
-		ClientID:  protoRT.ClientId,
-		UserID:    protoRT.UserId,
-		Scope:     protoRT.Scope,
-		ExpiresAt: protoRT.ExpiresAt.AsTime(),
-		IsRevoked: false, // If we get it from DTS, it's not revoked
+		TokenType:            domain.TokenTypeRefreshToken,
+		ClientID:             protoRT.ClientId,
+		UserID:               protoRT.UserId,
+		Scope:                protoRT.Scope,
+		ExpiresAt:            protoRT.ExpiresAt.AsTime(),
+		IsRevoked:            false, // If we get it from DTS, it's not revoked
+		AuthorizationDetails: protoRT.AuthorizationDetails,
 		// IssuedAt: // Needs to be sourced differently, perhaps from CreatedAt if that was stored
 		// Roles:    // Could come from claims if claims were parsed
 	}

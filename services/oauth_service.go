@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -501,7 +502,7 @@ func (s *defaultOAuthService) RefreshToken(ctx context.Context, refreshTokenValu
 		return nil, err
 	}
 	tokenPair, err := s.tokenService.GenerateTokenPairWithSession(
-		ctx, clientID, tokenInfo.UserID, tokenInfo.Scope, tokenTTL,
+		domain.ContextWithAuthorizationDetails(ctx, tokenInfo.AuthorizationDetails), clientID, tokenInfo.UserID, tokenInfo.Scope, tokenTTL,
 		tokenInfo.SessionID, tokenInfo.RefreshTokenFamily, tokenInfo.ID,
 	)
 	if err != nil {
@@ -968,7 +969,7 @@ func (s *defaultOAuthService) ExchangeAuthorizationCode(ctx context.Context,
 		log.Ctx(ctx).Error().Err(err).Str("client_id", clientID).Str("user_id", authCodeDomain.UserID).Msg("Failed to resolve access token lifespan in auth code exchange")
 		return nil, err
 	}
-	tokenPair, err := s.tokenService.GenerateTokenPair(ctx, clientID, authCodeDomain.UserID, authCodeDomain.Scope, tokenTTL, authCodeDomain.AuthCodeData.SessionID)
+	tokenPair, err := s.tokenService.GenerateTokenPair(domain.ContextWithAuthorizationDetails(ctx, authCodeDomain.AuthorizationDetails), clientID, authCodeDomain.UserID, authCodeDomain.Scope, tokenTTL, authCodeDomain.AuthCodeData.SessionID)
 	if err != nil {
 		telemetry.RecordSpanError(span, err, "failed to generate token pair")
 		span.SetStatus(codes.Error, err.Error())
@@ -1075,6 +1076,8 @@ func (s *defaultOAuthService) IntrospectToken(ctx context.Context,
 		Jti:       tokenInfo.ID,
 		Nbf:       tokenInfo.IssuedAt.Unix(),
 		Aud:       tokenInfo.ClientID,
+
+		AuthorizationDetails: json.RawMessage(tokenInfo.AuthorizationDetails),
 	}, nil
 }
 
@@ -1177,6 +1180,15 @@ func (s *defaultOAuthService) GenerateAuthCode(
 		return "", errScope
 	}
 
+	authorizationDetails := domain.AuthorizationDetailsFromContext(ctx)
+	if authorizationDetails != "" {
+		if err := validateAuthorizationDetailsForClient(authorizationDetails, cli); err != nil {
+			telemetry.RecordSpanError(span, err, "invalid authorization_details")
+			span.SetStatus(codes.Error, "invalid authorization_details")
+			return "", domain.NewInvalidRequest(err.Error())
+		}
+	}
+
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		telemetry.RecordSpanError(span, err, "entropy failure for auth code")
@@ -1218,18 +1230,19 @@ func (s *defaultOAuthService) GenerateAuthCode(
 		}
 	}
 	authCode := &domain.AuthCode{
-		Code:                code,
-		ClientID:            clientID,
-		UserID:              userID,
-		RedirectURI:         redirectURI,
-		Scope:               scope,
-		ExpiresAt:           time.Now().Add(codeTTL),
-		CreatedAt:           time.Now(),
-		Used:                false,
-		CodeChallenge:       codeChallenge,
-		CodeChallengeMethod: codeChallengeMethod,
-		Nonce:               nonce,
-		AuthCodeData:        domain.AuthCodeData{SessionID: sessionID},
+		Code:                 code,
+		ClientID:             clientID,
+		UserID:               userID,
+		RedirectURI:          redirectURI,
+		Scope:                scope,
+		ExpiresAt:            time.Now().Add(codeTTL),
+		CreatedAt:            time.Now(),
+		Used:                 false,
+		CodeChallenge:        codeChallenge,
+		CodeChallengeMethod:  codeChallengeMethod,
+		Nonce:                nonce,
+		AuthorizationDetails: authorizationDetails,
+		AuthCodeData:         domain.AuthCodeData{SessionID: sessionID},
 	}
 
 	if err := s.authCodeRepo.SaveAuthCode(ctx, authCode); err != nil {
@@ -1562,4 +1575,26 @@ func (s *defaultOAuthService) TokenExchange(ctx context.Context, subjectToken, s
 
 	log.Ctx(ctx).Info().Str("client_id", clientID).Str("user_id", tokenInfo.UserID).Str("effective_scope", effectiveScope).Msg("RFC 8693 Token Exchange successful")
 	return tokenPair, nil
+}
+
+// validateAuthorizationDetailsForClient checks RFC 9396 authorization_details
+// are well formed and only use types the client is allowed to request.
+func validateAuthorizationDetailsForClient(raw string, cli *domain.Client) error {
+	_, types, err := domain.ParseAuthorizationDetails(raw)
+	if err != nil {
+		return err
+	}
+
+	allowed := make(map[string]bool, len(cli.AllowedAuthorizationDetails))
+	for _, t := range cli.AllowedAuthorizationDetails {
+		allowed[t] = true
+	}
+
+	for _, t := range types {
+		if !allowed[t] {
+			return fmt.Errorf("authorization_details type %q not allowed for this client", t)
+		}
+	}
+
+	return nil
 }

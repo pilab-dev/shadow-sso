@@ -883,7 +883,7 @@ func (s *AuthServer) SubmitConsent(ctx context.Context, req *connect.Request[sso
 
 	// Generate authorization code with accepted scopes
 	authCode, err := s.oauthService.GenerateAuthCode(
-		ctx,
+		domain.ContextWithAuthorizationDetails(ctx, flowState.OriginalOIDCParams["authorization_details"]),
 		flowState.ClientID,
 		flowState.UserID,
 		flowState.RedirectURI,

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"os"
@@ -1204,4 +1205,54 @@ func TestTokenService_ValidateAccessToken_RejectsIDToken(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
+}
+
+func TestTokenService_CreateToken_AuthorizationDetailsClaim(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
+	mockCache := mock_cache.NewMockTokenStore(ctrl)
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+
+	signer := services.NewTokenSigner()
+	signer.AddKeySigner("test-secret")
+
+	ts := services.NewTokenService(
+		mockTokenRepo, mockCache, "test-issuer", signer,
+		mock_domain.NewMockPublicKeyRepository(ctrl),
+		mock_domain.NewMockServiceAccountRepository(ctrl),
+		mockUserRepo, nil, nil, nil, nil,
+	)
+
+	const details = `[{"type":"payment","amount":"10"}]`
+	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user-id").Return(nil, errors.New("not found")).Times(2)
+	mockTokenRepo.EXPECT().StoreToken(gomock.Any(), gomock.Any()).Return(nil).Times(2)
+	mockCache.EXPECT().Set(gomock.Any(), gomock.Any()).Return(nil)
+
+	ctx := domain.ContextWithAuthorizationDetails(context.Background(), details)
+	access, err := ts.CreateToken(ctx, domain.CreateTokenOptions{
+		TokenID: "at", Scope: "openid", ClientID: "c", UserID: "user-id",
+		ExpireIn: time.Hour, TokenType: api.TokenTypeAccessToken,
+	}, nil)
+	require.NoError(t, err)
+	assert.JSONEq(t, details, access.AuthorizationDetails)
+
+	parsed, err := jwt.Parse(access.TokenValue, func(*jwt.Token) (interface{}, error) { return []byte("test-secret"), nil })
+	require.NoError(t, err)
+	claims := parsed.Claims.(jwt.MapClaims)
+	raw, err := json.Marshal(claims["authorization_details"])
+	require.NoError(t, err)
+	assert.JSONEq(t, details, string(raw))
+
+	// Refresh tokens persist the grant but do not carry it as a claim.
+	refresh, err := ts.CreateToken(ctx, domain.CreateTokenOptions{
+		TokenID: "rt", Scope: "openid", ClientID: "c", UserID: "user-id",
+		ExpireIn: time.Hour, TokenType: api.TokenTypeRefreshToken,
+	}, nil)
+	require.NoError(t, err)
+	assert.JSONEq(t, details, refresh.AuthorizationDetails)
+	rparsed, err := jwt.Parse(refresh.TokenValue, func(*jwt.Token) (interface{}, error) { return []byte("test-secret"), nil })
+	require.NoError(t, err)
+	assert.NotContains(t, rparsed.Claims.(jwt.MapClaims), "authorization_details")
 }

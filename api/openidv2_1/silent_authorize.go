@@ -171,7 +171,7 @@ func (oa *OAuth2API) SilentAuthorizeHandler(c *gin.Context) {
 	}
 
 	authCode, err := oa.service.GenerateAuthCode(
-		ctx,
+		domain.ContextWithAuthorizationDetails(ctx, data.authorizationDetails),
 		data.clientID,
 		userID,
 		data.redirectURI,

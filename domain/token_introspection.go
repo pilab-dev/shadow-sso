@@ -1,5 +1,7 @@
 package domain
 
+import "encoding/json"
+
 // TokenIntrospection represents the response format defined in RFC 7662
 //
 //nolint:tagliatelle
@@ -16,4 +18,6 @@ type TokenIntrospection struct {
 	Aud       string `json:"aud,omitempty"`
 	Iss       string `json:"iss,omitempty"`
 	Jti       string `json:"jti,omitempty"`
+	// AuthorizationDetails is the RFC 9396 authorization_details array.
+	AuthorizationDetails json.RawMessage `json:"authorization_details,omitempty"`
 }

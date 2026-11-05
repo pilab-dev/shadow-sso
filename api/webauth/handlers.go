@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/pilab-dev/shadow-sso/domain"
 	"github.com/pilab-dev/shadow-sso/internal/ssosession"
 	"github.com/rs/zerolog/log"
 )
@@ -215,7 +216,7 @@ func (wa *WebAuth) ConsentSubmitHandler(c *gin.Context) {
 	}
 
 	authCode, err := wa.oauthService.GenerateAuthCode(
-		ctx,
+		domain.ContextWithAuthorizationDetails(ctx, flowState.OriginalOIDCParams["authorization_details"]),
 		flowState.ClientID,
 		flowState.UserID,
 		flowState.RedirectURI,

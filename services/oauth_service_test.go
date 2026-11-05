@@ -2099,3 +2099,53 @@ func TestOAuthService_IntrospectToken_ForeignTokenIsInactive(t *testing.T) {
 	assert.False(t, resp.Active)
 	assert.Empty(t, resp.Sub)
 }
+
+func newRARTestOAuthService(t *testing.T) (services.OAuthService, *mock_domain.MockClientRepository, *mock_domain.MockAuthorizationCodeRepository, *mock_domain.MockSessionRepository) {
+	t.Helper()
+	ctrl := gomock.NewController(t)
+	clientRepo := mock_domain.NewMockClientRepository(ctrl)
+	codeRepo := mock_domain.NewMockAuthorizationCodeRepository(ctrl)
+	sessionRepo := mock_domain.NewMockSessionRepository(ctrl)
+
+	svc := services.NewOAuthService(
+		mock_domain.NewMockTokenRepository(ctrl), codeRepo,
+		mock_domain.NewMockDeviceAuthorizationRepository(ctrl), clientRepo,
+		mock_domain.NewMockUserRepository(ctrl), sessionRepo,
+		mock_domain.NewMockTokenServiceInterface(ctrl), "test-issuer",
+	)
+
+	return svc, clientRepo, codeRepo, sessionRepo
+}
+
+func TestOAuthService_GenerateAuthCode_PersistsAuthorizationDetails(t *testing.T) {
+	svc, clientRepo, codeRepo, sessionRepo := newRARTestOAuthService(t)
+	const details = `[{"type":"payment","amount":"10"}]`
+
+	clientRepo.EXPECT().GetClient(gomock.Any(), "c1").Return(&domain.Client{
+		ID: "c1", AllowedScopes: []string{"openid"}, AllowedAuthorizationDetails: []string{"payment"},
+	}, nil)
+	sessionRepo.EXPECT().ListSessionsByUserID(gomock.Any(), "u1", gomock.Any()).Return(nil, nil)
+	sessionRepo.EXPECT().StoreSession(gomock.Any(), gomock.Any()).Return(nil)
+	sessionRepo.EXPECT().StoreSessionEvent(gomock.Any(), gomock.Any()).Return(nil)
+	codeRepo.EXPECT().SaveAuthCode(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, ac *domain.AuthCode) error {
+		assert.JSONEq(t, details, ac.AuthorizationDetails)
+		return nil
+	})
+
+	ctx := domain.ContextWithAuthorizationDetails(context.Background(), details)
+	_, err := svc.GenerateAuthCode(ctx, "c1", "u1", "https://cb", "openid", "", "", "", time.Now())
+	require.NoError(t, err)
+}
+
+func TestOAuthService_GenerateAuthCode_RejectsDisallowedAuthorizationDetails(t *testing.T) {
+	svc, clientRepo, _, _ := newRARTestOAuthService(t)
+
+	clientRepo.EXPECT().GetClient(gomock.Any(), "c1").Return(&domain.Client{
+		ID: "c1", AllowedScopes: []string{"openid"}, AllowedAuthorizationDetails: []string{"payment"},
+	}, nil)
+
+	ctx := domain.ContextWithAuthorizationDetails(context.Background(), `[{"type":"account_information"}]`)
+	_, err := svc.GenerateAuthCode(ctx, "c1", "u1", "https://cb", "openid", "", "", "", time.Now())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not allowed")
+}

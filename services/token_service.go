@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -145,8 +146,9 @@ func toCacheEntry(t *domain.Token) *cache.TokenEntry { // Ensure cache pkg is im
 		Scope: t.Scope, ExpiresAt: t.ExpiresAt, IsRevoked: t.IsRevoked,
 		Roles: t.Roles, // Add Roles
 		// Issuer and other fields not in TokenEntry are omitted
-		SessionID: t.SessionID,
-		CnfJKT:    t.CnfJKT,
+		SessionID:            t.SessionID,
+		CnfJKT:               t.CnfJKT,
+		AuthorizationDetails: t.AuthorizationDetails,
 	}
 }
 
@@ -157,16 +159,17 @@ func fromCacheEntry(entry *cache.TokenEntry, tokenValue string) *domain.Token { 
 	// This function might need to return a partially populated token or fetch more details.
 	// For now, it populates what's available.
 	return &domain.Token{
-		ID:         entry.ID,
-		UserID:     entry.UserID,
-		ClientID:   entry.ClientID,
-		Scope:      entry.Scope,
-		ExpiresAt:  entry.ExpiresAt,
-		IsRevoked:  entry.IsRevoked,
-		Roles:      entry.Roles,
-		SessionID:  entry.SessionID,
-		CnfJKT:     entry.CnfJKT,
-		TokenValue: tokenValue, // Pass tokenValue if needed for context
+		ID:                   entry.ID,
+		UserID:               entry.UserID,
+		ClientID:             entry.ClientID,
+		Scope:                entry.Scope,
+		ExpiresAt:            entry.ExpiresAt,
+		IsRevoked:            entry.IsRevoked,
+		Roles:                entry.Roles,
+		SessionID:            entry.SessionID,
+		CnfJKT:               entry.CnfJKT,
+		AuthorizationDetails: entry.AuthorizationDetails,
+		TokenValue:           tokenValue, // Pass tokenValue if needed for context
 		// TokenType, CreatedAt, LastUsedAt, Issuer would need to be set if required by caller
 	}
 }
@@ -275,6 +278,16 @@ func (s *defaultTokenService) CreateToken(ctx context.Context, opts domain.Creat
 		tokenClaimsMap["cnf"] = map[string]string{"jkt": cnfJKT}
 	}
 
+	// RFC 9396: access tokens carry the granted authorization_details; refresh
+	// tokens only persist them so a refresh can re-issue the same grant.
+	authorizationDetails := domain.AuthorizationDetailsFromContext(ctx)
+	if authorizationDetails != "" && opts.TokenType == api.TokenTypeAccessToken {
+		var details []map[string]any
+		if err := json.Unmarshal([]byte(authorizationDetails), &details); err == nil {
+			tokenClaimsMap["authorization_details"] = details
+		}
+	}
+
 	// groups is a flat array consumed by Kubernetes OIDC (--oidc-groups-claim).
 	// It is separate from the role claims above so RBAC bindings can be managed
 	// independently of application roles.
@@ -299,23 +312,24 @@ func (s *defaultTokenService) CreateToken(ctx context.Context, opts domain.Creat
 
 	// Store token in repository
 	token := &domain.Token{ // Changed to domain.Token
-		ID:         opts.TokenID,
-		TokenType:  opts.TokenType,
-		TokenValue: signedToken,
-		ClientID:   opts.ClientID,
-		UserID:     opts.UserID,
-		Scope:      opts.Scope,
-		ExpiresAt:  expiresAt,
-		CreatedAt:  time.Now(),
-		LastUsedAt: time.Now(),
-		Roles:      userRoles, // Store roles in the token struct
-		SessionID:  opts.SessionID,
-		CnfJKT:     cnfJKT,
-		Audience:   audience,
-		Subject:    subject,
-		Groups:     opts.Groups,
-		Family:     opts.Family,
-		ParentJTI:  opts.ParentJTI,
+		ID:                   opts.TokenID,
+		TokenType:            opts.TokenType,
+		TokenValue:           signedToken,
+		ClientID:             opts.ClientID,
+		UserID:               opts.UserID,
+		Scope:                opts.Scope,
+		ExpiresAt:            expiresAt,
+		CreatedAt:            time.Now(),
+		LastUsedAt:           time.Now(),
+		Roles:                userRoles, // Store roles in the token struct
+		SessionID:            opts.SessionID,
+		CnfJKT:               cnfJKT,
+		AuthorizationDetails: authorizationDetails,
+		Audience:             audience,
+		Subject:              subject,
+		Groups:               opts.Groups,
+		Family:               opts.Family,
+		ParentJTI:            opts.ParentJTI,
 	}
 	if err := s.repo.StoreToken(ctx, token); err != nil {
 		telemetry.RecordSpanError(span, err, "failed to store token")
@@ -646,11 +660,12 @@ func (s *defaultTokenService) GenerateTokenPairWithSession(ctx context.Context,
 	}
 
 	return &api.TokenResponse{
-		IDToken:      idToken,
-		AccessToken:  accessToken.TokenValue,
-		TokenType:    "Bearer", // Standard token type for responses
-		ExpiresIn:    int(tokenTTL.Seconds()),
-		RefreshToken: refreshToken.TokenValue,
+		IDToken:              idToken,
+		AccessToken:          accessToken.TokenValue,
+		TokenType:            "Bearer", // Standard token type for responses
+		ExpiresIn:            int(tokenTTL.Seconds()),
+		RefreshToken:         refreshToken.TokenValue,
+		AuthorizationDetails: json.RawMessage(accessToken.AuthorizationDetails),
 	}, nil
 }
 
@@ -920,6 +935,12 @@ func (s *defaultTokenService) validateRS256Token(ctx context.Context, tokenValue
 			cnfJKT = v
 		}
 	}
+	authorizationDetails := ""
+	if raw, ok := (*claims)["authorization_details"]; ok {
+		if b, err := json.Marshal(raw); err == nil {
+			authorizationDetails = string(b)
+		}
+	}
 	var tokenScope string
 	if scope, ok := (*claims)["scope"].(string); ok {
 		tokenScope = scope
@@ -945,18 +966,19 @@ func (s *defaultTokenService) validateRS256Token(ctx context.Context, tokenValue
 	}
 
 	return &domain.Token{
-		ID:         jtiClaim,
-		TokenType:  "access_token",
-		TokenValue: tokenValue,
-		UserID:     userID,
-		Scope:      tokenScope,
-		ExpiresAt:  expiresAt,
-		CreatedAt:  issuedAt,
-		IsRevoked:  false,
-		Issuer:     issuerClaim,
-		Roles:      roles,
-		SessionID:  sidClaim,
-		CnfJKT:     cnfJKT,
+		ID:                   jtiClaim,
+		TokenType:            "access_token",
+		TokenValue:           tokenValue,
+		UserID:               userID,
+		Scope:                tokenScope,
+		ExpiresAt:            expiresAt,
+		CreatedAt:            issuedAt,
+		IsRevoked:            false,
+		Issuer:               issuerClaim,
+		Roles:                roles,
+		SessionID:            sidClaim,
+		CnfJKT:               cnfJKT,
+		AuthorizationDetails: authorizationDetails,
 	}, nil
 }
 

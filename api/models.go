@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"time"
 )
 
@@ -17,6 +18,8 @@ type TokenResponse struct {
 	TokenType    string `json:"token_type"`
 	ExpiresIn    int    `json:"expires_in"`
 	RefreshToken string `json:"refresh_token,omitempty"`
+	// AuthorizationDetails is the RFC 9396 authorization_details array granted to the access token.
+	AuthorizationDetails json.RawMessage `json:"authorization_details,omitempty"`
 }
 
 // DeviceAuthResponse is the response from the device authorization endpoint.
@@ -124,6 +127,8 @@ type OpenIDConfiguration struct {
 	DPoPSigningAlgValuesSupported              []string `json:"dpop_signing_alg_values_supported,omitempty"`
 	AuthorizationResponseIssParameterSupported bool     `json:"authorization_response_iss_parameter_supported"`
 	TLSClientCertificateBoundAccessTokens      bool     `json:"tls_client_certificate_bound_access_tokens"`
+	// AuthorizationDetailsTypesSupported lists RFC 9396 types at least one client may request.
+	AuthorizationDetailsTypesSupported []string `json:"authorization_details_types_supported,omitempty"`
 }
 
 type UserInfoAddress struct {

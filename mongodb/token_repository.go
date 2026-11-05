@@ -133,19 +133,20 @@ func (r *TokenRepository) GetRefreshTokenInfo(ctx context.Context, tokenValue st
 		return nil, err
 	}
 	return &domain.TokenInfo{
-		ID:                 token.ID,
-		TokenType:          token.TokenType,
-		ClientID:           token.ClientID,
-		UserID:             token.UserID,
-		Scope:              token.Scope,
-		IssuedAt:           token.CreatedAt,
-		ExpiresAt:          token.ExpiresAt,
-		IsRevoked:          token.IsRevoked,
-		Roles:              token.Roles,
-		RefreshTokenFamily: token.Family,
-		SessionID:          token.SessionID,
-		UsedAt:             token.UsedAt,
-		CnfJKT:             token.CnfJKT,
+		ID:                   token.ID,
+		TokenType:            token.TokenType,
+		ClientID:             token.ClientID,
+		UserID:               token.UserID,
+		Scope:                token.Scope,
+		IssuedAt:             token.CreatedAt,
+		ExpiresAt:            token.ExpiresAt,
+		IsRevoked:            token.IsRevoked,
+		Roles:                token.Roles,
+		RefreshTokenFamily:   token.Family,
+		SessionID:            token.SessionID,
+		UsedAt:               token.UsedAt,
+		CnfJKT:               token.CnfJKT,
+		AuthorizationDetails: token.AuthorizationDetails,
 	}, nil
 }
 
@@ -154,7 +155,7 @@ func (r *TokenRepository) GetAccessTokenInfo(ctx context.Context, tokenValue str
 	if err != nil {
 		return nil, err
 	}
-	return &domain.TokenInfo{ID: token.ID, TokenType: token.TokenType, ClientID: token.ClientID, UserID: token.UserID, Scope: token.Scope, IssuedAt: token.CreatedAt, ExpiresAt: token.ExpiresAt, IsRevoked: token.IsRevoked, Roles: token.Roles}, nil
+	return &domain.TokenInfo{ID: token.ID, TokenType: token.TokenType, ClientID: token.ClientID, UserID: token.UserID, Scope: token.Scope, IssuedAt: token.CreatedAt, ExpiresAt: token.ExpiresAt, IsRevoked: token.IsRevoked, Roles: token.Roles, CnfJKT: token.CnfJKT, AuthorizationDetails: token.AuthorizationDetails}, nil
 }
 
 func (r *TokenRepository) RevokeRefreshToken(ctx context.Context, tokenValue string) error {
