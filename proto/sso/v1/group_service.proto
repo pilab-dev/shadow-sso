@@ -1,0 +1,159 @@
+syntax = "proto3";
+
+package sso.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+import "buf/validate/validate.proto";
+import "proto/sso/v1/role_service.proto";
+
+option go_package = "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1;ssov1";
+
+// GroupService manages Keycloak-style groups, membership and group role mappings.
+service GroupService {
+  rpc CreateGroup(CreateGroupRequest) returns (CreateGroupResponse);
+  rpc GetGroup(GetGroupRequest) returns (GetGroupResponse);
+  rpc ListGroups(ListGroupsRequest) returns (ListGroupsResponse);
+  rpc UpdateGroup(UpdateGroupRequest) returns (UpdateGroupResponse);
+  rpc DeleteGroup(DeleteGroupRequest) returns (google.protobuf.Empty);
+
+  rpc ListGroupMembers(ListGroupMembersRequest) returns (ListGroupMembersResponse);
+  rpc ListUserGroups(ListUserGroupsRequest) returns (ListUserGroupsResponse);
+  rpc AddUserToGroup(AddUserToGroupRequest) returns (google.protobuf.Empty);
+  rpc RemoveUserFromGroup(RemoveUserFromGroupRequest) returns (google.protobuf.Empty);
+
+  rpc GetGroupRoles(GetGroupRolesRequest) returns (GetGroupRolesResponse);
+  rpc AddRealmRoleToGroup(AddRealmRoleToGroupRequest) returns (google.protobuf.Empty);
+  rpc RemoveRealmRoleFromGroup(RemoveRealmRoleFromGroupRequest) returns (google.protobuf.Empty);
+  rpc AddClientRoleToGroup(AddClientRoleToGroupRequest) returns (google.protobuf.Empty);
+  rpc RemoveClientRoleFromGroup(RemoveClientRoleFromGroupRequest) returns (google.protobuf.Empty);
+}
+
+// Group mirrors domain.Group.
+message Group {
+  string id = 1;
+  string name = 2;
+  string path = 3;
+  string parent_group_id = 4;
+  repeated string realm_role_ids = 5;
+  map<string, ClientRoleIds> client_role_ids = 6;
+  repeated string member_ids = 7;
+  int32 member_count = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+}
+
+message ClientRoleIds {
+  repeated string role_ids = 1;
+}
+
+// GroupMember is the minimal user view returned for group membership.
+message GroupMember {
+  string id = 1;
+  string email = 2;
+  string first_name = 3;
+  string last_name = 4;
+}
+
+message CreateGroupRequest {
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+  // Optional; defaults to "/<name>".
+  string path = 2;
+}
+
+message CreateGroupResponse {
+  Group group = 1;
+}
+
+message GetGroupRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message GetGroupResponse {
+  Group group = 1;
+}
+
+message ListGroupsRequest {}
+
+message ListGroupsResponse {
+  repeated Group groups = 1;
+}
+
+message UpdateGroupRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  optional string name = 2;
+  optional string path = 3;
+}
+
+message UpdateGroupResponse {
+  Group group = 1;
+}
+
+message DeleteGroupRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message ListGroupMembersRequest {
+  string group_id = 1 [(buf.validate.field).string.min_len = 1];
+  int32 page_size = 2 [(buf.validate.field).int32.lte = 100];
+  string page_token = 3;
+}
+
+message ListGroupMembersResponse {
+  repeated GroupMember members = 1;
+  string next_page_token = 2;
+  int32 total_count = 3;
+}
+
+message ListUserGroupsRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message ListUserGroupsResponse {
+  repeated Group groups = 1;
+}
+
+message AddUserToGroupRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+  string group_id = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message RemoveUserFromGroupRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+  string group_id = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message GetGroupRolesRequest {
+  string group_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message GetGroupRolesResponse {
+  repeated Role realm_roles = 1;
+  map<string, RoleList> client_roles = 2;
+}
+
+message RoleList {
+  repeated Role roles = 1;
+}
+
+message AddRealmRoleToGroupRequest {
+  string group_id = 1 [(buf.validate.field).string.min_len = 1];
+  string role_id = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message RemoveRealmRoleFromGroupRequest {
+  string group_id = 1 [(buf.validate.field).string.min_len = 1];
+  string role_id = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message AddClientRoleToGroupRequest {
+  string group_id = 1 [(buf.validate.field).string.min_len = 1];
+  string client_id = 2 [(buf.validate.field).string.min_len = 1];
+  string role_id = 3 [(buf.validate.field).string.min_len = 1];
+}
+
+message RemoveClientRoleFromGroupRequest {
+  string group_id = 1 [(buf.validate.field).string.min_len = 1];
+  string client_id = 2 [(buf.validate.field).string.min_len = 1];
+  string role_id = 3 [(buf.validate.field).string.min_len = 1];
+}

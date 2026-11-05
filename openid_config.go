@@ -523,6 +523,59 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 	oidcConfigPath, oidcConfigHandler := ssov1connect.NewOIDCConfigurationServiceHandler(oidcConfigServer, interceptors)
 	router.Any(oidcConfigPath+"*action", gin.WrapH(oidcConfigHandler))
 
+	// Role, Group, Session admin, Realm, Introspection, Authentication Flow and User admin services.
+	roleServer := services.NewRoleServer(
+		repoProvider.RoleRepository(connectCtx),
+		repoProvider.UserRepository(connectCtx),
+	)
+	rolePath, roleHandler := ssov1connect.NewRoleServiceHandler(roleServer, interceptors)
+	router.Any(rolePath+"*action", gin.WrapH(roleHandler))
+
+	groupServer := services.NewGroupServer(
+		repoProvider.GroupRepository(connectCtx),
+		repoProvider.RoleRepository(connectCtx),
+		repoProvider.UserRepository(connectCtx),
+	)
+	groupPath, groupHandler := ssov1connect.NewGroupServiceHandler(groupServer, interceptors)
+	router.Any(groupPath+"*action", gin.WrapH(groupHandler))
+
+	sessionAdminServer := services.NewSessionAdminServer(
+		repoProvider.SessionRepository(connectCtx),
+		repoProvider.TokenRepository(connectCtx),
+	)
+	sessionAdminPath, sessionAdminHandler := ssov1connect.NewSessionAdminServiceHandler(sessionAdminServer, interceptors)
+	router.Any(sessionAdminPath+"*action", gin.WrapH(sessionAdminHandler))
+
+	realmServer := services.NewRealmServer(
+		repoProvider.RealmSettingsRepository(connectCtx),
+		repoProvider.RealmKeysRepository(connectCtx),
+	)
+	realmPath, realmHandler := ssov1connect.NewRealmServiceHandler(realmServer, interceptors)
+	router.Any(realmPath+"*action", gin.WrapH(realmHandler))
+
+	introspectionServer := services.NewTokenIntrospectionServer(
+		tokenService,
+		repoProvider.UserRepository(connectCtx),
+		opts.Config.Issuer,
+	)
+	introspectionPath, introspectionHandler := ssov1connect.NewTokenIntrospectionServiceHandler(introspectionServer, interceptors)
+	router.Any(introspectionPath+"*action", gin.WrapH(introspectionHandler))
+
+	if authFlowRepo != nil {
+		authFlowServer := services.NewAuthenticationFlowServer(authFlowRepo)
+		authFlowPath, authFlowHandler := ssov1connect.NewAuthenticationFlowServiceHandler(authFlowServer, interceptors)
+		router.Any(authFlowPath+"*action", gin.WrapH(authFlowHandler))
+	}
+
+	userAdminServer := services.NewUserAdminServer(
+		repoProvider.UserRepository(connectCtx),
+		passwordHasher,
+		webauthMailer,
+		strings.TrimRight(opts.Config.Issuer, "/"),
+	)
+	userAdminPath, userAdminHandler := ssov1connect.NewUserAdminServiceHandler(userAdminServer, interceptors)
+	router.Any(userAdminPath+"*action", gin.WrapH(userAdminHandler))
+
 	// Emit TokenExpired audit events once each token crosses expires_at.
 	services.StartTokenExpirySweeper(repoProvider.TokenRepository(connectCtx))
 

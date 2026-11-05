@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package sso.v1;
+
+import "google/protobuf/empty.proto";
+import "buf/validate/validate.proto";
+
+option go_package = "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1;ssov1";
+
+// UserAdminService exposes admin-only user operations (credentials, emails,
+// required actions). Two-factor reset is TwoFactorService.ResetUserMFA.
+service UserAdminService {
+  rpc SendVerificationEmail(SendVerificationEmailRequest) returns (google.protobuf.Empty);
+  rpc SendPasswordResetEmail(SendPasswordResetEmailRequest) returns (google.protobuf.Empty);
+  // Sets a new password and clears any pending reset token.
+  rpc AdminResetPassword(AdminResetPasswordRequest) returns (google.protobuf.Empty);
+  // Sets a password; when temporary, the user must change it at next login.
+  rpc SetUserPassword(SetUserPasswordRequest) returns (google.protobuf.Empty);
+  // Adds required actions executed at the user's next login.
+  rpc ExecuteActions(ExecuteActionsRequest) returns (google.protobuf.Empty);
+  rpc AddRequiredAction(AddRequiredActionRequest) returns (google.protobuf.Empty);
+  rpc RemoveRequiredAction(RemoveRequiredActionRequest) returns (google.protobuf.Empty);
+  rpc DeleteUserCredential(DeleteUserCredentialRequest) returns (google.protobuf.Empty);
+}
+
+message SendVerificationEmailRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message SendPasswordResetEmailRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message AdminResetPasswordRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+  string new_password = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message SetUserPasswordRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+  string password = 2 [(buf.validate.field).string.min_len = 1];
+  bool temporary = 3;
+}
+
+message ExecuteActionsRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+  repeated string actions = 2;
+}
+
+message AddRequiredActionRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+  string action = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message RemoveRequiredActionRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+  string action = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message DeleteUserCredentialRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+  string credential_id = 2 [(buf.validate.field).string.min_len = 1];
+}

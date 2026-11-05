@@ -81,6 +81,18 @@ const (
 	PermBrowserPolicyManage = "browser_policy:manage"
 )
 
+// Role, Group, Realm and Authentication Flow Management (Admin only)
+const (
+	PermRolesRead       = "roles:read"
+	PermRolesManage     = "roles:manage"
+	PermGroupsRead      = "groups:read"
+	PermGroupsManage    = "groups:manage"
+	PermRealmRead       = "realm:read"
+	PermRealmManage     = "realm:manage"
+	PermAuthFlowsRead   = "auth_flows:read"
+	PermAuthFlowsManage = "auth_flows:manage"
+)
+
 // RoleToPermissionsMap maps roles to their granted permissions.
 // This can be used by the authorization interceptor.
 var RoleToPermissionsMap = map[string][]string{
@@ -138,6 +150,15 @@ var RoleToPermissionsMap = map[string][]string{
 
 		PermOIDCConfigRead,
 		PermOIDCConfigManage,
+
+		PermRolesRead,
+		PermRolesManage,
+		PermGroupsRead,
+		PermGroupsManage,
+		PermRealmRead,
+		PermRealmManage,
+		PermAuthFlowsRead,
+		PermAuthFlowsManage,
 	},
 }
 
@@ -232,4 +253,74 @@ var MethodPermissions = map[string]string{
 	// OIDCConfigurationService (All admin)
 	"/sso.v1.OIDCConfigurationService/GetOIDCConfiguration":    PermOIDCConfigRead,
 	"/sso.v1.OIDCConfigurationService/UpdateOIDCConfiguration": PermOIDCConfigManage,
+
+	// RoleService
+	"/sso.v1.RoleService/CreateRole":                PermRolesManage,
+	"/sso.v1.RoleService/UpdateRole":                PermRolesManage,
+	"/sso.v1.RoleService/DeleteRole":                PermRolesManage,
+	"/sso.v1.RoleService/CreateCompositeRole":       PermRolesManage,
+	"/sso.v1.RoleService/GetRole":                   PermRolesRead,
+	"/sso.v1.RoleService/ListRoles":                 PermRolesRead,
+	"/sso.v1.RoleService/ListRealmRoles":            PermRolesRead,
+	"/sso.v1.RoleService/ListClientRoles":           PermRolesRead,
+	"/sso.v1.RoleService/GetUserRoleMappings":       PermUsersReadAll,
+	"/sso.v1.RoleService/GetUserClientRoleMappings": PermUsersReadAll,
+	"/sso.v1.RoleService/AddRealmRoleToUser":        PermUsersUpdateAll,
+	"/sso.v1.RoleService/RemoveRealmRoleFromUser":   PermUsersUpdateAll,
+	"/sso.v1.RoleService/AddClientRoleToUser":       PermUsersUpdateAll,
+	"/sso.v1.RoleService/RemoveClientRoleFromUser":  PermUsersUpdateAll,
+
+	// GroupService
+	"/sso.v1.GroupService/CreateGroup":               PermGroupsManage,
+	"/sso.v1.GroupService/UpdateGroup":               PermGroupsManage,
+	"/sso.v1.GroupService/DeleteGroup":               PermGroupsManage,
+	"/sso.v1.GroupService/AddUserToGroup":            PermGroupsManage,
+	"/sso.v1.GroupService/RemoveUserFromGroup":       PermGroupsManage,
+	"/sso.v1.GroupService/AddRealmRoleToGroup":       PermGroupsManage,
+	"/sso.v1.GroupService/RemoveRealmRoleFromGroup":  PermGroupsManage,
+	"/sso.v1.GroupService/AddClientRoleToGroup":      PermGroupsManage,
+	"/sso.v1.GroupService/RemoveClientRoleFromGroup": PermGroupsManage,
+	"/sso.v1.GroupService/GetGroup":                  PermGroupsRead,
+	"/sso.v1.GroupService/ListGroups":                PermGroupsRead,
+	"/sso.v1.GroupService/ListGroupMembers":          PermGroupsRead,
+	"/sso.v1.GroupService/GetGroupRoles":             PermGroupsRead,
+	"/sso.v1.GroupService/ListUserGroups":            PermUsersReadAll,
+
+	// SessionAdminService
+	"/sso.v1.SessionAdminService/ListSessions":           PermSessionsListOthers,
+	"/sso.v1.SessionAdminService/GetSession":             PermSessionsListOthers,
+	"/sso.v1.SessionAdminService/ListSessionEvents":      PermSessionsListOthers,
+	"/sso.v1.SessionAdminService/ListUserSessions":       PermSessionsListOthers,
+	"/sso.v1.SessionAdminService/ListClientUserSessions": PermSessionsListOthers,
+	"/sso.v1.SessionAdminService/RevokeSession":          PermSessionsClearOthers,
+	"/sso.v1.SessionAdminService/RevokeOtherSessions":    PermSessionsClearOthers,
+	"/sso.v1.SessionAdminService/RevokeAllSessions":      PermSessionsClearOthers,
+	"/sso.v1.SessionAdminService/LogoutUser":             PermSessionsClearOthers,
+
+	// RealmService
+	"/sso.v1.RealmService/GetRealm":        PermRealmRead,
+	"/sso.v1.RealmService/ListRealmKeys":   PermRealmRead,
+	"/sso.v1.RealmService/UpdateRealm":     PermRealmManage,
+	"/sso.v1.RealmService/UpdateRealmKeys": PermRealmManage,
+
+	// TokenIntrospectionService
+	"/sso.v1.TokenIntrospectionService/IntrospectToken": PermUsersDeleteAll,
+
+	// AuthenticationFlowService
+	"/sso.v1.AuthenticationFlowService/ListAuthenticationFlows":        PermAuthFlowsRead,
+	"/sso.v1.AuthenticationFlowService/ListAuthenticationExecutions":   PermAuthFlowsRead,
+	"/sso.v1.AuthenticationFlowService/CreateAuthenticationFlow":       PermAuthFlowsManage,
+	"/sso.v1.AuthenticationFlowService/UpdateAuthenticationFlow":       PermAuthFlowsManage,
+	"/sso.v1.AuthenticationFlowService/DeleteAuthenticationFlow":       PermAuthFlowsManage,
+	"/sso.v1.AuthenticationFlowService/UpdateAuthenticationExecutions": PermAuthFlowsManage,
+
+	// UserAdminService
+	"/sso.v1.UserAdminService/SendVerificationEmail":  PermUsersUpdateAll,
+	"/sso.v1.UserAdminService/SendPasswordResetEmail": PermUsersChangePasswordAll,
+	"/sso.v1.UserAdminService/AdminResetPassword":     PermUsersChangePasswordAll,
+	"/sso.v1.UserAdminService/SetUserPassword":        PermUsersChangePasswordAll,
+	"/sso.v1.UserAdminService/ExecuteActions":         PermUsersUpdateAll,
+	"/sso.v1.UserAdminService/AddRequiredAction":      PermUsersUpdateAll,
+	"/sso.v1.UserAdminService/RemoveRequiredAction":   PermUsersUpdateAll,
+	"/sso.v1.UserAdminService/DeleteUserCredential":   PermUsersUpdateAll,
 }

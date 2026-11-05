@@ -1,0 +1,116 @@
+syntax = "proto3";
+
+package sso.v1;
+
+import "google/protobuf/timestamp.proto";
+import "buf/validate/validate.proto";
+
+option go_package = "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1;ssov1";
+
+// RealmService manages realm settings and realm signing keys.
+// OIDC discovery overrides are managed by OIDCConfigurationService.
+service RealmService {
+  rpc GetRealm(GetRealmRequest) returns (GetRealmResponse);
+  rpc UpdateRealm(UpdateRealmRequest) returns (UpdateRealmResponse);
+  rpc ListRealmKeys(ListRealmKeysRequest) returns (ListRealmKeysResponse);
+  rpc UpdateRealmKeys(UpdateRealmKeysRequest) returns (UpdateRealmKeysResponse);
+}
+
+// PasswordPolicy mirrors the password fields of domain.RealmSettings.
+message PasswordPolicy {
+  int32 min_length = 1;
+  int32 max_length = 2;
+  int32 lower_case = 3;
+  int32 upper_case = 4;
+  int32 digits = 5;
+  int32 special_chars = 6;
+}
+
+// RealmSettings mirrors domain.RealmSettings.
+message RealmSettings {
+  string id = 1;
+  string realm = 2;
+  string display_name = 3;
+  bool enabled = 4;
+  bool registration_allowed = 5;
+  bool login_with_email_allowed = 6;
+  bool duplicate_emails_allowed = 7;
+  bool reset_password_allowed = 8;
+  bool edit_username_allowed = 9;
+  bool brute_force_protected = 10;
+  string ssl_required = 11;
+  PasswordPolicy password_policy = 12;
+  int32 access_token_lifespan = 13;
+  int32 access_code_lifespan = 14;
+  int32 refresh_token_lifespan = 15;
+  int32 sso_session_idle_timeout = 16;
+  int32 sso_session_max_lifespan = 17;
+  google.protobuf.Timestamp updated_at = 18;
+}
+
+// RealmKey mirrors domain.RealmKey; private key material is never returned.
+message RealmKey {
+  string id = 1;
+  string name = 2;
+  string type = 3;
+  string provider_id = 4;
+  bool active = 5;
+  int32 priority = 6;
+  string public_key = 7;
+  string certificate = 8;
+  string status = 9;
+}
+
+message GetRealmRequest {}
+
+message GetRealmResponse {
+  RealmSettings realm = 1;
+}
+
+// All fields optional; only set fields are changed.
+message UpdateRealmRequest {
+  optional string display_name = 1;
+  optional bool enabled = 2;
+  optional bool registration_allowed = 3;
+  optional bool login_with_email_allowed = 4;
+  optional bool duplicate_emails_allowed = 5;
+  optional bool reset_password_allowed = 6;
+  optional bool edit_username_allowed = 7;
+  optional bool brute_force_protected = 8;
+  // One of "none", "external", "all".
+  optional string ssl_required = 9;
+  optional int32 access_token_lifespan = 10 [(buf.validate.field).int32.gte = 0];
+  optional int32 access_code_lifespan = 11 [(buf.validate.field).int32.gte = 0];
+  optional int32 refresh_token_lifespan = 12 [(buf.validate.field).int32.gte = 0];
+  optional int32 sso_session_idle_timeout = 13 [(buf.validate.field).int32.gte = 0];
+  optional int32 sso_session_max_lifespan = 14 [(buf.validate.field).int32.gte = 0];
+}
+
+message UpdateRealmResponse {
+  RealmSettings realm = 1;
+}
+
+message ListRealmKeysRequest {}
+
+message ListRealmKeysResponse {
+  repeated RealmKey keys = 1;
+}
+
+message RealmKeyInput {
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+  string type = 2 [(buf.validate.field).string.min_len = 1];
+  string provider_id = 3 [(buf.validate.field).string.min_len = 1];
+  bool active = 4;
+  int32 priority = 5;
+  string public_key = 6;
+  string certificate = 7;
+}
+
+// UpdateRealmKeys bulk-replaces the realm-default key set.
+message UpdateRealmKeysRequest {
+  repeated RealmKeyInput keys = 1;
+}
+
+message UpdateRealmKeysResponse {
+  repeated RealmKey keys = 1;
+}

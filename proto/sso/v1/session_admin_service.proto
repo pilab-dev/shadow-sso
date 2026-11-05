@@ -1,0 +1,145 @@
+syntax = "proto3";
+
+package sso.v1;
+
+import "google/protobuf/timestamp.proto";
+import "buf/validate/validate.proto";
+
+option go_package = "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1;ssov1";
+
+// SessionAdminService is the admin-facing session management API
+// (mirrors the GraphQL session queries and mutations).
+service SessionAdminService {
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+  rpc GetSession(GetSessionRequest) returns (GetSessionResponse);
+  rpc ListSessionEvents(ListSessionEventsRequest) returns (ListSessionEventsResponse);
+  rpc ListUserSessions(ListAdminUserSessionsRequest) returns (ListAdminUserSessionsResponse);
+  rpc ListClientUserSessions(ListClientUserSessionsRequest) returns (ListClientUserSessionsResponse);
+  rpc RevokeSession(RevokeSessionRequest) returns (RevokeSessionResponse);
+  rpc RevokeOtherSessions(RevokeOtherSessionsRequest) returns (RevokeOtherSessionsResponse);
+  rpc RevokeAllSessions(RevokeAllSessionsRequest) returns (RevokeAllSessionsResponse);
+  rpc LogoutUser(LogoutUserRequest) returns (LogoutUserResponse);
+}
+
+// AdminSession mirrors domain.Session without token material.
+message AdminSession {
+  string id = 1;
+  string user_id = 2;
+  string client_id = 3;
+  string ip_address = 4;
+  string user_agent = 5;
+  google.protobuf.Timestamp created_time = 6;
+  google.protobuf.Timestamp last_accessed_time = 7;
+  google.protobuf.Timestamp expires = 8;
+  // "active", "revoked" or "expired".
+  string state = 9;
+  string device_name = 10;
+  string device_type = 11;
+  string os = 12;
+  string browser = 13;
+  string ip_country = 14;
+  string ip_region = 15;
+  string ip_city = 16;
+  repeated string risk_flags = 17;
+  google.protobuf.Timestamp revoked_at = 18;
+  string revoke_reason = 19;
+  // True when this is the caller's own session.
+  bool current = 20;
+}
+
+// AdminSessionEvent mirrors domain.SessionEvent.
+message AdminSessionEvent {
+  string id = 1;
+  string session_id = 2;
+  string user_id = 3;
+  string client_id = 4;
+  string type = 5;
+  string ip_address = 6;
+  string geo = 7;
+  string user_agent = 8;
+  google.protobuf.Timestamp at = 9;
+  string actor = 10;
+  string reason = 11;
+}
+
+message ListSessionsRequest {
+  string user_id = 1; // Optional filter
+  string client_id = 2; // Optional filter
+  int32 page_size = 3 [(buf.validate.field).int32.lte = 100];
+  string page_token = 4;
+}
+
+message ListSessionsResponse {
+  repeated AdminSession sessions = 1;
+  string next_page_token = 2;
+  int32 total_count = 3;
+}
+
+message GetSessionRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message GetSessionResponse {
+  AdminSession session = 1;
+}
+
+message ListSessionEventsRequest {
+  string session_id = 1 [(buf.validate.field).string.min_len = 1];
+  // Max events returned; defaults to 50.
+  int32 limit = 2 [(buf.validate.field).int32.lte = 500];
+}
+
+message ListSessionEventsResponse {
+  repeated AdminSessionEvent events = 1;
+}
+
+message ListAdminUserSessionsRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message ListAdminUserSessionsResponse {
+  repeated AdminSession sessions = 1;
+}
+
+message ListClientUserSessionsRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+  string client_id = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message ListClientUserSessionsResponse {
+  repeated AdminSession sessions = 1;
+}
+
+message RevokeSessionRequest {
+  string session_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message RevokeSessionResponse {
+  bool success = 1;
+}
+
+message RevokeOtherSessionsRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+  // Session to keep; defaults to the caller's own session.
+  optional string except_session_id = 2;
+}
+
+message RevokeOtherSessionsResponse {
+  int32 revoked_count = 1;
+}
+
+message RevokeAllSessionsRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message RevokeAllSessionsResponse {
+  bool success = 1;
+}
+
+message LogoutUserRequest {
+  string user_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message LogoutUserResponse {
+  bool success = 1;
+}

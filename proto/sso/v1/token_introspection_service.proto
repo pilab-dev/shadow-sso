@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package sso.v1;
+
+import "buf/validate/validate.proto";
+
+option go_package = "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1;ssov1";
+
+// TokenIntrospectionService provides admin-only token introspection.
+service TokenIntrospectionService {
+  rpc IntrospectToken(IntrospectTokenRequest) returns (IntrospectTokenResponse);
+}
+
+message IntrospectTokenRequest {
+  string token = 1 [(buf.validate.field).string.min_len = 1];
+  // Optional: "access_token" or "refresh_token".
+  string token_type_hint = 2;
+}
+
+// IntrospectTokenResponse mirrors domain.TokenIntrospection (RFC 7662).
+message IntrospectTokenResponse {
+  bool active = 1;
+  string scope = 2;
+  string client_id = 3;
+  string username = 4;
+  string token_type = 5;
+  int64 exp = 6;
+  int64 iat = 7;
+  int64 nbf = 8;
+  string sub = 9;
+  string aud = 10;
+  string iss = 11;
+  string jti = 12;
+  // RFC 9396 authorization_details as a JSON array string.
+  string authorization_details = 13;
+}
