@@ -48,12 +48,13 @@ func (s *ClientService) CreateConfidentialClient(ctx context.Context,
 	}
 
 	client := &domain.Client{
-		ID:            uuid.NewString(),
-		Secret:        string(hashedSecret),
-		Type:          domain.ClientTypeConfidential,
-		Name:          name,
-		RedirectURIs:  redirectURIs,
-		AllowedScopes: allowedScopes,
+		ID:             uuid.NewString(),
+		Secret:         string(hashedSecret),
+		Type:           domain.ClientTypeConfidential,
+		IsConfidential: true,
+		Name:           name,
+		RedirectURIs:   redirectURIs,
+		AllowedScopes:  allowedScopes,
 		AllowedGrantTypes: []string{
 			"authorization_code",
 			"client_credentials",
@@ -188,6 +189,10 @@ func (s *ClientService) CreateClient(ctx context.Context, client *domain.Client)
 			return nil, fmt.Errorf("failed to hash client secret: %w", err)
 		}
 		client.Secret = string(hashedSecret)
+	}
+
+	if client.Type == domain.ClientTypeConfidential {
+		client.IsConfidential = true
 	}
 
 	if err := s.store.CreateClient(ctx, client); err != nil {

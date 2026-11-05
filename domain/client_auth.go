@@ -17,16 +17,16 @@ import (
 type ClientAuthMethod string
 
 const (
-	ClientAuthMethodSecret          ClientAuthMethod = "client_secret_basic"
-	ClientAuthMethodSecretPost      ClientAuthMethod = "client_secret_post"
-	ClientAuthMethodPrivateKeyJWT   ClientAuthMethod = "private_key_jwt"
-	ClientAuthMethodTLSClientAuth   ClientAuthMethod = "tls_client_auth"
-	ClientAuthMethodNone            ClientAuthMethod = "none"
+	ClientAuthMethodSecret        ClientAuthMethod = "client_secret_basic"
+	ClientAuthMethodSecretPost    ClientAuthMethod = "client_secret_post"
+	ClientAuthMethodPrivateKeyJWT ClientAuthMethod = "private_key_jwt"
+	ClientAuthMethodTLSClientAuth ClientAuthMethod = "tls_client_auth"
+	ClientAuthMethodNone          ClientAuthMethod = "none"
 )
 
 var (
 	ErrInvalidClientAssertion = errors.New("invalid client assertion")
-	ErrInvalidJWTClientCreds   = errors.New("invalid jwt client credentials")
+	ErrInvalidJWTClientCreds  = errors.New("invalid jwt client credentials")
 )
 
 type ClientAssertionClaims struct {

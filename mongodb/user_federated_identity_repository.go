@@ -95,7 +95,6 @@ func (r *UserFederatedIdentityRepositoryMongo) Create(ctx context.Context, ident
 		return errors.New("ProviderID is required for federated identity")
 	}
 
-
 	_, err := r.collection.InsertOne(ctx, identity)
 	if err != nil {
 		if mongo.IsDuplicateKeyError(err) {

@@ -7,11 +7,11 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	goerrors "errors" // Standard Go errors package
 	"fmt"
 	"html/template" // Added for HTML rendering
 	"net/http"
-	"encoding/json"
 	"net/url"
 	"slices"
 	"strings"
@@ -19,8 +19,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/pilab-dev/shadow-sso/internal/dpop"
 	sssoapi "github.com/pilab-dev/shadow-sso/api"
+	"github.com/pilab-dev/shadow-sso/internal/dpop"
 
 	"github.com/google/uuid"
 	"github.com/pilab-dev/shadow-sso/api/webauth"
@@ -537,15 +537,15 @@ func (oa *OAuth2API) persistCodeChallenge(ctx context.Context, code, codeChallen
 
 // authorizeRequestData holds extracted and initially validated parameters from an authorization request.
 type authorizeRequestData struct {
-	clientID            string
-	redirectURI         string
-	responseType        string
-	scopeQuery          string
-	state               string
-	nonce               string
-	prompt              string
-	codeChallenge       string
-	codeChallengeMethod string
+	clientID             string
+	redirectURI          string
+	responseType         string
+	scopeQuery           string
+	state                string
+	nonce                string
+	prompt               string
+	codeChallenge        string
+	codeChallengeMethod  string
 	authorizationDetails string // RAR (RFC 9396) JSON array, passed through
 	responseMode         string // response_mode (query, fragment, form_post, jwt)
 	// originalParams map[string]string // If needed by sub-functions
@@ -554,13 +554,13 @@ type authorizeRequestData struct {
 // parseAndValidateAuthorizeParams extracts and performs basic validation of OIDC parameters.
 func (oa *OAuth2API) parseAndValidateAuthorizeParams(c *gin.Context) (*authorizeRequestData, error) {
 	data := &authorizeRequestData{
-		clientID:            c.Query("client_id"),
-		redirectURI:         c.Query("redirect_uri"),
-		responseType:        c.Query("response_type"),
-		scopeQuery:          c.Query("scope"),
-		state:               c.Query("state"),
-		nonce:               c.Query("nonce"),
-		prompt:              c.Query("prompt"),
+		clientID:             c.Query("client_id"),
+		redirectURI:          c.Query("redirect_uri"),
+		responseType:         c.Query("response_type"),
+		scopeQuery:           c.Query("scope"),
+		state:                c.Query("state"),
+		nonce:                c.Query("nonce"),
+		prompt:               c.Query("prompt"),
 		codeChallenge:        c.Query("code_challenge"),
 		codeChallengeMethod:  c.Query("code_challenge_method"),
 		authorizationDetails: c.Query("authorization_details"),

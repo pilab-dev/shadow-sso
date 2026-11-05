@@ -3,8 +3,8 @@ package services
 import (
 	"context"
 	"crypto/rand"
-	"encoding/json"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	goerrors "errors"
 	"fmt"
@@ -17,7 +17,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/pilab-dev/shadow-sso/client"
 	"github.com/pilab-dev/shadow-sso/domain"
-	"github.com/pilab-dev/shadow-sso/port"
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
 	"github.com/pilab-dev/shadow-sso/internal/audit"
@@ -30,6 +29,7 @@ import (
 	"github.com/pilab-dev/shadow-sso/internal/metrics"
 	"github.com/pilab-dev/shadow-sso/internal/reqinfo"
 	"github.com/pilab-dev/shadow-sso/internal/telemetry"
+	"github.com/pilab-dev/shadow-sso/port"
 	// "github.com/pilab-dev/shadow-sso/middleware" // No longer needed here
 	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/otel/attribute"
@@ -988,12 +988,12 @@ func (s *AuthServer) CompleteWebAuthnLogin(ctx context.Context, req *connect.Req
 
 	authResp := req.Msg.GetAuthenticationResponse()
 	body := map[string]any{
-		"id":   authResp.GetId(),
+		"id":    authResp.GetId(),
 		"rawId": authResp.GetRawId(),
-		"type": "public-key",
+		"type":  "public-key",
 		"response": map[string]any{
-			"clientDataJSON":     authResp.GetResponse().GetClientDataJson(),
-			"authenticatorData":  authResp.GetResponse().GetAuthenticatorAssertionResponse().GetAuthenticatorData(),
+			"clientDataJSON":    authResp.GetResponse().GetClientDataJson(),
+			"authenticatorData": authResp.GetResponse().GetAuthenticatorAssertionResponse().GetAuthenticatorData(),
 			"signature":         authResp.GetResponse().GetAuthenticatorAssertionResponse().GetSignature(),
 			"userHandle":        authResp.GetResponse().GetAuthenticatorAssertionResponse().GetUserHandle(),
 		},

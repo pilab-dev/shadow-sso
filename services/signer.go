@@ -114,11 +114,11 @@ func (s *TokenSigner) AddRSASigner(keyPath string) error {
 	s.rsaPubKey = &privKey.PublicKey
 
 	entry := &signingKey{
-		id:       "rsa-default",
-		status:   domain.RealmKeyStatusActive,
-		privKey:  privKey,
-		pubKey:   &privKey.PublicKey,
-		signer:   s.rsaSigner(privKey, "rsa-default"),
+		id:      "rsa-default",
+		status:  domain.RealmKeyStatusActive,
+		privKey: privKey,
+		pubKey:  &privKey.PublicKey,
+		signer:  s.rsaSigner(privKey, "rsa-default"),
 	}
 	s.keys["rsa-default"] = entry
 	s.keys["default"] = entry

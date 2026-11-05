@@ -13,9 +13,9 @@ import (
 	"connectrpc.com/connect"
 	"github.com/google/uuid" // For generating key IDs
 	"github.com/pilab-dev/shadow-sso/domain"
-	"github.com/pilab-dev/shadow-sso/internal/telemetry"
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
+	"github.com/pilab-dev/shadow-sso/internal/telemetry"
 	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"

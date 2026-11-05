@@ -31,18 +31,18 @@ func (wa *WebAuth) renderLoginPage(c *gin.Context, flowID string, providers []*d
 	setCSRFCookie(c.Writer, csrfToken, 10*time.Minute, isSecure)
 
 	c.HTML(http.StatusOK, "login.html", gin.H{
-		"PageTitle":                "Sign In",
-		"FlowID":                   flowID,
-		"CSRFToken":                csrfToken,
-		"Providers":                providers,
-		"BrandLogo":                wa.config.BrandLogoURL,
-		"BrandName":                wa.config.BrandOrganizationName,
-		"BrandColor":               wa.config.BrandPrimaryColor,
-		"Error":                    errMsg,
-		"Email":                    email,
-		"HasAccounts":              len(wa.loginAccounts(c.Request)) > 0,
-		"RegistrationAllowed":      wa.realmAllowsRegistration(c),
-		"ResetPasswordAvailable":   wa.resetPasswordEnabled(c),
+		"PageTitle":              "Sign In",
+		"FlowID":                 flowID,
+		"CSRFToken":              csrfToken,
+		"Providers":              providers,
+		"BrandLogo":              wa.config.BrandLogoURL,
+		"BrandName":              wa.config.BrandOrganizationName,
+		"BrandColor":             wa.config.BrandPrimaryColor,
+		"Error":                  errMsg,
+		"Email":                  email,
+		"HasAccounts":            len(wa.loginAccounts(c.Request)) > 0,
+		"RegistrationAllowed":    wa.realmAllowsRegistration(c),
+		"ResetPasswordAvailable": wa.resetPasswordEnabled(c),
 	})
 }
 

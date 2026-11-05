@@ -52,12 +52,12 @@ const (
 
 // MfaMethod represents an MFA method for a user.
 type MfaMethod struct {
-	ID           string        `bson:"id" json:"id"`
-	Type         MfaMethodType `bson:"type" json:"type"`
-	Secret       string        `bson:"secret,omitempty" json:"-"`
-	Verified     bool          `bson:"verified" json:"verified"`
-	CreatedAt    time.Time     `bson:"created_at" json:"created_at"`
-	Name         string        `bson:"name,omitempty" json:"name"`
+	ID        string        `bson:"id" json:"id"`
+	Type      MfaMethodType `bson:"type" json:"type"`
+	Secret    string        `bson:"secret,omitempty" json:"-"`
+	Verified  bool          `bson:"verified" json:"verified"`
+	CreatedAt time.Time     `bson:"created_at" json:"created_at"`
+	Name      string        `bson:"name,omitempty" json:"name"`
 	// WebAuthn/passkey specific fields (stored in Secret as well for the
 	// full credential record; these are convenience projections).
 	CredentialID string `bson:"credential_id,omitempty" json:"credential_id,omitempty"`

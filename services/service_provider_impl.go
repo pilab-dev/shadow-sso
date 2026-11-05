@@ -6,19 +6,19 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/pilab-dev/shadow-sso/api"
 	"github.com/pilab-dev/shadow-sso/apps/ssso/config"
 	"github.com/pilab-dev/shadow-sso/cache"
-	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/pilab-dev/shadow-sso/domain"
 	"github.com/pilab-dev/shadow-sso/internal/geo"
-	"github.com/pilab-dev/shadow-sso/port"
 	"github.com/pilab-dev/shadow-sso/internal/identity"
 	"github.com/pilab-dev/shadow-sso/internal/mfa"
-	"github.com/pilab-dev/shadow-sso/mongodb"
 	"github.com/pilab-dev/shadow-sso/internal/notifications"
 	"github.com/pilab-dev/shadow-sso/internal/oidcflow"
+	"github.com/pilab-dev/shadow-sso/mongodb"
 	pkgauth "github.com/pilab-dev/shadow-sso/pkg/auth"
+	"github.com/pilab-dev/shadow-sso/port"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -299,7 +299,7 @@ func (p *DefaultServiceProvider) MFARegistry() port.MFARegistry {
 			RPID:             "localhost",
 			RPName:           "Shadow SSO",
 			RPOrigins:        []string{"http://localhost:8080"},
-			UserVerification:  protocol.VerificationRequired,
+			UserVerification: protocol.VerificationRequired,
 		}
 		ycfg := mfa.YubicoConfig{}
 		reg, err := mfa.BuildDefaultRegistry(store, dir, wcfg, ycfg, p.smsService, p.emailService, p.PushMFAService())

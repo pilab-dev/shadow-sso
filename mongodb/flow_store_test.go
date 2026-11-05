@@ -85,23 +85,23 @@ func TestFlowStore_Integration(t *testing.T) {
 	}
 
 	flowState2 := domain.LoginFlowState{
-		FlowID:              flowID2,
-		ClientID:            "another-client-id",
-		RedirectURI:         "https://another.example.com/callback",
-		Scope:               "openid",
-		State:               "client-state-456",
-		ExpiresAt:           now.Add(30 * time.Minute),
-		OriginalOIDCParams:  map[string]string{},
+		FlowID:             flowID2,
+		ClientID:           "another-client-id",
+		RedirectURI:        "https://another.example.com/callback",
+		Scope:              "openid",
+		State:              "client-state-456",
+		ExpiresAt:          now.Add(30 * time.Minute),
+		OriginalOIDCParams: map[string]string{},
 	}
 
 	flowStateExpired := domain.LoginFlowState{
-		FlowID:              flowID3,
-		ClientID:            "expired-client-id",
-		RedirectURI:         "https://expired.example.com/callback",
-		Scope:               "openid",
-		State:               "client-state-expired",
-		ExpiresAt:           now.Add(-1 * time.Hour), // Already expired
-		OriginalOIDCParams:  map[string]string{},
+		FlowID:             flowID3,
+		ClientID:           "expired-client-id",
+		RedirectURI:        "https://expired.example.com/callback",
+		Scope:              "openid",
+		State:              "client-state-expired",
+		ExpiresAt:          now.Add(-1 * time.Hour), // Already expired
+		OriginalOIDCParams: map[string]string{},
 	}
 
 	t.Run("StoreFlowAndGetFlow", func(t *testing.T) {

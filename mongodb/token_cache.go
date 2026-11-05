@@ -18,9 +18,9 @@ const TokenCacheCollection = "token_cache"
 // We define a separate document struct with bson tags because cache.TokenEntry
 // uses redis tags and lacks bson tags.
 type tokenCacheDocument struct {
-	ID         string    `bson:"_id"`          // HashToken(tokenValue)
-	TokenType  string    `bson:"token_type"`   // "access_token" or "refresh_token"
-	TokenValue string    `bson:"token_value"`  // The actual token value (for LastUsedAt updates)
+	ID         string    `bson:"_id"`         // HashToken(tokenValue)
+	TokenType  string    `bson:"token_type"`  // "access_token" or "refresh_token"
+	TokenValue string    `bson:"token_value"` // The actual token value (for LastUsedAt updates)
 	ClientID   string    `bson:"client_id"`
 	UserID     string    `bson:"user_id"`
 	Scope      string    `bson:"scope"`

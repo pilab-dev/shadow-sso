@@ -72,8 +72,8 @@ func NewJWKSService(keyRotation time.Duration) (*defaultJWKSService, error) {
 // No automatic key rotation is performed — the provided key is the only key served.
 func NewJWKSServiceWithKey(privKey *rsa.PrivateKey, kid string) *defaultJWKSService {
 	service := &defaultJWKSService{
-		keys:        make(map[string]*rsa.PrivateKey),
-		keyRotation: 0, // no rotation for externally-provided keys
+		keys:         make(map[string]*rsa.PrivateKey),
+		keyRotation:  0, // no rotation for externally-provided keys
 		currentKeyID: kid,
 	}
 	service.keys[kid] = privKey
