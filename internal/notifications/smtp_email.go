@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/pilab-dev/shadow-sso/domain"
+	"github.com/pilab-dev/shadow-sso/port"
 )
 
 // SMTPEmailService implements domain.EmailService over SMTP. It can target
@@ -18,6 +19,7 @@ type SMTPEmailService struct {
 	password string
 	from     string
 	baseURL  string
+	loader   port.TemplateLoader
 }
 
 func NewSMTPEmailService(host, port, username, password, from, baseURL string) *SMTPEmailService {
@@ -46,22 +48,34 @@ func (s *SMTPEmailService) send(to, subject, html string) error {
 }
 
 func (s *SMTPEmailService) SendVerificationEmail(to, name, verificationLink string) error {
-	html := fmt.Sprintf(`<h1>Welcome %s!</h1><p>Verify your account:</p><a href="%s">Verify</a>`, name, verificationLink)
+	html, err := renderEmailTemplate("verification.html", emailTemplateData{Name: name, Link: verificationLink}, s.loader)
+	if err != nil {
+		html = fmt.Sprintf(`<h1>Welcome %s!</h1><p>Verify your account:</p><a href="%s">Verify</a>`, name, verificationLink)
+	}
 	return s.send(to, "Verify Your Account", html)
 }
 
 func (s *SMTPEmailService) SendPasswordResetEmail(to, name, resetLink string) error {
-	html := fmt.Sprintf(`<h1>Hello %s</h1><p>Reset your password:</p><a href="%s">Reset Password</a>`, name, resetLink)
+	html, err := renderEmailTemplate("password_reset.html", emailTemplateData{Name: name, Link: resetLink}, s.loader)
+	if err != nil {
+		html = fmt.Sprintf(`<h1>Hello %s</h1><p>Reset your password:</p><a href="%s">Reset Password</a>`, name, resetLink)
+	}
 	return s.send(to, "Reset Your Password", html)
 }
 
 func (s *SMTPEmailService) SendOTPEmail(to, otp string) error {
-	html := fmt.Sprintf(`<p>Your one-time code is: <b>%s</b></p>`, otp)
+	html, err := renderEmailTemplate("otp.html", emailTemplateData{OTP: otp}, s.loader)
+	if err != nil {
+		html = fmt.Sprintf(`<p>Your one-time code is: <b>%s</b></p>`, otp)
+	}
 	return s.send(to, "Your verification code", html)
 }
 
 func (s *SMTPEmailService) SendMFAEmail(to, name, otp, method string) error {
-	html := fmt.Sprintf(`<p>Hello %s, your %s code is: <b>%s</b></p>`, name, method, otp)
+	html, err := renderEmailTemplate("mfa.html", emailTemplateData{Name: name, OTP: otp, Method: method}, s.loader)
+	if err != nil {
+		html = fmt.Sprintf(`<p>Hello %s, your %s code is: <b>%s</b></p>`, name, method, otp)
+	}
 	return s.send(to, "MFA verification code", html)
 }
 

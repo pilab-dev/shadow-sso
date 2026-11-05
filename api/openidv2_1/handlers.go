@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	sssoapi "github.com/pilab-dev/shadow-sso/api"
 
 	"github.com/google/uuid"
@@ -511,7 +512,7 @@ func (oa *OAuth2API) completeAuthorizeAfterAuth(c *gin.Context, authReqData *aut
 	oa.persistCodeChallenge(ctx, authCode, authReqData.codeChallenge)
 
 	_ = oa.flowStore.DeleteFlow(ctx, flowState.FlowID)
-	oa.redirectToClient(c, authReqData.redirectURI, authCode, authReqData.state)
+	oa.redirectToClient(c, authReqData.redirectURI, authCode, authReqData.state, authReqData.responseMode)
 }
 
 // persistCodeChallenge stores the PKCE code challenge for a freshly generated
@@ -539,6 +540,8 @@ type authorizeRequestData struct {
 	prompt              string
 	codeChallenge       string
 	codeChallengeMethod string
+	authorizationDetails string // RAR (RFC 9396) JSON array, passed through
+	responseMode         string // response_mode (query, fragment, form_post, jwt)
 	// originalParams map[string]string // If needed by sub-functions
 }
 
@@ -552,8 +555,54 @@ func (oa *OAuth2API) parseAndValidateAuthorizeParams(c *gin.Context) (*authorize
 		state:               c.Query("state"),
 		nonce:               c.Query("nonce"),
 		prompt:              c.Query("prompt"),
-		codeChallenge:       c.Query("code_challenge"),
-		codeChallengeMethod: c.Query("code_challenge_method"),
+		codeChallenge:        c.Query("code_challenge"),
+		codeChallengeMethod:  c.Query("code_challenge_method"),
+		authorizationDetails: c.Query("authorization_details"),
+		responseMode:         c.Query("response_mode"),
+	}
+
+	// RFC 9126: a pushed authorization request carries a request_uri instead
+	// of the parameters inline. Resolve it into the same data struct.
+	if ru := c.Query("request_uri"); ru != "" {
+		params, ok := LookupPAR(ru)
+		if !ok {
+			err := domain.NewInvalidRequest("unknown or expired request_uri")
+			oa.sendHTMLError(c, http.StatusBadRequest, err)
+			return nil, err
+		}
+		if v := params["client_id"]; v != "" {
+			data.clientID = v
+		}
+		if v := params["redirect_uri"]; v != "" {
+			data.redirectURI = v
+		}
+		if v := params["response_type"]; v != "" {
+			data.responseType = v
+		}
+		if v := params["scope"]; v != "" {
+			data.scopeQuery = v
+		}
+		if v := params["state"]; v != "" {
+			data.state = v
+		}
+		if v := params["nonce"]; v != "" {
+			data.nonce = v
+		}
+		if v := params["prompt"]; v != "" {
+			data.prompt = v
+		}
+		if v := params["code_challenge"]; v != "" {
+			data.codeChallenge = v
+		}
+		if v := params["code_challenge_method"]; v != "" {
+			data.codeChallengeMethod = v
+		}
+		if v := params["authorization_details"]; v != "" {
+			data.authorizationDetails = v
+		}
+		if v := params["response_mode"]; v != "" {
+			data.responseMode = v
+		}
 	}
 
 	if data.clientID == "" || data.redirectURI == "" || data.responseType == "" {
@@ -714,7 +763,7 @@ func (oa *OAuth2API) tryHandleWithExistingSession(c *gin.Context, data *authoriz
 			return true, errGen // Error occurred, but considered "handled" in terms of flow decision
 		}
 		oa.persistCodeChallenge(ctx, authCode, data.codeChallenge)
-		oa.redirectToClient(c, data.redirectURI, authCode, data.state)
+		oa.redirectToClient(c, data.redirectURI, authCode, data.state, data.responseMode)
 		return true, nil // Handled successfully
 	}
 
@@ -799,12 +848,35 @@ func (oa *OAuth2API) sendHTMLError(c *gin.Context, statusCode int, errDetails *d
 }
 
 // redirectToClient is a helper to redirect back to the client's redirect_uri.
-func (oa *OAuth2API) redirectToClient(c *gin.Context, baseRedirectURI, code, state string) {
+func (oa *OAuth2API) redirectToClient(c *gin.Context, baseRedirectURI, code, state, responseMode string) {
 	parsedRedirectURI, err := url.Parse(baseRedirectURI)
 	if err != nil {
 		log.Error().Err(err).Str("redirect_uri", baseRedirectURI).Msg("Failed to parse base redirect URI")
 		oa.sendHTMLError(c, http.StatusInternalServerError, domain.NewServerError("internal error constructing redirect"))
 		return
+	}
+
+	// JARM: response_mode=jwt returns the authorization response as a signed JWT.
+	if responseMode == "jwt" && oa.tokenSigner != nil && oa.tokenSigner.HasRSASigner() {
+		claims := jwt.MapClaims{
+			"iss":  oa.config.Issuer,
+			"aud":  "", // client id unknown here; left blank
+			"exp":  time.Now().Add(5 * time.Minute).Unix(),
+			"iat":  time.Now().Unix(),
+			"code": code,
+		}
+		if state != "" {
+			claims["state"] = state
+		}
+		tok, err := oa.tokenSigner.Sign(claims, oa.tokenSigner.RealmDefaultKeyID())
+		if err == nil {
+			params := url.Values{}
+			params.Set("response", tok)
+			parsedRedirectURI.RawQuery = params.Encode()
+			c.Redirect(http.StatusFound, parsedRedirectURI.String())
+			return
+		}
+		log.Warn().Err(err).Msg("JARM signing failed; falling back to query response")
 	}
 
 	params := url.Values{}
@@ -1082,7 +1154,11 @@ func (oa *OAuth2API) FederatedCallbackHandler(c *gin.Context) {
 				)
 				if errGen == nil {
 					oa.persistCodeChallenge(c.Request.Context(), authCode, flowState.CodeChallenge)
-					oa.redirectToClient(c, flowState.RedirectURI, authCode, flowState.State)
+					rm := ""
+					if flowState.OriginalOIDCParams != nil {
+						rm = flowState.OriginalOIDCParams["response_mode"]
+					}
+					oa.redirectToClient(c, flowState.RedirectURI, authCode, flowState.State, rm)
 					return
 				}
 			}
