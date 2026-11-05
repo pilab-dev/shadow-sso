@@ -1,0 +1,53 @@
+package webauth
+
+import "github.com/gin-gonic/gin"
+
+// RegisterRoutes mounts all server-side web authentication UI routes onto the
+// provided Gin engine. These are product (portal) routes, not OIDC protocol
+// endpoints, but they share the same HTTP server.
+func (wa *WebAuth) RegisterRoutes(router *gin.Engine) {
+	router.GET("/", wa.LandingPageHandler)
+	router.GET("/login", wa.LoginPageHandler)
+	router.POST("/login", wa.LoginSubmitHandler)
+	router.POST("/login/select", wa.SelectAccountHandler)
+	router.GET("/login/:provider", wa.SocialLoginHandler)
+	router.POST("/login/select-account", wa.SelectAccountSubmitHandler)
+	router.GET("/consent", wa.ConsentPageHandler)
+	router.POST("/consent", wa.ConsentSubmitHandler)
+	router.GET("/oauth2/device/verify", wa.DeviceVerificationPageHandler)
+	router.POST("/oauth2/device/verify", wa.DeviceVerificationSubmitHandler)
+	router.POST("/login/passkey/begin", wa.PasskeyLoginBeginHandler)
+	router.POST("/login/passkey/finish", wa.PasskeyLoginFinishHandler)
+	router.GET("/account/passkeys", wa.AccountPasskeysPageHandler())
+	router.POST("/account/passkeys/register/begin", wa.PasskeyRegisterBeginHandler())
+	router.POST("/account/passkeys/register/finish", wa.PasskeyRegisterFinishHandler())
+	router.POST("/account/passkeys/delete", wa.PasskeyDeleteSubmitHandler())
+	router.GET("/account", wa.AccountOverviewHandler())
+	router.POST("/account/profile", wa.AccountProfileSubmitHandler())
+	router.GET("/account/security", wa.AccountSecurityHandler())
+	router.POST("/account/password", wa.AccountPasswordSubmitHandler())
+	router.GET("/account/mfa/totp", wa.AccountTOTPPageHandler())
+	router.POST("/account/mfa/totp", wa.AccountTOTPSubmitHandler())
+	router.POST("/account/mfa/recovery", wa.AccountRecoveryCodesSubmitHandler())
+	router.POST("/account/mfa/disable", wa.AccountMFADisableSubmitHandler())
+	router.GET("/account/sessions", wa.AccountSessionsHandler())
+	router.POST("/account/sessions/revoke", wa.AccountSessionRevokeHandler())
+	router.GET("/account/linked", wa.AccountLinkedHandler())
+	router.POST("/account/linked/unlink", wa.AccountUnlinkSubmitHandler())
+	router.POST("/account/logout", wa.AccountLogoutSubmitHandler())
+	router.GET("/forgot-password", wa.ForgotPasswordPageHandler)
+	router.POST("/forgot-password", wa.ForgotPasswordSubmitHandler)
+	router.GET("/reset-password", wa.ResetPasswordPageHandler)
+	router.POST("/reset-password", wa.ResetPasswordSubmitHandler)
+	router.GET("/register", wa.RegisterPageHandler)
+	router.POST("/register", wa.RegisterSubmitHandler)
+	router.GET("/verify-email", wa.VerifyEmailHandler)
+	router.GET("/required-action", wa.RequiredActionPageHandler)
+	router.POST("/required-action", wa.RequiredActionSubmitHandler)
+	router.POST("/mfa", wa.MFASubmitHandler)
+	router.POST("/mfa/resend", wa.MFAResendSubmitHandler)
+	router.GET("/mfa/enroll", wa.MFAEnrollPageHandler)
+	router.POST("/mfa/enroll", wa.MFAEnrollSubmitHandler)
+	router.POST("/mfa/enroll/complete", wa.MFAEnrollCompleteHandler)
+	router.GET("/api/session", wa.SessionHandler)
+}
