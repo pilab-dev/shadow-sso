@@ -1,6 +1,7 @@
 package webauth
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -106,15 +107,24 @@ func (wa *WebAuth) ConsentPageHandler(c *gin.Context) {
 
 	scopes := strings.Split(flowState.Scope, " ")
 
+	// RAR (RFC 9396): surface requested authorization details on the consent screen.
+	var authDetails []map[string]any
+	if flowState.OriginalOIDCParams != nil {
+		if raw := flowState.OriginalOIDCParams["authorization_details"]; raw != "" {
+			_ = json.Unmarshal([]byte(raw), &authDetails)
+		}
+	}
+
 	wa.renderTemplate(c, "consent.html", gin.H{
-		"PageTitle":         "Authorization Required",
-		"FlowID":            flowID,
-		"ClientID":          flowState.ClientID,
-		"ClientName":        client.Name,
-		"ClientLogo":        client.LogoURI,
-		"ClientDescription": "",
-		"Scopes":            scopes,
-		"RedirectURI":       flowState.RedirectURI,
+		"PageTitle":            "Authorization Required",
+		"FlowID":               flowID,
+		"ClientID":             flowState.ClientID,
+		"ClientName":           client.Name,
+		"ClientLogo":           client.LogoURI,
+		"ClientDescription":    "",
+		"Scopes":               scopes,
+		"RedirectURI":          flowState.RedirectURI,
+		"AuthorizationDetails": authDetails,
 	})
 }
 

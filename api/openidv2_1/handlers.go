@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"html/template" // Added for HTML rendering
 	"net/http"
+	"encoding/json"
 	"net/url"
 	"strings"
 	"time"
@@ -602,6 +603,23 @@ func (oa *OAuth2API) parseAndValidateAuthorizeParams(c *gin.Context) (*authorize
 		}
 		if v := params["response_mode"]; v != "" {
 			data.responseMode = v
+		}
+	}
+
+	// RAR (RFC 9396): validate authorization_details JSON when present.
+	if data.authorizationDetails != "" {
+		var details []map[string]any
+		if err := json.Unmarshal([]byte(data.authorizationDetails), &details); err != nil {
+			err2 := domain.NewInvalidRequest("invalid authorization_details JSON")
+			oa.sendHTMLError(c, http.StatusBadRequest, err2)
+			return nil, err2
+		}
+		for _, d := range details {
+			if t, _ := d["type"].(string); t == "" {
+				err2 := domain.NewInvalidRequest("authorization_details entry missing type")
+				oa.sendHTMLError(c, http.StatusBadRequest, err2)
+				return nil, err2
+			}
 		}
 	}
 
