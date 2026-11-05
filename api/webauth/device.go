@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/pilab-dev/shadow-sso/domain"
+	"github.com/pilab-dev/shadow-sso/internal/ssosession"
 	"github.com/rs/zerolog/log"
 )
 
@@ -42,7 +43,8 @@ func deviceErrorText(err error) string {
 func (wa *WebAuth) DeviceVerificationPageHandler(c *gin.Context) {
 	userCode := c.Query("user_code")
 
-	if _, err := GetSSOSession(c.Request, wa.ssoCookieSecret); err != nil {
+	session, err := GetSSOSession(c.Request, wa.ssoCookieSecret)
+	if err != nil || session == nil || len(session.Accounts) == 0 {
 		c.Redirect(http.StatusFound, deviceLoginRedirectURL(userCode))
 		return
 	}
@@ -53,6 +55,7 @@ func (wa *WebAuth) DeviceVerificationPageHandler(c *gin.Context) {
 		"Message":     "",
 		"MessageType": "",
 	}
+	wa.addDeviceAccount(data, session.Accounts[0], userCode)
 
 	if userCode != "" {
 		if wa.deviceAuthRepo == nil {
@@ -112,6 +115,14 @@ func (wa *WebAuth) DeviceVerificationSubmitHandler(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
+	if action != "deny" && action != "approve" {
+		c.HTML(http.StatusBadRequest, "error.html", gin.H{
+			"PageTitle": "Error",
+			"Message":   "Invalid form submission. Please try again.",
+		})
+		return
+	}
+
 	if action == "deny" {
 		if wa.deviceAuthRepo == nil {
 			log.Error().Msg("device: deviceAuthRepo is nil on deny")
@@ -144,8 +155,9 @@ func (wa *WebAuth) DeviceVerificationSubmitHandler(c *gin.Context) {
 
 		log.Info().Str("device_code", dc.DeviceCode).Str("user_id", userID).Msg("device: access denied by user")
 		wa.renderTemplate(c, "device.html", gin.H{
-			"UserCode":    userCode,
-			"Message":     "Device access denied.",
+			"Done":        true,
+			"Title":       "Request denied",
+			"Message":     "Device access was denied. You can now close this window.",
 			"MessageType": "success",
 		})
 		return
@@ -163,8 +175,19 @@ func (wa *WebAuth) DeviceVerificationSubmitHandler(c *gin.Context) {
 
 	log.Info().Str("user_code", userCode).Str("user_id", userID).Msg("device: code verified and linked to user")
 	wa.renderTemplate(c, "device.html", gin.H{
-		"UserCode":    userCode,
-		"Message":     "Device activated successfully! You can now return to your device.",
+		"Done":        true,
+		"Title":       "Device approved",
+		"Message":     "Device activated successfully. You can now close this window and return to your device.",
 		"MessageType": "success",
 	})
+}
+
+// addDeviceAccount adds the signed-in account and the switch-account link to the template data.
+func (wa *WebAuth) addDeviceAccount(data gin.H, account ssosession.Account, userCode string) {
+	label := account.Email
+	if label == "" {
+		label = account.Name
+	}
+	data["AccountLabel"] = label
+	data["SwitchURL"] = deviceLoginRedirectURL(userCode) + "&switch_account=1"
 }

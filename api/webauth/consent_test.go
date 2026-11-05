@@ -386,3 +386,59 @@ func TestConsentSubmit_DenyNoRedirectURI(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), "Access denied")
 }
+
+func TestConsentSubmit_NarrowedScopes(t *testing.T) {
+	router, ctrl, mockFlowStore, _, mockOAuthService := setupConsentTest(t)
+	defer ctrl.Finish()
+
+	flowState := &domain.LoginFlowState{
+		FlowID:      "valid-flow",
+		ClientID:    "test-client",
+		UserID:      "user-123",
+		Scope:       "openid profile email",
+		RedirectURI: "http://localhost/callback",
+		ExpiresAt:   time.Now().Add(10 * time.Minute),
+	}
+	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "valid-flow").Return(flowState, nil)
+	// email is unchecked, openid is required (disabled checkbox, not submitted) and "admin" was never requested.
+	mockOAuthService.EXPECT().GenerateAuthCode(
+		gomock.Any(), "test-client", "user-123", "http://localhost/callback",
+		"openid profile", "", "", "", gomock.Any(),
+	).Return("auth-code-abc", nil)
+	mockFlowStore.EXPECT().DeleteFlow(gomock.Any(), "valid-flow").Return(nil)
+
+	form := url.Values{"decision": {"approve"}, "csrf_token": {"test-csrf"}, "scope_selection": {"1"}, "scope": {"profile", "admin"}}
+	req := httptest.NewRequest("POST", "/consent", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: "sso_csrf_token", Value: "test-csrf"})
+	req.AddCookie(&http.Cookie{Name: "sso_oidc_flow_id", Value: "valid-flow"})
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusFound, w.Code)
+}
+
+func TestConsentPage_ShowsScopeDescriptions(t *testing.T) {
+	router, ctrl, mockFlowStore, mockClientService, _ := setupConsentTest(t)
+	defer ctrl.Finish()
+
+	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "valid-flow").Return(&domain.LoginFlowState{
+		FlowID: "valid-flow", ClientID: "test-client", Scope: "openid email",
+		ExpiresAt: time.Now().Add(10 * time.Minute), UserID: "user-123",
+	}, nil)
+	mockClientService.EXPECT().GetClient(gomock.Any(), "test-client").Return(&domain.Client{
+		Name: "My App", LogoURI: "https://example.com/logo.png",
+	}, nil)
+
+	req := httptest.NewRequest("GET", "/consent", nil)
+	req.AddCookie(&http.Cookie{Name: "sso_oidc_flow_id", Value: "valid-flow"})
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, body, "Your email address")
+	assert.Contains(t, body, `name="scope" value="email" checked `)
+	assert.Contains(t, body, `value="openid" checked disabled`)
+	assert.Contains(t, body, "https://example.com/logo.png")
+}

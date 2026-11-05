@@ -155,6 +155,8 @@ func TestDeviceVerifyPage_AuthenticatedWithValidCode(t *testing.T) {
 	body := w.Body.String()
 	assert.Contains(t, body, "ABCD-EFGH")
 	assert.Contains(t, body, "ssoctl CLI")
+	assert.Contains(t, body, "Switch account")
+	assert.Contains(t, body, "switch_account=1")
 	assert.Contains(t, body, "Approve")
 	assert.Contains(t, body, "Deny")
 }
@@ -211,7 +213,12 @@ func TestDeviceVerifySubmit_ApproveSuccess(t *testing.T) {
 
 	// Then the page confirms activation
 	require.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), "Device activated successfully")
+	body := w.Body.String()
+	assert.Contains(t, body, "Device activated successfully")
+	assert.Contains(t, body, "close this window")
+	assert.NotContains(t, body, "ABCD-EFGH")
+	assert.NotContains(t, body, "an application")
+	assert.NotContains(t, body, "Approve")
 }
 
 func TestDeviceVerifySubmit_ApproveInvalidCode(t *testing.T) {
@@ -251,7 +258,11 @@ func TestDeviceVerifySubmit_Deny(t *testing.T) {
 
 	// Then the code is marked denied and the page confirms it
 	require.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), "Device access denied.")
+	body := w.Body.String()
+	assert.Contains(t, body, "Device access was denied")
+	assert.Contains(t, body, "close this window")
+	assert.NotContains(t, body, "ABCD-EFGH")
+	assert.NotContains(t, body, "an application")
 }
 
 func TestDeviceVerifySubmit_MissingCSRFRejected(t *testing.T) {

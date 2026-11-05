@@ -106,7 +106,7 @@ func (wa *WebAuth) ConsentPageHandler(c *gin.Context) {
 		return
 	}
 
-	scopes := strings.Split(flowState.Scope, " ")
+	scopes := describeScopes(strings.Fields(flowState.Scope))
 
 	// RAR (RFC 9396): surface requested authorization details on the consent screen.
 	var authDetails []map[string]any
@@ -122,7 +122,7 @@ func (wa *WebAuth) ConsentPageHandler(c *gin.Context) {
 		"ClientID":             flowState.ClientID,
 		"ClientName":           client.Name,
 		"ClientLogo":           client.LogoURI,
-		"ClientDescription":    "",
+		"ClientDescription":    client.Description,
 		"Scopes":               scopes,
 		"RedirectURI":          flowState.RedirectURI,
 		"AuthorizationDetails": authDetails,
@@ -213,6 +213,20 @@ func (wa *WebAuth) ConsentSubmitHandler(c *gin.Context) {
 		return
 	}
 
+	// Scopes arrive as checkboxes (scope_selection marks the form, since unchecked boxes submit nothing).
+	grantScope := flowState.Scope
+	if c.PostForm("scope_selection") == "1" {
+		granted := grantedScopes(flowState.Scope, c.PostFormArray("scope"))
+		if len(granted) == 0 && strings.TrimSpace(flowState.Scope) != "" {
+			c.HTML(http.StatusBadRequest, "error.html", gin.H{
+				"PageTitle": "Error",
+				"Message":   "Select at least one permission to allow, or deny the request.",
+			})
+			return
+		}
+		grantScope = strings.Join(granted, " ")
+	}
+
 	authTime := flowState.UserAuthenticatedAt
 	if authTime.IsZero() {
 		authTime = time.Now()
@@ -223,7 +237,7 @@ func (wa *WebAuth) ConsentSubmitHandler(c *gin.Context) {
 		flowState.ClientID,
 		flowState.UserID,
 		flowState.RedirectURI,
-		flowState.Scope,
+		grantScope,
 		flowState.CodeChallenge,
 		flowState.CodeChallengeMethod,
 		flowState.Nonce,

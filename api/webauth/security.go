@@ -216,6 +216,11 @@ func GetFlowIDFromCookie(r *http.Request) string {
 // paths are accepted. Absolute URLs (http/https), protocol-relative URLs (//),
 // backslash escapes, and dot-segment traversal (/../) are rejected.
 func validReturnTo(rt string) bool {
+	for _, r := range rt {
+		if r < 0x20 || r == 0x7f {
+			return false
+		}
+	}
 	return strings.HasPrefix(rt, "/") &&
 		!strings.HasPrefix(rt, "//") &&
 		!strings.Contains(rt, "\\") &&
