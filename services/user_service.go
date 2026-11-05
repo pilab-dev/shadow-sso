@@ -13,6 +13,7 @@ import (
 	"github.com/pilab-dev/shadow-sso/internal/audit"
 	"github.com/pilab-dev/shadow-sso/internal/auth/rbac"
 	"github.com/pilab-dev/shadow-sso/internal/auth/totp"
+	"github.com/pilab-dev/shadow-sso/internal/identity"
 	pkgauth "github.com/pilab-dev/shadow-sso/pkg/auth"
 
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
@@ -28,6 +29,7 @@ type UserServer struct {
 	passwordHasher                               domain.PasswordHasher
 	phoneVerificationService                     *domain.PhoneVerificationService
 	realmSettingsRepo                            domain.RealmSettingsRepository
+	directoryPasswords                           domain.DirectoryPasswords
 }
 
 // userServerOption configures a UserServer at construction time.
@@ -39,6 +41,47 @@ type userServerOption func(*UserServer)
 func WithUserRealmSettings(repo domain.RealmSettingsRepository) userServerOption {
 	return func(s *UserServer) {
 		s.realmSettingsRepo = repo
+	}
+}
+
+// WithUserDirectoryPasswords lets directory users change their own password
+// through the directory that owns it.
+func WithUserDirectoryPasswords(p domain.DirectoryPasswords) userServerOption {
+	return func(s *UserServer) {
+		s.directoryPasswords = p
+	}
+}
+
+// changeDirectoryPassword is the self-service change for a directory user. The
+// directory verifies the old password and applies its policy; nothing is
+// stored here.
+func (s *UserServer) changeDirectoryPassword(ctx context.Context, actingUserID string, user *domain.User, oldPassword, newPassword string) error {
+	const op = "ChangePassword"
+	if s.directoryPasswords == nil || actingUserID != user.ID {
+		audit.Log("UserService", op, actingUserID, user.ID, "Directory-managed password", false, domain.ErrDirectoryManaged)
+		return connect.NewError(connect.CodeFailedPrecondition, domain.ErrDirectoryManaged)
+	}
+	if oldPassword == "" {
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("old_password is required for self password change"))
+	}
+	err := s.directoryPasswords.ChangePassword(ctx, user.ID, oldPassword, newPassword)
+	var policy *domain.PasswordPolicyError
+	switch {
+	case err == nil:
+		audit.Log("UserService", op, actingUserID, user.ID, "Directory password changed", true, nil)
+		return nil
+	case errors.As(err, &policy):
+		audit.Log("UserService", op, actingUserID, user.ID, "Password policy violation", false, err)
+		return connect.NewError(connect.CodeInvalidArgument, err)
+	case errors.Is(err, domain.ErrIncorrectPassword):
+		audit.Log("UserService", op, actingUserID, user.ID, "Incorrect old password", false, err)
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("incorrect old password"))
+	case errors.Is(err, identity.ErrLocked):
+		audit.Log("UserService", op, actingUserID, user.ID, "Account locked", false, err)
+		return connect.NewError(connect.CodePermissionDenied, errors.New("account is locked"))
+	default:
+		audit.Log("UserService", op, actingUserID, user.ID, "Directory unavailable", false, err)
+		return connect.NewError(connect.CodeUnavailable, errors.New("password change is unavailable"))
 	}
 }
 
@@ -409,8 +452,10 @@ func (s *UserServer) ChangePassword(ctx context.Context, req *connect.Request[ss
 
 	// 2. Check if user is self-changing password or admin changing
 	if user.IsDirectory() {
-		audit.Log("UserService", "ChangePassword", actingUserID, targetUserID, "Directory-managed password", false, domain.ErrDirectoryManaged)
-		return nil, connect.NewError(connect.CodeFailedPrecondition, domain.ErrDirectoryManaged)
+		if err := s.changeDirectoryPassword(ctx, actingUserID, user, req.Msg.GetOldPassword(), req.Msg.GetNewPassword()); err != nil {
+			return nil, err
+		}
+		return connect.NewResponse(&emptypb.Empty{}), nil
 	}
 	isSelfChange := actingUserID == targetUserID
 

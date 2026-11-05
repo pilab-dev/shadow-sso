@@ -296,6 +296,29 @@ func TestDirectoryVerifyMapsEveryCredentialOutcome(t *testing.T) {
 	}
 }
 
+func TestVerifyInteractiveParksAForcedChangeOnTheRequiredAction(t *testing.T) {
+	state := &fakeState{records: map[string]*domain.User{"guid": {ID: "guid"}}}
+	src := &fakeSource{
+		resolve: &Identity{ID: "guid", Status: domain.UserStatusActive},
+		auth:    &AuthResult{Code: CodeOK, MustChange: true},
+	}
+	svc := New(src, state)
+
+	got, err := svc.VerifyInteractive(context.Background(), "alice", "pw")
+	require.NoError(t, err)
+	assert.True(t, got.HasRequiredAction(domain.RequiredActionUpdatePassword))
+
+	// A wrong password is still a failure on the interactive path.
+	src.auth = &AuthResult{Code: CodeInvalid}
+	_, err = svc.VerifyInteractive(context.Background(), "alice", "pw")
+	require.ErrorIs(t, err, ErrInvalidCredentials)
+
+	// The non-interactive path never lets a must-change credential through.
+	src.auth = &AuthResult{Code: CodeOK, MustChange: true}
+	_, err = svc.Verify(context.Background(), "alice", "pw")
+	require.ErrorIs(t, err, ErrExpired)
+}
+
 func TestDirectoryVerifyNeverReportsAnOutageAsABadPassword(t *testing.T) {
 	state := &fakeState{records: map[string]*domain.User{"guid": {ID: "guid"}}}
 	src := &fakeSource{resolveErr: ErrUnavailable}

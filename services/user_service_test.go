@@ -913,3 +913,43 @@ func TestResolveUser(t *testing.T) {
 		assert.ErrorIs(t, err, domain.ErrUserNotFound)
 	})
 }
+
+type fakeDirectoryPasswords struct {
+	err      error
+	old, new string
+}
+
+func (f *fakeDirectoryPasswords) ChangePassword(_ context.Context, _, old, newPW string) error {
+	f.old, f.new = old, newPW
+	return f.err
+}
+
+func (f *fakeDirectoryPasswords) CompleteForcedChange(context.Context, string, string) error {
+	return f.err
+}
+
+func TestChangePassword_DirectoryUserChangesItsOwnPasswordInTheDirectory(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	userRepo := mock_domain.NewMockUserRepository(ctrl)
+	hasher := mock_domain.NewMockPasswordHasher(ctrl)
+	dir := &fakeDirectoryPasswords{}
+	service := NewUserServer(userRepo, hasher, nil, WithUserDirectoryPasswords(dir))
+	userRepo.EXPECT().GetUserByID(gomock.Any(), "dir-user").Return(&domain.User{
+		ID: "dir-user", Source: domain.SourceDirectory, Status: domain.UserStatusActive,
+	}, nil).AnyTimes()
+	ctx := createAuthenticatedContext(context.Background(), "dir-user")
+
+	_, err := service.ChangePassword(ctx, connect.NewRequest(&ssov1.ChangePasswordRequest{UserId: "dir-user", OldPassword: "old", NewPassword: "new"}))
+	require.NoError(t, err)
+	assert.Equal(t, "old", dir.old)
+	assert.Equal(t, "new", dir.new)
+
+	dir.err = &domain.PasswordPolicyError{Violations: []string{"too short"}}
+	_, err = service.ChangePassword(ctx, connect.NewRequest(&ssov1.ChangePasswordRequest{UserId: "dir-user", OldPassword: "old", NewPassword: "new"}))
+	assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
+
+	dir.err = domain.ErrIncorrectPassword
+	_, err = service.ChangePassword(ctx, connect.NewRequest(&ssov1.ChangePasswordRequest{UserId: "dir-user", OldPassword: "bad", NewPassword: "new"}))
+	assert.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
+}

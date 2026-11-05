@@ -60,6 +60,19 @@ func (s *Service) Resolve(ctx context.Context, login string) (*domain.User, erro
 // audit with the account id; it is nil only when the login is unknown or the
 // source could not be read.
 func (s *Service) Verify(ctx context.Context, login, password string) (*domain.User, error) {
+	return s.verify(ctx, login, password, false)
+}
+
+// VerifyInteractive is Verify for the browser login, which can walk the user
+// through a password change. When the directory accepts the password but
+// demands a change, the user comes back with no error and the
+// UPDATE_PASSWORD required action pending, so the flow parks on the change
+// form (completed through CompleteForcedChange) instead of failing the login.
+func (s *Service) VerifyInteractive(ctx context.Context, login, password string) (*domain.User, error) {
+	return s.verify(ctx, login, password, true)
+}
+
+func (s *Service) verify(ctx context.Context, login, password string, interactive bool) (*domain.User, error) {
 	ident, err := s.source.Resolve(ctx, login)
 	if err != nil {
 		return nil, err
@@ -81,11 +94,20 @@ func (s *Service) Verify(ctx context.Context, login, password string) (*domain.U
 	}
 	switch {
 	case res.Code == CodeOK && res.MustChange:
-		// The credential is accepted by the directory but may not be used
-		// any more. ShadowSSO has no directory password-change flow yet, so
-		// accepting it would bypass the directory's policy and refusing
-		// silently would look like a bad password.
-		return user, ErrExpired
+		// The directory accepts the credential but it may not be used any
+		// more. Only a caller that can run the change form may continue;
+		// the others (password grant, RPC login) must fail rather than
+		// bypass the directory's policy.
+		if !interactive {
+			return user, ErrExpired
+		}
+		if !user.HasRequiredAction(domain.RequiredActionUpdatePassword) {
+			user.RequiredActions = append(user.RequiredActions, domain.RequiredActionUpdatePassword)
+		}
+		if fresh {
+			s.ensureState(ctx, user)
+		}
+		return user, nil
 	case res.Code == CodeOK:
 		if fresh {
 			s.ensureState(ctx, user)
@@ -207,4 +229,38 @@ func groupNames(groups []Group) []string {
 		names = append(names, name)
 	}
 	return names
+}
+
+// Service implements domain.DirectoryPasswords.
+var _ domain.DirectoryPasswords = (*Service)(nil)
+
+// ErrPasswordChangeUnsupported means the configured source cannot change passwords.
+var ErrPasswordChangeUnsupported = errors.New("identity source cannot change passwords")
+
+func (s *Service) changer() (PasswordChanger, error) {
+	if s == nil {
+		return nil, ErrPasswordChangeUnsupported
+	}
+	if c, ok := s.source.(PasswordChanger); ok {
+		return c, nil
+	}
+	return nil, ErrPasswordChangeUnsupported
+}
+
+// ChangePassword implements domain.DirectoryPasswords.
+func (s *Service) ChangePassword(ctx context.Context, userID, oldPassword, newPassword string) error {
+	c, err := s.changer()
+	if err != nil {
+		return err
+	}
+	return c.ChangePassword(ctx, userID, oldPassword, newPassword)
+}
+
+// CompleteForcedChange implements domain.DirectoryPasswords.
+func (s *Service) CompleteForcedChange(ctx context.Context, userID, newPassword string) error {
+	c, err := s.changer()
+	if err != nil {
+		return err
+	}
+	return c.CompleteForcedChange(ctx, userID, newPassword)
 }

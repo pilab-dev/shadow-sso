@@ -1,6 +1,7 @@
 package webauth
 
 import (
+	"errors"
 	"net/http"
 	"net/url"
 	"sort"
@@ -149,7 +150,7 @@ func (wa *WebAuth) AccountProfileSubmitHandler() gin.HandlerFunc {
 func (wa *WebAuth) AccountSecurityHandler() gin.HandlerFunc {
 	return wa.requireAccount(func(c *gin.Context, user *domain.User) {
 		wa.renderAccount(c, "account_security.html", "Security", "security", user, gin.H{
-			"HasPassword": user.PasswordHash != "",
+			"HasPassword": user.PasswordHash != "" || user.IsDirectory(),
 			"TOTPEnabled": user.IsTwoFactorEnabled && user.TwoFactorMethod == "TOTP",
 			"MFAEnabled":  user.IsTwoFactorEnabled || user.EmailMFAEnabled || user.PushMFAEnabled,
 		})
@@ -159,7 +160,7 @@ func (wa *WebAuth) AccountSecurityHandler() gin.HandlerFunc {
 func (wa *WebAuth) renderSecurityError(c *gin.Context, user *domain.User, msg string) {
 	wa.renderAccount(c, "account_security.html", "Security", "security", user, gin.H{
 		"Error":       msg,
-		"HasPassword": user.PasswordHash != "",
+		"HasPassword": user.PasswordHash != "" || user.IsDirectory(),
 		"TOTPEnabled": user.IsTwoFactorEnabled && user.TwoFactorMethod == "TOTP",
 		"MFAEnabled":  user.IsTwoFactorEnabled || user.EmailMFAEnabled || user.PushMFAEnabled,
 	})
@@ -170,7 +171,7 @@ func (wa *WebAuth) AccountPasswordSubmitHandler() gin.HandlerFunc {
 	return wa.accountPost(func(c *gin.Context, user *domain.User) {
 		ctx := c.Request.Context()
 		if user.IsDirectory() {
-			wa.renderSecurityError(c, user, "Your password is managed by your organization's directory and cannot be changed here.")
+			wa.changeDirectoryPassword(c, user)
 			return
 		}
 		// Users that have a password must prove they know it (or hold their TOTP device).
@@ -215,6 +216,47 @@ func (wa *WebAuth) AccountPasswordSubmitHandler() gin.HandlerFunc {
 		log.Info().Str("user_id", user.ID).Msg("account: password changed")
 		wa.accountRedirect(c, "/account/security", "password_changed")
 	})
+}
+
+// changeDirectoryPassword changes a directory user's password in the directory,
+// which checks the current password and its own policy.
+func (wa *WebAuth) changeDirectoryPassword(c *gin.Context, user *domain.User) {
+	ctx := c.Request.Context()
+	if wa.directoryPasswords == nil {
+		wa.renderSecurityError(c, user, directoryPasswordMessage(domain.ErrDirectoryManaged))
+		return
+	}
+	key := "account-confirm:" + user.ID
+	if !wa.rateLimiter.Allow(key) {
+		wa.renderSecurityError(c, user, "Too many attempts. Please try again later.")
+		return
+	}
+	newPassword := c.PostForm("new_password")
+	if newPassword != c.PostForm("confirm_password") {
+		wa.renderSecurityError(c, user, "The new passwords do not match.")
+		return
+	}
+	if err := wa.directoryPasswords.ChangePassword(ctx, user.ID, c.PostForm("current_password"), newPassword); err != nil {
+		if errors.Is(err, domain.ErrIncorrectPassword) {
+			wa.rateLimiter.RecordFailure(key)
+		}
+		wa.renderSecurityError(c, user, directoryPasswordMessage(err))
+		return
+	}
+	wa.rateLimiter.Reset(key)
+	if user.HasRequiredAction(domain.RequiredActionUpdatePassword) {
+		user.RemoveRequiredAction(domain.RequiredActionUpdatePassword)
+		if err := wa.userRepo.UpdateUser(ctx, user); err != nil {
+			log.Warn().Err(err).Str("user_id", user.ID).Msg("account: could not clear the update-password action")
+		}
+	}
+	if wa.sessionRepo != nil {
+		if _, err := wa.sessionRepo.DeleteSessionsByUserID(ctx, user.ID); err != nil {
+			log.Warn().Err(err).Str("user_id", user.ID).Msg("account: failed to revoke sessions after password change")
+		}
+	}
+	log.Info().Str("user_id", user.ID).Msg("account: directory password changed")
+	wa.accountRedirect(c, "/account/security", "password_changed")
 }
 
 // AccountTOTPPageHandler serves GET /account/mfa/totp (authenticator enrolment).

@@ -183,3 +183,11 @@ type Verifier interface {
 	// can audit with the account id.
 	Verify(ctx context.Context, login, password string) (*domain.User, error)
 }
+
+// PasswordChanger is implemented by a source that owns passwords and can
+// change them. It is optional: the local source stores its own hashes and
+// does not implement it.
+type PasswordChanger interface {
+	ChangePassword(ctx context.Context, id, oldPassword, newPassword string) error
+	CompleteForcedChange(ctx context.Context, id, newPassword string) error
+}

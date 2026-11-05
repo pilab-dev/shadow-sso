@@ -2,13 +2,16 @@ package webauth
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/pilab-dev/shadow-sso/domain"
 	"github.com/pilab-dev/shadow-sso/internal/authflow"
+	"github.com/pilab-dev/shadow-sso/internal/identity"
 	"github.com/pilab-dev/shadow-sso/internal/ssosession"
 	pkgauth "github.com/pilab-dev/shadow-sso/pkg/auth"
 	"github.com/rs/zerolog/log"
@@ -305,6 +308,14 @@ func (updatePasswordAction) Submit(c *gin.Context, wa *WebAuth, user *domain.Use
 	if err := pkgauth.ValidatePassword(newPassword, wa.passwordPolicy(c.Request.Context())); err != nil {
 		return actionResult{Err: err.Error()}, nil
 	}
+	if user.IsDirectory() {
+		// The login that parked this flow was verified by the directory; it
+		// accepts the new password only for an account flagged for the change.
+		if err := wa.directoryForcedChange(c.Request.Context(), user, newPassword); err != nil {
+			return actionResult{Err: directoryPasswordMessage(err)}, nil
+		}
+		return actionResult{Done: true}, nil
+	}
 	if wa.passwordHasher.Verify(user.PasswordHash, newPassword) == nil {
 		return actionResult{Err: "The new password must be different from the current one."}, nil
 	}
@@ -316,6 +327,31 @@ func (updatePasswordAction) Submit(c *gin.Context, wa *WebAuth, user *domain.Use
 		return actionResult{Err: "Your password is managed by your organization's directory and cannot be changed here."}, nil
 	}
 	return actionResult{Done: true}, nil
+}
+
+func (wa *WebAuth) directoryForcedChange(ctx context.Context, user *domain.User, newPassword string) error {
+	if wa.directoryPasswords == nil {
+		return domain.ErrDirectoryManaged
+	}
+	return wa.directoryPasswords.CompleteForcedChange(ctx, user.ID, newPassword)
+}
+
+// directoryPasswordMessage turns a directory password failure into text for the user.
+func directoryPasswordMessage(err error) string {
+	var policy *domain.PasswordPolicyError
+	switch {
+	case errors.As(err, &policy):
+		return "The new password was rejected: " + strings.Join(policy.Violations, "; ") + "."
+	case errors.Is(err, domain.ErrIncorrectPassword):
+		return "The current password is incorrect."
+	case errors.Is(err, domain.ErrPasswordChangeNotAllowed), errors.Is(err, domain.ErrDirectoryManaged):
+		return "Your password is managed by your organization's directory and cannot be changed here."
+	case errors.Is(err, identity.ErrLocked):
+		return "Your account is temporarily locked. Please try again later."
+	default:
+		log.Error().Err(err).Msg("directory password change failed")
+		return "Could not change your password. Please try again."
+	}
 }
 
 // passwordPolicy resolves the realm password policy, falling back to a minimum length of 8.

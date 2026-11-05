@@ -25,6 +25,7 @@ type raEnv struct {
 	flows  *mock_domain.MockFlowStore
 	users  *mock_domain.MockUserRepository
 	hasher *mock_domain.MockPasswordHasher
+	wa     *webauth.WebAuth
 }
 
 func setupRequiredActionTest(t *testing.T) *raEnv {
@@ -43,6 +44,7 @@ func setupRequiredActionTest(t *testing.T) *raEnv {
 		Config:          webauth.DefaultConfig(),
 		SSOCookieSecret: raSecret,
 	})
+	e.wa = wa
 	e.router = gin.New()
 	e.router.LoadHTMLGlob("templates/*.html")
 	e.router.POST("/login", wa.LoginSubmitHandler)
@@ -212,6 +214,43 @@ func TestRequiredAction_UpdatePasswordCompletesLogin(t *testing.T) {
 	require.NotNil(t, saved)
 	assert.True(t, saved.Authenticated(), "pending marker must be cleared once the action is done")
 	assert.True(t, hasCookie(w, "sso_session"), "SSO cookie is issued only after the action completes")
+}
+
+func TestRequiredAction_DirectoryUserForcedChangeGoesToTheDirectory(t *testing.T) {
+	e := setupRequiredActionTest(t)
+	dir := &fakeDirPasswords{}
+	e.wa.SetDirectoryPasswords(dir)
+	e.flows.EXPECT().GetFlow(gomock.Any(), "f1").Return(raFlow("action:UPDATE_PASSWORD"), nil)
+	user := &domain.User{ID: "u1", Email: "a@b.c", Source: domain.SourceDirectory, Status: domain.UserStatusActive,
+		RequiredActions: []string{domain.RequiredActionUpdatePassword}}
+	e.users.EXPECT().GetUserByID(gomock.Any(), "u1").Return(user, nil)
+	var persisted *domain.User
+	e.users.EXPECT().UpdateUser(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ any, u *domain.User) error { persisted = u; return nil })
+	e.flows.EXPECT().UpdateFlow(gomock.Any(), "f1", gomock.Any()).Return(nil)
+
+	w := httptest.NewRecorder()
+	e.router.ServeHTTP(w, raPost("/required-action", url.Values{"flow_id": {"f1"}, "new_password": {"Sup3rSecret!"}, "confirm_password": {"Sup3rSecret!"}}))
+
+	require.Equal(t, http.StatusFound, w.Code)
+	assert.True(t, dir.forced)
+	assert.Equal(t, "Sup3rSecret!", dir.new)
+	require.NotNil(t, persisted)
+	assert.Empty(t, persisted.PasswordHash, "no hash is stored locally")
+	assert.Empty(t, persisted.RequiredActions)
+}
+
+func TestRequiredAction_DirectoryUserWithoutADirectoryIsRefused(t *testing.T) {
+	e := setupRequiredActionTest(t)
+	e.flows.EXPECT().GetFlow(gomock.Any(), "f1").Return(raFlow("action:UPDATE_PASSWORD"), nil)
+	user := &domain.User{ID: "u1", Source: domain.SourceDirectory, Status: domain.UserStatusActive,
+		RequiredActions: []string{domain.RequiredActionUpdatePassword}}
+	e.users.EXPECT().GetUserByID(gomock.Any(), "u1").Return(user, nil)
+
+	w := httptest.NewRecorder()
+	e.router.ServeHTTP(w, raPost("/required-action", url.Values{"flow_id": {"f1"}, "new_password": {"Sup3rSecret!"}, "confirm_password": {"Sup3rSecret!"}}))
+	assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
+	assert.Empty(t, user.PasswordHash)
 }
 
 func TestRequiredAction_RequiresCSRF(t *testing.T) {

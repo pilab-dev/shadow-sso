@@ -1,6 +1,7 @@
 package webauth_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -25,6 +26,7 @@ type acctEnv struct {
 	sessions *mock_domain.MockSessionRepository
 	fed      *services_mocks.MockFederationService
 	cookie   *http.Cookie
+	wa       *webauth.WebAuth
 }
 
 func setupAccountTest(t *testing.T) *acctEnv {
@@ -46,6 +48,7 @@ func setupAccountTest(t *testing.T) *acctEnv {
 		Config:            webauth.DefaultConfig(),
 		SSOCookieSecret:   raSecret,
 	})
+	e.wa = wa
 	e.router = gin.New()
 	e.router.LoadHTMLGlob("templates/*.html")
 	e.router.GET("/account", wa.AccountOverviewHandler())
@@ -173,6 +176,34 @@ func TestAccount_ChangePassword(t *testing.T) {
 		assert.Empty(t, u.PasswordHash)
 	})
 
+	t.Run("a directory user changes the password in the directory", func(t *testing.T) {
+		e := setupAccountTest(t)
+		dir := &fakeDirPasswords{}
+		e.wa.SetDirectoryPasswords(dir)
+		u := activeUser()
+		u.Source, u.PasswordHash = domain.SourceDirectory, ""
+		e.user(u)
+		e.sessions.EXPECT().DeleteSessionsByUserID(gomock.Any(), "u1").Return(int64(1), nil)
+
+		w := e.post("/account/password", good)
+		require.Equal(t, http.StatusSeeOther, w.Code)
+		assert.Equal(t, "u1", dir.id)
+		assert.Equal(t, "old-pw", dir.old)
+		assert.Equal(t, "Sup3rSecret!", dir.new)
+		assert.Empty(t, u.PasswordHash, "no hash is stored locally")
+	})
+
+	t.Run("a directory policy rejection is shown", func(t *testing.T) {
+		e := setupAccountTest(t)
+		e.wa.SetDirectoryPasswords(&fakeDirPasswords{err: &domain.PasswordPolicyError{Violations: []string{"reused"}}})
+		u := activeUser()
+		u.Source, u.PasswordHash = domain.SourceDirectory, ""
+		e.user(u)
+		w := e.post("/account/password", good)
+		assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
+		assert.Contains(t, w.Body.String(), "reused")
+	})
+
 	t.Run("policy and mismatch", func(t *testing.T) {
 		e := setupAccountTest(t)
 		e.user(activeUser())
@@ -237,4 +268,20 @@ func TestAccount_CannotUnlinkOnlySignInMethod(t *testing.T) {
 	w := e.post("/account/linked/unlink", url.Values{"provider": {"google"}, "provider_user_id": {"g1"}})
 	assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
 	assert.Contains(t, w.Body.String(), "Set a password")
+}
+
+type fakeDirPasswords struct {
+	err          error
+	id, old, new string
+	forced       bool
+}
+
+func (f *fakeDirPasswords) ChangePassword(_ context.Context, id, old, newPW string) error {
+	f.id, f.old, f.new = id, old, newPW
+	return f.err
+}
+
+func (f *fakeDirPasswords) CompleteForcedChange(_ context.Context, id, newPW string) error {
+	f.id, f.new, f.forced = id, newPW, true
+	return f.err
 }

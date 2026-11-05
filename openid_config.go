@@ -365,6 +365,10 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		WebAuthn:          passkeyRP,
 	})
 
+	if idSvc := serviceProvider.IdentityService(); idSvc != nil {
+		webauthAPI.SetDirectoryPasswords(idSvc)
+	}
+
 	// Styled recovery for panics.
 	router.Use(gin.CustomRecovery(func(c *gin.Context, recovered any) {
 		log.Error().Any("panic", recovered).Msg("panic recovered")
@@ -414,6 +418,7 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		passwordHasher,
 		nil,
 		services.WithUserRealmSettings(opts.RepositoryProvider.RealmSettingsRepository(ctx)),
+		services.WithUserDirectoryPasswords(serviceProvider.IdentityService()),
 	)
 	userPath, userHandler := ssov1connect.NewUserServiceHandler(userServer, interceptors)
 	router.Any(userPath+"*action", gin.WrapH(userHandler))

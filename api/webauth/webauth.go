@@ -58,6 +58,10 @@ type WebAuth struct {
 	sessionRepo domain.SessionRepository
 	// webAuthn is the passkey relying party. Nil disables passkey UI and endpoints.
 	webAuthn *webauthn.WebAuthn
+	// directoryPasswords changes the password of a directory user in the
+	// directory. Nil means the directory is not configured, and a directory
+	// user's password cannot be changed here.
+	directoryPasswords domain.DirectoryPasswords
 }
 
 // Options configures the WebAuth instance with all required dependencies.
@@ -89,6 +93,8 @@ type Options struct {
 	SessionRepo domain.SessionRepository
 	// WebAuthn enables passkeys (see NewWebAuthn). Optional.
 	WebAuthn *webauthn.WebAuthn
+	// DirectoryPasswords changes directory users' passwords. Optional.
+	DirectoryPasswords domain.DirectoryPasswords
 }
 
 // New creates a new WebAuth instance with the provided dependencies.
@@ -104,26 +110,27 @@ func New(opts *Options) *WebAuth {
 	}
 
 	return &WebAuth{
-		userRepo:          opts.UserRepo,
-		passwordHasher:    opts.PasswordHasher,
-		flowStore:         opts.FlowStore,
-		userSessionStore:  userSessionStore,
-		idpRepo:           opts.IdPRepository,
-		federationService: opts.FederationService,
-		oauthService:      opts.OAuthService,
-		tokenService:      opts.TokenService,
-		clientService:     opts.ClientService,
-		config:            cfg,
-		ssoCookieSecret:   opts.SSOCookieSecret,
-		rateLimiter:       NewRateLimiter(cfg.RateLimitMaxAttempts, cfg.RateLimitLockoutDuration),
-		runner:            authflow.NewRunner(opts.AuthFlowRepo, opts.PasswordHasher),
-		realmSettingsRepo: opts.RealmSettingsRepo,
-		deviceAuthRepo:    opts.DeviceAuthRepo,
-		mfaService:        opts.MFAService,
-		emailService:      opts.EmailService,
-		publicBaseURL:     strings.TrimRight(opts.PublicBaseURL, "/"),
-		sessionRepo:       opts.SessionRepo,
-		webAuthn:          opts.WebAuthn,
+		userRepo:           opts.UserRepo,
+		passwordHasher:     opts.PasswordHasher,
+		flowStore:          opts.FlowStore,
+		userSessionStore:   userSessionStore,
+		idpRepo:            opts.IdPRepository,
+		federationService:  opts.FederationService,
+		oauthService:       opts.OAuthService,
+		tokenService:       opts.TokenService,
+		clientService:      opts.ClientService,
+		config:             cfg,
+		ssoCookieSecret:    opts.SSOCookieSecret,
+		rateLimiter:        NewRateLimiter(cfg.RateLimitMaxAttempts, cfg.RateLimitLockoutDuration),
+		runner:             authflow.NewRunner(opts.AuthFlowRepo, opts.PasswordHasher),
+		realmSettingsRepo:  opts.RealmSettingsRepo,
+		deviceAuthRepo:     opts.DeviceAuthRepo,
+		mfaService:         opts.MFAService,
+		emailService:       opts.EmailService,
+		publicBaseURL:      strings.TrimRight(opts.PublicBaseURL, "/"),
+		sessionRepo:        opts.SessionRepo,
+		webAuthn:           opts.WebAuthn,
+		directoryPasswords: opts.DirectoryPasswords,
 	}
 }
 
@@ -190,4 +197,9 @@ func StaticHandler() (gin.HandlerFunc, error) {
 		c.Header("Cache-Control", "public, max-age=86400")
 		fileServer.ServeHTTP(c.Writer, c.Request)
 	}, nil
+}
+
+// SetDirectoryPasswords wires the directory that owns directory users' passwords.
+func (wa *WebAuth) SetDirectoryPasswords(p domain.DirectoryPasswords) {
+	wa.directoryPasswords = p
 }

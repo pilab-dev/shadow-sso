@@ -80,6 +80,56 @@ func (s *Source) Authenticate(ctx context.Context, ident *identity.Identity, pas
 	return res, nil
 }
 
+// ChangePassword implements identity.PasswordChanger. The directory checks the
+// current password, applies its policy and history, and derives its keys.
+func (s *Source) ChangePassword(ctx context.Context, id, oldPassword, newPassword string) error {
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+
+	resp, err := s.credentials.ChangePassword(ctx, connect.NewRequest(&credentialsv1.ChangePasswordRequest{
+		PrincipalId: id,
+		OldPassword: oldPassword,
+		NewPassword: newPassword,
+		Context:     &credentialsv1.AuthContext{Protocol: "oidc"},
+	}))
+	if err != nil {
+		return mapError(err)
+	}
+	switch resp.Msg.GetResult() {
+	case credentialsv1.VerifyResult_VERIFY_RESULT_OK:
+	case credentialsv1.VerifyResult_VERIFY_RESULT_LOCKED:
+		return identity.ErrLocked
+	default:
+		return domain.ErrIncorrectPassword
+	}
+	if v := resp.Msg.GetPolicyViolations(); len(v) > 0 {
+		return &domain.PasswordPolicyError{Violations: v}
+	}
+	return nil
+}
+
+// CompleteForcedChange implements identity.PasswordChanger. The directory
+// allows the SSO to set a password only for an account flagged must_change.
+func (s *Source) CompleteForcedChange(ctx context.Context, id, newPassword string) error {
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+
+	resp, err := s.credentials.SetPassword(ctx, connect.NewRequest(&credentialsv1.SetPasswordRequest{
+		PrincipalId: id,
+		NewPassword: newPassword,
+	}))
+	if err != nil {
+		if connect.CodeOf(err) == connect.CodePermissionDenied {
+			return domain.ErrPasswordChangeNotAllowed
+		}
+		return mapError(err)
+	}
+	if v := resp.Msg.GetPolicyViolations(); len(v) > 0 {
+		return &domain.PasswordPolicyError{Violations: v}
+	}
+	return nil
+}
+
 // Get implements identity.IdentitySource. It reads as the identity itself, so
 // the directory's object ACLs decide what the SSO may see of it.
 func (s *Source) Get(ctx context.Context, id string) (*identity.Identity, error) {
