@@ -425,6 +425,19 @@ func TestChangePasswordAuthorization(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
+	t.Run("a directory user's password is not changed here", func(t *testing.T) {
+		adminCtx := context.WithValue(context.Background(), domain.TokenContextKey, &domain.TokenInfo{
+			UserID: "admin-user",
+			Roles:  []string{"ROLE_ADMIN"},
+		})
+		userRepo.EXPECT().GetUserByID(gomock.Any(), "dir-user").Return(&domain.User{
+			ID: "dir-user", Source: domain.SourceDirectory, Status: domain.UserStatusActive,
+		}, nil)
+
+		_, err := service.ChangePassword(adminCtx, connect.NewRequest(&ssov1.ChangePasswordRequest{UserId: "dir-user", NewPassword: "new-password"}))
+		assert.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
+	})
+
 	t.Run("non-admin changes another user password denied", func(t *testing.T) {
 		userCtx := context.WithValue(context.Background(), domain.TokenContextKey, &domain.TokenInfo{
 			UserID: "regular-user",

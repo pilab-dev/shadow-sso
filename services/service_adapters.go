@@ -136,7 +136,9 @@ func (s *defaultUserService) ChangePassword(ctx context.Context, userID, oldPass
 	if err != nil {
 		return err
 	}
-	user.PasswordHash = hashedPassword
+	if err := user.SetPasswordHash(hashedPassword); err != nil {
+		return err
+	}
 	return s.userRepo.UpdateUser(ctx, user)
 }
 

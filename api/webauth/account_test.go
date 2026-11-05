@@ -163,6 +163,16 @@ func TestAccount_ChangePassword(t *testing.T) {
 		assert.Equal(t, "new-hash", u.PasswordHash)
 	})
 
+	t.Run("a directory user cannot set a local password", func(t *testing.T) {
+		e := setupAccountTest(t)
+		u := activeUser()
+		u.Source, u.PasswordHash = domain.SourceDirectory, ""
+		e.user(u)
+		w := e.post("/account/password", good)
+		assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
+		assert.Empty(t, u.PasswordHash)
+	})
+
 	t.Run("policy and mismatch", func(t *testing.T) {
 		e := setupAccountTest(t)
 		e.user(activeUser())

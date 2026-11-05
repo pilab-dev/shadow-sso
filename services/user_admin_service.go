@@ -143,7 +143,9 @@ func (s *UserAdminServiceServer) setPassword(ctx context.Context, userID, passwo
 		span.SetStatus(codes.Error, "failed to hash password")
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to hash password"))
 	}
-	user.PasswordHash = hash
+	if err := user.SetPasswordHash(hash); err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	}
 	apply(user)
 	if err := s.saveUser(ctx, user, spanName); err != nil {
 		span.SetStatus(codes.Error, "failed to update user")

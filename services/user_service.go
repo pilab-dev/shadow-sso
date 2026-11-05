@@ -408,6 +408,10 @@ func (s *UserServer) ChangePassword(ctx context.Context, req *connect.Request[ss
 	}
 
 	// 2. Check if user is self-changing password or admin changing
+	if user.IsDirectory() {
+		audit.Log("UserService", "ChangePassword", actingUserID, targetUserID, "Directory-managed password", false, domain.ErrDirectoryManaged)
+		return nil, connect.NewError(connect.CodeFailedPrecondition, domain.ErrDirectoryManaged)
+	}
 	isSelfChange := actingUserID == targetUserID
 
 	if isSelfChange {
@@ -444,7 +448,10 @@ func (s *UserServer) ChangePassword(ctx context.Context, req *connect.Request[ss
 	}
 
 	// 5. Update password hash and timestamp
-	user.PasswordHash = hashedPassword
+	if err := user.SetPasswordHash(hashedPassword); err != nil {
+		audit.Log("UserService", "ChangePassword", actingUserID, targetUserID, "Directory-managed password", false, err)
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	}
 	user.UpdatedAt = time.Now()
 
 	// 6. Save user
@@ -948,7 +955,9 @@ func (s *UserServer) UpdateUserPassword(ctx context.Context, req *connect.Reques
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to get user: %w", err))
 	}
 
-	user.PasswordHash = req.Msg.GetNewPasswordHash()
+	if err := user.SetPasswordHash(req.Msg.GetNewPasswordHash()); err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	}
 	user.UpdatedAt = time.Now()
 
 	if err := s.userRepo.UpdateUser(ctx, user); err != nil {
@@ -1105,7 +1114,9 @@ func (s *UserServer) ResetPassword(ctx context.Context, req *connect.Request[sso
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to process password"))
 	}
 
-	user.PasswordHash = hashedPassword
+	if err := user.SetPasswordHash(hashedPassword); err != nil {
+		return connect.NewResponse(&ssov1.ResetPasswordResponse{Success: false, Error: "invalid or expired reset token"}), nil
+	}
 	user.PasswordResetToken = ""
 	user.PasswordResetTokenExpiresAt = nil
 	user.UpdatedAt = time.Now()

@@ -465,7 +465,9 @@ func (r *mutationResolver) ResetPassword(ctx context.Context, userID string, new
 	if err != nil {
 		return false, err
 	}
-	user.PasswordHash = hashedPassword
+	if err := user.SetPasswordHash(hashedPassword); err != nil {
+		return false, err
+	}
 	// Clear password reset token
 	user.PasswordResetToken = ""
 	if err := r.UserRepo.UpdateUser(ctx, user); err != nil {
@@ -1238,7 +1240,9 @@ func (r *mutationResolver) SetUserPassword(ctx context.Context, userID string, p
 	if err != nil {
 		return false, err
 	}
-	user.PasswordHash = hashedPassword
+	if err := user.SetPasswordHash(hashedPassword); err != nil {
+		return false, err
+	}
 	if temporary {
 		// A temporary password must be replaced by the user at next login.
 		user.AddRequiredAction(domain.RequiredActionUpdatePassword)
