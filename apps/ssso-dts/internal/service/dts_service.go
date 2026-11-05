@@ -228,6 +228,29 @@ func (s *DTSService) GetAuthCode(ctx context.Context, req *connect.Request[ssov1
 	return connect.NewResponse(res), nil
 }
 
+// ConsumeAuthCode atomically returns and deletes an authorization code.
+func (s *DTSService) ConsumeAuthCode(ctx context.Context, req *connect.Request[ssov1.ConsumeAuthCodeRequest]) (*connect.Response[ssov1.AuthCode], error) {
+	if req.Msg.Code == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("auth code ID is missing"))
+	}
+
+	data, found, err := s.store.GetAndDelete(authCodesBucket, req.Msg.Code)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("consuming auth code: %w", err))
+	}
+
+	if !found {
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("auth code %s not found", req.Msg.Code))
+	}
+
+	authCode := &ssov1.AuthCode{}
+	if err := proto.Unmarshal(data, authCode); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("unmarshalling auth code: %w", err))
+	}
+
+	return connect.NewResponse(authCode), nil
+}
+
 func (s *DTSService) DeleteAuthCode(ctx context.Context, req *connect.Request[ssov1.DeleteAuthCodeRequest]) (*connect.Response[emptypb.Empty], error) {
 	if req.Msg.Code == "" {
 		err := errors.New("auth code ID is missing")

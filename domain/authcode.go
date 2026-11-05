@@ -17,6 +17,9 @@ type AuthCode struct {
 	CodeChallengeMethod string `json:"code_challenge_method,omitempty"`
 	Nonce               string `json:"nonce,omitempty"`
 
+	// AuthorizationDetails is the RFC 9396 authorization_details JSON array granted for this code.
+	AuthorizationDetails string `json:"authorization_details,omitempty" bson:"authorization_details,omitempty"`
+
 	AuthCodeData AuthCodeData `json:"auth_code_data,omitempty"`
 }
 

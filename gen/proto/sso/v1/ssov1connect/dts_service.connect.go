@@ -50,6 +50,9 @@ const (
 	// TokenStoreServiceDeleteAuthCodeProcedure is the fully-qualified name of the TokenStoreService's
 	// DeleteAuthCode RPC.
 	TokenStoreServiceDeleteAuthCodeProcedure = "/sso.v1.TokenStoreService/DeleteAuthCode"
+	// TokenStoreServiceConsumeAuthCodeProcedure is the fully-qualified name of the TokenStoreService's
+	// ConsumeAuthCode RPC.
+	TokenStoreServiceConsumeAuthCodeProcedure = "/sso.v1.TokenStoreService/ConsumeAuthCode"
 	// TokenStoreServiceStoreRefreshTokenProcedure is the fully-qualified name of the
 	// TokenStoreService's StoreRefreshToken RPC.
 	TokenStoreServiceStoreRefreshTokenProcedure = "/sso.v1.TokenStoreService/StoreRefreshToken"
@@ -125,6 +128,9 @@ type TokenStoreServiceClient interface {
 	StoreAuthCode(context.Context, *connect.Request[v1.StoreAuthCodeRequest]) (*connect.Response[emptypb.Empty], error)
 	GetAuthCode(context.Context, *connect.Request[v1.GetAuthCodeRequest]) (*connect.Response[v1.AuthCode], error)
 	DeleteAuthCode(context.Context, *connect.Request[v1.DeleteAuthCodeRequest]) (*connect.Response[emptypb.Empty], error)
+	// ConsumeAuthCode atomically returns and deletes an authorization code so it can be redeemed exactly once.
+	// Returns NOT_FOUND when the code does not exist, expired, or was already consumed.
+	ConsumeAuthCode(context.Context, *connect.Request[v1.ConsumeAuthCodeRequest]) (*connect.Response[v1.AuthCode], error)
 	// --- Refresh Tokens ---
 	StoreRefreshToken(context.Context, *connect.Request[v1.StoreRefreshTokenRequest]) (*connect.Response[emptypb.Empty], error)
 	GetRefreshToken(context.Context, *connect.Request[v1.GetRefreshTokenRequest]) (*connect.Response[v1.RefreshToken], error)
@@ -192,6 +198,11 @@ func NewTokenStoreServiceClient(httpClient connect.HTTPClient, baseURL string, o
 		deleteAuthCode: connect.NewClient[v1.DeleteAuthCodeRequest, emptypb.Empty](
 			httpClient,
 			baseURL+TokenStoreServiceDeleteAuthCodeProcedure,
+			opts...,
+		),
+		consumeAuthCode: connect.NewClient[v1.ConsumeAuthCodeRequest, v1.AuthCode](
+			httpClient,
+			baseURL+TokenStoreServiceConsumeAuthCodeProcedure,
 			opts...,
 		),
 		storeRefreshToken: connect.NewClient[v1.StoreRefreshTokenRequest, emptypb.Empty](
@@ -310,6 +321,7 @@ type tokenStoreServiceClient struct {
 	storeAuthCode             *connect.Client[v1.StoreAuthCodeRequest, emptypb.Empty]
 	getAuthCode               *connect.Client[v1.GetAuthCodeRequest, v1.AuthCode]
 	deleteAuthCode            *connect.Client[v1.DeleteAuthCodeRequest, emptypb.Empty]
+	consumeAuthCode           *connect.Client[v1.ConsumeAuthCodeRequest, v1.AuthCode]
 	storeRefreshToken         *connect.Client[v1.StoreRefreshTokenRequest, emptypb.Empty]
 	getRefreshToken           *connect.Client[v1.GetRefreshTokenRequest, v1.RefreshToken]
 	deleteRefreshToken        *connect.Client[v1.DeleteRefreshTokenRequest, emptypb.Empty]
@@ -361,6 +373,11 @@ func (c *tokenStoreServiceClient) GetAuthCode(ctx context.Context, req *connect.
 // DeleteAuthCode calls sso.v1.TokenStoreService.DeleteAuthCode.
 func (c *tokenStoreServiceClient) DeleteAuthCode(ctx context.Context, req *connect.Request[v1.DeleteAuthCodeRequest]) (*connect.Response[emptypb.Empty], error) {
 	return c.deleteAuthCode.CallUnary(ctx, req)
+}
+
+// ConsumeAuthCode calls sso.v1.TokenStoreService.ConsumeAuthCode.
+func (c *tokenStoreServiceClient) ConsumeAuthCode(ctx context.Context, req *connect.Request[v1.ConsumeAuthCodeRequest]) (*connect.Response[v1.AuthCode], error) {
+	return c.consumeAuthCode.CallUnary(ctx, req)
 }
 
 // StoreRefreshToken calls sso.v1.TokenStoreService.StoreRefreshToken.
@@ -478,6 +495,9 @@ type TokenStoreServiceHandler interface {
 	StoreAuthCode(context.Context, *connect.Request[v1.StoreAuthCodeRequest]) (*connect.Response[emptypb.Empty], error)
 	GetAuthCode(context.Context, *connect.Request[v1.GetAuthCodeRequest]) (*connect.Response[v1.AuthCode], error)
 	DeleteAuthCode(context.Context, *connect.Request[v1.DeleteAuthCodeRequest]) (*connect.Response[emptypb.Empty], error)
+	// ConsumeAuthCode atomically returns and deletes an authorization code so it can be redeemed exactly once.
+	// Returns NOT_FOUND when the code does not exist, expired, or was already consumed.
+	ConsumeAuthCode(context.Context, *connect.Request[v1.ConsumeAuthCodeRequest]) (*connect.Response[v1.AuthCode], error)
 	// --- Refresh Tokens ---
 	StoreRefreshToken(context.Context, *connect.Request[v1.StoreRefreshTokenRequest]) (*connect.Response[emptypb.Empty], error)
 	GetRefreshToken(context.Context, *connect.Request[v1.GetRefreshTokenRequest]) (*connect.Response[v1.RefreshToken], error)
@@ -541,6 +561,11 @@ func NewTokenStoreServiceHandler(svc TokenStoreServiceHandler, opts ...connect.H
 	tokenStoreServiceDeleteAuthCodeHandler := connect.NewUnaryHandler(
 		TokenStoreServiceDeleteAuthCodeProcedure,
 		svc.DeleteAuthCode,
+		opts...,
+	)
+	tokenStoreServiceConsumeAuthCodeHandler := connect.NewUnaryHandler(
+		TokenStoreServiceConsumeAuthCodeProcedure,
+		svc.ConsumeAuthCode,
 		opts...,
 	)
 	tokenStoreServiceStoreRefreshTokenHandler := connect.NewUnaryHandler(
@@ -662,6 +687,8 @@ func NewTokenStoreServiceHandler(svc TokenStoreServiceHandler, opts ...connect.H
 			tokenStoreServiceGetAuthCodeHandler.ServeHTTP(w, r)
 		case TokenStoreServiceDeleteAuthCodeProcedure:
 			tokenStoreServiceDeleteAuthCodeHandler.ServeHTTP(w, r)
+		case TokenStoreServiceConsumeAuthCodeProcedure:
+			tokenStoreServiceConsumeAuthCodeHandler.ServeHTTP(w, r)
 		case TokenStoreServiceStoreRefreshTokenProcedure:
 			tokenStoreServiceStoreRefreshTokenHandler.ServeHTTP(w, r)
 		case TokenStoreServiceGetRefreshTokenProcedure:
@@ -735,6 +762,10 @@ func (UnimplementedTokenStoreServiceHandler) GetAuthCode(context.Context, *conne
 
 func (UnimplementedTokenStoreServiceHandler) DeleteAuthCode(context.Context, *connect.Request[v1.DeleteAuthCodeRequest]) (*connect.Response[emptypb.Empty], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.TokenStoreService.DeleteAuthCode is not implemented"))
+}
+
+func (UnimplementedTokenStoreServiceHandler) ConsumeAuthCode(context.Context, *connect.Request[v1.ConsumeAuthCodeRequest]) (*connect.Response[v1.AuthCode], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.TokenStoreService.ConsumeAuthCode is not implemented"))
 }
 
 func (UnimplementedTokenStoreServiceHandler) StoreRefreshToken(context.Context, *connect.Request[v1.StoreRefreshTokenRequest]) (*connect.Response[emptypb.Empty], error) {

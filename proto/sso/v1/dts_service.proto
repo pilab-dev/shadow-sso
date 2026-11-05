@@ -22,6 +22,9 @@ service TokenStoreService {
   rpc StoreAuthCode(StoreAuthCodeRequest) returns (google.protobuf.Empty);
   rpc GetAuthCode(GetAuthCodeRequest) returns (AuthCode);
   rpc DeleteAuthCode(DeleteAuthCodeRequest) returns (google.protobuf.Empty);
+  // ConsumeAuthCode atomically returns and deletes an authorization code so it can be redeemed exactly once.
+  // Returns NOT_FOUND when the code does not exist, expired, or was already consumed.
+  rpc ConsumeAuthCode(ConsumeAuthCodeRequest) returns (AuthCode);
 
   // --- Refresh Tokens ---
   rpc StoreRefreshToken(StoreRefreshTokenRequest) returns (google.protobuf.Empty);
@@ -95,6 +98,7 @@ message AuthCode {
   string session_id = 9;
   string claims = 10; // JSON string for claims
   string auth_time_iat = 11; // Added from domain.AuthCodeData
+  string authorization_details = 12; // RFC 9396 authorization_details (JSON array)
 }
 
 message StoreAuthCodeRequest {
@@ -102,6 +106,10 @@ message StoreAuthCodeRequest {
 }
 
 message GetAuthCodeRequest {
+  string code = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message ConsumeAuthCodeRequest {
   string code = 1 [(buf.validate.field).string.min_len = 1];
 }
 
@@ -117,6 +125,7 @@ message RefreshToken {
   google.protobuf.Timestamp expires_at = 5;
   string session_id = 6; // Added from domain.RefreshTokenData
   string claims = 7; // JSON string for claims // Added from domain.RefreshTokenData
+  string authorization_details = 8; // RFC 9396 authorization_details (JSON array)
 }
 
 message StoreRefreshTokenRequest {
@@ -141,6 +150,7 @@ message AccessTokenMetadata {
   string session_id = 7; // Added from domain.TokenIntrospection
   string token_type = 8; // Added from domain.TokenIntrospection (e.g. "Bearer")
   string claims = 9; // JSON string for claims // Added from domain.TokenIntrospection
+  string authorization_details = 10; // RFC 9396 authorization_details (JSON array)
 }
 
 message StoreAccessTokenMetadataRequest {

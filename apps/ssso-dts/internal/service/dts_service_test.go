@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -219,3 +221,44 @@ func TestDTSService_GenericSetGetDelete(t *testing.T) {
 // Test UserSession operations.
 // Test AccessTokenMetadata operations.
 // Test behavior when store returns errors (e.g., disk full - harder to simulate here).
+
+func TestDTSService_ConsumeAuthCode_Atomic(t *testing.T) {
+	client, cleanup := setupBufconnServer(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	_, err := client.StoreAuthCode(ctx, connect.NewRequest(&ssov1.StoreAuthCodeRequest{
+		AuthCode: &ssov1.AuthCode{
+			Code:                 "consume-me",
+			ClientId:             "c1",
+			AuthorizationDetails: `[{"type":"payment"}]`,
+			ExpiresAt:            timestamppb.New(time.Now().Add(time.Minute)),
+		},
+	}))
+	require.NoError(t, err)
+
+	const workers = 20
+	var wg sync.WaitGroup
+	var success, notFound atomic.Int32
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			res, err := client.ConsumeAuthCode(ctx, connect.NewRequest(&ssov1.ConsumeAuthCodeRequest{Code: "consume-me"}))
+			switch {
+			case err == nil:
+				assert.Equal(t, `[{"type":"payment"}]`, res.Msg.AuthorizationDetails)
+				success.Add(1)
+			case connect.CodeOf(err) == connect.CodeNotFound:
+				notFound.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+
+	assert.EqualValues(t, 1, success.Load(), "exactly one redeemer must succeed")
+	assert.EqualValues(t, workers-1, notFound.Load())
+
+	_, err = client.GetAuthCode(ctx, connect.NewRequest(&ssov1.GetAuthCodeRequest{Code: "consume-me"}))
+	require.Error(t, err)
+}

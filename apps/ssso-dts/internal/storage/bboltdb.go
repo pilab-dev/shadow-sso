@@ -234,6 +234,57 @@ func (s *BBoltStore) Delete(bucketName, key string) error {
 	})
 }
 
+// GetAndDelete atomically reads and removes a key in a single write transaction,
+// so concurrent callers can never both receive the same value.
+// Expired items are removed but reported as not found.
+func (s *BBoltStore) GetAndDelete(bucketName, key string) ([]byte, bool, error) {
+	if bucketName == "" {
+		bucketName = DefaultBucketName
+	}
+
+	var value []byte
+	var found bool
+
+	err := s.db.Update(func(tx *bbolt.Tx) error {
+		b := tx.Bucket([]byte(bucketName))
+		if b == nil {
+			return nil
+		}
+		metaB := tx.Bucket([]byte(bucketName + metadataSuffix))
+		if metaB == nil {
+			return nil
+		}
+
+		metaBytes := metaB.Get([]byte(key))
+		if len(metaBytes) == 0 {
+			return nil
+		}
+
+		var metadata StoredItemMetadata
+		if err := gob.NewDecoder(bytes.NewReader(metaBytes)).Decode(&metadata); err != nil {
+			return fmt.Errorf("failed to decode metadata for key %s: %w", key, err)
+		}
+
+		valBytes := b.Get([]byte(key))
+		if valBytes != nil && (metadata.ExpiresAtUnixNano == 0 || time.Now().UnixNano() <= metadata.ExpiresAtUnixNano) {
+			value = make([]byte, len(valBytes))
+			copy(value, valBytes)
+			found = true
+		}
+
+		if err := b.Delete([]byte(key)); err != nil {
+			return fmt.Errorf("failed to delete key %s from bucket %s: %w", key, bucketName, err)
+		}
+
+		return metaB.Delete([]byte(key))
+	})
+	if err != nil {
+		return nil, false, err
+	}
+
+	return value, found, nil
+}
+
 // runCleanupLoop periodically scans all managed buckets and removes expired items.
 // `initialBuckets` are the buckets known at startup. More buckets might be created dynamically.
 func (s *BBoltStore) runCleanupLoop(initialBuckets []string) {

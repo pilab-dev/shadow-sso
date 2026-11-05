@@ -35,17 +35,18 @@ func toProtoAuthCode(domainAC *domain.AuthCode) *ssov1.AuthCode {
 	// 'CreatedAt' is not stored in DTS by default with this mapping.
 	// Fields from domain.AuthCode.AuthCodeData ARE mapped.
 	return &ssov1.AuthCode{
-		Code:                domainAC.Code,
-		ClientId:            domainAC.ClientID,
-		UserId:              domainAC.UserID,
-		RedirectUri:         domainAC.RedirectURI,
-		Scope:               domainAC.Scope,
-		CodeChallenge:       domainAC.CodeChallenge,
-		CodeChallengeMethod: domainAC.CodeChallengeMethod,
-		ExpiresAt:           timestamppb.New(domainAC.ExpiresAt),
-		SessionId:           domainAC.AuthCodeData.SessionID,
-		Claims:              domainAC.AuthCodeData.Claims,      // Assuming Claims is already a JSON string
-		AuthTimeIat:         domainAC.AuthCodeData.AuthTimeIat, // Assuming this is a string Unix timestamp
+		Code:                 domainAC.Code,
+		ClientId:             domainAC.ClientID,
+		UserId:               domainAC.UserID,
+		RedirectUri:          domainAC.RedirectURI,
+		Scope:                domainAC.Scope,
+		CodeChallenge:        domainAC.CodeChallenge,
+		CodeChallengeMethod:  domainAC.CodeChallengeMethod,
+		ExpiresAt:            timestamppb.New(domainAC.ExpiresAt),
+		SessionId:            domainAC.AuthCodeData.SessionID,
+		Claims:               domainAC.AuthCodeData.Claims,      // Assuming Claims is already a JSON string
+		AuthTimeIat:          domainAC.AuthCodeData.AuthTimeIat, // Assuming this is a string Unix timestamp
+		AuthorizationDetails: domainAC.AuthorizationDetails,
 	}
 }
 
@@ -58,15 +59,16 @@ func fromProtoAuthCode(protoAC *ssov1.AuthCode) *domain.AuthCode {
 	// If it's not found, it might have been used (deleted) or expired.
 	// 'CreatedAt' is not available from ssov1.AuthCode, will be zero time.
 	return &domain.AuthCode{
-		Code:                protoAC.Code,
-		ClientID:            protoAC.ClientId,
-		UserID:              protoAC.UserId,
-		RedirectURI:         protoAC.RedirectUri,
-		Scope:               protoAC.Scope,
-		ExpiresAt:           protoAC.ExpiresAt.AsTime(),
-		Used:                false, // If found in DTS, it's not marked 'Used' in DTS sense.
-		CodeChallenge:       protoAC.CodeChallenge,
-		CodeChallengeMethod: protoAC.CodeChallengeMethod,
+		Code:                 protoAC.Code,
+		ClientID:             protoAC.ClientId,
+		UserID:               protoAC.UserId,
+		RedirectURI:          protoAC.RedirectUri,
+		Scope:                protoAC.Scope,
+		ExpiresAt:            protoAC.ExpiresAt.AsTime(),
+		Used:                 false, // If found in DTS, it's not marked 'Used' in DTS sense.
+		CodeChallenge:        protoAC.CodeChallenge,
+		CodeChallengeMethod:  protoAC.CodeChallengeMethod,
+		AuthorizationDetails: protoAC.AuthorizationDetails,
 		AuthCodeData: domain.AuthCodeData{ // Populate embedded struct
 			SessionID:   protoAC.SessionId,
 			Claims:      protoAC.Claims,
@@ -134,32 +136,22 @@ func (r *dtsAuthCodeRepository) GetAuthCode(ctx context.Context, codeStr string)
 	return domainAC, nil
 }
 
-// MarkAuthCodeAsUsed deletes the authorization code from DTS, effectively marking it as used.
+// MarkAuthCodeAsUsed atomically consumes the authorization code in DTS.
+// It returns domain.ErrAuthCodeAlreadyUsed if the code is missing, expired or already consumed,
+// so only one concurrent redeemer can succeed.
 func (r *dtsAuthCodeRepository) MarkAuthCodeAsUsed(ctx context.Context, codeStr string) error {
 	if codeStr == "" {
 		return status.Error(codes.InvalidArgument, "auth code string cannot be empty")
 	}
-	// To truly mark as used, we should first verify it exists and is not expired.
-	// However, the interface doesn't require returning the code.
-	// Deleting it is the simplest way to make it unusable.
-	// If it doesn't exist, Delete is usually a no-op.
 
-	// Optional: Get it first to ensure it's valid before "using" (deleting)
-	// _, err := r.GetAuthCode(ctx, codeStr)
-	// if err != nil {
-	// return err // Could be internal error from Get
-	// }
-	// if existingCode == nil {
-	// return fmt.Errorf("auth code %s not found or expired, cannot mark as used", codeStr) // Or specific error
-	// }
-
-	req := connect.NewRequest(&ssov1.DeleteAuthCodeRequest{Code: codeStr})
-	_, err := r.client.DTS.DeleteAuthCode(ctx, req)
+	_, err := r.client.DTS.ConsumeAuthCode(ctx, connect.NewRequest(&ssov1.ConsumeAuthCodeRequest{Code: codeStr}))
 	if err != nil {
-		log.Printf("Error deleting (marking as used) auth code %s from DTS: %v", codeStr, err)
-		return status.Errorf(codes.Internal, "failed to delete auth code from DTS: %v", err)
+		if connect.CodeOf(err) == connect.CodeNotFound {
+			return domain.ErrAuthCodeAlreadyUsed
+		}
+
+		return status.Errorf(codes.Internal, "failed to consume auth code in DTS: %v", err)
 	}
-	log.Printf("Auth code %s marked as used (deleted) in DTS.", codeStr)
 
 	return nil
 }
