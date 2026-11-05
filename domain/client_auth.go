@@ -4,10 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -57,82 +56,50 @@ func (a *SecretAuthenticator) Authenticate(ctx context.Context, client *Client, 
 	return a.clientRepo.ValidateClient(ctx, clientID, clientSecret)
 }
 
-type JWTAssertionAuthenticator struct {
-	realmKeys []*RealmKey
+// ClientAssertionTypeJWTBearer is the client_assertion_type required by RFC 7523 §2.2.
+const ClientAssertionTypeJWTBearer = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+
+// maxClientAssertionLifetime bounds how far in the future an assertion may expire.
+const maxClientAssertionLifetime = 5 * time.Minute
+
+// ClientAssertionAlgs are the asymmetric algorithms accepted for private_key_jwt.
+var ClientAssertionAlgs = []string{"RS256", "RS384", "RS512", "PS256", "PS384", "PS512"}
+
+// assertionReplayCache remembers (client, jti) pairs until the assertion expires.
+type assertionReplayCache struct {
+	mu   sync.Mutex
+	seen map[string]time.Time
 }
 
-func NewJWTAssertionAuthenticator(realmKeys []*RealmKey) *JWTAssertionAuthenticator {
-	return &JWTAssertionAuthenticator{realmKeys: realmKeys}
-}
+var defaultAssertionReplayCache = &assertionReplayCache{seen: map[string]time.Time{}}
 
-func (a *JWTAssertionAuthenticator) Authenticate(ctx context.Context, client *Client, clientID string, params map[string][]string) (*Client, error) {
-	assertion := getFirstParam(params, "client_assertion")
-	assertionType := getFirstParam(params, "client_assertion_type")
-
-	if assertion == "" {
-		return nil, NewInvalidClient("client_assertion required")
-	}
-
-	if !strings.Contains(assertionType, "jwt") {
-		return nil, NewInvalidClient("invalid client_assertion_type")
-	}
-
-	token, err := jwt.ParseWithClaims(assertion, &ClientAssertionClaims{}, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+// claim returns false when the key was already used and has not expired.
+func (c *assertionReplayCache) claim(key string, expires, now time.Time) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for k, exp := range c.seen {
+		if !exp.After(now) {
+			delete(c.seen, k)
 		}
-
-		kid, ok := token.Header["kid"].(string)
-		if !ok {
-			return nil, ErrInvalidClientAssertion
-		}
-
-		for _, key := range a.realmKeys {
-			if key.ID == kid && key.PrivateKey != "" {
-				return a.parsePrivateKey(key.PrivateKey)
-			}
-		}
-
-		return nil, ErrInvalidClientAssertion
-	})
-	if err != nil {
-		return nil, ErrInvalidClientAssertion
 	}
-
-	claims, ok := token.Claims.(*ClientAssertionClaims)
-	if !ok || !token.Valid {
-		return nil, ErrInvalidClientAssertion
+	if _, used := c.seen[key]; used {
+		return false
 	}
-
-	if claims.Sub != clientID {
-		return nil, NewInvalidClient("client_assertion sub does not match client_id")
-	}
-
-	if (claims.RegisteredClaims).ExpiresAt == nil || (claims.RegisteredClaims).ExpiresAt.Time.Before(time.Now()) {
-		return nil, NewInvalidClient("client_assertion expired")
-	}
-
-	if claims.Aud == "" {
-		claims.Aud = clientID
-	}
-
-	return client, nil
+	c.seen[key] = expires
+	return true
 }
 
-func (a *JWTAssertionAuthenticator) parsePrivateKey(pk string) (*rsa.PrivateKey, error) {
-	var key rsa.PrivateKey
-	if err := json.Unmarshal([]byte(pk), &key); err != nil {
-		return nil, err
-	}
-	return &key, nil
-}
-
+// ClientJWTAuthenticator verifies private_key_jwt client assertions (RFC 7523)
+// against the public keys registered in the client's JWKS.
 type ClientJWTAuthenticator struct {
 	client *Client
+	// audiences lists the values accepted in the assertion's aud claim
+	// (the issuer and the endpoint URL).
+	audiences []string
 }
 
-func NewClientJWTAuthenticator(client *Client) *ClientJWTAuthenticator {
-	return &ClientJWTAuthenticator{client: client}
+func NewClientJWTAuthenticator(client *Client, audiences ...string) *ClientJWTAuthenticator {
+	return &ClientJWTAuthenticator{client: client, audiences: audiences}
 }
 
 func (a *ClientJWTAuthenticator) Authenticate(ctx context.Context, client *Client, clientID string, params map[string][]string) (*Client, error) {
@@ -142,47 +109,70 @@ func (a *ClientJWTAuthenticator) Authenticate(ctx context.Context, client *Clien
 	if assertion == "" {
 		return nil, NewInvalidClient("client_assertion required")
 	}
-
-	if !strings.Contains(assertionType, "jwt") {
+	if assertionType != ClientAssertionTypeJWTBearer {
 		return nil, NewInvalidClient("invalid client_assertion_type")
 	}
-
+	if a.client == nil || a.client.ID != clientID {
+		return nil, NewInvalidClient("unknown client")
+	}
 	if a.client.JWKS == nil || len(a.client.JWKS.Keys) == 0 {
 		return nil, NewInvalidClient("client has no JWKS configured")
 	}
 
-	token, err := jwt.ParseWithClaims(assertion, &ClientAssertionClaims{}, func(token *jwt.Token) (interface{}, error) {
-		kid, ok := token.Header["kid"].(string)
-		if !ok {
+	claims := jwt.RegisteredClaims{}
+	token, err := jwt.ParseWithClaims(assertion, &claims, func(token *jwt.Token) (interface{}, error) {
+		kid, _ := token.Header["kid"].(string)
+		var candidate *JSONWebKey
+		for i := range a.client.JWKS.Keys {
+			key := &a.client.JWKS.Keys[i]
+			if key.Use != "" && key.Use != "sig" {
+				continue
+			}
+			if kid != "" && key.Kid != kid {
+				continue
+			}
+			if candidate != nil {
+				return nil, ErrInvalidClientAssertion // ambiguous without kid
+			}
+			candidate = key
+		}
+		if candidate == nil {
 			return nil, ErrInvalidClientAssertion
 		}
+		return candidate.ToRSAPublicKey()
+	}, jwt.WithValidMethods(ClientAssertionAlgs), jwt.WithExpirationRequired(), jwt.WithLeeway(30*time.Second))
+	if err != nil || !token.Valid {
+		return nil, ErrInvalidClientAssertion
+	}
 
-		for _, key := range a.client.JWKS.Keys {
-			if key.Kid == kid {
-				return key.ToRSAKey()
+	if claims.Issuer != clientID || claims.Subject != clientID {
+		return nil, NewInvalidClient("client_assertion iss and sub must equal client_id")
+	}
+
+	audOK := false
+	for _, aud := range claims.Audience {
+		for _, want := range a.audiences {
+			if aud == want {
+				audOK = true
 			}
 		}
-
-		return nil, ErrInvalidClientAssertion
-	})
-	if err != nil {
-		return nil, ErrInvalidClientAssertion
+	}
+	if !audOK {
+		return nil, NewInvalidClient("client_assertion aud does not match this server")
 	}
 
-	claims, ok := token.Claims.(*ClientAssertionClaims)
-	if !ok || !token.Valid {
-		return nil, ErrInvalidClientAssertion
+	now := time.Now()
+	if claims.ExpiresAt.Time.After(now.Add(maxClientAssertionLifetime)) {
+		return nil, NewInvalidClient("client_assertion lifetime too long")
+	}
+	if claims.ID == "" {
+		return nil, NewInvalidClient("client_assertion jti required")
+	}
+	if !defaultAssertionReplayCache.claim(clientID+"\x00"+claims.ID, claims.ExpiresAt.Time.Add(30*time.Second), now) {
+		return nil, NewInvalidClient("client_assertion replayed")
 	}
 
-	if claims.Sub != clientID {
-		return nil, NewInvalidClient("client_assertion sub does not match client_id")
-	}
-
-	if (claims.RegisteredClaims).ExpiresAt == nil || (claims.RegisteredClaims).ExpiresAt.Time.Before(time.Now()) {
-		return nil, NewInvalidClient("client_assertion expired")
-	}
-
-	return client, nil
+	return a.client, nil
 }
 
 type MTLSAuthenticator struct{}

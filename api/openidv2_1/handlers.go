@@ -2496,26 +2496,29 @@ func (oa *OAuth2API) authenticateWithJWT(ctx context.Context, clientID string, e
 		return nil, domain.ErrInvalidClientAssertion
 	}
 
-	if !strings.Contains(clientAssertionType, "jwt") {
+	if clientAssertionType != domain.ClientAssertionTypeJWTBearer {
 		return nil, domain.NewInvalidClient("invalid client_assertion_type")
 	}
 
-	realmKeys, _ := oa.realmKeysRepo.ListRealmKeys(ctx)
-
-	authenticator := domain.NewJWTAssertionAuthenticator(realmKeys)
-	cli, err := authenticator.Authenticate(ctx, existingClient, clientID, params)
-	if err == nil {
-		return cli, nil
-	}
-
-	if existingClient != nil && existingClient.JWKS != nil {
-		cli, err := domain.NewClientJWTAuthenticator(existingClient).Authenticate(ctx, existingClient, clientID, params)
-		if err == nil {
-			return cli, nil
+	if existingClient == nil {
+		cli, err := oa.clientService.GetClient(ctx, clientID)
+		if err != nil {
+			return nil, domain.ErrInvalidClientAssertion
 		}
+		existingClient = cli
+	}
+	if existingClient.TokenEndpointAuth != "" && existingClient.TokenEndpointAuth != string(domain.ClientAuthMethodPrivateKeyJWT) {
+		return nil, domain.NewInvalidClient("client is not registered for private_key_jwt")
 	}
 
-	return nil, domain.ErrInvalidClientAssertion
+	issuer := strings.TrimRight(oa.config.Issuer, "/")
+	authenticator := domain.NewClientJWTAuthenticator(existingClient, issuer, issuer+"/oauth2/token", issuer+"/oauth2/par",
+		issuer+"/oauth2/introspect", issuer+"/oauth2/revoke")
+	cli, err := authenticator.Authenticate(ctx, existingClient, clientID, params)
+	if err != nil {
+		return nil, domain.ErrInvalidClientAssertion
+	}
+	return cli, nil
 }
 
 func getFirstParam(params map[string][]string, key string) string {

@@ -4,9 +4,11 @@ package domain
 import (
 	"context"
 	"crypto/rsa"
+	"encoding/base64"
 	"fmt"
 	"math/big"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -139,6 +141,30 @@ type JSONWebKey struct {
 	Qi string `json:"qi,omitempty"` // RSA other prime factor
 	Dq string `json:"dq,omitempty"` // RSA private exponent
 	Dp string `json:"dp,omitempty"` // RSA private exponent
+}
+
+// ToRSAPublicKey decodes the RFC 7518 §6.3 base64url modulus and exponent.
+func (k JSONWebKey) ToRSAPublicKey() (*rsa.PublicKey, error) {
+	if k.Kty != "" && k.Kty != "RSA" {
+		return nil, fmt.Errorf("unsupported key type %q", k.Kty)
+	}
+	nBytes, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(k.N, "="))
+	if err != nil || len(nBytes) == 0 {
+		return nil, fmt.Errorf("invalid modulus")
+	}
+	eBytes, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(k.E, "="))
+	if err != nil || len(eBytes) == 0 || len(eBytes) > 4 {
+		return nil, fmt.Errorf("invalid exponent")
+	}
+	e := 0
+	for _, b := range eBytes {
+		e = e<<8 | int(b)
+	}
+	n := new(big.Int).SetBytes(nBytes)
+	if n.BitLen() < 2048 || e < 3 {
+		return nil, fmt.Errorf("RSA key too weak")
+	}
+	return &rsa.PublicKey{N: n, E: e}, nil
 }
 
 func (k JSONWebKey) ToRSAKey() (*rsa.PrivateKey, error) {
