@@ -77,6 +77,7 @@ message ClientProto {
   string client_ldap_attribute_last_name = 24;
   string client_ldap_attribute_groups = 25;
   map<string, string> client_ldap_custom_claims_mapping = 26;
+  bool require_par = 27; // RFC 9126: authorization requests must be pushed
 }
 
 // --- RegisterClient ---
@@ -109,6 +110,7 @@ message RegisterClientRequest {
   string client_ldap_attribute_last_name = 19 [(buf.validate.field).string.max_len = 250];
   string client_ldap_attribute_groups = 20 [(buf.validate.field).string.max_len = 250];
   map<string, string> client_ldap_custom_claims_mapping = 21;
+  bool require_par = 22;
 }
 
 message RegisterClientResponse {
@@ -166,6 +168,7 @@ message UpdateClientRequest {
   string client_ldap_attribute_last_name = 18 [(buf.validate.field).string.max_len = 250];
   string client_ldap_attribute_groups = 19 [(buf.validate.field).string.max_len = 250];
   map<string, string> client_ldap_custom_claims_mapping = 20;
+  bool require_par = 21;
 }
 
 message UpdateClientResponse {

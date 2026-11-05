@@ -251,6 +251,7 @@ type GrantTypesConfig struct {
 // SecurityConfig contains security-related settings
 type SecurityConfig struct {
 	RequirePKCE                   bool     `json:"require_pkce"`
+	RequirePAR                    bool     `json:"require_par"` // RFC 9126: reject authorization requests not pushed first
 	RequirePKCEForPublicClients   bool     `json:"require_pkce_for_public_clients"`
 	AllowedSigningAlgs            []string `json:"allowed_signing_algs"`
 	AllowedEncryptionAlgs         []string `json:"allowed_encryption_algs"`

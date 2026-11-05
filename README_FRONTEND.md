@@ -101,6 +101,8 @@ Short-lived protocol state is stored behind small adapter interfaces so the back
 
 PAR entries are bound to the pushing client, single use, and expire after 60 seconds.
 
+Set `require_par` on a client (gRPC `ClientManagement`) or `security_config.require_par` globally to reject authorization requests that were not pushed to `/oauth2/par` first; discovery then reports `require_pushed_authorization_requests`.
+
 Select the PAR backend with `par_store_backend` (`SSSO_PAR_STORE_BACKEND`): `memory` (default), `valkey` (also set `valkey_url`, e.g. `redis://host:6379/0`) or `mongodb`.
 
 ## Rich Authorization Requests (RFC 9396)

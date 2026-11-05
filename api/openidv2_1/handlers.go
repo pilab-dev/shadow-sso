@@ -653,12 +653,31 @@ func (oa *OAuth2API) parseAndValidateAuthorizeParams(c *gin.Context) (*authorize
 		oa.sendHTMLError(c, http.StatusBadRequest, err)
 		return nil, err
 	}
+	if c.Query("request_uri") == "" && oa.parRequired(c.Request.Context(), data.clientID) {
+		err := domain.NewInvalidRequest("pushed authorization request required: use /oauth2/par and send request_uri")
+		oa.sendHTMLError(c, http.StatusBadRequest, err)
+		return nil, err
+	}
 	if data.responseType != "code" {
 		err := domain.NewInvalidRequest("unsupported response_type, only 'code' is supported")
 		oa.sendHTMLError(c, http.StatusBadRequest, err)
 		return nil, err
 	}
 	return data, nil
+}
+
+// parRequired reports whether authorization requests for the client must be
+// pushed first (global setting or per-client require_par).
+func (oa *OAuth2API) parRequired(ctx context.Context, clientID string) bool {
+	if oa.config != nil && oa.config.SecurityConfig.RequirePAR {
+		return true
+	}
+	if oa.clientService == nil {
+		return false
+	}
+	client, err := oa.clientService.GetClient(ctx, clientID)
+
+	return err == nil && client.RequirePAR
 }
 
 // validateClientDetails checks client existence, redirect URI, and scope.
@@ -1817,7 +1836,7 @@ func (oa *OAuth2API) OpenIDConfigurationHandler(c *gin.Context) {
 	// PAR is always routed; RFC 9126 requires advertising the endpoint so RPs
 	// can use request_uri instead of putting parameters in the front channel.
 	resp.PushedAuthorizationRequestEndpoint = ToPtr(baseURL + "/oauth2/par")
-	resp.RequirePushedAuthorizationRequests = false
+	resp.RequirePushedAuthorizationRequests = cfg.SecurityConfig.RequirePAR
 
 	// 4. Supported Grant Types. Only list grants the token endpoint actually
 	// dispatches; implicit and jwt-bearer are not wired even when enabled in

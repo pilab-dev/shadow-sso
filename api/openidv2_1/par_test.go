@@ -3,6 +3,7 @@ package openidv2_1_test
 import (
 	"context"
 	"encoding/json"
+	"html/template"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -111,4 +112,39 @@ func TestPAR_RejectsNestedRequestURI(t *testing.T) {
 	form := parForm("c1")
 	form.Set("request_uri", "urn:ietf:params:oauth:request_uri:abc")
 	assert.Equal(t, http.StatusBadRequest, postPAR(router, form, "", "").Code)
+}
+
+func getAuthorize(router *gin.Engine, query url.Values) *httptest.ResponseRecorder {
+	if router.HTMLRender == nil {
+		router.SetHTMLTemplate(template.Must(template.New("error.html").Parse("{{.Message}}")))
+	}
+	req := httptest.NewRequest("GET", "/oauth2/authorize?"+query.Encode(), nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	return w
+}
+
+func TestAuthorize_RequirePARRejectsDirectRequests(t *testing.T) {
+	router, repo, _ := setupPARTest(t)
+	repo.EXPECT().GetClient(gomock.Any(), "par-only").AnyTimes().Return(&domain.Client{ID: "par-only", RequirePAR: true}, nil)
+
+	w := getAuthorize(router, parForm("par-only"))
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "pushed authorization request required")
+}
+
+func TestAuthorize_RequirePARAllowsPushedRequests(t *testing.T) {
+	router, repo, _ := setupPARTest(t)
+	repo.EXPECT().GetClient(gomock.Any(), "par-only").AnyTimes().Return(&domain.Client{ID: "par-only", RequirePAR: true}, nil)
+
+	w := postPAR(router, parForm("par-only"), "", "")
+	require.Equal(t, http.StatusCreated, w.Code)
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+
+	q := url.Values{}
+	q.Set("client_id", "par-only")
+	q.Set("request_uri", resp["request_uri"].(string))
+	w = getAuthorize(router, q)
+	assert.NotContains(t, w.Body.String(), "pushed authorization request required")
 }

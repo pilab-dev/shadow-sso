@@ -85,6 +85,7 @@ type Client struct {
 	TermsURI                    string     `bson:"tos_uri,omitempty"                   json:"terms_uri,omitempty"`
 	RequireConsent              bool       `bson:"require_consent"                     json:"require_consent,omitempty"`
 	RequirePKCE                 bool       `bson:"require_pkce"                        json:"require_pkce,omitempty"`
+	RequirePAR                  bool       `bson:"require_par,omitempty"               json:"require_par,omitempty"`
 	CreatedAt                   time.Time  `bson:"created_at"                          json:"created_at,omitempty"`
 	UpdatedAt                   time.Time  `bson:"updated_at"                          json:"updated_at,omitempty"`
 	LastUsed                    time.Time  `bson:"last_used,omitempty"                 json:"last_used,omitempty"`
