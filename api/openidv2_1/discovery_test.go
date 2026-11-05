@@ -139,7 +139,8 @@ func TestOpenIDConfiguration_IsTruthful(t *testing.T) {
 	doc := fetchDiscovery(t, newDiscoveryAPI(t, fullDiscoveryConfig(), true, nil))
 
 	require.Equal(t, []any{"public"}, doc["subject_types_supported"], "pairwise is not implemented")
-	require.Equal(t, false, doc["request_parameter_supported"], "request objects are not parsed")
+	require.Equal(t, true, doc["request_parameter_supported"], "signed request objects are verified")
+	require.NotContains(t, doc["request_object_signing_alg_values_supported"], "none")
 	require.Equal(t, true, doc["authorization_response_iss_parameter_supported"], "iss is sent on success and error redirects")
 	require.Equal(t, false, doc["tls_client_certificate_bound_access_tokens"])
 	require.Contains(t, doc["scopes_supported"], "openid")
@@ -149,8 +150,6 @@ func TestOpenIDConfiguration_IsTruthful(t *testing.T) {
 		"basic auth is parsed at the token, PAR, introspection and revocation endpoints")
 	require.NotContains(t, doc, "userinfo_signing_alg_values_supported",
 		"UserInfo responses are plain JSON")
-	require.NotContains(t, doc, "request_object_signing_alg_values_supported",
-		"request objects are not supported")
 	require.Equal(t, "https://sso.example.com/oauth2/par", doc["pushed_authorization_request_endpoint"])
 	require.Equal(t, true, doc["backchannel_logout_supported"])
 	require.Equal(t, true, doc["backchannel_logout_session_supported"])

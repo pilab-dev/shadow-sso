@@ -81,7 +81,15 @@
   ],
   "pushed_authorization_request_endpoint": "https://sso.example.com/oauth2/par",
   "registration_endpoint": "https://sso.example.com/oauth2/register",
-  "request_parameter_supported": false,
+  "request_object_signing_alg_values_supported": [
+    "RS256",
+    "RS384",
+    "RS512",
+    "PS256",
+    "PS384",
+    "PS512"
+  ],
+  "request_parameter_supported": true,
   "request_uri_parameter_supported": true,
   "require_pushed_authorization_requests": false,
   "require_request_uri_registration": false,

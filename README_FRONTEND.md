@@ -119,6 +119,10 @@ Allow `offline_access` on a client's scopes to get refresh tokens with the longe
 
 ID tokens carry `amr` (RFC 8176: `pwd`, `otp`, `mfa`, `hwk`) and `acr` (`loa1` single factor, `loa2` MFA or passkey), taken from the authentication that produced the authorization code; both are stored on the session and advertised via `acr_values_supported`. `acr_values` is treated as a voluntary hint: step-up authentication is not implemented, so a request for `loa2` does not force a second factor. Logins that reuse an existing OP session do not re-assert methods and fall back to the session defaults (`pwd`, `loa1`).
 
+### Signed request objects (JAR, RFC 9101)
+
+`/oauth2/authorize` accepts `request=<JWT>`. The object must be signed (RS/PS 256/384/512, never `none`) with a key from the client's registered JWKS, carry `iss` = the client_id and `aud` = the issuer, and include `response_type`, `redirect_uri` etc.; only its signed values are used, unsigned query parameters do not fill gaps. Set `require_signed_request_object` on a client (gRPC `ClientManagement`) to refuse plain authorization requests (PAR remains allowed). `request_uri` still only resolves PAR-issued URIs; JWE-encrypted objects and remote `request_uri` fetching are not supported.
+
 ## Rich Authorization Requests (RFC 9396)
 
 Clients may send `authorization_details` (a JSON array of objects, each with a `type`) on `/oauth2/authorize` or

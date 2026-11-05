@@ -563,6 +563,36 @@ type authorizeRequestData struct {
 }
 
 // parseAndValidateAuthorizeParams extracts and performs basic validation of OIDC parameters.
+// resolveRequestObject verifies a JAR request object for the client named in
+// the query and returns its parameters.
+func (oa *OAuth2API) resolveRequestObject(ctx context.Context, clientID, raw string) (map[string]string, *domain.OAuth2Error) {
+	if oa.clientService == nil || clientID == "" {
+		return nil, domain.NewInvalidRequest("client_id required with request object")
+	}
+	client, err := oa.clientService.GetClient(ctx, clientID)
+	if err != nil || client == nil {
+		return nil, domain.NewInvalidRequest("unknown client")
+	}
+	params, err := domain.VerifyRequestObject(client, raw, strings.TrimRight(oa.config.Issuer, "/"))
+	if err != nil {
+		log.Warn().Err(err).Str("client_id", clientID).Msg("AuthorizeHandler: request object rejected")
+		return nil, domain.NewInvalidRequest("invalid request object")
+	}
+
+	return params, nil
+}
+
+// requiresSignedRequestObject reports whether the client may only use signed
+// request objects (or PAR) at the authorization endpoint.
+func (oa *OAuth2API) requiresSignedRequestObject(ctx context.Context, clientID string) bool {
+	if oa.clientService == nil || clientID == "" {
+		return false
+	}
+	client, err := oa.clientService.GetClient(ctx, clientID)
+
+	return err == nil && client != nil && client.RequireSignedRequestObject
+}
+
 func (oa *OAuth2API) parseAndValidateAuthorizeParams(c *gin.Context) (*authorizeRequestData, error) {
 	data := &authorizeRequestData{
 		clientID:             c.Query("client_id"),
@@ -578,8 +608,10 @@ func (oa *OAuth2API) parseAndValidateAuthorizeParams(c *gin.Context) (*authorize
 		responseMode:         c.Query("response_mode"),
 	}
 
-	// RFC 9126: a pushed authorization request carries a request_uri instead
-	// of the parameters inline. Resolve it into the same data struct.
+	// RFC 9126 (PAR) and RFC 9101 (JAR) both deliver the authorization request
+	// parameters out of band; resolve them into the same data struct.
+	var resolved map[string]string
+	byValue := false
 	if ru := c.Query("request_uri"); ru != "" {
 		params, perr := oa.parStore.Consume(c.Request.Context(), ru, data.clientID)
 		if perr != nil {
@@ -588,37 +620,34 @@ func (oa *OAuth2API) parseAndValidateAuthorizeParams(c *gin.Context) (*authorize
 			return nil, err
 		}
 		// The pushed (authenticated) client_id is authoritative.
-		data.clientID = params["client_id"]
-		c.Set(parResolvedKey, params)
-		if v := params["redirect_uri"]; v != "" {
-			data.redirectURI = v
+		resolved = params
+	} else if ro := c.Query("request"); ro != "" {
+		params, rerr := oa.resolveRequestObject(c.Request.Context(), data.clientID, ro)
+		if rerr != nil {
+			oa.sendHTMLError(c, http.StatusBadRequest, rerr)
+			return nil, rerr
 		}
-		if v := params["response_type"]; v != "" {
-			data.responseType = v
-		}
-		if v := params["scope"]; v != "" {
-			data.scopeQuery = v
-		}
-		if v := params["state"]; v != "" {
-			data.state = v
-		}
-		if v := params["nonce"]; v != "" {
-			data.nonce = v
-		}
-		if v := params["prompt"]; v != "" {
-			data.prompt = v
-		}
-		if v := params["code_challenge"]; v != "" {
-			data.codeChallenge = v
-		}
-		if v := params["code_challenge_method"]; v != "" {
-			data.codeChallengeMethod = v
-		}
-		if v := params["authorization_details"]; v != "" {
-			data.authorizationDetails = v
-		}
-		if v := params["response_mode"]; v != "" {
-			data.responseMode = v
+		resolved = params
+		byValue = true
+	} else if oa.requiresSignedRequestObject(c.Request.Context(), data.clientID) {
+		err := domain.NewInvalidRequest("signed request object required")
+		oa.sendHTMLError(c, http.StatusBadRequest, err)
+		return nil, err
+	}
+	if resolved != nil {
+		data.clientID = resolved["client_id"]
+		c.Set(parResolvedKey, resolved)
+		for name, dst := range map[string]*string{
+			"redirect_uri": &data.redirectURI, "response_type": &data.responseType, "scope": &data.scopeQuery,
+			"state": &data.state, "nonce": &data.nonce, "prompt": &data.prompt,
+			"code_challenge": &data.codeChallenge, "code_challenge_method": &data.codeChallengeMethod,
+			"authorization_details": &data.authorizationDetails, "response_mode": &data.responseMode,
+		} {
+			// With a request object only its signed values count; unsigned
+			// query parameters must not fill gaps.
+			if v := resolved[name]; v != "" || byValue {
+				*dst = v
+			}
 		}
 	}
 
@@ -1954,9 +1983,10 @@ func (oa *OAuth2API) OpenIDConfigurationHandler(c *gin.Context) {
 
 	// 13. Other Boolean Flags
 	resp.ClaimsParameterSupported = cfg.ClaimsConfig.EnableClaimsParameter
-	// Request objects (request=) are not parsed; only PAR-issued request_uri
-	// values are resolved, so request_parameter_supported must stay false.
-	resp.RequestParameterSupported = false
+	// Signed request objects (request=) are verified against the client JWKS;
+	// request_uri only resolves PAR-issued values.
+	resp.RequestParameterSupported = true
+	resp.RequestObjectSigningAlgValuesSupported = append([]string{}, domain.RequestObjectAlgs...)
 	resp.RequestURIParameterSupported = true
 	resp.RequireRequestURIRegistration = cfg.SecurityConfig.RequireRequestURIRegistration
 	resp.PromptValuesSupported = append([]string{}, sssoapi.DefaultPromptValuesSupported...)
