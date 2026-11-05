@@ -119,3 +119,33 @@ func TestClientJWTAuthenticator(t *testing.T) {
 		assert.Error(t, err)
 	})
 }
+
+func TestClientSecretJWTAuthenticator(t *testing.T) {
+	secret := []byte("super-secret-value")
+	client := &domain.Client{ID: "client-1"}
+	sign := func(key []byte, alg jwt.SigningMethod, jti string) string {
+		s, err := jwt.NewWithClaims(alg, jwt.RegisteredClaims{
+			Issuer: "client-1", Subject: "client-1",
+			Audience:  jwt.ClaimStrings{assertionAud},
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute)),
+			ID:        jti,
+		}).SignedString(key)
+		require.NoError(t, err)
+		return s
+	}
+	auth := func(a string) error {
+		_, err := domain.NewClientSecretJWTAuthenticator(client, secret, assertionAud).Authenticate(
+			context.Background(), client, "client-1", map[string][]string{
+				"client_assertion":      {a},
+				"client_assertion_type": {domain.ClientAssertionTypeJWTBearer},
+			})
+		return err
+	}
+
+	assert.NoError(t, auth(sign(secret, jwt.SigningMethodHS256, "csj-1")))
+	assert.NoError(t, auth(sign(secret, jwt.SigningMethodHS512, "csj-2")))
+	assert.Error(t, auth(sign([]byte("wrong"), jwt.SigningMethodHS256, "csj-3")))
+	replay := sign(secret, jwt.SigningMethodHS256, "csj-4")
+	assert.NoError(t, auth(replay))
+	assert.Error(t, auth(replay))
+}

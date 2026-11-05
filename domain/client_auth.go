@@ -19,6 +19,7 @@ const (
 	ClientAuthMethodSecret        ClientAuthMethod = "client_secret_basic"
 	ClientAuthMethodSecretPost    ClientAuthMethod = "client_secret_post"
 	ClientAuthMethodPrivateKeyJWT ClientAuthMethod = "private_key_jwt"
+	ClientAuthMethodSecretJWT     ClientAuthMethod = "client_secret_jwt"
 	ClientAuthMethodTLSClientAuth ClientAuthMethod = "tls_client_auth"
 	ClientAuthMethodNone          ClientAuthMethod = "none"
 )
@@ -145,31 +146,83 @@ func (a *ClientJWTAuthenticator) Authenticate(ctx context.Context, client *Clien
 		return nil, ErrInvalidClientAssertion
 	}
 
+	if err := validateAssertionClaims(&claims, clientID, a.audiences); err != nil {
+		return nil, err
+	}
+
+	return a.client, nil
+}
+
+// validateAssertionClaims applies the RFC 7523 §3 / OIDC Core §9 claim rules
+// shared by private_key_jwt and client_secret_jwt: iss and sub equal the
+// client_id, aud names this server, a bounded exp, and a single-use jti.
+func validateAssertionClaims(claims *jwt.RegisteredClaims, clientID string, audiences []string) error {
 	if claims.Issuer != clientID || claims.Subject != clientID {
-		return nil, NewInvalidClient("client_assertion iss and sub must equal client_id")
+		return NewInvalidClient("client_assertion iss and sub must equal client_id")
 	}
 
 	audOK := false
 	for _, aud := range claims.Audience {
-		for _, want := range a.audiences {
+		for _, want := range audiences {
 			if aud == want {
 				audOK = true
 			}
 		}
 	}
 	if !audOK {
-		return nil, NewInvalidClient("client_assertion aud does not match this server")
+		return NewInvalidClient("client_assertion aud does not match this server")
 	}
 
 	now := time.Now()
 	if claims.ExpiresAt.Time.After(now.Add(maxClientAssertionLifetime)) {
-		return nil, NewInvalidClient("client_assertion lifetime too long")
+		return NewInvalidClient("client_assertion lifetime too long")
 	}
 	if claims.ID == "" {
-		return nil, NewInvalidClient("client_assertion jti required")
+		return NewInvalidClient("client_assertion jti required")
 	}
 	if !defaultAssertionReplayCache.claim(clientID+"\x00"+claims.ID, claims.ExpiresAt.Time.Add(30*time.Second), now) {
-		return nil, NewInvalidClient("client_assertion replayed")
+		return NewInvalidClient("client_assertion replayed")
+	}
+
+	return nil
+}
+
+// ClientSecretJWTAuthenticator verifies client_secret_jwt assertions: HMAC
+// signed with the client secret (HS256/384/512).
+type ClientSecretJWTAuthenticator struct {
+	client    *Client
+	secret    []byte
+	audiences []string
+}
+
+// ClientSecretAssertionAlgs are the HMAC algorithms accepted for client_secret_jwt.
+var ClientSecretAssertionAlgs = []string{"HS256", "HS384", "HS512"}
+
+func NewClientSecretJWTAuthenticator(client *Client, secret []byte, audiences ...string) *ClientSecretJWTAuthenticator {
+	return &ClientSecretJWTAuthenticator{client: client, secret: secret, audiences: audiences}
+}
+
+func (a *ClientSecretJWTAuthenticator) Authenticate(ctx context.Context, client *Client, clientID string, params map[string][]string) (*Client, error) {
+	assertion := getFirstParam(params, "client_assertion")
+	if assertion == "" {
+		return nil, NewInvalidClient("client_assertion required")
+	}
+	if getFirstParam(params, "client_assertion_type") != ClientAssertionTypeJWTBearer {
+		return nil, NewInvalidClient("invalid client_assertion_type")
+	}
+	if a.client == nil || a.client.ID != clientID || len(a.secret) == 0 {
+		return nil, NewInvalidClient("unknown client")
+	}
+
+	claims := jwt.RegisteredClaims{}
+	token, err := jwt.ParseWithClaims(assertion, &claims, func(*jwt.Token) (interface{}, error) {
+		return a.secret, nil
+	}, jwt.WithValidMethods(ClientSecretAssertionAlgs), jwt.WithExpirationRequired(), jwt.WithLeeway(30*time.Second))
+	if err != nil || !token.Valid {
+		return nil, ErrInvalidClientAssertion
+	}
+	if err := validateAssertionClaims(&claims, clientID, a.audiences); err != nil {
+		return nil, err
 	}
 
 	return a.client, nil

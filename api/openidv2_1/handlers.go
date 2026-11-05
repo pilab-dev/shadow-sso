@@ -28,6 +28,7 @@ import (
 	"github.com/pilab-dev/shadow-sso/internal/metrics" // For custom metrics
 	"github.com/pilab-dev/shadow-sso/internal/reqinfo"
 	"github.com/pilab-dev/shadow-sso/internal/ssosession"
+	pkgcrypto "github.com/pilab-dev/shadow-sso/pkg/crypto"
 
 	// Removed duplicate domain import
 	"github.com/pilab-dev/shadow-sso/services"
@@ -52,6 +53,7 @@ type OAuth2API struct {
 	config              *sssoapi.OpenIDProviderConfig
 	flowStore           domain.FlowStore
 	parStore            domain.PARStore
+	clientSecretKey     []byte
 	rarTypesCache       rarTypesCache
 	userSessionStore    domain.UserSessionStore
 	userRepo            domain.UserRepository
@@ -82,6 +84,7 @@ type BackchannelLogoutNotifier interface {
 
 type OAuth2APIOptions struct {
 	PARStore              domain.PARStore // defaults to an in-process ttlcache store
+	ClientSecretKey       []byte          // opens sealed client secrets (client_secret_jwt)
 	OAuthService          services.OAuthService
 	JSKSService           services.JWKSService
 	ClientService         services.ClientService
@@ -134,6 +137,7 @@ func NewOAuth2API(
 		config:              opts.Config,
 		flowStore:           opts.FlowStore,
 		parStore:            parStore,
+		clientSecretKey:     opts.ClientSecretKey,
 		userSessionStore:    opts.UserSessionStore,
 		userRepo:            opts.UserRepo,
 		passwordHasher:      opts.PasswordHasher,
@@ -1906,8 +1910,15 @@ func (oa *OAuth2API) OpenIDConfigurationHandler(c *gin.Context) {
 			resp.IDTokenSigningAlgValuesSupported = append(resp.IDTokenSigningAlgValuesSupported, alg)
 		}
 	}
+	// client_secret_jwt needs a key to recover sealed client secrets.
+	if len(oa.clientSecretKey) == 32 && !containsString(resp.TokenEndpointAuthMethodsSupported, "client_secret_jwt") {
+		resp.TokenEndpointAuthMethodsSupported = append(resp.TokenEndpointAuthMethodsSupported, "client_secret_jwt")
+	}
 	if containsString(resp.TokenEndpointAuthMethodsSupported, "private_key_jwt") {
 		resp.TokenEndpointAuthSigningAlgSupported = append([]string{}, sssoapi.DefaultClientAssertionSigningAlgs...)
+	}
+	if containsString(resp.TokenEndpointAuthMethodsSupported, "client_secret_jwt") {
+		resp.TokenEndpointAuthSigningAlgSupported = append(resp.TokenEndpointAuthSigningAlgSupported, domain.ClientSecretAssertionAlgs...)
 	}
 	if containsString(resp.ResponseModesSupported, "jwt") {
 		resp.AuthorizationSigningAlgValuesSupported = []string{"RS256"}
@@ -2529,18 +2540,43 @@ func (oa *OAuth2API) authenticateWithJWT(ctx context.Context, clientID string, e
 		}
 		existingClient = cli
 	}
-	if existingClient.TokenEndpointAuth != "" && existingClient.TokenEndpointAuth != string(domain.ClientAuthMethodPrivateKeyJWT) {
-		return nil, domain.NewInvalidClient("client is not registered for private_key_jwt")
+	method := existingClient.TokenEndpointAuth
+	if method != "" && method != string(domain.ClientAuthMethodPrivateKeyJWT) && method != string(domain.ClientAuthMethodSecretJWT) {
+		return nil, domain.NewInvalidClient("client is not registered for assertion authentication")
 	}
 
 	issuer := strings.TrimRight(oa.config.Issuer, "/")
-	authenticator := domain.NewClientJWTAuthenticator(existingClient, issuer, issuer+"/oauth2/token", issuer+"/oauth2/par",
-		issuer+"/oauth2/introspect", issuer+"/oauth2/revoke")
+	audiences := []string{issuer, issuer + "/oauth2/token", issuer + "/oauth2/par", issuer + "/oauth2/introspect", issuer + "/oauth2/revoke"}
+
+	var authenticator domain.ClientAuthenticator
+	if method == string(domain.ClientAuthMethodSecretJWT) {
+		secret, err := oa.openClientSecret(existingClient)
+		if err != nil {
+			log.Error().Err(err).Str("client_id", clientID).Msg("client_secret_jwt: cannot open client secret")
+			return nil, domain.ErrInvalidClientAssertion
+		}
+		authenticator = domain.NewClientSecretJWTAuthenticator(existingClient, secret, audiences...)
+	} else {
+		authenticator = domain.NewClientJWTAuthenticator(existingClient, audiences...)
+	}
 	cli, err := authenticator.Authenticate(ctx, existingClient, clientID, params)
 	if err != nil {
 		return nil, domain.ErrInvalidClientAssertion
 	}
 	return cli, nil
+}
+
+// openClientSecret returns the plaintext secret of a client_secret_jwt client.
+func (oa *OAuth2API) openClientSecret(client *domain.Client) ([]byte, error) {
+	if client.SecretEnc == "" || len(oa.clientSecretKey) != 32 {
+		return nil, goerrors.New("no recoverable secret available")
+	}
+	plain, err := pkgcrypto.DecryptAESGCM(oa.clientSecretKey, client.SecretEnc)
+	if err != nil {
+		return nil, err
+	}
+
+	return []byte(plain), nil
 }
 
 func getFirstParam(params map[string][]string, key string) string {

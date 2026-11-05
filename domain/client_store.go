@@ -65,8 +65,11 @@ type ClientRepository interface {
 //
 //nolint:tagliatelle
 type Client struct {
-	ID                          string     `bson:"client_id"                           json:"client_id,omitempty"`
-	Secret                      string     `bson:"client_secret,omitempty"             json:"secret,omitempty"`
+	ID     string `bson:"client_id"                           json:"client_id,omitempty"`
+	Secret string `bson:"client_secret,omitempty"             json:"secret,omitempty"`
+	// SecretEnc is the AES-GCM sealed plaintext secret, kept only for
+	// client_secret_jwt clients (HMAC needs the raw secret).
+	SecretEnc                   string     `bson:"client_secret_enc,omitempty"         json:"-"`
 	Type                        ClientType `bson:"client_type"                         json:"type,omitempty"`
 	Name                        string     `bson:"client_name"                         json:"name,omitempty"`
 	Description                 string     `bson:"description,omitempty"               json:"description,omitempty"`

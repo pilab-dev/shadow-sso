@@ -242,6 +242,7 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 
 	// Create OAuth2 API handlers
 	oauth2API := openidv2_1.NewOAuth2API(&openidv2_1.OAuth2APIOptions{
+		ClientSecretKey:       []byte(opts.EncryptionKey),
 		OAuthService:          serviceProvider.OAuthService(),
 		JSKSService:           serviceProvider.JWKSService(),
 		ClientService:         serviceProvider.ClientService(),
@@ -434,7 +435,7 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 	clientManagementServer := services.NewClientManagementServer(
 		opts.RepositoryProvider.ClientRepository(connectCtx),
 		passwordHasher,
-	)
+	).WithSecretEncryption([]byte(opts.EncryptionKey))
 	clientPath, clientHandler := ssov1connect.NewClientManagementServiceHandler(clientManagementServer, interceptors)
 	router.Any(clientPath+"*action", gin.WrapH(clientHandler))
 

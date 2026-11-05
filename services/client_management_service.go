@@ -16,6 +16,7 @@ import (
 	ssov1 "github.com/pilab-dev/shadow-sso/gen/proto/sso/v1"
 	"github.com/pilab-dev/shadow-sso/gen/proto/sso/v1/ssov1connect"
 	"github.com/pilab-dev/shadow-sso/internal/telemetry"
+	pkgcrypto "github.com/pilab-dev/shadow-sso/pkg/crypto"
 	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -30,6 +31,8 @@ type ClientManagementServer struct {
 	ssov1connect.UnimplementedClientManagementServiceHandler
 	clientRepo   domain.ClientRepository // Changed to domain.OAuthRepository
 	secretHasher domain.PasswordHasher
+
+	secretKey []byte // seals plaintext secrets of client_secret_jwt clients
 }
 
 // NewClientManagementServer creates a new ClientManagementServer.
@@ -38,6 +41,32 @@ func NewClientManagementServer(clientRepo domain.ClientRepository, hasher domain
 		clientRepo:   clientRepo,
 		secretHasher: hasher,
 	}
+}
+
+// WithSecretEncryption sets the 32 byte key used to seal the secrets of
+// client_secret_jwt clients (HMAC assertions need the raw secret).
+func (s *ClientManagementServer) WithSecretEncryption(key []byte) *ClientManagementServer {
+	s.secretKey = key
+	return s
+}
+
+// sealSecret stores the recoverable secret for client_secret_jwt clients and
+// clears it for every other method.
+func (s *ClientManagementServer) sealSecret(client *domain.Client, plaintext string) error {
+	client.SecretEnc = ""
+	if client.TokenEndpointAuth != string(domain.ClientAuthMethodSecretJWT) {
+		return nil
+	}
+	if len(s.secretKey) != 32 {
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New("client_secret_jwt requires a 32 byte config encryption key"))
+	}
+	sealed, err := pkgcrypto.EncryptAESGCM(s.secretKey, plaintext)
+	if err != nil {
+		return connect.NewError(connect.CodeInternal, errors.New("failed to protect client secret"))
+	}
+	client.SecretEnc = sealed
+
+	return nil
 }
 
 // Helper to map ssov1.ClientTypeProto to client.ClientType (string)
@@ -175,6 +204,9 @@ func (s *ClientManagementServer) RegisterClient(ctx context.Context, req *connec
 			return nil, connect.NewError(connect.CodeInternal, errors.New("error processing client secret"))
 		}
 		newClient.Secret = hashedSecret
+		if err := s.sealSecret(newClient, plaintextSecretForResponse); err != nil {
+			return nil, err
+		}
 	} else {
 		newClient.Secret = ""
 		if newClient.TokenEndpointAuth == "" {
@@ -386,6 +418,9 @@ func (s *ClientManagementServer) GenerateClientSecret(ctx context.Context, req *
 	}
 
 	client.Secret = hashed
+	if err := s.sealSecret(client, secret); err != nil {
+		return nil, err
+	}
 	if err := s.clientRepo.UpdateClient(ctx, client); err != nil {
 		telemetry.RecordSpanError(span, err, "failed to store client secret")
 		return nil, connect.NewError(connect.CodeInternal, errors.New("failed to store client secret"))

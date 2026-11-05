@@ -107,6 +107,10 @@ Signing keys may be RSA (RS256/384/512), RSA-PSS (PS256/384/512), ECDSA (ES256/3
 
 Select the PAR backend with `par_store_backend` (`SSSO_PAR_STORE_BACKEND`): `memory` (default), `valkey` (also set `valkey_url`, e.g. `redis://host:6379/0`) or `mongodb`.
 
+### `client_secret_jwt`
+
+Set a client's `token_endpoint_auth_method` to `client_secret_jwt` (HS256/384/512 assertions signed with the client secret). The server must recover the raw secret, so it stores an AES-GCM sealed copy using the 32 byte config encryption key; without that key registration is rejected and the method is not advertised in discovery. Regenerate the secret after switching an existing client to this method.
+
 ## Rich Authorization Requests (RFC 9396)
 
 Clients may send `authorization_details` (a JSON array of objects, each with a `type`) on `/oauth2/authorize` or
