@@ -97,7 +97,8 @@
     "profile",
     "email",
     "address",
-    "phone"
+    "phone",
+    "offline_access"
   ],
   "subject_types_supported": [
     "public"

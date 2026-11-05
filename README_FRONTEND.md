@@ -111,6 +111,10 @@ Select the PAR backend with `par_store_backend` (`SSSO_PAR_STORE_BACKEND`): `mem
 
 Set a client's `token_endpoint_auth_method` to `client_secret_jwt` (HS256/384/512 assertions signed with the client secret). The server must recover the raw secret, so it stores an AES-GCM sealed copy using the 32 byte config encryption key; without that key registration is rejected and the method is not advertised in discovery. Regenerate the secret after switching an existing client to this method.
 
+### `offline_access`
+
+Allow `offline_access` on a client's scopes to get refresh tokens with the longer `offline_refresh_token_ttl` lifetime (default 2160h); other refresh tokens keep their regular lifetime. The consent screen lists the scope. The `phone` and `address` scopes expose `phone_number`/`address` at UserInfo.
+
 ## Rich Authorization Requests (RFC 9396)
 
 Clients may send `authorization_details` (a JSON array of objects, each with a `type`) on `/oauth2/authorize` or
