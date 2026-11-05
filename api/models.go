@@ -37,15 +37,14 @@ type DeviceAuthResponse struct {
 // implements today; keep them in sync with the token and claims code.
 var (
 	// DefaultScopesSupported lists the scopes the server understands and
-	// enforces. offline_access/address/phone are intentionally absent until
-	// they have semantics.
-	DefaultScopesSupported = []string{"openid", "profile", "email"}
+	// enforces. offline_access is intentionally absent until it has semantics.
+	DefaultScopesSupported = []string{"openid", "profile", "email", "address", "phone"}
 
 	// DefaultClaimsSupported lists claims that can appear in an ID token,
 	// access token or UserInfo response.
 	DefaultClaimsSupported = []string{
 		"sub", "iss", "aud", "exp", "iat", "nbf", "jti", "auth_time", "nonce", "sid",
-		"email", "email_verified", "name", "given_name", "family_name", "preferred_username",
+		"email", "email_verified", "phone_number", "phone_number_verified", "address", "name", "given_name", "family_name", "preferred_username",
 		"groups", "roles", "realm_access", "resource_access", "cnf",
 	}
 
@@ -137,12 +136,12 @@ type OpenIDConfiguration struct {
 }
 
 type UserInfoAddress struct {
-	Formatted     string `json:"formatted"`      // (String) The full mailing address, with multiple lines if necessary.
-	StreetAddress string `json:"street_address"` // : (String) The street address component.
-	Locality      string `json:"locality"`       // (String) City or locality component.
-	Region        string `json:"region"`         // (String) State, province, prefecture, or region component.
-	PostalCode    string `json:"postal_code"`    // (String) Zip code or postal code component.
-	Country       string `json:"country"`        // (String) Country name component.
+	Formatted     string `json:"formatted,omitempty"`      // (String) The full mailing address, with multiple lines if necessary.
+	StreetAddress string `json:"street_address,omitempty"` // : (String) The street address component.
+	Locality      string `json:"locality,omitempty"`       // (String) City or locality component.
+	Region        string `json:"region,omitempty"`         // (String) State, province, prefecture, or region component.
+	PostalCode    string `json:"postal_code,omitempty"`    // (String) Zip code or postal code component.
+	Country       string `json:"country,omitempty"`        // (String) Country name component.
 }
 
 type UserInfo struct {

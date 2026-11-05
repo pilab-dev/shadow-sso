@@ -312,7 +312,9 @@ func (updatePasswordAction) Submit(c *gin.Context, wa *WebAuth, user *domain.Use
 	if err != nil {
 		return actionResult{}, err
 	}
-	user.PasswordHash = hash
+	if err := user.SetPasswordHash(hash); err != nil {
+		return actionResult{Err: "Your password is managed by your organization's directory and cannot be changed here."}, nil
+	}
 	return actionResult{Done: true}, nil
 }
 

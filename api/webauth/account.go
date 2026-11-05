@@ -169,6 +169,10 @@ func (wa *WebAuth) renderSecurityError(c *gin.Context, user *domain.User, msg st
 func (wa *WebAuth) AccountPasswordSubmitHandler() gin.HandlerFunc {
 	return wa.accountPost(func(c *gin.Context, user *domain.User) {
 		ctx := c.Request.Context()
+		if user.IsDirectory() {
+			wa.renderSecurityError(c, user, "Your password is managed by your organization's directory and cannot be changed here.")
+			return
+		}
 		// Users that have a password must prove they know it (or hold their TOTP device).
 		if user.PasswordHash != "" && !wa.confirmIdentity(c, user) {
 			wa.renderSecurityError(c, user, "The current password is incorrect.")
@@ -192,7 +196,10 @@ func (wa *WebAuth) AccountPasswordSubmitHandler() gin.HandlerFunc {
 			wa.renderInternalError(c, "Could not change your password. Please try again.")
 			return
 		}
-		user.PasswordHash = hash
+		if err := user.SetPasswordHash(hash); err != nil {
+			wa.renderSecurityError(c, user, "Your password is managed by your organization's directory and cannot be changed here.")
+			return
+		}
 		user.RemoveRequiredAction(domain.RequiredActionUpdatePassword)
 		if err := wa.userRepo.UpdateUser(ctx, user); err != nil {
 			log.Error().Err(err).Str("user_id", user.ID).Msg("account: password change failed")

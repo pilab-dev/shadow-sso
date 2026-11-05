@@ -1676,3 +1676,37 @@ func TestUserInfoHandler_ScopeEnforcement(t *testing.T) {
 		assert.Equal(t, http.StatusUnauthorized, w.Code)
 	})
 }
+
+func TestUserInfoHandler_PhoneAddressScopes(t *testing.T) {
+	user := &domain.User{
+		ID: "user1", Email: "a@b.c", Status: domain.UserStatusActive,
+		PhoneNumber: "+36301234567", IsPhoneNumberVerified: true,
+		Address: &domain.UserAddress{Locality: "Budapest", Country: "HU"},
+	}
+	for scope, want := range map[string]bool{"openid phone address": true, "openid": false} {
+		router, ctrl, mockTokenSvc, mockUserRepo := setupUserInfoTest(t)
+		mockTokenSvc.EXPECT().ValidateAccessToken(gomock.Any(), "valid-token").Return(&domain.Token{
+			UserID: "user1", TokenType: "access_token", Scope: scope,
+		}, nil)
+		mockTokenSvc.EXPECT().ApplyTokenMappers(gomock.Any(), gomock.Any(), "", "user1", "userinfo").Return(nil)
+		mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user1").Return(user, nil)
+
+		req := httptest.NewRequest("GET", "/oauth2/userinfo", nil)
+		req.Header.Set("Authorization", "Bearer valid-token")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		ctrl.Finish()
+
+		var resp sssoapi.UserInfo
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		if want {
+			require.NotNil(t, resp.PhoneNumber)
+			assert.Equal(t, "+36301234567", *resp.PhoneNumber)
+			require.NotNil(t, resp.Address)
+			assert.Equal(t, "Budapest", resp.Address.Locality)
+		} else {
+			assert.Nil(t, resp.PhoneNumber)
+			assert.Nil(t, resp.Address)
+		}
+	}
+}

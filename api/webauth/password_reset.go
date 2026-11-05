@@ -133,6 +133,9 @@ func (wa *WebAuth) userForResetToken(c *gin.Context, token string) *domain.User 
 		time.Now().After(*user.PasswordResetTokenExpiresAt) || user.Status != domain.UserStatusActive {
 		return nil
 	}
+	if user.IsDirectory() {
+		return nil // the directory owns the password; a link cannot change it here
+	}
 	return user
 }
 
@@ -183,7 +186,10 @@ func (wa *WebAuth) ResetPasswordSubmitHandler(c *gin.Context) {
 		wa.renderInternalError(c, "Could not update your password. Please try again.")
 		return
 	}
-	user.PasswordHash = hash
+	if err := user.SetPasswordHash(hash); err != nil {
+		wa.renderMessage(c, http.StatusBadRequest, "Link expired", "This password reset link is invalid or has expired.", "/forgot-password", "Request a new link")
+		return
+	}
 	user.PasswordResetToken, user.PasswordResetTokenExpiresAt = "", nil // single use
 	user.RemoveRequiredAction(domain.RequiredActionUpdatePassword)
 	// Following the emailed link proves control of the mailbox.

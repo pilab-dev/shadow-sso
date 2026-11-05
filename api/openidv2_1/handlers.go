@@ -1638,6 +1638,15 @@ func (oa *OAuth2API) UserInfoHandler(c *gin.Context) {
 			userInfo.Email = &email
 			userInfo.EmailVerified = &emailVerified
 		}
+		if hasScope("phone") && user.PhoneNumber != "" {
+			phone, phoneVerified := user.PhoneNumber, user.IsPhoneNumberVerified
+			userInfo.PhoneNumber = &phone
+			userInfo.PhoneNumberVerified = &phoneVerified
+		}
+		if hasScope("address") && user.Address != nil {
+			a := sssoapi.UserInfoAddress(*user.Address)
+			userInfo.Address = &a
+		}
 	}
 
 	claims := make(map[string]interface{})

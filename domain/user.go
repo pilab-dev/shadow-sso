@@ -37,6 +37,21 @@ func (u *User) IsDirectory() bool {
 	return u != nil && u.Source != "" && u.Source != SourceLocal
 }
 
+// ErrDirectoryManaged is returned when something tries to store a password for a
+// user whose identity belongs to an external directory.
+var ErrDirectoryManaged = errors.New("the password of this user is managed by the directory")
+
+// SetPasswordHash stores a local password hash. It is the only way code outside
+// the repositories writes one, and it refuses for a directory user: a local
+// hash would shadow the directory's password with one it does not know about.
+func (u *User) SetPasswordHash(hash string) error {
+	if u.IsDirectory() {
+		return ErrDirectoryManaged
+	}
+	u.PasswordHash = hash
+	return nil
+}
+
 // MfaMethodType defines the type of MFA method.
 type MfaMethodType string
 
@@ -90,6 +105,16 @@ type PushMFAChallenge struct {
 }
 
 // User represents a user in the system.
+// UserAddress is the OIDC Core §5.1.1 postal address of a user.
+type UserAddress struct {
+	Formatted     string `bson:"formatted,omitempty" json:"formatted,omitempty"`
+	StreetAddress string `bson:"street_address,omitempty" json:"street_address,omitempty"`
+	Locality      string `bson:"locality,omitempty" json:"locality,omitempty"`
+	Region        string `bson:"region,omitempty" json:"region,omitempty"`
+	PostalCode    string `bson:"postal_code,omitempty" json:"postal_code,omitempty"`
+	Country       string `bson:"country,omitempty" json:"country,omitempty"`
+}
+
 type User struct {
 	ID           string     `bson:"_id,omitempty" json:"id,omitempty"`
 	Email        string     `bson:"email,unique" json:"email"`
@@ -147,6 +172,8 @@ type User struct {
 	PushMFAEnabled      bool               `bson:"push_mfa_enabled,omitempty" json:"push_mfa_enabled,omitempty"`
 	PushMFADeviceTokens []string           `bson:"push_mfa_device_tokens,omitempty" json:"-"`
 	PushMFAChallenges   []PushMFAChallenge `bson:"push_mfa_challenges,omitempty" json:"-"`
+
+	Address *UserAddress `bson:"address,omitempty" json:"address,omitempty"`
 
 	// Phone verification fields
 	PhoneNumber                    string     `bson:"phone_number,omitempty" json:"phone_number,omitempty"`

@@ -23,6 +23,9 @@
     "sid",
     "email",
     "email_verified",
+    "phone_number",
+    "phone_number_verified",
+    "address",
     "name",
     "given_name",
     "family_name",
@@ -92,7 +95,9 @@
   "scopes_supported": [
     "openid",
     "profile",
-    "email"
+    "email",
+    "address",
+    "phone"
   ],
   "subject_types_supported": [
     "public"
