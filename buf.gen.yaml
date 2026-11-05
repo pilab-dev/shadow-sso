@@ -13,3 +13,10 @@ plugins:
     out: ../shadow-sso-ui2/src/lib/backend/gen
     include_imports: true
     opt: target=ts
+  # TypeScript messages + Connect service descriptors for the accounts BFF/UI
+  - remote: buf.build/bufbuild/es
+    out: ../shadow-sso-accounts/packages/api-client/src/gen
+    include_imports: true
+    opt:
+      - target=ts
+      - import_extension=js
