@@ -1240,6 +1240,41 @@ func TestOAuthService_ExchangeAuthorizationCode_Success(t *testing.T) {
 	assert.NotEmpty(t, resp.AccessToken)
 }
 
+func TestOAuthService_ExchangeAuthorizationCode_LostRedeemRace(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
+	mockAuthCodeRepo := mock_domain.NewMockAuthorizationCodeRepository(ctrl)
+	mockSessionRepo := mock_domain.NewMockSessionRepository(ctrl)
+	svc := services.NewOAuthService(
+		mockTokenRepo,
+		mockAuthCodeRepo,
+		mock_domain.NewMockDeviceAuthorizationRepository(ctrl),
+		mock_domain.NewMockClientRepository(ctrl),
+		mock_domain.NewMockUserRepository(ctrl),
+		mockSessionRepo,
+		mock_domain.NewMockTokenServiceInterface(ctrl),
+		"test-issuer",
+	)
+
+	ctx := context.Background()
+	mockSessionRepo.EXPECT().GetSessionByID(ctx, "sid").Return(nil, errors.New("gone"))
+	ac := &domain.AuthCode{
+		Code: "c", ClientID: "cid", RedirectURI: "https://cb", UserID: "u", Scope: "openid",
+		ExpiresAt: time.Now().Add(time.Minute), AuthCodeData: domain.AuthCodeData{SessionID: "sid"},
+	}
+	mockAuthCodeRepo.EXPECT().GetAuthCode(ctx, "c").Return(ac, nil)
+	mockAuthCodeRepo.EXPECT().MarkAuthCodeAsUsed(ctx, "c").Return(domain.ErrAuthCodeAlreadyUsed)
+	mockTokenRepo.EXPECT().RevokeTokensBySessionID(ctx, "sid").Return(nil)
+
+	resp, err := svc.ExchangeAuthorizationCode(ctx, "c", "cid", "s", "https://cb")
+	require.Nil(t, resp)
+	var oerr *domain.OAuth2Error
+	require.ErrorAs(t, err, &oerr)
+	assert.Equal(t, domain.InvalidGrant, oerr.Code)
+}
+
 func TestOAuthService_ExchangeAuthorizationCode_InvalidCode(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()

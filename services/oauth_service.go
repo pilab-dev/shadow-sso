@@ -521,6 +521,23 @@ func (s *defaultOAuthService) RefreshToken(ctx context.Context, refreshTokenValu
 
 // revokeSession marks a session revoked and kills every token issued for it.
 // Used when a refresh token is replayed.
+// revokeTokensForReusedCode implements RFC 6749 §4.1.2: presenting a used code
+// again signals theft, so tokens already issued from it are revoked.
+func (s *defaultOAuthService) revokeTokensForReusedCode(ctx context.Context, ac *domain.AuthCode) {
+	sid := ac.AuthCodeData.SessionID
+	if sid == "" {
+		return
+	}
+	if err := s.tokenRepo.RevokeTokensBySessionID(ctx, sid); err != nil {
+		log.Ctx(ctx).Error().Err(err).Str("session_id", sid).Msg("Failed to revoke tokens after auth code reuse")
+	}
+	if s.sessionRepo != nil {
+		if err := s.revokeSession(ctx, sid); err != nil {
+			log.Ctx(ctx).Warn().Err(err).Str("session_id", sid).Msg("Failed to revoke session after auth code reuse")
+		}
+	}
+}
+
 func (s *defaultOAuthService) revokeSession(ctx context.Context, sessionID string) error {
 	sess, err := s.sessionRepo.GetSessionByID(ctx, sessionID)
 	if err != nil {
@@ -905,6 +922,9 @@ func (s *defaultOAuthService) ExchangeAuthorizationCode(ctx context.Context,
 		attribute.String("oauth.nonce", authCodeDomain.Nonce),
 	)
 
+	if authCodeDomain.Used {
+		s.revokeTokensForReusedCode(ctx, authCodeDomain)
+	}
 	if authCodeDomain.Used || time.Now().After(authCodeDomain.ExpiresAt) {
 		errUsed := errors.New("authorization code expired or already used")
 		telemetry.RecordSpanError(span, errUsed, "auth code expired/used")
@@ -931,6 +951,10 @@ func (s *defaultOAuthService) ExchangeAuthorizationCode(ctx context.Context,
 	}
 
 	if err := s.authCodeRepo.MarkAuthCodeAsUsed(ctx, code); err != nil {
+		if errors.Is(err, domain.ErrAuthCodeAlreadyUsed) {
+			s.revokeTokensForReusedCode(ctx, authCodeDomain)
+			return nil, domain.NewInvalidGrant("authorization code expired or already used")
+		}
 		telemetry.RecordSpanError(span, err, "failed to mark auth code as used")
 		span.SetStatus(codes.Error, err.Error())
 		log.Ctx(ctx).Error().Err(err).Str("client_id", clientID).Msg("Failed to mark authorization code as used")

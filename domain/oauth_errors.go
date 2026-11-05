@@ -25,6 +25,7 @@ var (
 	ErrUserCodeNotFound        = errors.New("user code not found or expired")
 	ErrCannotApproveDeviceAuth = errors.New("cannot approve device authorization; code may be invalid, expired, or already used")
 	ErrAuthorizationPending    = errors.New("authorization pending") // Specific error for device flow polling
+	ErrAuthCodeAlreadyUsed     = errors.New("authorization code already used")
 	ErrSlowDown                = errors.New("slow down")             // Specific error for device flow polling if too frequent
 	ErrDeviceFlowAccessDenied  = errors.New("access denied")         // User denied the request
 	ErrDeviceFlowTokenExpired  = errors.New("token expired")         // Device code or user code expired

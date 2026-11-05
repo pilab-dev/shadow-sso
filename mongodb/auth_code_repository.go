@@ -64,7 +64,9 @@ func (r *AuthCodeRepository) GetAuthCode(ctx context.Context, codeValue string) 
 }
 
 func (r *AuthCodeRepository) MarkAuthCodeAsUsed(ctx context.Context, codeValue string) error {
-	filter := bson.M{"code": codeValue}
+	// The used:false guard makes redemption atomic: of two concurrent
+	// exchanges only one matches.
+	filter := bson.M{"code": codeValue, "used": bson.M{"$ne": true}}
 	update := bson.M{"$set": bson.M{"used": true}}
 	result, err := r.authCodes.UpdateOne(ctx, filter, update)
 	if err != nil {
@@ -72,7 +74,7 @@ func (r *AuthCodeRepository) MarkAuthCodeAsUsed(ctx context.Context, codeValue s
 		return fmt.Errorf("failed to mark authorization code as used: %w", err)
 	}
 	if result.MatchedCount == 0 {
-		return fmt.Errorf("authorization code %s not found to mark as used", codeValue)
+		return domain.ErrAuthCodeAlreadyUsed
 	}
 	log.Debug().Msg("Authorization code marked as used")
 	return nil
