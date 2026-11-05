@@ -193,12 +193,11 @@ func (oa *OAuth2API) RegisterRoutes(e *gin.Engine) {
 	// Client JWKS endpoints
 	e.GET("/clients/:clientId/jwks", oa.ClientJWKSHandler)
 
-	// API Endpoints for Next.js UI driven OIDC flow
+	// Deprecated: legacy Next.js UI driven OIDC flow. Login is served by api/webauth.
 	oidcAPIGroup := e.Group("/api/oidc")
 	{
 		oidcAPIGroup.GET("/flow/:flowId", oa.GetFlowDetailsHandler)
 		oidcAPIGroup.POST("/authenticate", oa.AuthenticateUserHandler)
-		// TODO: Add CSRF protection middleware to /authenticate if possible, or handle in handler.
 	}
 
 	// Register LDAP specific routes
