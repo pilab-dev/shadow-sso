@@ -15,8 +15,9 @@ const (
 	OPSessionCookieName = "sso_op_session"
 
 	// OPSessionTTL is how long a web login remains valid for cross-application
-	// SSO. Keep it in sync with the OIDC provider's session expectations.
-	OPSessionTTL = 24 * time.Hour
+	// SSO. It matches the lifetime of the sso_session account list so accounts
+	// listed in the chooser do not turn "Signed out" while still remembered.
+	OPSessionTTL = MaxAge
 )
 
 // EstablishOPSession creates a server-side OP user session for userID and sets
