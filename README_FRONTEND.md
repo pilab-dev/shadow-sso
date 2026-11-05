@@ -103,6 +103,8 @@ PAR entries are bound to the pushing client, single use, and expire after 60 sec
 
 Set `require_par` on a client (gRPC `ClientManagement`) or `security_config.require_par` globally to reject authorization requests that were not pushed to `/oauth2/par` first; discovery then reports `require_pushed_authorization_requests`.
 
+Signing keys may be RSA (RS256/384/512), RSA-PSS (PS256/384/512), ECDSA (ES256/384/512) or EdDSA. Create them with the admin `RealmService.GenerateRealmKey` RPC; they are encrypted at rest and published in the JWKS (`kty` RSA/EC/OKP). Tokens are verified against the key named by `kid`, and only with that key's algorithm.
+
 Select the PAR backend with `par_store_backend` (`SSSO_PAR_STORE_BACKEND`): `memory` (default), `valkey` (also set `valkey_url`, e.g. `redis://host:6379/0`) or `mongodb`.
 
 ## Rich Authorization Requests (RFC 9396)

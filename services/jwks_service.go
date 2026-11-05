@@ -2,6 +2,8 @@ package services
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha1" //nolint:gosec // x5t is SHA-1 by definition
@@ -28,8 +30,13 @@ type JSONWebKey struct {
 	Kty string `json:"kty"`
 	Alg string `json:"alg"`
 	Use string `json:"use"`
-	N   string `json:"n"`
-	E   string `json:"e"`
+	N   string `json:"n,omitempty"`
+	E   string `json:"e,omitempty"`
+
+	// EC and OKP keys (RFC 7518 §6.2, RFC 8037).
+	Crv string `json:"crv,omitempty"`
+	X   string `json:"x,omitempty"`
+	Y   string `json:"y,omitempty"`
 
 	// Certificate chain and thumbprints (RFC 7517 §4.6-4.9), as Keycloak publishes.
 	X5c     []string `json:"x5c,omitempty"`
@@ -153,7 +160,7 @@ func NewJWKSServiceFromSigner(signer *TokenSigner) JWKSService {
 // GetPublicJWKS retrieves the public JSON Web Key Set from the signer's
 // active and retiring keys.
 func (s *signerJWKSService) GetPublicJWKS(ctx context.Context) (*JSONWebKeySet, error) {
-	if len(s.signer.PublicKeys()) == 0 {
+	if len(s.signer.PublicKeyInfos()) == 0 {
 		return nil, fmt.Errorf("no keys available in JWKS service")
 	}
 
@@ -164,7 +171,7 @@ func (s *signerJWKSService) keys() []JSONWebKey {
 	infos := s.signer.PublicKeyInfos()
 	keys := make([]JSONWebKey, 0, len(infos))
 	for _, info := range infos {
-		jwk := jsonWebKeyFromPublicKey(info.KeyID, info.Key)
+		jwk := jsonWebKeyFromInfo(info)
 		if len(info.CertDER) > 0 {
 			sha1Sum := sha1.Sum(info.CertDER) //nolint:gosec // x5t is defined as SHA-1 by RFC 7515
 			sha256Sum := sha256.Sum256(info.CertDER)
@@ -228,4 +235,28 @@ func (s *defaultJWKSService) startKeyRotation() {
 			log.Error().Err(err).Msg("failed to rotate JWKS keys")
 		}
 	}
+}
+
+// jsonWebKeyFromInfo builds the JWKS entry for RSA, EC and Ed25519 keys.
+func jsonWebKeyFromInfo(info PublicKeyInfo) JSONWebKey {
+	switch pub := info.Public.(type) {
+	case *ecdsa.PublicKey:
+		size := (pub.Curve.Params().BitSize + 7) / 8
+		return JSONWebKey{
+			Kid: info.KeyID, Kty: "EC", Alg: info.Alg, Use: "sig",
+			Crv: pub.Curve.Params().Name,
+			X:   base64.RawURLEncoding.EncodeToString(pub.X.FillBytes(make([]byte, size))),
+			Y:   base64.RawURLEncoding.EncodeToString(pub.Y.FillBytes(make([]byte, size))),
+		}
+	case ed25519.PublicKey:
+		return JSONWebKey{
+			Kid: info.KeyID, Kty: "OKP", Alg: "EdDSA", Use: "sig", Crv: "Ed25519",
+			X: base64.RawURLEncoding.EncodeToString(pub),
+		}
+	}
+	jwk := jsonWebKeyFromPublicKey(info.KeyID, info.Key)
+	if info.Alg != "" {
+		jwk.Alg = info.Alg
+	}
+	return jwk
 }

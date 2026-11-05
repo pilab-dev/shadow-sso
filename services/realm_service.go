@@ -22,6 +22,9 @@ type RealmServiceServer struct {
 	ssov1connect.UnimplementedRealmServiceHandler
 	settingsRepo domain.RealmSettingsRepository
 	keysRepo     domain.RealmKeysRepository
+
+	encryptionKey []byte
+	reloadKeys    func(context.Context) error
 }
 
 // NewRealmServer creates the realm settings and keys admin service.

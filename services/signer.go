@@ -2,6 +2,10 @@ package services
 
 import (
 	"context"
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -43,6 +47,11 @@ type signingKey struct {
 	pubKey  *rsa.PublicKey  // nil for HS256 keys
 	secret  []byte          // nil for RSA keys
 	certDER []byte          // X.509 certificate wrapping pubKey, published as x5c in the JWKS
+
+	// alg is the JWS algorithm this key signs with (e.g. RS256, ES256, EdDSA).
+	// pub is the public key for non-RSA keys (*ecdsa.PublicKey, ed25519.PublicKey).
+	alg string
+	pub crypto.PublicKey
 }
 
 // TokenSigner signs and verifies JWTs. It supports two modes:
@@ -128,6 +137,7 @@ func (s *TokenSigner) AddRSASigner(keyPath string) error {
 		pubKey:  &privKey.PublicKey,
 		signer:  s.rsaSigner(privKey, "rsa-default"),
 		certDER: certificateDER("", "rsa-default", privKey, time.Time{}),
+		alg:     jwt.SigningMethodRS256.Alg(),
 	}
 	s.keys["rsa-default"] = entry
 	s.keys["default"] = entry
@@ -223,6 +233,9 @@ func (s *TokenSigner) GetDefaultSigningMethod() jwt.SigningMethod {
 		return jwt.SigningMethodRS256
 	}
 	if entry := s.keys[s.defaultKeyID]; entry != nil {
+		if m := jwt.GetSigningMethod(entry.alg); m != nil {
+			return m
+		}
 		if entry.privKey != nil {
 			return jwt.SigningMethodRS256
 		}
@@ -321,10 +334,28 @@ func (s *TokenSigner) lookupKey(kid string) *signingKey {
 }
 
 // VerifyToken verifies a JWT signature against the signer's configured keys
-// (HS256 via the shared secret, RS256 via the RSA public keys) and validates
-// standard exp/nbf claims. Verification material is selected by the token's
-// "kid" header, falling back to the legacy single-key state.
+// (HS256 via the shared secret; RSA, RSA-PSS, ECDSA and EdDSA via the public
+// keys) and validates standard exp/nbf claims. Verification material is
+// selected by the token's "kid" header, falling back to the legacy single-key
+// state. A kid-matched key only verifies tokens of its own algorithm.
 func (s *TokenSigner) VerifyToken(tokenString string) (jwt.MapClaims, error) {
+	return s.verify(tokenString, true)
+}
+
+// VerifyAsymmetricToken is VerifyToken restricted to asymmetric algorithms, for
+// tokens that relying parties must be able to verify against the JWKS.
+func (s *TokenSigner) VerifyAsymmetricToken(tokenString string) (jwt.MapClaims, error) {
+	return s.verify(tokenString, false)
+}
+
+var asymmetricAlgs = []string{"RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512", "EdDSA"}
+
+func (s *TokenSigner) verify(tokenString string, allowHMAC bool) (jwt.MapClaims, error) {
+	validMethods := append([]string{}, asymmetricAlgs...)
+	if allowHMAC {
+		validMethods = append(validMethods, jwt.SigningMethodHS256.Alg())
+	}
+
 	claims := jwt.MapClaims{}
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
 		kid, _ := token.Header["kid"].(string)
@@ -335,6 +366,10 @@ func (s *TokenSigner) VerifyToken(tokenString string) (jwt.MapClaims, error) {
 		legacyRSA := s.rsaPubKey
 		s.mu.RUnlock()
 
+		if entry != nil && entry.alg != "" && entry.alg != token.Method.Alg() {
+			return nil, fmt.Errorf("token alg %s does not match key alg %s", token.Method.Alg(), entry.alg)
+		}
+
 		switch token.Method.(type) {
 		case *jwt.SigningMethodHMAC:
 			if entry != nil && entry.secret != nil {
@@ -344,18 +379,31 @@ func (s *TokenSigner) VerifyToken(tokenString string) (jwt.MapClaims, error) {
 				return legacyHS, nil
 			}
 			return nil, errors.New("no HS256 secret configured for verification")
-		case *jwt.SigningMethodRSA:
+		case *jwt.SigningMethodRSA, *jwt.SigningMethodRSAPSS:
 			if entry != nil && entry.pubKey != nil {
 				return entry.pubKey, nil
 			}
 			if legacyRSA != nil {
 				return legacyRSA, nil
 			}
+			if kid == "" {
+				s.mu.RLock()
+				def := s.keys[s.defaultKeyID]
+				s.mu.RUnlock()
+				if def != nil && def.pubKey != nil && def.alg == token.Method.Alg() {
+					return def.pubKey, nil
+				}
+			}
 			return nil, errors.New("no RSA public key configured for verification")
+		case *jwt.SigningMethodECDSA, *jwt.SigningMethodEd25519:
+			if entry != nil && entry.pub != nil {
+				return entry.pub, nil
+			}
+			return nil, errors.New("no matching public key configured for verification")
 		default:
 			return nil, fmt.Errorf("unsupported signing method: %v", token.Header["alg"])
 		}
-	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg(), jwt.SigningMethodRS256.Alg()}))
+	}, jwt.WithValidMethods(validMethods))
 
 	if err != nil {
 		return nil, fmt.Errorf("token verification failed: %w", err)
@@ -364,6 +412,37 @@ func (s *TokenSigner) VerifyToken(tokenString string) (jwt.MapClaims, error) {
 		return nil, errors.New("token is invalid")
 	}
 	return claims, nil
+}
+
+// HasAsymmetricSigner reports whether any asymmetric signing key is available.
+func (s *TokenSigner) HasAsymmetricSigner() bool {
+	if s.HasRSASigner() {
+		return true
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	entry := s.keys[s.defaultKeyID]
+	return entry != nil && entry.pub != nil
+}
+
+// SigningAlgorithms returns the distinct JWS algorithms of the active keys
+// that can be verified against the JWKS, sorted.
+func (s *TokenSigner) SigningAlgorithms() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	seen := map[string]bool{}
+	for _, entry := range s.keys {
+		if entry.status == domain.RealmKeyStatusActive && entry.alg != "" && entry.secret == nil {
+			seen[entry.alg] = true
+		}
+	}
+	algs := make([]string, 0, len(seen))
+	for a := range seen {
+		algs = append(algs, a)
+	}
+	sort.Strings(algs)
+	return algs
 }
 
 // parseRSAPrivateKeyPEM parses an RSA private key from PKCS1 or PKCS8 PEM.
@@ -464,13 +543,19 @@ func (s *TokenSigner) buildSigningKey(rk *domain.RealmKey, encryptionKey []byte)
 			},
 			secret: secret,
 		}, nil
-	default: // "RSA" or empty
+	case "EC", "ECDSA", "ES256", "ES384", "ES512", "EdDSA", "ED25519", "Ed25519":
+		return buildPKCS8SigningKey(rk, plaintext)
+	default: // "RSA", "RS256/384/512", "PS256/384/512" or empty
 		privKey, err := parseRSAPrivateKeyPEM([]byte(plaintext))
 		if err != nil {
 			return nil, err
 		}
 		if privKey.N.BitLen() < 2048 {
 			return nil, fmt.Errorf("RSA key too small: %d bits (minimum 2048)", privKey.N.BitLen())
+		}
+		method, err := rsaMethodForType(rk.Type)
+		if err != nil {
+			return nil, err
 		}
 		return &signingKey{
 			id:       rk.ID,
@@ -479,8 +564,9 @@ func (s *TokenSigner) buildSigningKey(rk *domain.RealmKey, encryptionKey []byte)
 			priority: rk.Priority,
 			privKey:  privKey,
 			pubKey:   &privKey.PublicKey,
-			signer:   s.rsaSigner(privKey, rk.ID),
+			signer:   methodSigner(method, privKey, rk.ID),
 			certDER:  certificateDER(rk.Certificate, rk.ID, privKey, rk.CreatedAt),
+			alg:      method.Alg(),
 		}, nil
 	}
 }
@@ -574,7 +660,9 @@ func (s *TokenSigner) RealmDefaultKeyID() string {
 // PublicKeyInfo is the public verification material of one signing key.
 type PublicKeyInfo struct {
 	KeyID   string
-	Key     *rsa.PublicKey
+	Key     *rsa.PublicKey   // nil for non-RSA keys
+	Public  crypto.PublicKey // the key regardless of type
+	Alg     string
 	CertDER []byte // may be nil
 	Default bool   // the realm-default key that signs new tokens
 }
@@ -590,12 +678,18 @@ func (s *TokenSigner) PublicKeyInfos() []PublicKeyInfo {
 		if entry.status != domain.RealmKeyStatusActive && entry.status != domain.RealmKeyStatusRetiring {
 			continue
 		}
-		if entry.pubKey == nil {
+		var public crypto.PublicKey = entry.pub
+		if entry.pubKey != nil {
+			public = entry.pubKey
+		}
+		if public == nil {
 			continue
 		}
 		infos = append(infos, PublicKeyInfo{
 			KeyID:   kid,
 			Key:     entry.pubKey,
+			Public:  public,
+			Alg:     entry.alg,
 			CertDER: entry.certDER,
 			Default: kid == s.defaultKeyID || (s.defaultKeyID == "" && kid == "rsa-default"),
 		})
@@ -645,4 +739,77 @@ func certificateDER(stored, kid string, priv *rsa.PrivateKey, createdAt time.Tim
 		return nil
 	}
 	return der
+}
+
+func rsaMethodForType(keyType string) (jwt.SigningMethod, error) {
+	switch strings.ToUpper(keyType) {
+	case "", "RSA", "RS256":
+		return jwt.SigningMethodRS256, nil
+	case "RS384":
+		return jwt.SigningMethodRS384, nil
+	case "RS512":
+		return jwt.SigningMethodRS512, nil
+	case "PS256":
+		return jwt.SigningMethodPS256, nil
+	case "PS384":
+		return jwt.SigningMethodPS384, nil
+	case "PS512":
+		return jwt.SigningMethodPS512, nil
+	}
+	return nil, fmt.Errorf("unsupported RSA key type %q", keyType)
+}
+
+// methodSigner signs claims with the given JWS method and key, setting the kid header.
+func methodSigner(method jwt.SigningMethod, key any, kid string) TokenSignerFunc {
+	return func(claims jwt.Claims) (string, error) {
+		token := jwt.NewWithClaims(method, claims)
+		token.Header["kid"] = kid
+		tokenString, err := token.SignedString(key)
+		if err != nil {
+			return "", fmt.Errorf("failed to sign token with %s: %w", method.Alg(), err)
+		}
+		return tokenString, nil
+	}
+}
+
+// buildPKCS8SigningKey builds an ECDSA (ES256/384/512 by curve) or Ed25519
+// (EdDSA) signing entry from a PEM private key (SEC1 or PKCS#8).
+func buildPKCS8SigningKey(rk *domain.RealmKey, plaintext string) (*signingKey, error) {
+	block, _ := pem.Decode([]byte(plaintext))
+	if block == nil {
+		return nil, errors.New("signing key is not valid PEM")
+	}
+
+	var parsed any
+	if ec, err := x509.ParseECPrivateKey(block.Bytes); err == nil {
+		parsed = ec
+	} else if pk, err := x509.ParsePKCS8PrivateKey(block.Bytes); err == nil {
+		parsed = pk
+	} else {
+		return nil, fmt.Errorf("failed to parse signing key: %w", err)
+	}
+
+	entry := &signingKey{id: rk.ID, clientID: rk.ClientID, status: rk.Status, priority: rk.Priority}
+	switch k := parsed.(type) {
+	case *ecdsa.PrivateKey:
+		var method jwt.SigningMethod
+		switch k.Curve {
+		case elliptic.P256():
+			method = jwt.SigningMethodES256
+		case elliptic.P384():
+			method = jwt.SigningMethodES384
+		case elliptic.P521():
+			method = jwt.SigningMethodES512
+		default:
+			return nil, errors.New("unsupported EC curve (use P-256, P-384 or P-521)")
+		}
+		entry.alg, entry.pub = method.Alg(), &k.PublicKey
+		entry.signer = methodSigner(method, k, rk.ID)
+	case ed25519.PrivateKey:
+		entry.alg, entry.pub = jwt.SigningMethodEdDSA.Alg(), k.Public()
+		entry.signer = methodSigner(jwt.SigningMethodEdDSA, k, rk.ID)
+	default:
+		return nil, fmt.Errorf("unsupported signing key type %T", parsed)
+	}
+	return entry, nil
 }

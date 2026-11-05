@@ -778,7 +778,7 @@ func (s *defaultTokenService) ValidateAccessToken(ctx context.Context, tokenValu
 }
 
 func (s *defaultTokenService) validateUserToken(ctx context.Context, tokenValue string) (*domain.Token, error) {
-	if s.signer.HasRSASigner() {
+	if s.signer.HasAsymmetricSigner() {
 		if token, err := s.validateRS256Token(ctx, tokenValue); err == nil {
 			return token, nil
 		}
@@ -870,30 +870,11 @@ func (s *defaultTokenService) cacheSessionLiveness(sid string, active bool, now 
 }
 
 func (s *defaultTokenService) validateRS256Token(ctx context.Context, tokenValue string) (*domain.Token, error) {
-	pubKey := s.signer.GetRSAPublicKey()
-	if pubKey == nil {
-		return nil, errors.New("no RSA public key available for validation")
-	}
-
-	token, err := jwt.ParseWithClaims(tokenValue, &jwt.MapClaims{}, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-		}
-		return pubKey, nil
-	})
-
+	verified, err := s.signer.VerifyAsymmetricToken(tokenValue)
 	if err != nil {
-		return nil, fmt.Errorf("RS256 token validation failed: %w", err)
+		return nil, fmt.Errorf("asymmetric token validation failed: %w", err)
 	}
-
-	if !token.Valid {
-		return nil, errors.New("RS256 token is invalid")
-	}
-
-	claims, ok := token.Claims.(*jwt.MapClaims)
-	if !ok {
-		return nil, errors.New("invalid claims type in RS256 token")
-	}
+	claims := &verified
 
 	if use, _ := (*claims)["token_use"].(string); use == "id" {
 		return nil, errors.New("ID token cannot be used as an access token")

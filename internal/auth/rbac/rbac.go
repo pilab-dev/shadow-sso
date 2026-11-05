@@ -298,10 +298,11 @@ var MethodPermissions = map[string]string{
 	"/sso.v1.SessionAdminService/LogoutUser":             PermSessionsClearOthers,
 
 	// RealmService
-	"/sso.v1.RealmService/GetRealm":        PermRealmRead,
-	"/sso.v1.RealmService/ListRealmKeys":   PermRealmRead,
-	"/sso.v1.RealmService/UpdateRealm":     PermRealmManage,
-	"/sso.v1.RealmService/UpdateRealmKeys": PermRealmManage,
+	"/sso.v1.RealmService/GetRealm":         PermRealmRead,
+	"/sso.v1.RealmService/ListRealmKeys":    PermRealmRead,
+	"/sso.v1.RealmService/UpdateRealm":      PermRealmManage,
+	"/sso.v1.RealmService/UpdateRealmKeys":  PermRealmManage,
+	"/sso.v1.RealmService/GenerateRealmKey": PermRealmManage,
 
 	// TokenIntrospectionService
 	"/sso.v1.TokenIntrospectionService/IntrospectToken": PermUsersDeleteAll,

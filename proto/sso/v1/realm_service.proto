@@ -14,6 +14,7 @@ service RealmService {
   rpc UpdateRealm(UpdateRealmRequest) returns (UpdateRealmResponse);
   rpc ListRealmKeys(ListRealmKeysRequest) returns (ListRealmKeysResponse);
   rpc UpdateRealmKeys(UpdateRealmKeysRequest) returns (UpdateRealmKeysResponse);
+  rpc GenerateRealmKey(GenerateRealmKeyRequest) returns (GenerateRealmKeyResponse);
 }
 
 // PasswordPolicy mirrors the password fields of domain.RealmSettings.
@@ -113,4 +114,18 @@ message UpdateRealmKeysRequest {
 
 message UpdateRealmKeysResponse {
   repeated RealmKey keys = 1;
+}
+
+// GenerateRealmKey creates a new signing key on the server. type is one of
+// RSA, RS384, RS512, PS256, PS384, PS512, ES256, ES384, ES512 or EdDSA. The
+// private key is encrypted at rest and never returned.
+message GenerateRealmKeyRequest {
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+  string type = 2 [(buf.validate.field).string.min_len = 1];
+  int32 priority = 3;
+  int32 rsa_bits = 4; // RSA/PS only; defaults to 2048, minimum 2048
+}
+
+message GenerateRealmKeyResponse {
+  RealmKey key = 1;
 }

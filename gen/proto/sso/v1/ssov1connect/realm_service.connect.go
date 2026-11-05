@@ -44,6 +44,9 @@ const (
 	// RealmServiceUpdateRealmKeysProcedure is the fully-qualified name of the RealmService's
 	// UpdateRealmKeys RPC.
 	RealmServiceUpdateRealmKeysProcedure = "/sso.v1.RealmService/UpdateRealmKeys"
+	// RealmServiceGenerateRealmKeyProcedure is the fully-qualified name of the RealmService's
+	// GenerateRealmKey RPC.
+	RealmServiceGenerateRealmKeyProcedure = "/sso.v1.RealmService/GenerateRealmKey"
 )
 
 // RealmServiceClient is a client for the sso.v1.RealmService service.
@@ -52,6 +55,7 @@ type RealmServiceClient interface {
 	UpdateRealm(context.Context, *connect.Request[v1.UpdateRealmRequest]) (*connect.Response[v1.UpdateRealmResponse], error)
 	ListRealmKeys(context.Context, *connect.Request[v1.ListRealmKeysRequest]) (*connect.Response[v1.ListRealmKeysResponse], error)
 	UpdateRealmKeys(context.Context, *connect.Request[v1.UpdateRealmKeysRequest]) (*connect.Response[v1.UpdateRealmKeysResponse], error)
+	GenerateRealmKey(context.Context, *connect.Request[v1.GenerateRealmKeyRequest]) (*connect.Response[v1.GenerateRealmKeyResponse], error)
 }
 
 // NewRealmServiceClient constructs a client for the sso.v1.RealmService service. By default, it
@@ -84,15 +88,21 @@ func NewRealmServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			baseURL+RealmServiceUpdateRealmKeysProcedure,
 			opts...,
 		),
+		generateRealmKey: connect.NewClient[v1.GenerateRealmKeyRequest, v1.GenerateRealmKeyResponse](
+			httpClient,
+			baseURL+RealmServiceGenerateRealmKeyProcedure,
+			opts...,
+		),
 	}
 }
 
 // realmServiceClient implements RealmServiceClient.
 type realmServiceClient struct {
-	getRealm        *connect.Client[v1.GetRealmRequest, v1.GetRealmResponse]
-	updateRealm     *connect.Client[v1.UpdateRealmRequest, v1.UpdateRealmResponse]
-	listRealmKeys   *connect.Client[v1.ListRealmKeysRequest, v1.ListRealmKeysResponse]
-	updateRealmKeys *connect.Client[v1.UpdateRealmKeysRequest, v1.UpdateRealmKeysResponse]
+	getRealm         *connect.Client[v1.GetRealmRequest, v1.GetRealmResponse]
+	updateRealm      *connect.Client[v1.UpdateRealmRequest, v1.UpdateRealmResponse]
+	listRealmKeys    *connect.Client[v1.ListRealmKeysRequest, v1.ListRealmKeysResponse]
+	updateRealmKeys  *connect.Client[v1.UpdateRealmKeysRequest, v1.UpdateRealmKeysResponse]
+	generateRealmKey *connect.Client[v1.GenerateRealmKeyRequest, v1.GenerateRealmKeyResponse]
 }
 
 // GetRealm calls sso.v1.RealmService.GetRealm.
@@ -115,12 +125,18 @@ func (c *realmServiceClient) UpdateRealmKeys(ctx context.Context, req *connect.R
 	return c.updateRealmKeys.CallUnary(ctx, req)
 }
 
+// GenerateRealmKey calls sso.v1.RealmService.GenerateRealmKey.
+func (c *realmServiceClient) GenerateRealmKey(ctx context.Context, req *connect.Request[v1.GenerateRealmKeyRequest]) (*connect.Response[v1.GenerateRealmKeyResponse], error) {
+	return c.generateRealmKey.CallUnary(ctx, req)
+}
+
 // RealmServiceHandler is an implementation of the sso.v1.RealmService service.
 type RealmServiceHandler interface {
 	GetRealm(context.Context, *connect.Request[v1.GetRealmRequest]) (*connect.Response[v1.GetRealmResponse], error)
 	UpdateRealm(context.Context, *connect.Request[v1.UpdateRealmRequest]) (*connect.Response[v1.UpdateRealmResponse], error)
 	ListRealmKeys(context.Context, *connect.Request[v1.ListRealmKeysRequest]) (*connect.Response[v1.ListRealmKeysResponse], error)
 	UpdateRealmKeys(context.Context, *connect.Request[v1.UpdateRealmKeysRequest]) (*connect.Response[v1.UpdateRealmKeysResponse], error)
+	GenerateRealmKey(context.Context, *connect.Request[v1.GenerateRealmKeyRequest]) (*connect.Response[v1.GenerateRealmKeyResponse], error)
 }
 
 // NewRealmServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -149,6 +165,11 @@ func NewRealmServiceHandler(svc RealmServiceHandler, opts ...connect.HandlerOpti
 		svc.UpdateRealmKeys,
 		opts...,
 	)
+	realmServiceGenerateRealmKeyHandler := connect.NewUnaryHandler(
+		RealmServiceGenerateRealmKeyProcedure,
+		svc.GenerateRealmKey,
+		opts...,
+	)
 	return "/sso.v1.RealmService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case RealmServiceGetRealmProcedure:
@@ -159,6 +180,8 @@ func NewRealmServiceHandler(svc RealmServiceHandler, opts ...connect.HandlerOpti
 			realmServiceListRealmKeysHandler.ServeHTTP(w, r)
 		case RealmServiceUpdateRealmKeysProcedure:
 			realmServiceUpdateRealmKeysHandler.ServeHTTP(w, r)
+		case RealmServiceGenerateRealmKeyProcedure:
+			realmServiceGenerateRealmKeyHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -182,4 +205,8 @@ func (UnimplementedRealmServiceHandler) ListRealmKeys(context.Context, *connect.
 
 func (UnimplementedRealmServiceHandler) UpdateRealmKeys(context.Context, *connect.Request[v1.UpdateRealmKeysRequest]) (*connect.Response[v1.UpdateRealmKeysResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.RealmService.UpdateRealmKeys is not implemented"))
+}
+
+func (UnimplementedRealmServiceHandler) GenerateRealmKey(context.Context, *connect.Request[v1.GenerateRealmKeyRequest]) (*connect.Response[v1.GenerateRealmKeyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("sso.v1.RealmService.GenerateRealmKey is not implemented"))
 }

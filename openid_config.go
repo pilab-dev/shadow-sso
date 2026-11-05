@@ -549,7 +549,12 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 	realmServer := services.NewRealmServer(
 		repoProvider.RealmSettingsRepository(connectCtx),
 		repoProvider.RealmKeysRepository(connectCtx),
-	)
+	).WithKeyGeneration([]byte(opts.EncryptionKey), func(ctx context.Context) error {
+		if !tokenSigner.IsRegistryBacked() {
+			return nil
+		}
+		return tokenSigner.Refresh(ctx)
+	})
 	realmPath, realmHandler := ssov1connect.NewRealmServiceHandler(realmServer, interceptors)
 	router.Any(realmPath+"*action", gin.WrapH(realmHandler))
 
