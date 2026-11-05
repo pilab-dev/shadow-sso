@@ -313,21 +313,12 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		authFlowRepo = mongoRp.AuthenticationFlowRepository(context.Background())
 	}
 
-	var webauthEmailService domain.EmailService
-	if opts.AppConfig != nil {
-		webauthEmailService = notifications.NewResendEmailService(
-			opts.AppConfig.ResendAPIKey,
-			opts.AppConfig.FromEmail,
-			opts.AppConfig.NextPublicBaseURL,
-		)
-	} else {
-		webauthEmailService = notifications.NewResendEmailService("", "", "")
-	}
+	webauthEmailService := newConfiguredEmailService(opts.AppConfig)
 	// Only hand the mail provider to the web UI when it can actually send; otherwise flows that
 	// depend on email (forgot password, VERIFY_EMAIL) are reported as unavailable instead of
 	// failing silently or trapping users on a page that can never complete.
 	var webauthMailer domain.EmailService
-	if opts.AppConfig != nil && opts.AppConfig.ResendAPIKey != "" && opts.AppConfig.FromEmail != "" {
+	if opts.AppConfig != nil && emailServiceConfigured(opts.AppConfig) {
 		webauthMailer = webauthEmailService
 	}
 	webauthMFAService := domain.NewMFAService(
@@ -543,12 +534,8 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		// Nil unless a Resend key and from-address are configured, so the admin mutations report
 		// "email delivery is not configured" instead of failing deep inside the provider.
 		var emailService domain.EmailService
-		if opts.AppConfig != nil && opts.AppConfig.ResendAPIKey != "" && opts.AppConfig.FromEmail != "" {
-			emailService = notifications.NewResendEmailService(
-				opts.AppConfig.ResendAPIKey,
-				opts.AppConfig.FromEmail,
-				opts.AppConfig.NextPublicBaseURL,
-			)
+		if opts.AppConfig != nil && emailServiceConfigured(opts.AppConfig) {
+			emailService = newConfiguredEmailService(opts.AppConfig)
 		}
 
 		resolver := &graphql.Resolver{
@@ -744,4 +731,38 @@ func IsEndpointEnabled(c *api.OpenIDProviderConfig, endpoint string) bool {
 	default:
 		return false
 	}
+}
+
+// emailServiceConfigured reports whether any outbound mail transport is
+// configured (SMTP/PiMail takes precedence over Resend).
+func emailServiceConfigured(cfg *config.Config) bool {
+	if cfg == nil {
+		return false
+	}
+	if cfg.SMTPHost != "" && cfg.FromEmail != "" {
+		return true
+	}
+	return cfg.ResendAPIKey != "" && cfg.FromEmail != ""
+}
+
+// newConfiguredEmailService builds the configured email transport. SMTP is
+// used when SMTPHost is set (point it at PiMail's SMTP listener); otherwise
+// Resend is used.
+func newConfiguredEmailService(cfg *config.Config) domain.EmailService {
+	if cfg == nil {
+		return notifications.NewResendEmailService("", "", "")
+	}
+	if cfg.SMTPHost != "" {
+		port := cfg.SMTPPort
+		if port == "" {
+			port = "587"
+		}
+		return notifications.NewSMTPEmailService(
+			cfg.SMTPHost, port, cfg.SMTPUsername, cfg.SMTPPassword,
+			cfg.FromEmail, cfg.NextPublicBaseURL,
+		)
+	}
+	return notifications.NewResendEmailService(
+		cfg.ResendAPIKey, cfg.FromEmail, cfg.NextPublicBaseURL,
+	)
 }

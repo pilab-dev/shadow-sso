@@ -45,6 +45,14 @@ type Config struct {
 	FromEmail         string `mapstructure:"from_email"`
 	NextPublicBaseURL string `mapstructure:"next_public_base_url"`
 
+	// SMTP / PiMail submission configuration. When SMTPHost is set the SMTP
+	// service is used instead of Resend. Point it at PiMail's SMTP listener to
+	// route SSO mail through PiMail.
+	SMTPHost     string `mapstructure:"smtp_host"`
+	SMTPPort     string `mapstructure:"smtp_port"`
+	SMTPUsername string `mapstructure:"smtp_username"`
+	SMTPPassword string `mapstructure:"smtp_password"`
+
 	// Push notification service configuration
 	FirebaseProjectID       string `mapstructure:"firebase_project_id"`
 	FirebaseCredentialsPath string `mapstructure:"firebase_credentials_path"`

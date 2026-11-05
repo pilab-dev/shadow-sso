@@ -913,7 +913,15 @@ func (oa *OAuth2API) redirectToClient(c *gin.Context, baseRedirectURI, code, sta
 			c.Redirect(http.StatusFound, parsedRedirectURI.String())
 			return
 		}
-		log.Warn().Err(err).Msg("JARM signing failed; falling back to query response")
+		// Do not silently downgrade an explicitly requested JWT response mode.
+		log.Error().Err(err).Msg("JARM signing failed")
+		oa.redirectWithOAuthError(c, baseRedirectURI, state, "server_error", "failed to sign authorization response")
+		return
+	}
+	if responseMode == "jwt" {
+		// JARM requested but no signing key is available.
+		oa.redirectWithOAuthError(c, baseRedirectURI, state, "server_error", "JWT response mode unavailable")
+		return
 	}
 
 	params := url.Values{}
