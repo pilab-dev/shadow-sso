@@ -115,6 +115,10 @@ Set a client's `token_endpoint_auth_method` to `client_secret_jwt` (HS256/384/51
 
 Allow `offline_access` on a client's scopes to get refresh tokens with the longer `offline_refresh_token_ttl` lifetime (default 2160h); other refresh tokens keep their regular lifetime. The consent screen lists the scope. The `phone` and `address` scopes expose `phone_number`/`address` at UserInfo.
 
+### `acr` and `amr`
+
+ID tokens carry `amr` (RFC 8176: `pwd`, `otp`, `mfa`, `hwk`) and `acr` (`loa1` single factor, `loa2` MFA or passkey), taken from the authentication that produced the authorization code; both are stored on the session and advertised via `acr_values_supported`. `acr_values` is treated as a voluntary hint: step-up authentication is not implemented, so a request for `loa2` does not force a second factor. Logins that reuse an existing OP session do not re-assert methods and fall back to the session defaults (`pwd`, `loa1`).
+
 ## Rich Authorization Requests (RFC 9396)
 
 Clients may send `authorization_details` (a JSON array of objects, each with a `type`) on `/oauth2/authorize` or

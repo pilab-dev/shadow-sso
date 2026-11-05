@@ -8,6 +8,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -73,8 +74,10 @@ type defaultTokenService struct {
 	// Session-aware access-token validation (Phase 1 strict mode).
 	sessionRepo             domain.SessionRepository
 	strictSessionValidation bool
-	sessionLivenessMu       sync.Mutex
-	sessionLivenessCache    map[string]sessionLivenessEntry
+
+	offlineRefreshTTL    time.Duration
+	sessionLivenessMu    sync.Mutex
+	sessionLivenessCache map[string]sessionLivenessEntry
 }
 
 // newDefaultTokenService creates a new TokenService instance (internal constructor).
@@ -629,6 +632,12 @@ func (s *defaultTokenService) GenerateTokenPairWithSession(ctx context.Context,
 	// Generate refresh token
 	refreshTokenID := uuid.NewString()
 	refreshTokenTTL := tokenTTL * 24 // Example: Refresh token lives 24x longer
+	if slices.Contains(strings.Fields(scope), "offline_access") {
+		refreshTokenTTL = s.offlineRefreshTTL
+		if refreshTokenTTL <= 0 {
+			refreshTokenTTL = defaultOfflineRefreshTTL
+		}
+	}
 	refreshToken, err := s.CreateToken(ctx, domain.CreateTokenOptions{
 		TokenID:      refreshTokenID,
 		Scope:        scope,
@@ -1061,6 +1070,17 @@ func (s *defaultTokenService) GenerateIDToken(ctx context.Context, userID, clien
 
 	if sessionID != "" {
 		claims["sid"] = sessionID
+	}
+
+	if sessionID != "" && s.sessionRepo != nil {
+		if sess, errSess := s.sessionRepo.GetSessionByID(ctx, sessionID); errSess == nil && sess != nil {
+			if len(sess.AMR) > 0 {
+				claims["amr"] = sess.AMR
+			}
+			if sess.ACR != "" {
+				claims["acr"] = sess.ACR
+			}
+		}
 	}
 
 	scopes := strings.Split(scope, " ")
@@ -1645,6 +1665,15 @@ func (s *defaultTokenService) GenerateTokenPairWithFamily(ctx context.Context, c
 // validation (Phase 1).
 func (s *defaultTokenService) SetSessionRepository(repo domain.SessionRepository) {
 	s.sessionRepo = repo
+}
+
+// defaultOfflineRefreshTTL applies to offline_access refresh tokens when no
+// explicit lifetime is configured.
+const defaultOfflineRefreshTTL = 90 * 24 * time.Hour
+
+// SetOfflineRefreshTTL sets the lifetime of offline_access refresh tokens.
+func (s *defaultTokenService) SetOfflineRefreshTTL(d time.Duration) {
+	s.offlineRefreshTTL = d
 }
 
 // SetStrictSessionValidation toggles strict session-aware access-token validation.

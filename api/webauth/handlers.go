@@ -219,7 +219,7 @@ func (wa *WebAuth) ConsentSubmitHandler(c *gin.Context) {
 	}
 
 	authCode, err := wa.oauthService.GenerateAuthCode(
-		domain.ContextWithAuthorizationDetails(ctx, flowState.OriginalOIDCParams["authorization_details"]),
+		domain.ContextWithAuthMethods(domain.ContextWithAuthorizationDetails(ctx, flowState.OriginalOIDCParams["authorization_details"]), flowState.AMR),
 		flowState.ClientID,
 		flowState.UserID,
 		flowState.RedirectURI,

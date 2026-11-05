@@ -37,15 +37,15 @@ type DeviceAuthResponse struct {
 // implements today; keep them in sync with the token and claims code.
 var (
 	// DefaultScopesSupported lists the scopes the server understands and
-	// enforces. offline_access is intentionally absent until it has semantics.
-	DefaultScopesSupported = []string{"openid", "profile", "email", "address", "phone"}
+	// enforces. offline_access selects the longer offline refresh token lifetime.
+	DefaultScopesSupported = []string{"openid", "profile", "email", "address", "phone", "offline_access"}
 
 	// DefaultClaimsSupported lists claims that can appear in an ID token,
 	// access token or UserInfo response.
 	DefaultClaimsSupported = []string{
 		"sub", "iss", "aud", "exp", "iat", "nbf", "jti", "auth_time", "nonce", "sid",
 		"email", "email_verified", "phone_number", "phone_number_verified", "address", "name", "given_name", "family_name", "preferred_username",
-		"groups", "roles", "realm_access", "resource_access", "cnf",
+		"acr", "amr", "groups", "roles", "realm_access", "resource_access", "cnf",
 	}
 
 	// DefaultTokenEndpointAuthMethods are the client authentication methods
@@ -133,6 +133,9 @@ type OpenIDConfiguration struct {
 	TLSClientCertificateBoundAccessTokens      bool     `json:"tls_client_certificate_bound_access_tokens"`
 	// AuthorizationDetailsTypesSupported lists RFC 9396 types at least one client may request.
 	AuthorizationDetailsTypesSupported []string `json:"authorization_details_types_supported,omitempty"`
+
+	// ACRValuesSupported lists the acr values asserted in ID tokens.
+	ACRValuesSupported []string `json:"acr_values_supported,omitempty"`
 }
 
 type UserInfoAddress struct {

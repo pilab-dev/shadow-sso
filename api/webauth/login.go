@@ -443,6 +443,7 @@ func (wa *WebAuth) LoginSubmitHandler(c *gin.Context) {
 
 	wa.rateLimiter.Reset(rateLimitKey)
 	wa.resetLoginFailures(ctx, user.ID)
+	flowState.AMR = domain.AddAMR(nil, domain.AMRPassword)
 
 	// Enrollment enforcement: when MFA is required (per user, per realm, or by
 	// the browser flow) and the account has no usable factor, send the user to

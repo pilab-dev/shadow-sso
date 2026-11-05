@@ -25,3 +25,14 @@ func TestRefreshTokenMappingKeepsSessionAndFamily(t *testing.T) {
 	assert.Equal(t, "f-1", out.Family)
 	assert.Equal(t, "p-1", out.ParentJTI)
 }
+
+func TestFlowAMRRoundTrip(t *testing.T) {
+	state := &domain.LoginFlowState{FlowID: "f", AMR: []string{"pwd", "otp", "mfa"}, ExpiresAt: time.Now()}
+	back := fromProtoOIDCFlw(toProtoOIDCFlw(state))
+	if len(back.AMR) != 3 || back.AMR[2] != "mfa" {
+		t.Fatalf("amr lost: %v", back.AMR)
+	}
+	if fromProtoOIDCFlw(toProtoOIDCFlw(&domain.LoginFlowState{ExpiresAt: time.Now()})).AMR != nil {
+		t.Fatal("empty amr must stay nil")
+	}
+}

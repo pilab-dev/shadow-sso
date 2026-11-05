@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -60,8 +61,7 @@ func toProtoOIDCFlw(state *domain.LoginFlowState) *ssov1.OIDCFlw { // Changed to
 		UserAuthenticatedAt: userAuthAt,
 		ExpiresAt:           timestamppb.New(state.ExpiresAt),
 		OriginalOidcParams:  withPendingParam(state.OriginalOIDCParams, state.Pending),
-		// acr_level, amr_methods, session_id are not in domain.LoginFlowState
-		// They will be default/empty when converting from it.
+		AmrMethods:          strings.Join(state.AMR, ","),
 	}
 }
 
@@ -87,7 +87,16 @@ func fromProtoOIDCFlw(protoFlw *ssov1.OIDCFlw) *domain.LoginFlowState { // Chang
 		ExpiresAt:           protoFlw.ExpiresAt.AsTime(),
 		OriginalOIDCParams:  withoutPendingParam(protoFlw.OriginalOidcParams),
 		Pending:             protoFlw.OriginalOidcParams[pendingParamKey],
+		AMR:                 splitAMR(protoFlw.AmrMethods),
 	}
+}
+
+func splitAMR(s string) []string {
+	if s == "" {
+		return nil
+	}
+
+	return strings.Split(s, ",")
 }
 
 // pendingParamKey smuggles LoginFlowState.Pending through the OIDCFlw proto,

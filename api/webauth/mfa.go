@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/pilab-dev/shadow-sso/domain"
 	"github.com/pilab-dev/shadow-sso/internal/auth/totp"
 	"github.com/rs/zerolog/log"
 )
@@ -177,6 +178,7 @@ func (wa *WebAuth) MFASubmitHandler(c *gin.Context) {
 	// Second factor verified: clear the pending marker and run the shared completion
 	// point (required actions, SSO cookie, consent, authorization).
 	flowState.Pending = ""
+	flowState.AMR = domain.AddAMR(flowState.AMR, domain.AMROTP, domain.AMRMFA)
 	wa.finishLogin(c, ctx, flowID, flowState, user)
 }
 

@@ -93,6 +93,9 @@ type LoginFlowState struct {
 	// (e.g. UPDATE_PASSWORD) is outstanding. Empty means fully authenticated.
 	// UserID alone does NOT imply a finished login.
 	Pending string `bson:"pending,omitempty"`
+
+	// AMR lists the authentication methods completed so far (RFC 8176).
+	AMR []string `bson:"amr,omitempty"`
 }
 
 const (

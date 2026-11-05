@@ -510,7 +510,7 @@ func (oa *OAuth2API) completeAuthorizeAfterAuth(c *gin.Context, authReqData *aut
 
 	// No consent required — generate auth code directly.
 	authCode, err := oa.service.GenerateAuthCode(
-		domain.ContextWithAuthorizationDetails(ctx, authReqData.authorizationDetails),
+		domain.ContextWithAuthMethods(domain.ContextWithAuthorizationDetails(ctx, authReqData.authorizationDetails), flowState.AMR),
 		authReqData.clientID,
 		flowState.UserID,
 		authReqData.redirectURI,
@@ -1964,6 +1964,7 @@ func (oa *OAuth2API) OpenIDConfigurationHandler(c *gin.Context) {
 	// iss is added to both success and error redirects (RFC 9207).
 	resp.AuthorizationResponseIssParameterSupported = cfg.Issuer != ""
 	resp.AuthorizationDetailsTypesSupported = oa.authorizationDetailsTypes(c.Request.Context())
+	resp.ACRValuesSupported = append([]string{}, domain.SupportedACRValues...)
 	// Access tokens are bearer JWTs; mTLS-bound tokens are not implemented.
 	resp.TLSClientCertificateBoundAccessTokens = false
 
@@ -2461,7 +2462,7 @@ func (oa *OAuth2API) AuthenticateUserHandler(c *gin.Context) {
 
 	// No consent required, proceed with authorization code generation
 	authCode, err := oa.service.GenerateAuthCode(
-		domain.ContextWithAuthorizationDetails(ctx, flowState.OriginalOIDCParams["authorization_details"]),
+		domain.ContextWithAuthMethods(domain.ContextWithAuthorizationDetails(ctx, flowState.OriginalOIDCParams["authorization_details"]), flowState.AMR),
 		flowState.ClientID,
 		user.ID, // Pass the authenticated UserID
 		flowState.RedirectURI,

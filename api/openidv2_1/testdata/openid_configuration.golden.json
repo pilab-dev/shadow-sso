@@ -1,4 +1,8 @@
 {
+  "acr_values_supported": [
+    "loa1",
+    "loa2"
+  ],
   "authorization_endpoint": "https://sso.example.com/oauth2/authorize",
   "authorization_response_iss_parameter_supported": true,
   "authorization_signing_alg_values_supported": [
@@ -30,6 +34,8 @@
     "given_name",
     "family_name",
     "preferred_username",
+    "acr",
+    "amr",
     "groups",
     "roles",
     "realm_access",

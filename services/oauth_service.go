@@ -1220,6 +1220,10 @@ func (s *defaultOAuthService) GenerateAuthCode(
 			CreatedAt:  now,
 			LastUsedAt: now,
 		}
+		if amr := domain.AuthMethodsFromContext(ctx); len(amr) > 0 {
+			session.AMR = amr
+			session.ACR = domain.ACRForAMR(amr)
+		}
 		enrichSession(ctx, session, s.geoResolver, s.sessionRepo, s.sessionNotifier)
 		if errStore := s.sessionRepo.StoreSession(ctx, session); errStore != nil {
 			log.Ctx(ctx).Warn().Err(errStore).Str("client_id", clientID).Str("user_id", userID).

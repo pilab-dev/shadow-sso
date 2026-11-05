@@ -392,6 +392,7 @@ func (wa *WebAuth) PasskeyLoginFinishHandler(c *gin.Context) {
 	}
 
 	wa.rateLimiter.Reset(key)
+	flowState.AMR = domain.AddAMR(nil, domain.AMRHardware)
 	next, failure := wa.completeLogin(c, ctx, flowID, flowState, loaded)
 	if failure != "" {
 		jsonError(c, http.StatusInternalServerError, failure)
