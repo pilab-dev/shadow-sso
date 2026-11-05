@@ -16,8 +16,10 @@ import (
 	"github.com/pilab-dev/shadow-sso/internal/audit"
 	"github.com/pilab-dev/shadow-sso/internal/dpop"
 	"github.com/pilab-dev/shadow-sso/internal/geo"
+	"github.com/pilab-dev/shadow-sso/internal/identity"
 	"github.com/pilab-dev/shadow-sso/internal/reqinfo"
 	"github.com/pilab-dev/shadow-sso/internal/telemetry"
+	pkgauth "github.com/pilab-dev/shadow-sso/pkg/auth"
 	"github.com/rs/zerolog/log"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -77,6 +79,7 @@ type defaultOAuthService struct {
 	realmSettingsRepo domain.RealmSettingsRepository
 	geoResolver       geo.Resolver
 	sessionNotifier   domain.SessionNotifier
+	identity          identity.Verifier
 }
 
 // oauthServiceOption configures a defaultOAuthService at construction time.
@@ -99,6 +102,23 @@ func WithOAuthGeoResolver(r geo.Resolver) oauthServiceOption {
 // WithOAuthSessionNotifier injects the notifier used for session risk alerts.
 func WithOAuthSessionNotifier(n domain.SessionNotifier) oauthServiceOption {
 	return func(s *defaultOAuthService) { s.sessionNotifier = n }
+}
+
+// withIdentity injects the identity seam every password grant authenticates
+// through. Without it the service builds the local one (MongoDB identity,
+// local bcrypt password) from the user repository it was given.
+func withIdentity(v identity.Verifier) oauthServiceOption {
+	return func(s *defaultOAuthService) {
+		if v != nil {
+			s.identity = v
+		}
+	}
+}
+
+// localIdentity is the default seam: the local user repository is both the
+// identity source and the SSO state, and the password is a bcrypt hash.
+func localIdentity(users domain.UserRepository) identity.Verifier {
+	return identity.New(identity.NewLocalSource(users, pkgauth.NewBcryptPasswordHasher(bcrypt.DefaultCost)), nil)
 }
 
 // tokenServiceAdapter wraps the services.TokenService interface to satisfy domain.TokenServiceInterface
@@ -131,6 +151,7 @@ func newDefaultOAuthService(
 		sessionRepo:    sessionRepo,
 		tokenService:   &tokenServiceAdapter{tokenService},
 		issuer:         issuer,
+		identity:       localIdentity(userRepo),
 	}
 	for _, opt := range opts {
 		opt(svc)
@@ -162,6 +183,7 @@ func NewOAuthService(
 		sessionRepo:    sessionRepo,
 		tokenService:   tokenService,
 		issuer:         issuer,
+		identity:       localIdentity(userRepo),
 	}
 	for _, opt := range opts {
 		opt(svc)
@@ -244,6 +266,34 @@ func (s *defaultOAuthService) RegisterUser(ctx context.Context, username, passwo
 	return user, nil
 }
 
+// authenticate runs the identity seam for a password grant and records the
+// outcome. The returned error is identity.ErrNotFound, identity.ErrUnavailable
+// or domain.ErrInvalidCredentials; a source failure is never reported as a
+// bad password.
+func (s *defaultOAuthService) authenticate(ctx context.Context, span oteltrace.Span, grant, username, password string) (*domain.User, error) {
+	user, err := s.identity.Verify(ctx, username, password)
+	switch {
+	case err == nil:
+		span.SetAttributes(attribute.String("user.id", user.ID))
+		return user, nil
+	case errors.Is(err, identity.ErrUnavailable):
+		telemetry.RecordSpanError(span, err, "identity source unavailable")
+		span.SetStatus(codes.Error, err.Error())
+		log.Ctx(ctx).Error().Err(err).Str("username", username).Str("grant", grant).Msg(grant + " failed: identity source unavailable")
+		return nil, err
+	case errors.Is(err, identity.ErrNotFound):
+		telemetry.RecordSpanError(span, err, "user not found")
+		span.SetStatus(codes.Error, err.Error())
+		log.Ctx(ctx).Warn().Err(err).Str("username", username).Str("grant", grant).Msg(grant + " failed: user not found")
+		return nil, err
+	default:
+		telemetry.RecordSpanError(span, err, "invalid credentials")
+		span.SetStatus(codes.Error, "invalid credentials")
+		log.Ctx(ctx).Warn().Err(err).Str("username", username).Str("grant", grant).Msg(grant + " failed: invalid credentials")
+		return nil, domain.ErrInvalidCredentials
+	}
+}
+
 func (s *defaultOAuthService) Login(ctx context.Context, username, password, deviceInfo string) (*api.TokenResponse, error) {
 	_, span := telemetry.StartSpan(ctx, tracerName, "Login",
 		attribute.String("user.username", username),
@@ -253,20 +303,12 @@ func (s *defaultOAuthService) Login(ctx context.Context, username, password, dev
 
 	log.Ctx(ctx).Debug().Str("username", username).Str("device_info", deviceInfo).Msg("Processing user login attempt")
 
-	user, err := s.userRepo.GetUserByEmail(ctx, username)
+	user, err := s.authenticate(ctx, span, "Login", username, password)
 	if err != nil {
-		telemetry.RecordSpanError(span, err, "user not found")
-		span.SetStatus(codes.Error, err.Error())
-		log.Ctx(ctx).Warn().Err(err).Str("username", username).Msg("Login failed: user not found")
-		return nil, fmt.Errorf("user not found: %w", err)
-	}
-	span.SetAttributes(attribute.String("user.id", user.ID))
-
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
-		telemetry.RecordSpanError(span, err, "invalid password credentials")
-		span.SetStatus(codes.Error, "invalid credentials")
-		log.Ctx(ctx).Warn().Str("username", username).Str("user_id", user.ID).Msg("Login failed: password mismatch")
-		return nil, domain.ErrInvalidCredentials
+		if errors.Is(err, identity.ErrNotFound) {
+			return nil, fmt.Errorf("user not found: %w", err)
+		}
+		return nil, err
 	}
 
 	// Create a user session
@@ -549,20 +591,13 @@ func (s *defaultOAuthService) DirectGrant(ctx context.Context,
 		return nil, errGrant
 	}
 
-	user, err := s.userRepo.GetUserByEmail(ctx, username)
+	user, err := s.authenticate(ctx, span, "Direct grant", username, password)
 	if err != nil {
-		telemetry.RecordSpanError(span, err, "user not found")
-		span.SetStatus(codes.Error, "user not found")
-		log.Ctx(ctx).Warn().Err(err).Str("username", username).Msg("Direct grant failed: user not found")
-		return nil, domain.ErrInvalidCredentials
-	}
-	span.SetAttributes(attribute.String("user.id", user.ID))
-
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
-		telemetry.RecordSpanError(span, err, "password mismatch")
-		span.SetStatus(codes.Error, "invalid credentials")
-		log.Ctx(ctx).Warn().Str("username", username).Str("user_id", user.ID).Msg("Direct grant failed: invalid password")
-		return nil, domain.ErrInvalidCredentials
+		if errors.Is(err, identity.ErrNotFound) {
+			// A grant never says whether the login exists.
+			return nil, domain.ErrInvalidCredentials
+		}
+		return nil, err
 	}
 
 	if !s.validateScope(ctx, scope, cli.AllowedScopes) {
@@ -811,20 +846,13 @@ func (s *defaultOAuthService) PasswordGrant(ctx context.Context,
 
 	log.Ctx(ctx).Debug().Str("client_id", cli.ID).Str("username", username).Msg("Processing Password Grant request")
 
-	user, err := s.userRepo.GetUserByEmail(ctx, username)
+	user, err := s.authenticate(ctx, span, "Password grant", username, password)
 	if err != nil {
-		telemetry.RecordSpanError(span, err, "user not found")
-		span.SetStatus(codes.Error, "user not found")
-		log.Ctx(ctx).Warn().Err(err).Str("username", username).Msg("Password grant failed: user not found")
-		return nil, domain.ErrInvalidCredentials
-	}
-	span.SetAttributes(attribute.String("user.id", user.ID))
-
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
-		telemetry.RecordSpanError(span, err, "password mismatch")
-		span.SetStatus(codes.Error, "invalid credentials")
-		log.Ctx(ctx).Warn().Str("username", username).Str("user_id", user.ID).Msg("Password grant failed: password mismatch")
-		return nil, domain.ErrInvalidCredentials
+		if errors.Is(err, identity.ErrNotFound) {
+			// A grant never says whether the login exists.
+			return nil, domain.ErrInvalidCredentials
+		}
+		return nil, err
 	}
 
 	tokenTTL, err := s.realmAccessTokenLifespan(ctx)

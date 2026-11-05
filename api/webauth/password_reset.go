@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/pilab-dev/shadow-sso/domain"
+	"github.com/pilab-dev/shadow-sso/internal/notifications"
 	pkgauth "github.com/pilab-dev/shadow-sso/pkg/auth"
 	"github.com/rs/zerolog/log"
 )
@@ -35,10 +36,29 @@ func (wa *WebAuth) brandName(c *gin.Context) string {
 	return wa.config.BrandOrganizationName
 }
 
+// emailServiceConfigured reports whether an email provider capable of sending
+// password-reset mail is actually configured (not just non-nil).
+func (wa *WebAuth) emailServiceConfigured() bool {
+	if wa.emailService == nil {
+		return false
+	}
+	if s, ok := wa.emailService.(*notifications.ResendEmailService); ok {
+		return s.IsConfigured()
+	}
+	return true
+}
+
+// resetPasswordEnabled reports whether password reset can be used, without the
+// side effects of resetPasswordAvailable.
+func (wa *WebAuth) resetPasswordEnabled(c *gin.Context) bool {
+	s := wa.realm(c)
+	return s != nil && s.ResetPasswordAllowed && wa.emailServiceConfigured()
+}
+
 // resetPasswordAvailable renders a "not available" page and returns false when the realm
 // disallows password reset or no mail provider is configured.
 func (wa *WebAuth) resetPasswordAvailable(c *gin.Context) bool {
-	if s := wa.realm(c); s == nil || !s.ResetPasswordAllowed || wa.emailService == nil {
+	if !wa.resetPasswordEnabled(c) {
 		wa.renderMessage(c, http.StatusNotFound, "Not available", "Password reset is not available. Please contact your administrator.", "/login", "Back to sign in")
 		return false
 	}

@@ -52,6 +52,20 @@
 </p>
 {{end}}
 
+{{if .AuthorizationDetails}}
+<p style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:8px;font-weight:500;">Requested authorization details:</p>
+<ul class="scope-list">
+    {{range .AuthorizationDetails}}
+    <li class="scope-item">
+        <span class="scope-icon">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/></svg>
+        </span>
+        <span>{{.type}}: {{.}} </span>
+    </li>
+    {{end}}
+</ul>
+{{end}}
+
 <form method="POST" action="/consent">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 

@@ -268,7 +268,6 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 
 	// Setup Gin server
 	router := gin.New()
-	router.Use(gin.Recovery())
 	router.Use(middleware.ZerologLogger())
 
 	// Apply extra middlewares (CORS, request ID, tracing, etc.)
@@ -371,50 +370,15 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		WebAuthn:          passkeyRP,
 	})
 
-	router.GET("/", webauthAPI.LandingPageHandler)
-	router.GET("/login", webauthAPI.LoginPageHandler)
-	router.POST("/login", webauthAPI.LoginSubmitHandler)
-	router.POST("/login/select", webauthAPI.SelectAccountHandler)
-	router.GET("/login/:provider", webauthAPI.SocialLoginHandler)
-	router.POST("/login/select-account", webauthAPI.SelectAccountSubmitHandler)
-	router.GET("/consent", webauthAPI.ConsentPageHandler)
-	router.POST("/consent", webauthAPI.ConsentSubmitHandler)
-	router.GET("/oauth2/device/verify", webauthAPI.DeviceVerificationPageHandler)
-	router.POST("/oauth2/device/verify", webauthAPI.DeviceVerificationSubmitHandler)
-	router.POST("/login/passkey/begin", webauthAPI.PasskeyLoginBeginHandler)
-	router.POST("/login/passkey/finish", webauthAPI.PasskeyLoginFinishHandler)
-	router.GET("/account/passkeys", webauthAPI.AccountPasskeysPageHandler())
-	router.POST("/account/passkeys/register/begin", webauthAPI.PasskeyRegisterBeginHandler())
-	router.POST("/account/passkeys/register/finish", webauthAPI.PasskeyRegisterFinishHandler())
-	router.POST("/account/passkeys/delete", webauthAPI.PasskeyDeleteSubmitHandler())
-	router.GET("/account", webauthAPI.AccountOverviewHandler())
-	router.POST("/account/profile", webauthAPI.AccountProfileSubmitHandler())
-	router.GET("/account/security", webauthAPI.AccountSecurityHandler())
-	router.POST("/account/password", webauthAPI.AccountPasswordSubmitHandler())
-	router.GET("/account/mfa/totp", webauthAPI.AccountTOTPPageHandler())
-	router.POST("/account/mfa/totp", webauthAPI.AccountTOTPSubmitHandler())
-	router.POST("/account/mfa/recovery", webauthAPI.AccountRecoveryCodesSubmitHandler())
-	router.POST("/account/mfa/disable", webauthAPI.AccountMFADisableSubmitHandler())
-	router.GET("/account/sessions", webauthAPI.AccountSessionsHandler())
-	router.POST("/account/sessions/revoke", webauthAPI.AccountSessionRevokeHandler())
-	router.GET("/account/linked", webauthAPI.AccountLinkedHandler())
-	router.POST("/account/linked/unlink", webauthAPI.AccountUnlinkSubmitHandler())
-	router.POST("/account/logout", webauthAPI.AccountLogoutSubmitHandler())
-	router.GET("/forgot-password", webauthAPI.ForgotPasswordPageHandler)
-	router.POST("/forgot-password", webauthAPI.ForgotPasswordSubmitHandler)
-	router.GET("/reset-password", webauthAPI.ResetPasswordPageHandler)
-	router.POST("/reset-password", webauthAPI.ResetPasswordSubmitHandler)
-	router.GET("/register", webauthAPI.RegisterPageHandler)
-	router.POST("/register", webauthAPI.RegisterSubmitHandler)
-	router.GET("/verify-email", webauthAPI.VerifyEmailHandler)
-	router.GET("/required-action", webauthAPI.RequiredActionPageHandler)
-	router.POST("/required-action", webauthAPI.RequiredActionSubmitHandler)
-	router.POST("/mfa", webauthAPI.MFASubmitHandler)
-	router.POST("/mfa/resend", webauthAPI.MFAResendSubmitHandler)
-	router.GET("/mfa/enroll", webauthAPI.MFAEnrollPageHandler)
-	router.POST("/mfa/enroll", webauthAPI.MFAEnrollSubmitHandler)
-	router.POST("/mfa/enroll/complete", webauthAPI.MFAEnrollCompleteHandler)
-	router.GET("/api/session", webauthAPI.SessionHandler)
+	// Styled recovery for panics.
+	router.Use(gin.CustomRecovery(func(c *gin.Context, recovered any) {
+		log.Error().Any("panic", recovered).Msg("panic recovered")
+		webauthAPI.InternalServerErrorHandler(c)
+	}))
+
+	// WebAuth portal routes (login, registration, account console, MFA, ...).
+	// These are product/portal routes, not OIDC protocol endpoints.
+	webauthAPI.RegisterRoutes(router)
 	// ---------- Connect-RPC handlers ----------
 	connectCtx, connectSpan := telemetry.StartSpan(ctx, "shadow-sso", "NewSSOServer.connectrpc")
 	defer connectSpan.End()
@@ -444,6 +408,7 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		services.WithAuthBrowserPolicy(browserPolicyProvider),
 		services.WithAuthGeoResolver(serviceProvider.GeoResolver()),
 		services.WithAuthSessionNotifier(serviceProvider.SessionNotifier()),
+		services.WithIdentity(serviceProvider.IdentityService()),
 	)
 	authPath, authHandler := ssov1connect.NewAuthServiceHandler(authServer, interceptors)
 	router.Any(authPath+"*action", gin.WrapH(authHandler))
@@ -618,6 +583,10 @@ func NewSSOServer(ctx context.Context, opts SSOServerOptions) (*gin.Engine, erro
 		router.GET("/sandbox", gin.WrapH(graphql.SandboxHandler("/graphql")))
 	}
 
+	// Styled fallbacks for unmatched routes and methods.
+	router.NoRoute(webauthAPI.NotFoundHandler)
+	router.NoMethod(webauthAPI.MethodNotAllowedHandler)
+
 	return router, nil
 }
 
@@ -647,13 +616,15 @@ func seedRealmSettingsFromConfig(repoProvider services.RepositoryProvider, cfg *
 	}
 
 	settings := &domain.RealmSettings{
-		Realm:               "master",
-		DisplayName:         "Shadow SSO",
-		Enabled:             true,
-		BruteForceProtected: true,
-		SSLRequired:         "external",
-		AccessTokenLifespan: accessTokenLifespan,
-		AccessCodeLifespan:  accessCodeLifespan,
+		Realm:                "master",
+		DisplayName:          "Shadow SSO",
+		Enabled:              true,
+		BruteForceProtected:  true,
+		SSLRequired:          "external",
+		RegistrationAllowed:  true,
+		ResetPasswordAllowed: true,
+		AccessTokenLifespan:  accessTokenLifespan,
+		AccessCodeLifespan:   accessCodeLifespan,
 	}
 
 	if _, err := repo.SeedRealmSettingsIfEmpty(ctx, settings); err != nil {

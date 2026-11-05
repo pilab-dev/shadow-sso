@@ -96,6 +96,36 @@ func TestConsentPage_Success(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "Authorization Required")
 }
 
+func TestConsentPage_RARAuthorizationDetails(t *testing.T) {
+	router, ctrl, mockFlowStore, mockClientService, _ := setupConsentTest(t)
+	defer ctrl.Finish()
+
+	flowState := &domain.LoginFlowState{
+		FlowID:    "rar-flow",
+		ClientID:  "test-client",
+		Scope:     "openid",
+		ExpiresAt: time.Now().Add(10 * time.Minute),
+		UserID:    "user-123",
+		OriginalOIDCParams: map[string]string{
+			"authorization_details": `[{"type":"payment_initiation","instructedAmount":{"amount":"100","currency":"EUR"}}]`,
+		},
+	}
+	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "rar-flow").Return(flowState, nil)
+	mockClientService.EXPECT().GetClient(gomock.Any(), "test-client").Return(&domain.Client{
+		ID:             "test-client",
+		Name:           "My App",
+		RequireConsent: true,
+	}, nil)
+
+	req := httptest.NewRequest("GET", "/consent", nil)
+	req.AddCookie(&http.Cookie{Name: "sso_oidc_flow_id", Value: "rar-flow"})
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
 func TestConsentPage_NoFlowID(t *testing.T) {
 	router, ctrl, _, _, _ := setupConsentTest(t)
 	defer ctrl.Finish()

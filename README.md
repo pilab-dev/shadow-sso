@@ -11,8 +11,11 @@
    <a href="https://github.com/pilab-dev/shadow-sso/blob/main/LICENSE">
       <img src="https://img.shields.io/github/license/pilab-dev/shadow-sso" alt="License">
    </a>
-   <img src="https://github.com/pilab-dev/shadow-sso/workflows/Build, Test and Coverage/badge.svg" alt="Pipeline Status" title="Pipeline Status">
-   <img src="https://codecov.io/github/pilab-dev/shadow-sso/branch/v1/graph/badge.svg?token=KWTJG0ADS0" alt="Coverage" title="Covrage"/>
+   <a href="https://github.com/pilab-dev/shadow-sso/actions/workflows/ci.yml">
+      <img src="https://github.com/pilab-dev/shadow-sso/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+   <a href="https://goreportcard.com/report/github.com/pilab-dev/shadow-sso">
+      <img src="https://goreportcard.com/badge/github.com/pilab-dev/shadow-sso" alt="Go Report Card"></a>
+   <img src="https://codecov.io/github/pilab-dev/shadow-sso/branch/v1/graph/badge.svg?token=KWTJG0ADS0" alt="Coverage" title="Coverage"/>
 </p>
 
 
