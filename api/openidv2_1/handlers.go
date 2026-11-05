@@ -1905,7 +1905,15 @@ func (oa *OAuth2API) OpenIDConfigurationHandler(c *gin.Context) {
 	// advertised. Symmetric algorithms are never advertised: relying parties
 	// cannot verify them against the JWKS.
 	resp.IDTokenSigningAlgValuesSupported = []string{}
+	var loadedAlgs []string
+	if oa.tokenSigner != nil {
+		loadedAlgs = oa.tokenSigner.SigningAlgorithms()
+	}
 	for _, alg := range cfg.SecurityConfig.AllowedSigningAlgs {
+		// With a loaded signer, only algorithms backed by an active key are advertised.
+		if len(loadedAlgs) > 0 && !containsString(loadedAlgs, alg) {
+			continue
+		}
 		if !strings.HasPrefix(strings.ToUpper(alg), "HS") {
 			resp.IDTokenSigningAlgValuesSupported = append(resp.IDTokenSigningAlgValuesSupported, alg)
 		}
