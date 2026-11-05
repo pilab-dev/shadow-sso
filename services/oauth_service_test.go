@@ -2069,3 +2069,33 @@ func TestOAuthService_TokenExchange_ScopeIntersection(t *testing.T) {
 		})
 	}
 }
+
+func TestOAuthService_IntrospectToken_ForeignTokenIsInactive(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockClientRepo := mock_domain.NewMockClientRepository(ctrl)
+	mockTokenSvc := mock_domain.NewMockTokenServiceInterface(ctrl)
+
+	oauthService := services.NewOAuthService(
+		mock_domain.NewMockTokenRepository(ctrl),
+		mock_domain.NewMockAuthorizationCodeRepository(ctrl),
+		mock_domain.NewMockDeviceAuthorizationRepository(ctrl),
+		mockClientRepo,
+		mock_domain.NewMockUserRepository(ctrl),
+		mock_domain.NewMockSessionRepository(ctrl),
+		mockTokenSvc,
+		"test-issuer",
+	)
+
+	ctx := context.Background()
+	mockClientRepo.EXPECT().ValidateClient(ctx, "caller", "secret").Return(&domain.Client{ID: "caller"}, nil)
+	mockTokenSvc.EXPECT().GetAccessTokenInfo(ctx, "tok").Return(&domain.TokenInfo{
+		ClientID: "other-client", UserID: "u", ExpiresAt: time.Now().Add(time.Hour),
+	}, nil)
+
+	resp, err := oauthService.IntrospectToken(ctx, "tok", "access_token", "caller", "secret")
+	require.NoError(t, err)
+	assert.False(t, resp.Active)
+	assert.Empty(t, resp.Sub)
+}

@@ -1037,6 +1037,13 @@ func (s *defaultOAuthService) IntrospectToken(ctx context.Context,
 		return &domain.TokenIntrospection{Active: false}, nil
 	}
 
+	// RFC 7662 §2.2: do not disclose tokens that were issued to other clients.
+	if tokenInfo.ClientID != clientID {
+		log.Ctx(ctx).Debug().Str("client_id", clientID).Msg("Token introspection completed: token active=false (not owned by caller)")
+		span.SetAttributes(attribute.Bool("token.active", false))
+		return &domain.TokenIntrospection{Active: false}, nil
+	}
+
 	span.SetAttributes(
 		attribute.Bool("token.active", true),
 		attribute.String("user.id", tokenInfo.UserID),
