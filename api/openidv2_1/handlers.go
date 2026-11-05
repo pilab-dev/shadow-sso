@@ -55,6 +55,7 @@ type OAuth2API struct {
 	federationService   services.FederationService
 	tokenService        services.TokenService
 	realmKeysRepo       domain.RealmKeysRepository
+	realmSettingsRepo   domain.RealmSettingsRepository
 	clientRepo          domain.ClientRepository
 	cookieSigningSecret string
 
@@ -88,6 +89,7 @@ type OAuth2APIOptions struct {
 	FederationService     services.FederationService
 	TokenService          services.TokenService
 	RealmKeysRepo         domain.RealmKeysRepository
+	RealmSettingsRepo     domain.RealmSettingsRepository
 	ClientRepo            domain.ClientRepository
 	CookieSigningSecret   string
 	BrandLogoURL          string
@@ -128,6 +130,7 @@ func NewOAuth2API(
 		federationService:   opts.FederationService,
 		tokenService:        opts.TokenService,
 		realmKeysRepo:       opts.RealmKeysRepo,
+		realmSettingsRepo:   opts.RealmSettingsRepo,
 		clientRepo:          opts.ClientRepo,
 		cookieSigningSecret: opts.CookieSigningSecret,
 		tokenSigner:         opts.TokenSigner,
@@ -956,6 +959,31 @@ func (oa *OAuth2API) redirectWithOAuthError(c *gin.Context, baseRedirectURI, sta
 	c.Redirect(http.StatusFound, parsedRedirectURI.String())
 }
 
+// applyBasicClientAuth maps HTTP Basic client credentials (client_secret_basic,
+// RFC 6749 §2.3.1) onto the client_id/client_secret form values so every
+// endpoint handles both authentication styles identically. Malformed headers
+// are ignored and leave the form untouched.
+func applyBasicClientAuth(c *gin.Context) {
+	id, secret, ok := c.Request.BasicAuth()
+	if !ok {
+		return
+	}
+	id, errID := url.QueryUnescape(id)
+	secret, errSecret := url.QueryUnescape(secret)
+	if errID != nil || errSecret != nil || id == "" {
+		return
+	}
+	_ = c.Request.ParseForm()
+	if c.Request.PostForm == nil {
+		c.Request.PostForm = url.Values{}
+	}
+	if existing := c.Request.PostForm.Get("client_id"); existing != "" && existing != id {
+		return
+	}
+	c.Request.PostForm.Set("client_id", id)
+	c.Request.PostForm.Set("client_secret", secret)
+}
+
 // hasPrompt reports whether the space-delimited prompt parameter contains the
 // requested value.
 func hasPrompt(prompt, value string) bool {
@@ -1333,6 +1361,7 @@ const (
 //
 //nolint:funlen,gocognit
 func (oa *OAuth2API) TokenHandler(c *gin.Context) {
+	applyBasicClientAuth(c)
 	clientID := c.PostForm("client_id")
 	clientSecret := c.PostForm("client_secret")
 	clientAssertion := c.PostForm("client_assertion")
@@ -1572,6 +1601,7 @@ func (oa *OAuth2API) UserInfoHandler(c *gin.Context) {
 // Errors related to client authentication or invalid requests will result in
 // appropriate HTTP error responses.
 func (oa *OAuth2API) RevokeHandler(c *gin.Context) {
+	applyBasicClientAuth(c)
 	token := c.PostForm("token")
 	if token == "" {
 		c.JSON(http.StatusBadRequest, domain.NewInvalidRequest("token parameter is required"))
@@ -1717,16 +1747,28 @@ func (oa *OAuth2API) OpenIDConfigurationHandler(c *gin.Context) {
 		resp.IntrospectionEndpoint = ToPtr(baseURL + "/oauth2/introspect")
 	}
 	if cfg.EnabledEndpoints.EndSession {
-		resp.EndSessionEndpoint = ToPtr(baseURL + "/oauth2/logout") // Assuming /oauth2/logout
+		resp.EndSessionEndpoint = ToPtr(baseURL + "/oauth2/logout")
+		// Front-channel logout is not implemented; back-channel logout is
+		// dispatched whenever a notifier is wired.
+		if oa.backchannelNotifier != nil {
+			resp.BackchannelLogoutSupported = true
+			resp.BackchannelLogoutSessionSupported = true
+		}
 	}
 	if cfg.EnabledEndpoints.Registration {
-		resp.RegistrationEndpoint = ToPtr(baseURL + "/oauth2/register") // Assuming /oauth2/register
+		resp.RegistrationEndpoint = ToPtr(baseURL + "/oauth2/register")
 	}
-	if cfg.EnabledEndpoints.DeviceAuthorization { // Check if Device Authorization endpoint is enabled
+	if cfg.EnabledEndpoints.DeviceAuthorization {
 		resp.DeviceAuthorizationEndpoint = ToPtr(baseURL + "/oauth2/device_authorization")
 	}
+	// PAR is always routed; RFC 9126 requires advertising the endpoint so RPs
+	// can use request_uri instead of putting parameters in the front channel.
+	resp.PushedAuthorizationRequestEndpoint = ToPtr(baseURL + "/oauth2/par")
+	resp.RequirePushedAuthorizationRequests = false
 
-	// 4. Supported Grant Types
+	// 4. Supported Grant Types. Only list grants the token endpoint actually
+	// dispatches; implicit and jwt-bearer are not wired even when enabled in
+	// config, so advertising them would be a lie.
 	grantTypesSupported := []string{}
 	if cfg.EnabledGrantTypes.AuthorizationCode {
 		grantTypesSupported = append(grantTypesSupported, "authorization_code")
@@ -1740,104 +1782,81 @@ func (oa *OAuth2API) OpenIDConfigurationHandler(c *gin.Context) {
 	if cfg.EnabledGrantTypes.Password {
 		grantTypesSupported = append(grantTypesSupported, "password")
 	}
-	if cfg.EnabledGrantTypes.Implicit {
-		// "implicit" is not a grant type for the token endpoint but often listed.
-		// It enables flows that result in tokens being issued directly from the authorization endpoint.
-		grantTypesSupported = append(grantTypesSupported, "implicit")
-	}
-	if cfg.EnabledGrantTypes.JWTBearer {
-		grantTypesSupported = append(grantTypesSupported, "urn:ietf:params:oauth:grant-type:jwt-bearer")
-	}
 	if cfg.EnabledGrantTypes.DeviceCode {
 		grantTypesSupported = append(grantTypesSupported, "urn:ietf:params:oauth:grant-type:device_code")
 	}
-	if len(grantTypesSupported) > 0 {
-		resp.GrantTypesSupported = grantTypesSupported
-	} else {
-		resp.GrantTypesSupported = []string{} // Ensure empty array if none are supported
+	resp.GrantTypesSupported = grantTypesSupported
+
+	// Runtime metadata overrides managed through OIDCConfigurationService take
+	// precedence over the static provider config and the built-in defaults.
+	var realmSettings *domain.RealmSettings
+	if oa.realmSettingsRepo != nil {
+		s, err := oa.realmSettingsRepo.GetRealmSettings(c.Request.Context())
+		if err != nil {
+			log.Ctx(c.Request.Context()).Warn().Err(err).Msg("discovery: failed to load realm settings, using static configuration")
+		} else {
+			realmSettings = s
+		}
 	}
+	meta := services.ResolveOIDCDiscoveryMetadata(realmSettings, cfg,
+		oa.tokenSigner != nil && oa.tokenSigner.HasRSASigner())
 
 	// 5. Supported Response Types
-	if len(cfg.TokenConfig.SupportedResponseTypes) > 0 {
-		resp.ResponseTypesSupported = cfg.TokenConfig.SupportedResponseTypes
-	} else {
-		resp.ResponseTypesSupported = []string{}
-	}
+	resp.ResponseTypesSupported = append([]string{}, meta.ResponseTypesSupported...)
 
-	// 6. Supported Response Modes
-	if len(cfg.TokenConfig.SupportedResponseModes) > 0 {
-		resp.ResponseModesSupported = cfg.TokenConfig.SupportedResponseModes
-	} else {
-		// Default if not specified, as per previous hardcoding
-		resp.ResponseModesSupported = []string{"query", "fragment", "form_post"}
-	}
+	// 6. Supported Response Modes. JARM (response_mode=jwt) is appended by
+	// ResolveOIDCDiscoveryMetadata when an RSA signing key is present.
+	resp.ResponseModesSupported = append([]string{}, meta.ResponseModesSupported...)
 
 	// 7. Supported Scopes
-	if len(cfg.ClaimsConfig.SupportedScopes) > 0 {
-		resp.ScopesSupported = cfg.ClaimsConfig.SupportedScopes
-	} else {
-		resp.ScopesSupported = []string{}
-	}
+	resp.ScopesSupported = append([]string{}, meta.ScopesSupported...)
 
-	// 8. Supported Subject Types (Defaulting as per previous hardcoding if no specific config field)
-	// Assuming no direct field in cfg. For now, keep previous default.
-	// If a field like cfg.SubjectTypesSupported exists, it should be used.
-	resp.SubjectTypesSupported = []string{"public", "pairwise"} // Default or from cfg if available
+	// 8. Supported Subject Types. Only public subjects are implemented;
+	// pairwise identifiers have no code path.
+	resp.SubjectTypesSupported = []string{"public"}
 
 	// 9. Supported Token Endpoint Auth Methods
-	if len(cfg.TokenConfig.SupportedTokenEndpointAuth) > 0 {
-		resp.TokenEndpointAuthMethodsSupported = cfg.TokenConfig.SupportedTokenEndpointAuth
-	} else {
-		resp.TokenEndpointAuthMethodsSupported = []string{}
+	resp.TokenEndpointAuthMethodsSupported = append([]string{}, meta.TokenEndpointAuthMethodsSupported...)
+	if cfg.EnabledEndpoints.Introspection {
+		resp.IntrospectionEndpointAuthMethodsSupported = append([]string{}, sssoapi.DefaultResourceEndpointAuthMethods...)
+	}
+	if cfg.EnabledEndpoints.Revocation {
+		resp.RevocationEndpointAuthMethodsSupported = append([]string{}, sssoapi.DefaultResourceEndpointAuthMethods...)
 	}
 
-	// 10. Supported Signing Algorithms
-	// Assuming SecurityConfig.AllowedSigningAlgs is the source for these
+	// 10. Supported Signing Algorithms. UserInfo responses are plain JSON and
+	// request objects are not parsed, so only the ID token algorithm list is
+	// advertised.
 	if len(cfg.SecurityConfig.AllowedSigningAlgs) > 0 {
 		resp.IDTokenSigningAlgValuesSupported = cfg.SecurityConfig.AllowedSigningAlgs
-		resp.UserinfoSigningAlgValuesSupported = cfg.SecurityConfig.AllowedSigningAlgs      // Or a more specific field if exists
-		resp.RequestObjectSigningAlgValuesSupported = cfg.SecurityConfig.AllowedSigningAlgs // Or a more specific field
 	} else {
 		resp.IDTokenSigningAlgValuesSupported = []string{}
-		resp.UserinfoSigningAlgValuesSupported = []string{}
-		resp.RequestObjectSigningAlgValuesSupported = []string{}
 	}
-	// Encryption related algs (id_token_encryption_alg_values_supported, etc.)
-	// would follow a similar pattern if configured in SecurityConfig.AllowedEncryptionAlgs/Enc
 
 	// 11. Supported Claims
-	if len(cfg.ClaimsConfig.SupportedClaims) > 0 {
-		resp.ClaimsSupported = cfg.ClaimsConfig.SupportedClaims
-	} else {
-		resp.ClaimsSupported = []string{}
-	}
+	resp.ClaimsSupported = append([]string{}, meta.ClaimsSupported...)
+	resp.ClaimTypesSupported = append([]string{}, sssoapi.DefaultClaimTypesSupported...)
 
 	// 12. PKCE Support
 	if cfg.PKCEConfig.Enabled && len(cfg.PKCEConfig.SupportedMethods) > 0 {
 		resp.CodeChallengeMethodsSupported = cfg.PKCEConfig.SupportedMethods
 	} else {
-		// If PKCE is disabled, or no methods specified, omit or provide empty array
 		resp.CodeChallengeMethodsSupported = []string{}
 	}
 
 	// 13. Other Boolean Flags
 	resp.ClaimsParameterSupported = cfg.ClaimsConfig.EnableClaimsParameter
-	// For RequestParameterSupported & RequestURIParameterSupported, using true as per previous hardcoding
-	// if no direct config field. Assume these are generally supported.
-	resp.RequestParameterSupported = true    // Default or from cfg if available
-	resp.RequestURIParameterSupported = true // Default or from cfg if available
+	// Request objects (request=) are not parsed; only PAR-issued request_uri
+	// values are resolved, so request_parameter_supported must stay false.
+	resp.RequestParameterSupported = false
+	resp.RequestURIParameterSupported = true
 	resp.RequireRequestURIRegistration = cfg.SecurityConfig.RequireRequestURIRegistration
-
-	// Other fields from sssoapi.OpenIDConfiguration that might need mapping or defaults:
-	// TokenEndpointAuthSigningAlgSupported, ServiceDocumentation, UILocalesSupported,
-	// OpPolicyURI, OpTosURI, RevocationEndpointAuthMethodsSupported,
-	// IntrospectionEndpointAuthMethodsSupported, IDTokenEncryptionAlgValuesSupported,
-	// IDTokenEncryptionEncValuesSupported, UserinfoEncryptionAlgValuesSupported,
-	// UserinfoEncryptionEncValuesSupported, RequestObjectEncryptionAlgValuesSupported,
-	// RequestObjectEncryptionEncValuesSupported.
-	// These are omitted if not directly available in oa.config or not specified in the task.
-	// For example, if token endpoint supports JWT auth, TokenEndpointAuthSigningAlgSupported would list algs.
-	// For now, focusing on explicitly mentioned fields.
+	resp.PromptValuesSupported = append([]string{}, sssoapi.DefaultPromptValuesSupported...)
+	resp.DPoPSigningAlgValuesSupported = append([]string{}, sssoapi.DPoPSigningAlgValuesSupported...)
+	// The authorization endpoint does not add the RFC 9207 iss parameter.
+	resp.AuthorizationResponseIssParameterSupported = false
+	// Access tokens are bearer JWTs; mTLS-bound tokens are not implemented.
+	resp.TLSClientCertificateBoundAccessTokens = false
 
 	c.JSON(http.StatusOK, resp)
 }
@@ -2084,6 +2103,7 @@ func (oa *OAuth2API) handleDeviceCodeGrant(c *gin.Context, cli *domain.Client) (
 // IntrospectToken method to inspect the token. If the introspection fails, it returns
 // a 200 OK response with active=false as per the RFC. Otherwise, it returns the introspection result.
 func (oa *OAuth2API) IntrospectHandler(c *gin.Context) {
+	applyBasicClientAuth(c)
 	// Token introspection requires authentication
 	clientID := c.PostForm("client_id")
 	clientSecret := c.PostForm("client_secret")
