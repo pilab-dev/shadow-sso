@@ -14,5 +14,6 @@ func (oa *OAuth2API) JWKSHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve JWKS"})
 		return
 	}
+	c.Header("Cache-Control", "public, max-age=300")
 	c.JSON(http.StatusOK, jwks)
 }

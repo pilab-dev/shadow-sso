@@ -69,6 +69,10 @@ var (
 	// DefaultClaimTypesSupported is the only claim type the server emits.
 	DefaultClaimTypesSupported = []string{"normal"}
 
+	// DefaultClientAssertionSigningAlgs are the RSA PKCS#1 v1.5 algorithms
+	// accepted for private_key_jwt client assertions.
+	DefaultClientAssertionSigningAlgs = []string{"RS256", "RS384", "RS512"}
+
 	// DefaultPromptValuesSupported are the prompt values honoured by the
 	// authorization endpoint.
 	DefaultPromptValuesSupported = []string{"none", "login", "select_account"}
@@ -98,6 +102,7 @@ type OpenIDConfiguration struct {
 	GrantTypesSupported                        []string `json:"grant_types_supported"`
 	TokenEndpointAuthMethodsSupported          []string `json:"token_endpoint_auth_methods_supported"`
 	TokenEndpointAuthSigningAlgSupported       []string `json:"token_endpoint_auth_signing_alg_values_supported,omitempty"`
+	AuthorizationSigningAlgValuesSupported     []string `json:"authorization_signing_alg_values_supported,omitempty"` // JARM response signing
 	ServiceDocumentation                       *string  `json:"service_documentation,omitempty"`
 	UILocalesSupported                         []string `json:"ui_locales_supported,omitempty"`
 	OpPolicyURI                                *string  `json:"op_policy_uri,omitempty"`

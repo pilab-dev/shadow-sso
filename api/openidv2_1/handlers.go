@@ -1876,11 +1876,19 @@ func (oa *OAuth2API) OpenIDConfigurationHandler(c *gin.Context) {
 
 	// 10. Supported Signing Algorithms. UserInfo responses are plain JSON and
 	// request objects are not parsed, so only the ID token algorithm list is
-	// advertised.
-	if len(cfg.SecurityConfig.AllowedSigningAlgs) > 0 {
-		resp.IDTokenSigningAlgValuesSupported = cfg.SecurityConfig.AllowedSigningAlgs
-	} else {
-		resp.IDTokenSigningAlgValuesSupported = []string{}
+	// advertised. Symmetric algorithms are never advertised: relying parties
+	// cannot verify them against the JWKS.
+	resp.IDTokenSigningAlgValuesSupported = []string{}
+	for _, alg := range cfg.SecurityConfig.AllowedSigningAlgs {
+		if !strings.HasPrefix(strings.ToUpper(alg), "HS") {
+			resp.IDTokenSigningAlgValuesSupported = append(resp.IDTokenSigningAlgValuesSupported, alg)
+		}
+	}
+	if containsString(resp.TokenEndpointAuthMethodsSupported, "private_key_jwt") {
+		resp.TokenEndpointAuthSigningAlgSupported = append([]string{}, sssoapi.DefaultClientAssertionSigningAlgs...)
+	}
+	if containsString(resp.ResponseModesSupported, "jwt") {
+		resp.AuthorizationSigningAlgValuesSupported = []string{"RS256"}
 	}
 
 	// 11. Supported Claims

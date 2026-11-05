@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha1" //nolint:gosec // x5t is SHA-1 by definition
+	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"math/big"
@@ -28,6 +30,11 @@ type JSONWebKey struct {
 	Use string `json:"use"`
 	N   string `json:"n"`
 	E   string `json:"e"`
+
+	// Certificate chain and thumbprints (RFC 7517 §4.6-4.9), as Keycloak publishes.
+	X5c     []string `json:"x5c,omitempty"`
+	X5t     string   `json:"x5t,omitempty"`
+	X5tS256 string   `json:"x5t#S256,omitempty"`
 }
 
 type JSONWebKeySet struct {
@@ -146,26 +153,33 @@ func NewJWKSServiceFromSigner(signer *TokenSigner) JWKSService {
 // GetPublicJWKS retrieves the public JSON Web Key Set from the signer's
 // active and retiring keys.
 func (s *signerJWKSService) GetPublicJWKS(ctx context.Context) (*JSONWebKeySet, error) {
-	pubKeys := s.signer.PublicKeys()
-	if len(pubKeys) == 0 {
+	if len(s.signer.PublicKeys()) == 0 {
 		return nil, fmt.Errorf("no keys available in JWKS service")
 	}
 
-	keys := make([]JSONWebKey, 0, len(pubKeys))
-	for kid, publicKey := range pubKeys {
-		keys = append(keys, jsonWebKeyFromPublicKey(kid, publicKey))
+	return &JSONWebKeySet{Keys: s.keys()}, nil
+}
+
+func (s *signerJWKSService) keys() []JSONWebKey {
+	infos := s.signer.PublicKeyInfos()
+	keys := make([]JSONWebKey, 0, len(infos))
+	for _, info := range infos {
+		jwk := jsonWebKeyFromPublicKey(info.KeyID, info.Key)
+		if len(info.CertDER) > 0 {
+			sha1Sum := sha1.Sum(info.CertDER) //nolint:gosec // x5t is defined as SHA-1 by RFC 7515
+			sha256Sum := sha256.Sum256(info.CertDER)
+			jwk.X5c = []string{base64.StdEncoding.EncodeToString(info.CertDER)}
+			jwk.X5t = base64.RawURLEncoding.EncodeToString(sha1Sum[:])
+			jwk.X5tS256 = base64.RawURLEncoding.EncodeToString(sha256Sum[:])
+		}
+		keys = append(keys, jwk)
 	}
-	return &JSONWebKeySet{Keys: keys}, nil
+	return keys
 }
 
 // GetJWKS retrieves the JSON Web Key Set.
 func (s *signerJWKSService) GetJWKS() JSONWebKeySet {
-	pubKeys := s.signer.PublicKeys()
-	keys := make([]JSONWebKey, 0, len(pubKeys))
-	for kid, publicKey := range pubKeys {
-		keys = append(keys, jsonWebKeyFromPublicKey(kid, publicKey))
-	}
-	return JSONWebKeySet{Keys: keys}
+	return JSONWebKeySet{Keys: s.keys()}
 }
 
 // GetSigningKey retrieves the current realm-default signing key.

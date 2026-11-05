@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"testing"
 
@@ -72,7 +74,24 @@ func TestSignerJWKSService_PublishesActiveAndRetiringKeys(t *testing.T) {
 		assert.Equal(t, "sig", key.Use)
 		assert.NotEmpty(t, key.N)
 		assert.NotEmpty(t, key.E)
+
+		require.Len(t, key.X5c, 1)
+		der, err := base64.StdEncoding.DecodeString(key.X5c[0])
+		require.NoError(t, err)
+		cert, err := x509.ParseCertificate(der)
+		require.NoError(t, err)
+		sum := sha256.Sum256(der)
+		assert.Equal(t, base64.RawURLEncoding.EncodeToString(sum[:]), key.X5tS256)
+		assert.NotEmpty(t, key.X5t)
+		pub, ok := cert.PublicKey.(*rsa.PublicKey)
+		require.True(t, ok)
+		assert.Equal(t, key.N, base64.RawURLEncoding.EncodeToString(pub.N.Bytes()))
 	}
+	assert.Equal(t, "realm-active", jwks.Keys[0].Kid, "the default signing key is listed first")
+
+	again, err := jwksSvc.GetPublicJWKS(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, jwks, again, "x5c must be stable across calls")
 
 	assert.True(t, published["realm-active"], "realm-default active key must be published")
 	assert.True(t, published["client-active"], "per-client active key must be published")

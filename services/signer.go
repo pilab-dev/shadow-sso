@@ -2,12 +2,19 @@ package services
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -35,6 +42,7 @@ type signingKey struct {
 	privKey *rsa.PrivateKey // nil for HS256 keys
 	pubKey  *rsa.PublicKey  // nil for HS256 keys
 	secret  []byte          // nil for RSA keys
+	certDER []byte          // X.509 certificate wrapping pubKey, published as x5c in the JWKS
 }
 
 // TokenSigner signs and verifies JWTs. It supports two modes:
@@ -119,6 +127,7 @@ func (s *TokenSigner) AddRSASigner(keyPath string) error {
 		privKey: privKey,
 		pubKey:  &privKey.PublicKey,
 		signer:  s.rsaSigner(privKey, "rsa-default"),
+		certDER: certificateDER("", "rsa-default", privKey, time.Time{}),
 	}
 	s.keys["rsa-default"] = entry
 	s.keys["default"] = entry
@@ -471,6 +480,7 @@ func (s *TokenSigner) buildSigningKey(rk *domain.RealmKey, encryptionKey []byte)
 			privKey:  privKey,
 			pubKey:   &privKey.PublicKey,
 			signer:   s.rsaSigner(privKey, rk.ID),
+			certDER:  certificateDER(rk.Certificate, rk.ID, privKey, rk.CreatedAt),
 		}, nil
 	}
 }
@@ -559,4 +569,80 @@ func (s *TokenSigner) RealmDefaultKeyID() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.defaultKeyID
+}
+
+// PublicKeyInfo is the public verification material of one signing key.
+type PublicKeyInfo struct {
+	KeyID   string
+	Key     *rsa.PublicKey
+	CertDER []byte // may be nil
+	Default bool   // the realm-default key that signs new tokens
+}
+
+// PublicKeyInfos returns the active and retiring keys in a stable order:
+// the realm-default key first, then the rest by key ID.
+func (s *TokenSigner) PublicKeyInfos() []PublicKeyInfo {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	infos := make([]PublicKeyInfo, 0, len(s.keys))
+	for kid, entry := range s.keys {
+		if entry.status != domain.RealmKeyStatusActive && entry.status != domain.RealmKeyStatusRetiring {
+			continue
+		}
+		if entry.pubKey == nil {
+			continue
+		}
+		infos = append(infos, PublicKeyInfo{
+			KeyID:   kid,
+			Key:     entry.pubKey,
+			CertDER: entry.certDER,
+			Default: kid == s.defaultKeyID || (s.defaultKeyID == "" && kid == "rsa-default"),
+		})
+	}
+	sort.Slice(infos, func(i, j int) bool {
+		if infos[i].Default != infos[j].Default {
+			return infos[i].Default
+		}
+		return infos[i].KeyID < infos[j].KeyID
+	})
+	return infos
+}
+
+// certificateDER returns the stored certificate (PEM or base64 DER) when it
+// matches priv, otherwise a deterministic self-signed certificate like
+// Keycloak publishes, so x5c/x5t stay stable across restarts and replicas.
+func certificateDER(stored, kid string, priv *rsa.PrivateKey, createdAt time.Time) []byte {
+	if stored != "" {
+		var der []byte
+		if block, _ := pem.Decode([]byte(stored)); block != nil {
+			der = block.Bytes
+		} else if d, err := base64.StdEncoding.DecodeString(strings.TrimSpace(stored)); err == nil {
+			der = d
+		}
+		if cert, err := x509.ParseCertificate(der); err == nil {
+			if pub, ok := cert.PublicKey.(*rsa.PublicKey); ok && pub.Equal(&priv.PublicKey) {
+				return der
+			}
+		}
+	}
+
+	notBefore := createdAt.UTC().Truncate(time.Second)
+	if createdAt.IsZero() {
+		notBefore = time.Unix(0, 0).UTC()
+	}
+	sum := sha256.Sum256([]byte(kid))
+	tmpl := &x509.Certificate{
+		SerialNumber: new(big.Int).SetBytes(sum[:16]),
+		Subject:      pkix.Name{CommonName: kid},
+		NotBefore:    notBefore,
+		NotAfter:     notBefore.AddDate(10, 0, 0),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+	}
+	// PKCS#1 v1.5 signatures are deterministic, so the same key always yields the same certificate.
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
+	if err != nil {
+		return nil
+	}
+	return der
 }
