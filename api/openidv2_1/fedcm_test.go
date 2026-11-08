@@ -1,6 +1,7 @@
 package openidv2_1_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -33,7 +34,7 @@ func TestFedCM_Flow(t *testing.T) {
 		ID: "client-1", RedirectURIs: []string{"https://app.example.com/cb"}, AllowedScopes: []string{"openid", "email"}, PolicyURI: "https://app.example.com/privacy",
 	}, nil).AnyTimes()
 	clientSvc.EXPECT().GetClient(gomock.Any(), gomock.Any()).Return(nil, domain.ErrClientNotFound).AnyTimes()
-	tokenSvc.EXPECT().GenerateIDToken(gomock.Any(), "user-1", "client-1", "n-1", "", gomock.Any(), "openid email").Return("id.token.value", nil)
+	tokenSvc.EXPECT().GenerateIDToken(gomock.Any(), "user-1", "client-1", "n-1", "", gomock.Any(), "openid email").Return("id.token.value", nil).Times(2)
 
 	api := sssogin.NewOAuth2API(&sssogin.OAuth2APIOptions{
 		Config:           &sssoapi.OpenIDProviderConfig{Issuer: "https://sso.example.com"},
@@ -60,6 +61,16 @@ func TestFedCM_Flow(t *testing.T) {
 	}
 	assertion := func(origin, account string) *http.Request {
 		form := url.Values{"client_id": {"client-1"}, "nonce": {"n-1"}, "account_id": {account}}
+		req := httptest.NewRequest(http.MethodPost, "/fedcm/assertion", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", origin)
+		return req
+	}
+	// Chrome 145+ sends the nonce inside the params JSON blob.
+	paramsAssertion := func(origin, account string) *http.Request {
+		params, err := json.Marshal(map[string]string{"nonce": "n-1"})
+		require.NoError(t, err)
+		form := url.Values{"client_id": {"client-1"}, "params": {string(params)}, "account_id": {account}}
 		req := httptest.NewRequest(http.MethodPost, "/fedcm/assertion", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		req.Header.Set("Origin", origin)
@@ -99,4 +110,8 @@ func TestFedCM_Flow(t *testing.T) {
 	assert.Contains(t, w.Body.String(), `"token":"id.token.value"`)
 	assert.Equal(t, "https://app.example.com", w.Header().Get("Access-Control-Allow-Origin"))
 	assert.Equal(t, "true", w.Header().Get("Access-Control-Allow-Credentials"))
+
+	w = do(paramsAssertion("https://app.example.com", "user-1"), true)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"token":"id.token.value"`)
 }

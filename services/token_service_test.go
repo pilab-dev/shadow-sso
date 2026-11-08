@@ -837,6 +837,67 @@ func TestTokenService_GenerateIDToken_WithoutProfile(t *testing.T) {
 	t.Skip("Skipping due to JWKS complexity in test setup")
 }
 
+// A long-lived OP session must still produce a fresh ID token: exp/iat belong
+// to issuance time, while auth_time preserves the original login time. FedCM
+// issues tokens from an existing session and previously returned expired ones.
+func TestTokenService_GenerateIDToken_UsesIssueTimeForExpiry(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
+	mockCache := mock_cache.NewMockTokenStore(ctrl)
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockPubKeyRepo := mock_domain.NewMockPublicKeyRepository(ctrl)
+	mockSARepo := mock_domain.NewMockServiceAccountRepository(ctrl)
+	mockSigner := services.NewTokenSigner()
+	mockSigner.AddKeySigner("test-secret")
+
+	tokenService := services.NewTokenService(
+		mockTokenRepo,
+		mockCache,
+		"test-issuer",
+		mockSigner,
+		mockPubKeyRepo,
+		mockSARepo,
+		mockUserRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	authTime := time.Now().Add(-72 * time.Hour).UTC().Truncate(time.Second)
+	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user-id").Return(&domain.User{
+		ID:              "user-id",
+		Email:           "user@example.com",
+		FirstName:       "Test",
+		LastName:        "User",
+		IsEmailVerified: true,
+	}, nil)
+
+	tokenValue, err := tokenService.GenerateIDToken(
+		context.Background(), "user-id", "client-id", "nonce-1", "", authTime, "openid email",
+	)
+	require.NoError(t, err)
+
+	claims := jwt.MapClaims{}
+	parsed, err := jwt.ParseWithClaims(tokenValue, claims, func(token *jwt.Token) (any, error) {
+		return []byte("test-secret"), nil
+	})
+	require.NoError(t, err)
+	require.True(t, parsed.Valid)
+
+	exp, err := claims.GetExpirationTime()
+	require.NoError(t, err)
+	iat, err := claims.GetIssuedAt()
+	require.NoError(t, err)
+
+	assert.WithinDuration(t, time.Now().Add(time.Hour), exp.Time, 5*time.Second)
+	assert.WithinDuration(t, time.Now(), iat.Time, 5*time.Second)
+	assert.Equal(t, float64(authTime.Unix()), claims["auth_time"])
+	assert.Equal(t, "nonce-1", claims["nonce"])
+}
+
 func TestTokenService_RevokeToken_CacheError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()

@@ -1053,12 +1053,16 @@ func (s *defaultTokenService) GenerateIDToken(ctx context.Context, userID, clien
 		return "", err
 	}
 
+	// iat/exp describe when this token was issued, not when the user first
+	// authenticated. Using authTime for exp breaks long-lived OP sessions:
+	// FedCM can issue a token days after login, which would already be expired.
+	now := time.Now()
 	claims := jwt.MapClaims{
 		"iss":       s.issuer,
 		"sub":       userID,
 		"aud":       clientID,
-		"exp":       jwt.NewNumericDate(authTime.Add(time.Hour)),
-		"iat":       jwt.NewNumericDate(authTime),
+		"exp":       jwt.NewNumericDate(now.Add(time.Hour)),
+		"iat":       jwt.NewNumericDate(now),
 		"auth_time": jwt.NewNumericDate(authTime),
 		// Marks the JWT as an ID token so it is never accepted as an access token.
 		"token_use": "id",

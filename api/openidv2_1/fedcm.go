@@ -1,6 +1,7 @@
 package openidv2_1
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -117,6 +118,28 @@ func clientAllowsOrigin(client *domain.Client, origin string) bool {
 	return false
 }
 
+// fedcmNonce extracts the nonce from a FedCM assertion request. Chrome 145+
+// passes it inside the percent-encoded `params` JSON object; older browsers
+// send a top-level `nonce` form field.
+func fedcmNonce(c *gin.Context) string {
+	if nonce := c.PostForm("nonce"); nonce != "" {
+		return nonce
+	}
+	raw := c.PostForm("params")
+	if raw == "" {
+		raw = c.Query("params")
+	}
+	if raw != "" {
+		var params struct {
+			Nonce string `json:"nonce"`
+		}
+		if err := json.Unmarshal([]byte(raw), &params); err == nil && params.Nonce != "" {
+			return params.Nonce
+		}
+	}
+	return c.Query("nonce")
+}
+
 // FedCMAssertionHandler issues an ID token for the signed-in account. The
 // request Origin must belong to the client, and the token is bound to the
 // client's nonce.
@@ -152,7 +175,7 @@ func (oa *OAuth2API) FedCMAssertionHandler(c *gin.Context) {
 			}
 		}
 	}
-	token, err := oa.tokenService.GenerateIDToken(ctx, userID, clientID, c.PostForm("nonce"), "", authenticatedAt, scope)
+	token, err := oa.tokenService.GenerateIDToken(ctx, userID, clientID, fedcmNonce(c), "", authenticatedAt, scope)
 	if err != nil {
 		log.Ctx(ctx).Error().Err(err).Str("client_id", clientID).Msg("FedCM: failed to issue ID token")
 		c.AbortWithStatusJSON(http.StatusInternalServerError, domain.NewServerError("failed to issue token"))
