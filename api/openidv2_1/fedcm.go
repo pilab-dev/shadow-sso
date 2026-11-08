@@ -22,9 +22,19 @@ func (oa *OAuth2API) registerFedCMRoutes(e *gin.Engine) {
 }
 
 // FedCMWebIdentityHandler serves /.well-known/web-identity.
+//
+// FedCM requires this file on the registrable domain (eTLD+1) of the IdP. When
+// the IdP is served from a subdomain (for example sso.example.com), the same
+// JSON must also be published at https://example.com/.well-known/web-identity.
+// accounts_endpoint and login_url are required when the FedCM config file
+// exposes client_metadata_endpoint.
 func (oa *OAuth2API) FedCMWebIdentityHandler(c *gin.Context) {
 	c.Header("Cache-Control", "public, max-age=300")
-	c.JSON(http.StatusOK, gin.H{"provider_urls": []string{oa.config.Issuer + "/fedcm/config.json"}})
+	c.JSON(http.StatusOK, gin.H{
+		"provider_urls":     []string{oa.config.Issuer + "/fedcm/config.json"},
+		"accounts_endpoint": oa.config.Issuer + "/fedcm/accounts",
+		"login_url":         oa.config.Issuer + "/login?fedcm=1",
+	})
 }
 
 // FedCMConfigHandler serves the IdP configuration file.
@@ -39,8 +49,11 @@ func (oa *OAuth2API) FedCMConfigHandler(c *gin.Context) {
 		"accounts_endpoint":        base + "/fedcm/accounts",
 		"client_metadata_endpoint": base + "/fedcm/client_metadata",
 		"id_assertion_endpoint":    base + "/fedcm/assertion",
-		"login_url":                base + "/login",
-		"branding":                 branding,
+		"login_url":                base + "/login?fedcm=1",
+		// Active mode can offer "use another account" in the FedCM dialog.
+		// Shadow SSO supports multiple accounts and the account chooser.
+		"supports_use_other_account": true,
+		"branding":                   branding,
 	})
 }
 
@@ -62,7 +75,8 @@ func (oa *OAuth2API) FedCMAccountsHandler(c *gin.Context) {
 	}
 	userID, _, ok := oa.currentOPUser(c)
 	if !ok {
-		c.JSON(http.StatusOK, gin.H{"accounts": []any{}})
+		// FedCM expects 401 when the user is not signed in to the IdP.
+		c.JSON(http.StatusUnauthorized, gin.H{"accounts": []any{}})
 		return
 	}
 	info := oa.silentUserInfo(c, userID)

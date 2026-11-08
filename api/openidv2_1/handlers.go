@@ -826,14 +826,17 @@ func (oa *OAuth2API) tryHandleWithExistingSession(c *gin.Context, data *authoriz
 				return true, storeErr
 			}
 
-			// Set flow ID cookie
+			// Set flow ID cookie. A normal OIDC authorize flow must not be
+			// hijacked by a FedCM login flow started earlier in another window.
+			isSecure := c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https")
+			webauth.ClearFedCMFlowCookies(c.Writer, isSecure)
 			http.SetCookie(c.Writer, &http.Cookie{
 				Name:     "sso_oidc_flow_id",
 				Value:    flowID,
 				Path:     "/",
 				MaxAge:   int((10 * time.Minute).Seconds()),
 				HttpOnly: true,
-				Secure:   c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https"),
+				Secure:   isSecure,
 				SameSite: http.SameSiteLaxMode,
 			})
 
@@ -915,13 +918,17 @@ func (oa *OAuth2API) initiateExternalLoginFlow(c *gin.Context, data *authorizeRe
 		return ssoErr
 	}
 
+	// Starting a normal OIDC flow supersedes any FedCM login flow that may
+	// still be pending in another window.
+	isSecure := c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https")
+	webauth.ClearFedCMFlowCookies(c.Writer, isSecure)
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     "sso_oidc_flow_id",
 		Value:    flowID,
 		Path:     "/",
 		MaxAge:   int((10 * time.Minute).Seconds()),
 		HttpOnly: true,
-		Secure:   c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https"),
+		Secure:   isSecure,
 		SameSite: http.SameSiteLaxMode,
 	})
 

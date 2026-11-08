@@ -24,6 +24,12 @@ const (
 	// FlowCookieName is the name of the cookie carrying the server-side flow ID.
 	// The client never sees this value — it is only read from the cookie.
 	FlowCookieName = "sso_oidc_flow_id"
+	// FedCMLoginCookieName marks a login flow started from the FedCM active-mode
+	// login dialog. It keeps the FedCM flow ID separate from an in-progress
+	// OIDC flow in another window.
+	FedCMLoginCookieName = "sso_fedcm_login"
+	// FedCMFlowCookieName carries the server-side flow ID for FedCM login.
+	FedCMFlowCookieName = "sso_fedcm_flow_id"
 	// ReturnToCookieName is the name of the signed cookie carrying the
 	// validated same-origin destination for flow-less logins. The return_to
 	// value travels in this cookie (HMAC-signed), never in a form field.
@@ -198,14 +204,67 @@ func IsSecureRequest(r *http.Request) bool {
 	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
 
-// GetFlowIDFromCookie extracts the flow ID from the sso_oidc_flow_id cookie.
+// IsFedCMLogin reports whether the current request belongs to a FedCM
+// active-mode login flow started from the IdP login dialog.
+func IsFedCMLogin(r *http.Request) bool {
+	cookie, err := r.Cookie(FedCMLoginCookieName)
+	return err == nil && cookie.Value == "1"
+}
+
+// GetFlowIDFromCookie extracts the flow ID from the FedCM login cookie when a
+// FedCM flow is active, otherwise from the regular sso_oidc_flow_id cookie.
 // Returns empty string if the cookie is missing or empty.
 func GetFlowIDFromCookie(r *http.Request) string {
+	if IsFedCMLogin(r) {
+		if cookie, err := r.Cookie(FedCMFlowCookieName); err == nil && cookie.Value != "" {
+			return cookie.Value
+		}
+	}
 	cookie, err := r.Cookie(FlowCookieName)
 	if err != nil || cookie.Value == "" {
 		return ""
 	}
 	return cookie.Value
+}
+
+// setFedCMFlowCookies starts an isolated FedCM login flow. The regular OIDC
+// flow cookie is left untouched so an in-progress authorize flow in another
+// window is not disturbed.
+func setFedCMFlowCookies(w http.ResponseWriter, flowID string, isSecure bool) {
+	maxAge := int(syntheticFlowLifetime.Seconds())
+	http.SetCookie(w, &http.Cookie{
+		Name:     FedCMLoginCookieName,
+		Value:    "1",
+		Path:     "/",
+		MaxAge:   maxAge,
+		HttpOnly: true,
+		Secure:   isSecure,
+		SameSite: http.SameSiteLaxMode,
+	})
+	http.SetCookie(w, &http.Cookie{
+		Name:     FedCMFlowCookieName,
+		Value:    flowID,
+		Path:     "/",
+		MaxAge:   maxAge,
+		HttpOnly: true,
+		Secure:   isSecure,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+// ClearFedCMFlowCookies ends the FedCM active-mode login flow.
+func ClearFedCMFlowCookies(w http.ResponseWriter, isSecure bool) {
+	for _, name := range []string{FedCMLoginCookieName, FedCMFlowCookieName} {
+		http.SetCookie(w, &http.Cookie{
+			Name:     name,
+			Value:    "",
+			Path:     "/",
+			MaxAge:   -1,
+			HttpOnly: true,
+			Secure:   isSecure,
+			SameSite: http.SameSiteLaxMode,
+		})
+	}
 }
 
 // ---------------------------------------------------------------------------

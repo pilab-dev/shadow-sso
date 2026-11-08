@@ -13,6 +13,7 @@ func (wa *WebAuth) RegisterRoutes(router *gin.Engine) {
 	r.GET("/", wa.LandingPageHandler)
 	r.GET("/login", wa.LoginPageHandler)
 	r.POST("/login", wa.LoginSubmitHandler)
+	r.GET("/fedcm/close", wa.FedCMClosePageHandler)
 	r.POST("/login/select", wa.SelectAccountHandler)
 	r.GET("/login/:provider", wa.SocialLoginHandler)
 	r.POST("/login/select-account", wa.SelectAccountSubmitHandler)

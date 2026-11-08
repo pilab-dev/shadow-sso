@@ -68,14 +68,25 @@ func TestFedCM_Flow(t *testing.T) {
 
 	w := do(httptest.NewRequest(http.MethodGet, "/.well-known/web-identity", nil), false)
 	assert.Contains(t, w.Body.String(), "https://sso.example.com/fedcm/config.json")
+	assert.Contains(t, w.Body.String(), "https://sso.example.com/fedcm/accounts")
+	assert.Contains(t, w.Body.String(), "https://sso.example.com/login?fedcm=1")
 	w = do(httptest.NewRequest(http.MethodGet, "/fedcm/config.json", nil), false)
 	assert.Contains(t, w.Body.String(), "id_assertion_endpoint")
+	assert.Contains(t, w.Body.String(), `"supports_use_other_account":true`)
+	assert.Contains(t, w.Body.String(), "https://sso.example.com/login?fedcm=1")
 
 	assert.Equal(t, http.StatusBadRequest, do(httptest.NewRequest(http.MethodGet, "/fedcm/accounts", nil), false).Code)
 	w = do(httptest.NewRequest(http.MethodGet, "/fedcm/accounts", nil), true)
 	require.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), `"id":"user-1"`)
 	assert.Contains(t, w.Body.String(), `"name":"Test User"`)
+
+	// Signed-out FedCM requests must return 401, as required by the FedCM spec.
+	signedOut := httptest.NewRequest(http.MethodGet, "/fedcm/accounts", nil)
+	signedOut.Header.Set("Sec-Fetch-Dest", "webidentity")
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, signedOut)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
 
 	w = do(httptest.NewRequest(http.MethodGet, "/fedcm/client_metadata?client_id=client-1", nil), true)
 	assert.Contains(t, w.Body.String(), "privacy_policy_url")

@@ -3,6 +3,10 @@
 # Usage: ./scripts/build-and-deploy.sh [version-tag] [environment]
 # Example: ./scripts/build-and-deploy.sh v1.2.3 production
 # Defaults: tag = current git short SHA, environment = production, NAMESPACE env = shadow-sso
+#
+# Production values are maintained in the pistack repository and are
+# deliberately not committed here. Set HELM_VALUES_FILE explicitly or keep the
+# pistack checkout at ../pistack/shadow-sso/values.yaml.
 
 set -euo pipefail
 
@@ -23,6 +27,7 @@ ENVIRONMENT="${2:-production}"
 HELM_CHART_PATH="helm/ssso-backend"
 HELM_RELEASE_NAME="ssso-backend"
 NAMESPACE="${NAMESPACE:-shadow-sso}"
+HELM_VALUES_FILE="${HELM_VALUES_FILE:-}"
 
 # Parse arguments
 VERSION_TAG="${1:-${DEFAULT_TAG}}"
@@ -76,6 +81,26 @@ build_image() {
 }
 
 select_values_file() {
+    if [[ -n "${HELM_VALUES_FILE:-}" ]]; then
+        if [[ ! -f "${HELM_VALUES_FILE}" ]]; then
+            log_error "HELM_VALUES_FILE not found: ${HELM_VALUES_FILE}"
+            exit 1
+        fi
+        echo "${HELM_VALUES_FILE}"
+        return
+    fi
+
+    if [[ "${ENVIRONMENT}" == "production" ]]; then
+        local pistack_values="../pistack/shadow-sso/values.yaml"
+        if [[ -f "${pistack_values}" ]]; then
+            echo "${pistack_values}"
+            return
+        fi
+        log_error "Production values are maintained in the pistack repository."
+        log_error "Set HELM_VALUES_FILE to the production values file (e.g. ../pistack/shadow-sso/values.yaml)."
+        exit 1
+    fi
+
     local values_file="${HELM_CHART_PATH}/values-${ENVIRONMENT}.yaml"
 
     if [[ ! -f "${values_file}" ]]; then

@@ -159,94 +159,20 @@ mongodb:
 
 ### Production Values
 
-```yaml
-# values-production.yaml
-replicaCount: 2
+Production values are **not stored in this repository**. Keep them in your
+deployment/configuration repository (for example, the `pistack` repository's
+`shadow-sso/values.yaml`) or in a secrets-managed location. Pass the external
+file explicitly:
 
-image:
-  repository: ghcr.io/pilab-dev/shadow-sso-backend
-  pullPolicy: Always
-  tag: "v1"
-
-imagePullSecrets:
-  - name: ghcr-secret
-
-podSecurityContext:
-  fsGroup: 1001
-  runAsUser: 1001
-  runAsNonRoot: true
-
-securityContext:
-  allowPrivilegeEscalation: false
-  capabilities:
-    drop:
-    - ALL
-  readOnlyRootFilesystem: true
-  seccompProfile:
-    type: RuntimeDefault
-
-service:
-  type: ClusterIP
-  port: 8080
-
-ingress:
-  enabled: true
-  className: "nginx"
-  annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-  hosts:
-    - host: sso.example.com
-      paths:
-        - path: /
-          pathType: Prefix
-  tls:
-    - secretName: sso-tls
-      hosts:
-        - sso.example.com
-
-config:
-  SSSO_LOG_LEVEL: "info"
-  SSSO_JSON_LOG: "true"
-  SSSO_ISSUER_URL: "https://sso.example.com"
-  SSSO_SIGNING_KEY_PATH: "/etc/sso/keys/private.pem"
-  SSSO_KEY_ROTATION_INTERVAL: "24h"
-
-initialAdmin:
-  enabled: true
-  createSecret: false
-  secretName: "ssso-initial-admin-credentials"
-
-signingKeySecretName: "sso-signing-key"
-createSigningKeySecret: false
-
-resources:
-  limits:
-    cpu: 500m
-    memory: 512Mi
-  requests:
-    cpu: 200m
-    memory: 256Mi
-
-autoscaling:
-  enabled: true
-  minReplicas: 2
-  maxReplicas: 5
-  targetCPUUtilizationPercentage: 80
-
-networkPolicy:
-  enabled: true
-
-# OpenTelemetry tracing
-tracing:
-  enabled: true
-  otlpEndpoint: "http://tempo.observability:4317"
-  serviceName: "shadow-sso"
-
-extraEnvFrom:
-  - secretRef:
-      name: ssso-config
+```bash
+helm upgrade --install ssso-backend ./helm/ssso-backend \
+  -f /path/to/shadow-sso-production-values.yaml \
+  -n shadow-sso \
+  --create-namespace
 ```
+
+Do not commit production values, credentials, connection strings, or signing
+keys to this repository.
 
 ## Deploy
 
@@ -261,7 +187,7 @@ helm install ssso-backend ./helm/ssso-backend \
 
 # Production
 helm install ssso-backend ./helm/ssso-backend \
-  -f values-production.yaml \
+  -f /path/to/shadow-sso-production-values.yaml \
   -n shadow-sso \
   --create-namespace
 ```
@@ -270,7 +196,7 @@ helm install ssso-backend ./helm/ssso-backend \
 
 ```bash
 helm upgrade ssso-backend ./helm/ssso-backend \
-  -f values-production.yaml \
+  -f /path/to/shadow-sso-production-values.yaml \
   -n shadow-sso
 ```
 

@@ -62,6 +62,7 @@ func setupLoginTest(t *testing.T) (
 	router.LoadHTMLGlob("templates/*.html")
 	router.GET("/login", wa.LoginPageHandler)
 	router.POST("/login", wa.LoginSubmitHandler)
+	router.GET("/fedcm/close", wa.FedCMClosePageHandler)
 	router.GET("/login/:provider", wa.SocialLoginHandler)
 	router.GET("/consent", wa.ConsentPageHandler)
 	router.POST("/consent", wa.ConsentSubmitHandler)

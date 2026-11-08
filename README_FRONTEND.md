@@ -139,7 +139,9 @@ Set `userinfo_signed_response_alg` on a client (gRPC `ClientManagement`) to rece
 
 Shadow SSO is a FedCM identity provider: the browser shows the account chooser
 and no third-party cookie or iframe is needed. `/.well-known/web-identity` must be
-reachable at the registrable domain root of the issuer.
+reachable at the **registrable domain root** of the issuer, not on the issuer
+subdomain. For `https://sso.pilab.hu`, that is
+`https://pilab.hu/.well-known/web-identity`.
 
 ```js
 const cred = await navigator.credentials.get({
@@ -154,10 +156,21 @@ const cred = await navigator.credentials.get({
 
 The page origin must match the origin of one of the client's registered
 redirect URIs. Endpoints: `/fedcm/config.json`, `/fedcm/accounts`,
-`/fedcm/client_metadata`, `/fedcm/assertion`. The OP session cookie is
-`SameSite=None; Secure` over HTTPS (required by browsers), and `Set-Login`
-headers keep the browser's login status in sync. The token's `aud` is the client
-ID; scopes are `openid` plus `email`/`profile` when the client allows them.
+`/fedcm/client_metadata`, `/fedcm/assertion`. The accounts endpoint returns
+`401 Unauthorized` when the user has no OP session (as required by FedCM). The OP
+session cookie is `SameSite=None; Secure` over HTTPS (required by browsers), and
+`Set-Login` headers keep the browser's login status in sync. The token's `aud`
+is the client ID; scopes are `openid` plus `email`/`profile` when the client
+allows them.
+
+FedCM has **passive** and **active** UX modes. Passive mode is the default and is
+used for silent/One Tap checks. Active mode (`mode: "active"`) must be started
+from a user gesture and uses the browser's button-flow UI. The FedCM config
+advertises `supports_use_other_account: true`; the active-mode `login_url` is
+`/login?fedcm=1`. That URL starts an isolated FedCM login flow (separate from
+any in-progress OIDC flow cookie), and after authentication redirects to
+`/fedcm/close`, which calls `IdentityProvider.close()` and clears the FedCM flow
+cookies.
 
 ### CIBA (poll mode)
 

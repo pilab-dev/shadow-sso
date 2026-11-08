@@ -102,6 +102,14 @@ func (wa *WebAuth) renderLoginStart(c *gin.Context, flowID string, providers []*
 // LoginPageHandler serves the GET /login page.
 // It validates the flow, loads social providers, and renders the login form.
 func (wa *WebAuth) LoginPageHandler(c *gin.Context) {
+	// FedCM active mode opens this URL in a browser-controlled login dialog.
+	// It has no OIDC flow of its own, so start an isolated synthetic flow that
+	// completes at /fedcm/close and leaves any normal OIDC flow untouched.
+	if c.Query("fedcm") == "1" {
+		wa.startFedCMLogin(c)
+		return
+	}
+
 	flowID := GetFlowIDFromCookie(c.Request)
 
 	// switch_account=1 forces a fresh synthetic flow so a stale flow cookie
