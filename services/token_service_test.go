@@ -1317,3 +1317,43 @@ func TestTokenService_CreateToken_AuthorizationDetailsClaim(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotContains(t, rparsed.Claims.(jwt.MapClaims), "authorization_details")
 }
+
+func TestTokenService_CreateToken_UserGroupsClaim(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTokenRepo := mock_domain.NewMockTokenRepository(ctrl)
+	mockCache := mock_cache.NewMockTokenStore(ctrl)
+	mockUserRepo := mock_domain.NewMockUserRepository(ctrl)
+	mockGroupRepo := mock_domain.NewMockGroupRepository(ctrl)
+	mockRoleRepo := mock_domain.NewMockRoleRepository(ctrl)
+
+	signer := services.NewTokenSigner()
+	signer.AddKeySigner("test-secret")
+
+	tokenService := services.NewTokenService(
+		mockTokenRepo, mockCache, "https://sso.example", signer,
+		mock_domain.NewMockPublicKeyRepository(ctrl),
+		mock_domain.NewMockServiceAccountRepository(ctrl),
+		mockUserRepo, nil, nil, mockGroupRepo, mockRoleRepo,
+	)
+
+	mockUserRepo.EXPECT().GetUserByID(gomock.Any(), "user-id").Return(&domain.User{ID: "user-id"}, nil)
+	mockGroupRepo.EXPECT().GetGroupsByUserID(gomock.Any(), "user-id").
+		Return([]*domain.Group{{Name: "pilab-dev"}, {Name: "admin"}}, nil)
+	mockTokenRepo.EXPECT().StoreToken(gomock.Any(), gomock.Any()).Return(nil)
+	mockCache.EXPECT().Set(gomock.Any(), gomock.Any()).Return(nil)
+
+	token, err := tokenService.CreateToken(context.Background(), domain.CreateTokenOptions{
+		TokenID: "token-id", Scope: "openid", ClientID: "client-id", UserID: "user-id",
+		ExpireIn: time.Hour, TokenType: api.TokenTypeAccessToken,
+	}, nil)
+	require.NoError(t, err)
+
+	claims := jwt.MapClaims{}
+	_, err = jwt.ParseWithClaims(token.TokenValue, claims, func(*jwt.Token) (any, error) {
+		return []byte("test-secret"), nil
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []any{"admin", "pilab-dev"}, claims["groups"])
+}

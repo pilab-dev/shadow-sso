@@ -906,6 +906,22 @@ func SeedDefaultRealmRoles(ctx context.Context, roleRepo domain.RoleRepository, 
 
 // SeedDefaultGroup ensures a group with the given name and path exists.
 // An existing group at the same path is left untouched (idempotent).
+// EnsureGroupMember creates the group when missing and adds the user to it.
+// It is idempotent, so it is safe to run on every startup.
+func EnsureGroupMember(ctx context.Context, groupRepo domain.GroupRepository, name, path, userID string) error {
+	if err := SeedDefaultGroup(ctx, groupRepo, name, path); err != nil {
+		return err
+	}
+	group, err := groupRepo.GetGroupByPath(ctx, path)
+	if err != nil {
+		return fmt.Errorf("failed to load group %q: %w", path, err)
+	}
+	if err := groupRepo.AddMember(ctx, group.ID, userID); err != nil {
+		return fmt.Errorf("failed to add user to group %q: %w", path, err)
+	}
+	return nil
+}
+
 func SeedDefaultGroup(ctx context.Context, groupRepo domain.GroupRepository, name, path string) error {
 	existing, err := groupRepo.GetGroupByPath(ctx, path)
 	if err == nil && existing != nil {

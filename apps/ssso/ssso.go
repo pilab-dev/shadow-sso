@@ -243,6 +243,14 @@ func main() {
 			}
 		}
 
+		// The admin joins the "admin" group so tokens carry groups=["admin"],
+		// which relying parties (Grafana, OpenBao, repisitory) use for access.
+		if adminUser, gErr := userRepo.GetUserByEmail(bCtx, cfg.InitialAdminEmail); gErr == nil && adminUser != nil {
+			if err := mongodb.EnsureGroupMember(bCtx, repoProvider.GroupRepository(bCtx), "admin", "/admin", adminUser.ID); err != nil {
+				log.Warn().Err(err).Str("email", cfg.InitialAdminEmail).Msg("Failed to add initial admin to the admin group")
+			}
+		}
+
 		// Create or update confidential admin-ui client
 		clientRepo := repoProvider.ClientRepository(bCtx)
 		existingClient, cErr := clientRepo.GetClient(bCtx, "admin-ui")

@@ -402,6 +402,12 @@ func (s *defaultTokenService) applyRoleAndGroupClaims(ctx context.Context, token
 		log.Ctx(ctx).Warn().Err(err).Str("userID", opts.UserID).Msg("CreateToken: failed to get groups for role claims, proceeding without group-derived roles.")
 	}
 
+	// Flat `groups` claim (membership names) for relying parties; explicit
+	// opts.Groups (service accounts) are applied later and take precedence.
+	if names := groupNames(groups); len(names) > 0 {
+		tokenClaimsMap["groups"] = names
+	}
+
 	for _, group := range groups {
 		for _, roleID := range group.RealmRoles {
 			role, errRole := s.roleRepo.GetRoleByID(ctx, roleID)
@@ -438,6 +444,30 @@ func (s *defaultTokenService) applyRoleAndGroupClaims(ctx context.Context, token
 		}
 		tokenClaimsMap["resource_access"] = resourceAccess
 	}
+}
+
+// userGroupNames returns the sorted names of the groups the user belongs to,
+// emitted as the flat `groups` claim for end-user tokens.
+func (s *defaultTokenService) userGroupNames(ctx context.Context, userID string) []string {
+	if s.groupRepo == nil || userID == "" {
+		return nil
+	}
+	groups, err := s.groupRepo.GetGroupsByUserID(ctx, userID)
+	if err != nil {
+		log.Ctx(ctx).Warn().Err(err).Str("userID", userID).Msg("failed to load user groups for the groups claim")
+		return nil
+	}
+	return groupNames(groups)
+}
+
+func groupNames(groups []*domain.Group) []string {
+	set := make(map[string]bool, len(groups))
+	for _, g := range groups {
+		if g != nil && g.Name != "" {
+			set[g.Name] = true
+		}
+	}
+	return sortedKeys(set)
 }
 
 func sortedKeys(set map[string]bool) []string {
@@ -1096,6 +1126,10 @@ func (s *defaultTokenService) GenerateIDToken(ctx context.Context, userID, clien
 			claims["email"] = user.Email
 			claims["email_verified"] = user.IsEmailVerified
 		}
+	}
+
+	if names := s.userGroupNames(ctx, userID); len(names) > 0 {
+		claims["groups"] = names
 	}
 
 	if err := s.ApplyTokenMappers(ctx, claims, clientID, userID, api.TokenTypeIDToken); err != nil {
