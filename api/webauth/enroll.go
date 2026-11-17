@@ -49,7 +49,7 @@ func (wa *WebAuth) MFAEnrollPageHandler(c *gin.Context) {
 		c.Redirect(http.StatusFound, "/mfa?flow_id="+url.QueryEscape(flowID))
 		return
 	}
-	if hasUnverifiableActiveFactor(user) {
+	if wa.hasUnverifiableActiveFactor(user) {
 		c.HTML(http.StatusForbidden, "error.html", gin.H{
 			"PageTitle": "Second factor unavailable",
 			"Message":   "This account already has another second factor that this page cannot verify. Contact your administrator to reset it.",
@@ -122,7 +122,7 @@ func (wa *WebAuth) MFAEnrollSubmitHandler(c *gin.Context) {
 		c.Redirect(http.StatusFound, "/mfa?flow_id="+url.QueryEscape(flowID))
 		return
 	}
-	if hasUnverifiableActiveFactor(user) {
+	if wa.hasUnverifiableActiveFactor(user) {
 		c.HTML(http.StatusForbidden, "error.html", gin.H{
 			"PageTitle": "Second factor unavailable",
 			"Message":   "This account already has another second factor that this page cannot verify. Contact your administrator to reset it.",

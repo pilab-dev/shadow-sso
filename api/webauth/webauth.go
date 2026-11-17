@@ -134,8 +134,6 @@ func New(opts *Options) *WebAuth {
 	}
 }
 
-// LoadTemplates parses the embedded HTML templates and registers them with
-// the gin engine so that c.HTML() calls resolve correctly.
 // LoadTemplates parses HTML templates and registers them with the gin engine.
 // If loader is non-nil (e.g. an internal/templates.Loader), its filesystem is
 // used so operators can override templates on disk without rebuilding.

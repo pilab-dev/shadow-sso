@@ -143,7 +143,6 @@ func (wa *WebAuth) MFASubmitHandler(c *gin.Context) {
 	}
 
 	otp := c.PostForm("otp")
-
 	var valid bool
 	if user.TwoFactorMethod == "EMAIL" {
 		if wa.mfaService == nil {
