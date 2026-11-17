@@ -4,8 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="{{if .BrandName}}{{.BrandName}}{{else}}Shadow SSO{{end}} — Secure, open-source single sign-on and identity management built for developers.">
-    <meta http-equiv="X-Content-Type-Options" content="nosniff">
-    <meta http-equiv="X-Frame-Options" content="DENY">
     <title>{{if .BrandName}}{{.BrandName}}{{else}}Shadow SSO{{end}} — Secure Identity for Everyone</title>
     <link rel="stylesheet" href="/static/fonts/lato.css">
     <link rel="stylesheet" href="/static/app.css">
@@ -29,10 +27,9 @@
             <span class="text-base font-bold tracking-tight">{{if .BrandName}}{{.BrandName}}{{else}}Shadow SSO{{end}}</span>
         </a>
         <nav class="ms-auto flex items-center gap-1" aria-label="Main">
-            <a class="nav-link hidden sm:flex" href="/healthz">Status</a>
-            <a class="nav-link hidden sm:flex" href="/.well-known/openid-configuration">OpenID Config</a>
-            <a class="nav-link hidden sm:flex" href="/graphql">GraphQL</a>
-            <a class="btn btn-primary btn-sm auto focus-visible:ring-3 focus-visible:ring-primary-light focus-visible:outline-none" href="/oauth2/authorize">
+            <a class="nav-link hidden sm:flex" href="/.well-known/openid-configuration">Developers</a>
+            <a class="nav-link hidden sm:flex" href="/.well-known/jwks.json">JWKS</a>
+            <a class="btn btn-primary btn-sm auto focus-visible:ring-3 focus-visible:ring-primary-light focus-visible:outline-none" href="/account">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
                 Sign In
             </a>
@@ -54,7 +51,7 @@
             Secure, extensible, and fully spec-compliant — ready for production.
         </p>
         <div class="flex flex-wrap items-center justify-center gap-3">
-            <a class="btn btn-primary auto focus-visible:ring-3 focus-visible:ring-primary-light focus-visible:outline-none" href="/oauth2/authorize">
+            <a class="btn btn-primary auto focus-visible:ring-3 focus-visible:ring-primary-light focus-visible:outline-none" href="/account">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
                 Sign In
             </a>
@@ -207,7 +204,7 @@
                         </tr>
                         <tr>
                             <td><span class="badge badge-ok plain">GET</span></td>
-                            <td class="mono">/oauth2/jwks</td>
+                            <td class="mono">/.well-known/jwks.json</td>
                             <td class="cell-sub hidden md:table-cell">JSON Web Key Set</td>
                         </tr>
                         <tr>
@@ -217,13 +214,13 @@
                         </tr>
                         <tr>
                             <td><span class="badge badge-primary plain">POST</span></td>
-                            <td class="mono">/graphql</td>
-                            <td class="cell-sub hidden md:table-cell">GraphQL management API</td>
+                            <td class="mono">/oauth2/device_authorization</td>
+                            <td class="cell-sub hidden md:table-cell">Device authorization</td>
                         </tr>
                         <tr>
                             <td><span class="badge badge-ok plain">GET</span></td>
-                            <td class="mono">/healthz</td>
-                            <td class="cell-sub hidden md:table-cell">Health check</td>
+                            <td class="mono">/oauth2/logout</td>
+                            <td class="cell-sub hidden md:table-cell">End session</td>
                         </tr>
                     </tbody>
                 </table>
@@ -238,7 +235,7 @@
                 <h2 class="mb-2 text-2xl font-semibold tracking-tight text-fg">Ready to get started?</h2>
                 <p class="mb-6 text-sm text-muted">Sign in or explore the live OpenID Connect discovery document to integrate with your application.</p>
                 <div class="flex flex-wrap items-center justify-center gap-3">
-                    <a class="btn btn-primary auto focus-visible:ring-3 focus-visible:ring-primary-light focus-visible:outline-none" href="/oauth2/authorize">
+                    <a class="btn btn-primary auto focus-visible:ring-3 focus-visible:ring-primary-light focus-visible:outline-none" href="/account">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
                         Sign In
                     </a>
@@ -261,10 +258,9 @@
             {{if .BrandName}}{{.BrandName}}{{else}}Shadow SSO{{end}} — open-source identity platform
         </p>
         <nav class="flex flex-wrap items-center gap-4" aria-label="Footer">
-            <a class="rounded-md text-[0.8125rem] text-subtle no-underline hover:text-muted focus-visible:ring-3 focus-visible:ring-primary-light focus-visible:outline-none" href="/healthz">Health</a>
-            <a class="rounded-md text-[0.8125rem] text-subtle no-underline hover:text-muted focus-visible:ring-3 focus-visible:ring-primary-light focus-visible:outline-none" href="/metrics">Metrics</a>
-            <a class="rounded-md text-[0.8125rem] text-subtle no-underline hover:text-muted focus-visible:ring-3 focus-visible:ring-primary-light focus-visible:outline-none" href="/.well-known/openid-configuration">OpenID Config</a>
-            <a class="rounded-md text-[0.8125rem] text-subtle no-underline hover:text-muted focus-visible:ring-3 focus-visible:ring-primary-light focus-visible:outline-none" href="/graphql">GraphQL</a>
+            <a class="rounded-md text-[0.8125rem] text-subtle no-underline hover:text-muted focus-visible:ring-3 focus-visible:ring-primary-light focus-visible:outline-none" href="/account">Sign in</a>
+            <a class="rounded-md text-[0.8125rem] text-subtle no-underline hover:text-muted focus-visible:ring-3 focus-visible:ring-primary-light focus-visible:outline-none" href="/.well-known/openid-configuration">Discovery</a>
+            <a class="rounded-md text-[0.8125rem] text-subtle no-underline hover:text-muted focus-visible:ring-3 focus-visible:ring-primary-light focus-visible:outline-none" href="/.well-known/jwks.json">JWKS</a>
         </nav>
     </div>
 </footer>

@@ -100,11 +100,13 @@ func TestLandingPageIsTranslated(t *testing.T) {
 		"Beépített megfigyelhetőség",
 		"Élő végpontok",
 		"Kapcsolódásra kész",
-		"Állapotellenőrzés",
+		"Eszközengedélyezés",
+		"Fejlesztők",
 		"Bejelentkezés",
 		// entities must be decoded before the catalog lookup
 		"OpenID Connect és OAuth 2.0 szolgáltató",
 		"Közösségi és föderált bejelentkezés",
+		"Munkamenet lezárása",
 	} {
 		assert.Contains(t, out, want)
 	}
