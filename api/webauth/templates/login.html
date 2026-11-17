@@ -43,13 +43,13 @@
     </div>
 
     <button type="submit" class="btn btn-primary">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
         Sign In
     </button>
 </form>
 
 {{if .HasAccounts}}
-<p style="text-align:center;margin-top:12px;font-size:0.8125rem;">
+<p class="mt-3 text-center text-[0.8125rem]">
     {{if .Email}}
     <a href="/login?form=1" class="link">Use another account</a>
     {{else}}

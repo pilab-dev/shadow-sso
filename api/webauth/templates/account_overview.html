@@ -30,10 +30,10 @@
         <label for="last_name" class="form-label">Last name</label>
         <input type="text" id="last_name" name="last_name" class="form-input" autocomplete="family-name" maxlength="100" value="{{.LastName}}">
     </div>
-    <p style="font-size:0.8125rem;color:var(--text-subtle);">Email {{.Email}}{{if .User.IsEmailVerified}} (verified){{else}} (not verified){{end}}</p>
+    <p class="text-[0.8125rem] text-subtle">Email {{.Email}}{{if .User.IsEmailVerified}} (verified){{else}} (not verified){{end}}</p>
     <button type="submit" class="btn btn-primary">Save changes</button>
 </form>
-<form method="POST" action="/account/logout" style="margin-top:16px;">
+<form method="POST" action="/account/logout" class="mt-4">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
     <button type="submit" class="btn btn-secondary">Sign out</button>
 </form>

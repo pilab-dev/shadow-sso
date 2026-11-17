@@ -251,18 +251,22 @@ func (w *i18nWriter) WriteHeaderNow()                   {}
 func (w *i18nWriter) Written() bool                     { return w.buf.Len() > 0 || w.ResponseWriter.Written() }
 func (w *i18nWriter) Flush()                            {}
 
+// languageSwitcher renders the switcher that i18nMiddleware appends before
+// </body>. Markup and styling are fixed by the pilab-laf spec: a bare
+// <nav class="lang-switch"> with the current language marked by aria-current,
+// styled only through the compiled .lang-switch class (no inline styles).
 func languageSwitcher(u *url.URL, current string) string {
 	var b strings.Builder
-	b.WriteString(`<nav class="lang-switch" aria-label="Language" style="position:relative;z-index:1;display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:12px;font-size:0.75rem;">`)
+	b.WriteString(`<nav class="lang-switch" aria-label="Language">`)
 	for _, l := range supportedLocales {
 		q := u.Query()
 		q.Set(localeQueryParam, l.Code)
 		href := html.EscapeString(u.Path + "?" + q.Encode())
 		if l.Code == current {
-			fmt.Fprintf(&b, `<span aria-current="true" style="color:var(--text);font-weight:600;">%s</span>`, l.Name)
+			fmt.Fprintf(&b, `<span aria-current="true">%s</span>`, l.Name)
 			continue
 		}
-		fmt.Fprintf(&b, `<a href="%s" hreflang="%s" lang="%s" style="color:var(--text-subtle);text-decoration:none;">%s</a>`, href, l.Code, l.Code, l.Name)
+		fmt.Fprintf(&b, `<a href="%s" hreflang="%s" lang="%s">%s</a>`, href, l.Code, l.Code, l.Name)
 	}
 	b.WriteString(`</nav>`)
 	return b.String()

@@ -17,10 +17,10 @@
 </div>
 {{end}}
 
-<div style="text-align:center;margin:12px 0;">
-    <img src="{{.QRCode}}" alt="QR code for authenticator setup" width="200" height="200" style="background:#fff;padding:8px;border-radius:8px;">
-    <p style="font-size:0.8125rem;color:var(--text-subtle);margin-top:8px;">Can't scan? Enter this key manually:</p>
-    <code style="font-family:var(--font-mono);word-break:break-all;">{{.Secret}}</code>
+<div class="my-3 text-center">
+    <img src="{{.QRCode}}" alt="QR code for authenticator setup" width="200" height="200" class="rounded-md bg-white p-2">
+    <p class="mt-2 text-[0.8125rem] text-subtle">Can't scan? Enter this key manually:</p>
+    <code class="font-mono break-all">{{.Secret}}</code>
 </div>
 
 <form method="POST" action="{{.Action}}">

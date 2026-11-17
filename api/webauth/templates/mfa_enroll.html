@@ -19,17 +19,17 @@
 {{end}}
 
 {{if .QRDataURI}}
-<div style="display:flex;justify-content:center;margin-bottom:18px;">
-    <img src="{{.QRDataURI}}" alt="TOTP QR code" width="200" height="200" style="border-radius:10px;background:#fff;padding:10px;">
+<div class="mb-4.5 flex justify-center">
+    <img src="{{.QRDataURI}}" alt="TOTP QR code" width="200" height="200" class="rounded-md bg-white p-2.5">
 </div>
 {{end}}
 
 <div class="form-group">
     <label class="form-label">Manual entry key</label>
-    <div style="display:flex;gap:8px;align-items:center;">
-        <input type="text" class="form-input" value="{{.Secret}}" readonly onclick="this.select()" style="font-family:var(--font-mono);font-size:0.8125rem;">
+    <div class="flex items-center gap-2">
+        <input type="text" class="form-input font-mono text-[0.8125rem]" value="{{.Secret}}" readonly onclick="this.select()">
     </div>
-    <p style="font-size:0.75rem;color:var(--text-subtle);margin-top:6px;">Account: {{.Email}}</p>
+    <p class="mt-1.5 text-xs text-subtle">Account: {{.Email}}</p>
 </div>
 
 <form method="POST" action="/mfa/enroll">
@@ -54,12 +54,12 @@
     </div>
 
     <button type="submit" class="btn btn-primary">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
         Verify and continue
     </button>
 </form>
 
-<p style="text-align:center;margin-top:16px;font-size:0.8125rem;color:var(--text-subtle);">
+<p class="mt-4 text-center text-[0.8125rem] text-subtle">
     You cannot skip this step while MFA is required. Contact your administrator if you need help.
 </p>
 {{template "base_end" .}}

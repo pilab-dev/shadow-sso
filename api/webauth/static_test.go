@@ -35,6 +35,20 @@ func TestStaticHandler_ServesCSS(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "inter-latin.woff2")
 }
 
+func TestStaticHandler_ServesLAFAppCSS(t *testing.T) {
+	router := setupStaticTest(t)
+	req := httptest.NewRequest(http.MethodGet, "/static/app.css", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "text/css; charset=utf-8", w.Header().Get("Content-Type"))
+	// The compiled pilab-laf bundle must carry the auth shell and the
+	// language switcher the i18n middleware injects.
+	assert.Contains(t, w.Body.String(), ".lang-switch")
+	assert.Contains(t, w.Body.String(), ".auth-container")
+}
+
 func TestStaticHandler_ServesFont(t *testing.T) {
 	router := setupStaticTest(t)
 	req := httptest.NewRequest(http.MethodGet, "/static/fonts/inter-latin.woff2", nil)

@@ -8,12 +8,12 @@
 <h2 class="page-title">Save your recovery codes</h2>
 <p class="page-subtitle">Each code works once if you lose your authenticator. They will not be shown again.</p>
 
-<div style="font-family:var(--font-mono);display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:16px 0;text-align:center;">
+<div class="my-4 grid grid-cols-2 gap-1.5 text-center font-mono">
     {{range .Codes}}<code>{{.}}</code>{{end}}
 </div>
 
 {{if .ContinueHref}}
-<a class="btn btn-primary" href="{{.ContinueHref}}" style="display:block;text-align:center;text-decoration:none;">I have saved my codes — continue</a>
+<a class="btn btn-primary" href="{{.ContinueHref}}">I have saved my codes — continue</a>
 {{else}}
 <form method="POST" action="{{.Action}}">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">

@@ -1,6 +1,6 @@
 {{template "base_start" .}}
-<div class="mfa-icon" style="background: var(--warning-bg); border-color: var(--warning-border);">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--warning);">
+<div class="mfa-icon border-warn-line bg-warn-bg [&_svg]:text-warn">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
         <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
     </svg>
@@ -15,7 +15,7 @@
     </span>
     <div>
         <strong>Account already exists</strong>
-        <p style="margin-top:4px;margin-bottom:0;font-size:0.875rem;">
+        <p class="mt-1 mb-0 text-sm">
             An account with the email <strong>{{.Email}}</strong> already exists in our system.
         </p>
     </div>
@@ -23,7 +23,7 @@
 
 <div class="info-box">
     <p class="info-box-title">Provider</p>
-    <p style="font-size:0.875rem;color:var(--text);margin-bottom:10px;">{{.ProviderName}}</p>
+    <p class="mb-2.5 text-sm text-fg">{{.ProviderName}}</p>
     <p class="info-box-title">What would you like to do?</p>
     <ul>
         <li><strong>Sign in with your existing account</strong> — use your email and password to sign in normally</li>
@@ -32,17 +32,17 @@
     </ul>
 </div>
 
-<div class="actions" style="flex-direction:column;">
-    <a href="/login?flow_id={{.FlowID}}" class="btn btn-primary" style="text-decoration:none;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+<div class="actions flex-col">
+    <a href="/login?flow_id={{.FlowID}}" class="btn btn-primary">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
         Sign in with Email &amp; Password
     </a>
-    <a href="/login?flow_id={{.FlowID}}" class="btn btn-secondary" style="text-decoration:none;">
+    <a href="/login?flow_id={{.FlowID}}" class="btn btn-secondary">
         Use Different Account
     </a>
 </div>
 
-<p style="font-size:0.75rem;color:var(--text-subtle);text-align:center;margin-top:14px;">
+<p class="mt-3.5 text-center text-xs text-subtle">
     Need help? Contact your administrator for account linking assistance.
 </p>
 {{template "base_end" .}}

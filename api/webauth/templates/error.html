@@ -1,6 +1,6 @@
 {{template "base_start" .}}
-<div class="mfa-icon" style="background: var(--error-bg); border-color: var(--error-border);">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--error);">
+<div class="mfa-icon border-danger-line bg-danger-bg [&_svg]:text-danger">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="10"/>
         <line x1="15" y1="9" x2="9" y2="15"/>
         <line x1="9" y1="9" x2="15" y2="15"/>
@@ -17,7 +17,7 @@
     <div>
         <strong>{{if .Message}}{{.Message}}{{else}}An unexpected error occurred{{end}}</strong>
         {{if .Detail}}
-        <p style="margin-top:4px;margin-bottom:0;font-size:0.8125rem;opacity:0.85;">{{.Detail}}</p>
+        <p class="mt-1 mb-0 text-[0.8125rem] opacity-85">{{.Detail}}</p>
         {{end}}
     </div>
 </div>
@@ -31,26 +31,26 @@
     </ul>
 </div>
 
-<div class="actions" style="flex-direction:column;">
+<div class="actions flex-col">
     {{if .LoginURL}}
-    <a href="{{.LoginURL}}" class="btn btn-primary" style="text-decoration:none;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+    <a href="{{.LoginURL}}" class="btn btn-primary">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
         Back to Sign In
     </a>
     {{else}}
-    <a href="/login" class="btn btn-primary" style="text-decoration:none;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+    <a href="/login" class="btn btn-primary">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
         Back to Sign In
     </a>
     {{end}}
     <button onclick="window.history.back()" class="btn btn-secondary">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;"><polyline points="15 18 9 12 15 6"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
         Go Back
     </button>
 </div>
 
 {{if .RequestID}}
-<p style="font-size:0.75rem;color:var(--text-subtle);text-align:center;margin-top:16px;font-family:var(--font-mono);">
+<p class="mt-4 text-center font-mono text-xs text-subtle">
     Request ID: {{.RequestID}}
 </p>
 {{end}}

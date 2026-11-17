@@ -20,7 +20,7 @@
 </div>
 {{end}}
 
-<h3 class="page-subtitle" style="font-weight:600;">Password</h3>
+<h3 class="page-subtitle font-semibold">Password</h3>
 <form method="POST" action="/account/password">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 {{if .HasPassword}}    <div class="form-group">
@@ -38,10 +38,10 @@
     <button type="submit" class="btn btn-primary">{{if .HasPassword}}Change password{{else}}Set password{{end}}</button>
 </form>
 
-<h3 class="page-subtitle" style="font-weight:600;margin-top:28px;">Authenticator app</h3>
+<h3 class="page-subtitle mt-7 font-semibold">Authenticator app</h3>
 {{if .TOTPEnabled}}
 <p class="page-subtitle">Two-factor authentication is on.</p>
-<form method="POST" action="/account/mfa/recovery" style="margin-bottom:12px;">
+<form method="POST" action="/account/mfa/recovery" class="mb-3">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
     <div class="form-group">
         <label for="current_password" class="form-label">Password or authenticator code</label>
@@ -61,6 +61,6 @@
 <p class="page-subtitle">Another second factor (email or push) is enabled on your account.</p>
 {{else}}
 <p class="page-subtitle">Add a second step to sign-in with an authenticator app.</p>
-<a class="btn btn-primary" href="/account/mfa/totp" style="display:block;text-align:center;text-decoration:none;">Set up authenticator</a>
+<a class="btn btn-primary" href="/account/mfa/totp">Set up authenticator</a>
 {{end}}
 {{template "base_end" .}}

@@ -1,8 +1,11 @@
 package webauth
 
 import (
+	"bytes"
+	"html/template"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -81,6 +84,41 @@ func TestTranslateHTML(t *testing.T) {
 	assert.Contains(t, out, "<nav>SW</nav></body>")
 }
 
+// The landing page is public marketing copy; every sentence must be in the
+// catalogs, otherwise switching language leaves the page half-English.
+func TestLandingPageIsTranslated(t *testing.T) {
+	tmpl, err := template.ParseGlob(filepath.Join("templates", "*.html"))
+	require.NoError(t, err)
+
+	var buf bytes.Buffer
+	require.NoError(t, tmpl.ExecuteTemplate(&buf, "landing.html", map[string]any{"BrandName": "Shadow SSO"}))
+
+	out := string(translateHTML(buf.Bytes(), catalogs["hu"], "hu", ""))
+	for _, want := range []string{
+		"Identitás-infrastruktúra",
+		"Többtényezős hitelesítés",
+		"Beépített megfigyelhetőség",
+		"Élő végpontok",
+		"Kapcsolódásra kész",
+		"Állapotellenőrzés",
+		"Bejelentkezés",
+		// entities must be decoded before the catalog lookup
+		"OpenID Connect és OAuth 2.0 szolgáltató",
+		"Közösségi és föderált bejelentkezés",
+	} {
+		assert.Contains(t, out, want)
+	}
+	for _, unwanted := range []string{
+		"Identity infrastructure",
+		"Multi-Factor Authentication",
+		"Social &amp; Federated Login",
+		"Live Endpoints",
+		"Health check",
+	} {
+		assert.NotContains(t, out, unwanted)
+	}
+}
+
 func TestI18nMiddleware(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	wa := &WebAuth{}
@@ -137,5 +175,17 @@ func TestI18nMiddleware(t *testing.T) {
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, httptest.NewRequest("GET", "/page", nil))
 		assert.True(t, strings.Contains(w.Body.String(), "<h1>Request denied</h1>"))
+	})
+
+	// The switcher is styled by the compiled pilab-laf .lang-switch class; inline
+	// styles or a styled current language would break the design system (R3).
+	t.Run("switcher is pilab-laf compliant", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest("GET", "/page?lang=hu", nil))
+		body := w.Body.String()
+		assert.NotContains(t, body, "lang-switch\" aria-label=\"Language\" style=")
+		assert.Contains(t, body, `<nav class="lang-switch" aria-label="Language">`)
+		assert.Contains(t, body, `<span aria-current="true">Magyar</span>`)
+		assert.Contains(t, body, `hreflang="de" lang="de">Deutsch</a>`)
 	})
 }

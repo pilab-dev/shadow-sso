@@ -33,28 +33,28 @@
 </div>
 
 {{if .Scopes}}
-<p style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:8px;font-weight:500;">This application will be able to:</p>
+<p class="mb-2 text-[0.8125rem] font-semibold text-muted">This application will be able to:</p>
 <ul class="scope-list">
     {{range .Scopes}}
     <li class="scope-item">
-        <label style="display:flex;align-items:flex-start;gap:10px;width:100%;cursor:{{if .Required}}default{{else}}pointer{{end}};">
-            <input type="checkbox" form="consent-form" name="scope" value="{{.Name}}" checked {{if .Required}}disabled{{end}} style="margin-top:4px;">
-            <span style="display:flex;flex-direction:column;">
-                <span>{{.Title}}{{if .Required}} <small style="color:var(--text-subtle);">(required)</small>{{end}}</span>
-                <small style="color:var(--text-muted);">{{.Description}}</small>
+        <label class="flex w-full cursor-pointer items-start gap-2.5{{if .Required}} cursor-default{{end}}">
+            <input type="checkbox" form="consent-form" name="scope" value="{{.Name}}" checked {{if .Required}}disabled{{end}} class="mt-1">
+            <span class="flex flex-col">
+                <span>{{.Title}}{{if .Required}} <small class="text-subtle">(required)</small>{{end}}</span>
+                <small class="text-muted">{{.Description}}</small>
             </span>
         </label>
     </li>
     {{end}}
 </ul>
 {{else}}
-<p style="font-size:0.875rem;color:var(--text-muted);margin-bottom:16px;">
+<p class="mb-4 text-sm text-muted">
     This application is requesting access to your basic profile information.
 </p>
 {{end}}
 
 {{if .AuthorizationDetails}}
-<p style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:8px;font-weight:500;">Requested authorization details:</p>
+<p class="mb-2 text-[0.8125rem] font-semibold text-muted">Requested authorization details:</p>
 <ul class="scope-list">
     {{range .AuthorizationDetails}}
     <li class="scope-item">
@@ -73,17 +73,17 @@
 
     <div class="actions">
         <button type="submit" name="decision" value="deny" class="btn btn-secondary">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             Deny
         </button>
         <button type="submit" name="decision" value="approve" class="btn btn-primary">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;"><polyline points="20 6 9 17 4 12"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ><polyline points="20 6 9 17 4 12"/></svg>
             Allow Access
         </button>
     </div>
 </form>
 
-<p style="font-size:0.75rem;color:var(--text-subtle);text-align:center;margin-top:14px;">
+<p class="mt-3.5 text-center text-xs text-subtle">
     Only approve this if you trust the application.
 </p>
 {{template "base_end" .}}

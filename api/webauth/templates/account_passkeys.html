@@ -25,13 +25,13 @@
 <p class="page-subtitle">Passkeys are not available on this server.</p>
 {{else}}
 {{range .Passkeys}}
-<div style="border:1px solid var(--border);border-radius:var(--radius-md);padding:12px;margin-bottom:10px;">
-    <div style="font-weight:600;">{{.Name}}</div>
-    <div style="font-size:0.8125rem;color:var(--text-subtle);">Added {{.CreatedAt.Format "2006-01-02"}}</div>
-    <form method="POST" action="/account/passkeys/delete" style="margin-top:8px;">
+<div class="mb-2.5 rounded-md border border-line p-3">
+    <div class="font-semibold">{{.Name}}</div>
+    <div class="text-[0.8125rem] text-subtle">Added {{.CreatedAt.Format "2006-01-02"}}</div>
+    <form method="POST" action="/account/passkeys/delete" class="mt-2">
         <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
         <input type="hidden" name="device_id" value="{{.ID}}">
-        {{if $.CanConfirm}}<input type="password" name="current_password" class="form-input" placeholder="Password or authenticator code" autocomplete="current-password" required style="margin-bottom:8px;">{{end}}
+        {{if $.CanConfirm}}<input type="password" name="current_password" class="form-input mb-2" placeholder="Password or authenticator code" autocomplete="current-password" required>{{end}}
         <button type="submit" class="btn btn-secondary">Remove</button>
     </form>
 </div>
@@ -40,7 +40,7 @@
 {{end}}
 
 {{if .CanConfirm}}
-<h3 class="page-subtitle" style="font-weight:600;margin-top:20px;">Add a passkey</h3>
+<h3 class="page-subtitle mt-5 font-semibold">Add a passkey</h3>
 <div class="form-group">
     <label for="passkey-name" class="form-label">Name</label>
     <input type="text" id="passkey-name" class="form-input" maxlength="60" placeholder="e.g. Work laptop">
