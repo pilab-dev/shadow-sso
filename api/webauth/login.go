@@ -118,6 +118,17 @@ func (wa *WebAuth) LoginPageHandler(c *gin.Context) {
 		flowID = ""
 	}
 
+	// A fresh return_to request (e.g. /account redirecting to login) must not
+	// reuse a stale, expired or unknown flow cookie left over from an earlier
+	// attempt: that would show an error or complete the login at the old
+	// destination. Real OIDC flows (with a client) are left untouched.
+	if flowID != "" && validReturnTo(c.Query("return_to")) {
+		if fs, ferr := wa.flowStore.GetFlow(c.Request.Context(), flowID); ferr != nil || fs == nil ||
+			time.Now().After(fs.ExpiresAt) || fs.ClientID == "" {
+			flowID = ""
+		}
+	}
+
 	if flowID == "" {
 		// Flow-less login: when no sso_oidc_flow_id cookie exists but a
 		// validated same-origin return_to is present (e.g. the device

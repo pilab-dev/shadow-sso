@@ -86,6 +86,27 @@ func TestLoginPage_FlowlessWithReturnTo(t *testing.T) {
 	assert.Equal(t, wantReturnTo, string(payload))
 }
 
+// TestLoginPage_StaleFlowCookieWithReturnTo: a stale flow cookie must not break
+// a fresh return_to login; a new synthetic flow replaces it.
+func TestLoginPage_StaleFlowCookieWithReturnTo(t *testing.T) {
+	router, ctrl, mockFlowStore, _, mockIdPRepo, _, _, _ := setupLoginTest(t)
+	defer ctrl.Finish()
+
+	mockFlowStore.EXPECT().GetFlow(gomock.Any(), "stale-flow").Return(nil, assert.AnError)
+	mockFlowStore.EXPECT().StoreFlow(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(1)
+	mockIdPRepo.EXPECT().ListIdPs(gomock.Any(), true).Return([]*domain.IdentityProvider{}, nil)
+
+	req := httptest.NewRequest("GET", "/login?return_to="+url.QueryEscape("/account"), nil)
+	req.AddCookie(&http.Cookie{Name: "sso_oidc_flow_id", Value: "stale-flow"})
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	flowCookie := findCookie(w.Result().Cookies(), "sso_oidc_flow_id")
+	require.NotNil(t, flowCookie)
+	assert.NotEqual(t, "stale-flow", flowCookie.Value)
+}
+
 // TestLoginSubmit_FlowlessHappyPath: full POST with a synthetic (ClientID-less)
 // flow redirects to the exact signed return_to path and clears the cookie.
 func TestLoginSubmit_FlowlessHappyPath(t *testing.T) {
